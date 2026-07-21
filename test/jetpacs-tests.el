@@ -8150,5 +8150,22 @@ vocabulary `jetpacs-lint' checks."
   (should (equal (jetpacs-date-shift "2026-01-15" -1 'month) "2025-12-15")))
 
 
+(ert-deftest jetpacs-captpl-cards-hold-one-child ()
+  "Every card in the template-builder body carries exactly ONE child.
+A card's children render inside a stacking Box companion-side, so
+sibling children overlay — the muddled-builder regression (Key/Name and
+the section headers drawn on top of each other).  Multi-part content
+must ride a single explicit column."
+  (jetpacs-tests--with-captpl-env
+    (setq jetpacs-org--captpl-editing 'new)
+    (cl-labels ((walk (node)
+                  (when (and (listp node) (consp (car-safe node)))
+                    (when (equal "card" (alist-get t node))
+                      (should (= 1 (length (alist-get 'children node)))))
+                    (mapc #'walk (append (alist-get 'children node) nil)))))
+      (mapc #'walk (append (alist-get 'children
+                                      (jetpacs-org--captpl-builder-body))
+                           nil)))))
+
 (provide 'jetpacs-tests)
 ;;; jetpacs-tests.el ends here

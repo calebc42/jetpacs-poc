@@ -837,80 +837,81 @@ still reads as a summary of what it contributes."
                                    (and initial "shared text")))))
     (jetpacs-card
      (list
-      (jetpacs-org--captpl-section
-       "target" "Destination"
-       (cond (custom-target "custom (kept as-is)")
-             ((string-empty-p file-val) nil)
-             ((string-empty-p headline-val) file-val)
-             (t (format "%s → %s" file-val headline-val)))
-       (if custom-target
-           (list (jetpacs-text
-                  "This template files somewhere the builder can't edit (an id, clock, or function target); saving keeps it unchanged."
-                  'caption))
-         (list
-          (jetpacs-enum-list "captpl-file" (jetpacs-org--captpl-org-files)
-                             :value (and (not (string-empty-p file-val))
-                                         file-val)
-                             :allow-add t
-                             :on-change (jetpacs-action
-                                         "org.templates.update"
-                                         :args '((field . "file"))))
-          (jetpacs-text-input "captpl-headline"
-                              :value headline-val
-                              :label "Under headline"
-                              :hint "Empty = end of file; A/B nests an outline path"
-                              :single-line t))))
-      (jetpacs-org--captpl-section
-       "todo" "Status" (unless (equal todo-val "None") todo-val)
-       (list (jetpacs-enum-list "captpl-todo"
-                                (cons "None" (jetpacs-org--captpl-todo-keywords))
-                                :value todo-val
-                                :on-change (jetpacs-action
-                                            "org.templates.update"
-                                            :args '((field . "todo"))))))
-      (jetpacs-org--captpl-section
-       "tags" "Tags" (when tags-list (string-join tags-list ", "))
-       (list (jetpacs-enum-list "captpl-tags" (jetpacs-org--captpl-known-tags)
-                                :value (vconcat tags-list)
-                                :multi-select t
-                                :allow-add t
-                                :on-change (jetpacs-action
-                                            "org.templates.update"
-                                            :args '((field . "tags"))))))
-      (jetpacs-org--captpl-section
-       "prompts" "Extra prompts"
-       (when prompts-list (string-join prompts-list ", "))
-       (list (jetpacs-text
-              "Each becomes a %^{Field} capture asks for."
-              'caption)
-             (jetpacs-enum-list "captpl-prompts" prompts-list
-                                :value (vconcat prompts-list)
-                                :multi-select t
-                                :allow-add t
-                                :on-change (jetpacs-action
-                                            "org.templates.update"
-                                            :args '((field . "prompts"))))))
-      (jetpacs-org--captpl-section
-       "includes" "Include" (and includes (string-join includes ", "))
-       (list (jetpacs-text "Created timestamp" 'caption)
-             (jetpacs-enum-list "captpl-timestamp"
-                                jetpacs-org--captpl-timestamps
-                                :value ts-val
-                                :on-change (jetpacs-action
-                                            "org.templates.update"
-                                            :args '((field . "timestamp"))))
-             (jetpacs-switch "captpl-link"
-                             :checked link
-                             :label "Link to where capture was called (%a)"
-                             :on-change (jetpacs-action
-                                         "org.templates.update"
-                                         :args '((field . "link"))))
-             (jetpacs-switch "captpl-initial"
-                             :checked initial
-                             :label "Shared/selected text (%i)"
-                             :on-change (jetpacs-action
-                                         "org.templates.update"
-                                         :args '((field . "initial")))))))
+      (jetpacs-column
+       (jetpacs-org--captpl-section
+        "target" "Destination"
+        (cond (custom-target "custom (kept as-is)")
+              ((string-empty-p file-val) nil)
+              ((string-empty-p headline-val) file-val)
+              (t (format "%s → %s" file-val headline-val)))
+        (if custom-target
+            (list (jetpacs-text
+                   "This template files somewhere the builder can't edit (an id, clock, or function target); saving keeps it unchanged."
+                   'caption))
+          (list
+           (jetpacs-enum-list "captpl-file" (jetpacs-org--captpl-org-files)
+                              :value (and (not (string-empty-p file-val))
+                                          file-val)
+                              :allow-add t
+                              :on-change (jetpacs-action
+                                          "org.templates.update"
+                                          :args '((field . "file"))))
+           (jetpacs-text-input "captpl-headline"
+                               :value headline-val
+                               :label "Under headline"
+                               :hint "Empty = end of file; A/B nests an outline path"
+                               :single-line t))))
+       (jetpacs-org--captpl-section
+        "todo" "Status" (unless (equal todo-val "None") todo-val)
+        (list (jetpacs-enum-list "captpl-todo"
+                                 (cons "None" (jetpacs-org--captpl-todo-keywords))
+                                 :value todo-val
+                                 :on-change (jetpacs-action
+                                             "org.templates.update"
+                                             :args '((field . "todo"))))))
+       (jetpacs-org--captpl-section
+        "tags" "Tags" (when tags-list (string-join tags-list ", "))
+        (list (jetpacs-enum-list "captpl-tags" (jetpacs-org--captpl-known-tags)
+                                 :value (vconcat tags-list)
+                                 :multi-select t
+                                 :allow-add t
+                                 :on-change (jetpacs-action
+                                             "org.templates.update"
+                                             :args '((field . "tags"))))))
+       (jetpacs-org--captpl-section
+        "prompts" "Extra prompts"
+        (when prompts-list (string-join prompts-list ", "))
+        (list (jetpacs-text
+               "Each becomes a %^{Field} capture asks for."
+               'caption)
+              (jetpacs-enum-list "captpl-prompts" prompts-list
+                                 :value (vconcat prompts-list)
+                                 :multi-select t
+                                 :allow-add t
+                                 :on-change (jetpacs-action
+                                             "org.templates.update"
+                                             :args '((field . "prompts"))))))
+       (jetpacs-org--captpl-section
+        "includes" "Include" (and includes (string-join includes ", "))
+        (list (jetpacs-text "Created timestamp" 'caption)
+              (jetpacs-enum-list "captpl-timestamp"
+                                 jetpacs-org--captpl-timestamps
+                                 :value ts-val
+                                 :on-change (jetpacs-action
+                                             "org.templates.update"
+                                             :args '((field . "timestamp"))))
+              (jetpacs-switch "captpl-link"
+                              :checked link
+                              :label "Link to where capture was called (%a)"
+                              :on-change (jetpacs-action
+                                          "org.templates.update"
+                                          :args '((field . "link"))))
+              (jetpacs-switch "captpl-initial"
+                              :checked initial
+                              :label "Shared/selected text (%i)"
+                              :on-change (jetpacs-action
+                                          "org.templates.update"
+                                          :args '((field . "initial"))))))))
      :padding 16)))
 
 (defun jetpacs-org--captpl-builder-body ()
@@ -920,40 +921,44 @@ still reads as a summary of what it contributes."
         (desc-val (or (jetpacs-ui-state "captpl-description") ""))
         (tmpl-val (or (jetpacs-ui-state "captpl-template") "")))
     (jetpacs-lazy-column
+     ;; A card's children render in a stacking Box companion-side —
+     ;; multiple children must ride ONE explicit column, or they overlay.
      (jetpacs-card
       (list
-       (jetpacs-text-input "captpl-key"
-                           :value key-val
-                           :label "Key"
-                           :hint "One short letter, e.g. t"
-                           :single-line t)
-       (jetpacs-text-input "captpl-description"
-                           :value desc-val
-                           :label "Name"
-                           :hint "What the capture sheet shows, e.g. Todo"
-                           :single-line t))
+       (jetpacs-column
+        (jetpacs-text-input "captpl-key"
+                            :value key-val
+                            :label "Key"
+                            :hint "One short letter, e.g. t"
+                            :single-line t)
+        (jetpacs-text-input "captpl-description"
+                            :value desc-val
+                            :label "Name"
+                            :hint "What the capture sheet shows, e.g. Todo"
+                            :single-line t)))
       :padding 16)
      (jetpacs-spacer :height 8)
      (jetpacs-org--captpl-builder-card)
      (jetpacs-spacer :height 8)
      (jetpacs-card
       (list
-       (jetpacs-text "Template" 'headline)
-       (jetpacs-text
-        "The builder writes this org template as you pick — edit it here to go further."
-        'caption)
-       (jetpacs-text-input "captpl-template"
-                           :value tmpl-val
-                           :multi-line t
-                           :min-lines 4
-                           :monospace t
-                           :syntax "org")
-       (jetpacs-text (jetpacs-org--captpl-prompts-caption) 'caption)
-       (jetpacs-row
-        (jetpacs-spacer :weight 1)
-        (jetpacs-button "Rebuild from builder"
-                        (jetpacs-action "org.templates.update")
-                        :variant "text")))
+       (jetpacs-column
+        (jetpacs-text "Template" 'headline)
+        (jetpacs-text
+         "The builder writes this org template as you pick — edit it here to go further."
+         'caption)
+        (jetpacs-text-input "captpl-template"
+                            :value tmpl-val
+                            :multi-line t
+                            :min-lines 4
+                            :monospace t
+                            :syntax "org")
+        (jetpacs-text (jetpacs-org--captpl-prompts-caption) 'caption)
+        (jetpacs-row
+         (jetpacs-spacer :weight 1)
+         (jetpacs-button "Rebuild from builder"
+                         (jetpacs-action "org.templates.update")
+                         :variant "text"))))
       :padding 16)
      (jetpacs-spacer :height 8)
      (jetpacs-row
