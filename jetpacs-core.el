@@ -19154,13 +19154,18 @@ heading\" FAB on org files, ideally gated to a non-editing reader mode.")
 
 (defun jetpacs-files--within-root-p (path)
   "Non-nil when PATH is inside (or is) one of `jetpacs-files-roots'.
-Uses `file-in-directory-p', which compares path components — a bare
-string-prefix check would let root \"~/org\" authorize \"~/org-secrets\",
-and this predicate is the security boundary for every file operation
-the phone can trigger."
-  (let ((full (expand-file-name path)))
+Both sides are resolved with `file-truename' before the component compare,
+so a symlink that SITS inside a root but POINTS outside it cannot smuggle an
+operation past the boundary (e.g. `files.move' into such a link), while a
+root that is itself a symlink still authorizes its real tree.  For a target
+that does not exist yet, `file-truename' resolves the existing prefix and
+keeps the new tail literal, so the check still fires on the real parent.
+`file-in-directory-p' compares path COMPONENTS — a bare string-prefix check
+would let root \"~/org\" authorize \"~/org-secrets\" — and this predicate is
+the security boundary for every file operation the phone can trigger."
+  (let ((full (file-truename (expand-file-name path))))
     (cl-some (lambda (root)
-               (file-in-directory-p full (expand-file-name (cdr root))))
+               (file-in-directory-p full (file-truename (expand-file-name (cdr root)))))
              jetpacs-files-roots)))
 
 ;; ─── Shared storage (/sdcard) ────────────────────────────────────────────────
