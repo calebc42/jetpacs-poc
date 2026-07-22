@@ -2563,6 +2563,122 @@ INCLUDE-FIRST non-nil includes the heading at BEG (used for subtrees)."
             (save-excursion (goto-char org-clock-hd-marker)
                             (line-beginning-position))))))
 
+;; ─── Reusable outline view ─────────────────────────────────────────────────────
+;;
+;; A file's top-level headings as a scrollable list of cards — the shared
+;; scaffolding an app drops into `jetpacs-files-editor-body-functions' so it
+;; need not re-derive collect/cap/scroll/empty-state.  Both the item source and
+;; the per-heading card are seams: an app rebinds
+;; `jetpacs-org-outline-card-function' (or passes :items / :card-fn) to layer its
+;; own richer card — an agenda card, say — over the same body.  Built on the
+;; outline primitives above, so this is where they finally earn their keep.
+
+(defun jetpacs-org-file-toplevel-records (file)
+  "Capped level-1 heading records for org FILE, each tagged :file and :buffer.
+Uses `jetpacs-org-outline-collect'; the extra :file/:buffer let a card
+build a heading ref and an `org.header.actions' tap target."
+  (when (and file (file-readable-p file))
+    (with-current-buffer (find-file-noselect file)
+      (org-with-wide-buffer
+       (let* ((buf (buffer-name))
+              (all (jetpacs-org-outline-collect (point-min) (point-max) nil))
+              (tops (cl-remove-if-not (lambda (r) (= (plist-get r :level) 1)) all)))
+         (mapcar (lambda (r)
+                   (setq r (plist-put (copy-sequence r) :file file))
+                   (plist-put r :buffer buf))
+                 (jetpacs-org-outline-cap tops)))))))
+
+(defun jetpacs-org--outline-default-card (rec)
+  "A plain `jetpacs-list-item' card for outline RECORD REC.
+A leading state glyph, the headline, any TODO/DEADLINE as a caption, and a
+tap that opens the heading's action sheet (`org.header.actions')."
+  (let* ((title (or (plist-get rec :title) "Untitled"))
+         (todo (plist-get rec :todo))
+         (deadline (plist-get rec :deadline))
+         (subtitle (let ((parts (delq nil (list todo (and deadline
+                                                          (concat "⚑ " deadline))))))
+                     (and parts (string-join parts "  ·  ")))))
+    (jetpacs-list-item
+     :leading (jetpacs-icon (if (plist-get rec :done) "check_circle" "chevron_right"))
+     :title title
+     :subtitle subtitle
+     :key (format "%s:%s" (or (plist-get rec :file) "") (plist-get rec :pos))
+     :on-tap (jetpacs-action "org.header.actions"
+                          :args `((buffer . ,(plist-get rec :buffer))
+                                  (pos . ,(plist-get rec :pos)))
+                          :when-offline "drop"))))
+
+(defvar jetpacs-org-outline-card-function #'jetpacs-org--outline-default-card
+  "Function rendering ONE item as a card node in `jetpacs-org-outline-body'.
+Called with whatever the body iterates — a record plist from
+`jetpacs-org-file-toplevel-records' by default.  Apps rebind it (or pass
+:card-fn) to supply a richer card without reimplementing the body's
+collect/cap/scroll/empty-state scaffolding.")
+
+(cl-defun jetpacs-org-outline-body (file &key
+                                        (items 'unset)
+                                        (items-fn #'jetpacs-org-file-toplevel-records)
+                                        (card-fn jetpacs-org-outline-card-function)
+                                        header footer
+                                        (empty-icon "description")
+                                        (empty-title "Empty file")
+                                        (empty-caption "No headings yet."))
+  "A scrollable `lazy_column' of top-level heading cards for org FILE.
+ITEMS is the list of items to render; left unset it is computed by ITEMS-FN
+\(default `jetpacs-org-file-toplevel-records', which re-reads FILE — pass a
+precomputed :items, or a memoised :items-fn, for large files or hot render
+paths).  CARD-FN renders one item as a node (default
+`jetpacs-org-outline-card-function').  HEADER and FOOTER are lists of extra
+nodes placed before/after the cards (e.g. a filter row); nil entries are
+dropped.  With no items, an empty state (EMPTY-ICON/-TITLE/-CAPTION) shows."
+  (let* ((items (if (eq items 'unset)
+                    (and file (funcall items-fn file))
+                  items))
+         (cards (if items
+                    (mapcar card-fn items)
+                  (list (jetpacs-empty-state :icon empty-icon
+                                          :title empty-title
+                                          :caption empty-caption)))))
+    (apply #'jetpacs-lazy-column (delq nil (append header cards footer)))))
+
+(defun jetpacs-org--default-file-save (_buffer)
+  "Invalidate the org memo and schedule a save for the current buffer.
+The default `jetpacs-org-file-save-function'."
+  (jetpacs-org-cache-invalidate)
+  (jetpacs-org-defer-save))
+
+(defvar jetpacs-org-file-save-function #'jetpacs-org--default-file-save
+  "Function called, with the just-mutated org BUFFER current, to persist it.
+The tail of `file.add-heading': it saves the buffer and drops whatever
+extractions the edit invalidates.  Apps rebind it to their own mutation
+tail — e.g. a synchronous save plus a note-index refresh — so a generic
+core action keeps their memo/index coherent.  Default:
+`jetpacs-org--default-file-save' (idle save + full cache bust).")
+
+(jetpacs-defaction "file.add-heading"
+  ;; Append a new TOP-LEVEL heading to FILE.  The `read-string' prompt bridges
+  ;; to a native text-input dialog inside the action handler; empty or
+  ;; cancelled input is a no-op.  Generic — no org-agenda opinion — so any
+  ;; app's add-heading FAB or button can fire it; the save/invalidate tail is
+  ;; the `jetpacs-org-file-save-function' seam so an app keeps its index fresh.
+  (lambda (args _)
+    (let ((file (alist-get 'file args)))
+      (if (not (and (stringp file) (file-writable-p file)))
+          (jetpacs-shell-notify "Can't add a heading — file not writable")
+        (let ((title (string-trim (condition-case nil
+                                      (read-string "New heading: ")
+                                    (quit "")))))
+          (if (string-empty-p title)
+              (jetpacs-shell-notify "Heading cancelled")
+            (with-current-buffer (find-file-noselect file)
+              (org-with-wide-buffer
+               (goto-char (point-max))
+               (unless (bolp) (insert "\n"))
+               (insert "* " title "\n"))
+              (funcall jetpacs-org-file-save-function (current-buffer)))
+            (jetpacs-shell-notify (format "Added \"%s\"" title)))))
+      (jetpacs-shell-push))))
+
 (defun jetpacs-org-parse-logbook (text)
   ;; Keywords may be written lowercase in org files ("clock:" is as valid
   ;; as "CLOCK:"), so match case-insensitively — explicitly, like

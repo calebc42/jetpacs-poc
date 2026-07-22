@@ -131,6 +131,29 @@ mapping so the toolbar choice ships in the editor spec instead of being
 inferred client-side.  Defaults to `jetpacs-files-dwim-toolbar'; set to
 `ignore' for no toolbar.")
 
+(defun jetpacs-files--org-add-heading-fab (file)
+  "An add-top-level-heading FAB for an org FILE, else nil for other types.
+Fires the generic `file.add-heading' action (defined in `jetpacs-org').
+An OPT-IN helper for `jetpacs-files-editor-fab-function', not the default:
+a bare editor is a text field whose software keyboard a FAB would float
+over, and the action lives in the org layer (absent from an org-free core).
+An app whose org surface has a distinct reader mode should wrap this to show
+the FAB only there — see Glasspane's `jetpacs-files-editor-fab-function'."
+  (when (and file (string-suffix-p ".org" file t))
+    (jetpacs-fab "post_add"
+              :on-tap (jetpacs-action "file.add-heading"
+                                   :args `((file . ,file))
+                                   :when-offline "drop"))))
+
+(defvar jetpacs-files-editor-fab-function #'ignore
+  "Function of FILE returning a `jetpacs-fab' for the editor view, or nil.
+The floating-button sibling of `jetpacs-files-editor-toolbar-function':
+apps point it at their file-type mapping to surface a primary action as a
+FAB instead of crowding the top bar.  Defaults to `ignore' (no FAB), so the
+org-agnostic core adds nothing over the plain editor and stays keyboard-safe;
+opt in per app — e.g. `jetpacs-files--org-add-heading-fab' for a simple \"add
+heading\" FAB on org files, ideally gated to a non-editing reader mode.")
+
 ;; ─── Browser view (dired under the hood) ─────────────────────────────────────
 
 ;; The directory listing is backed by a real dired buffer — the standard Emacs
@@ -584,6 +607,8 @@ otherwise the plain-text editor."
                      (delq nil
                            (mapcar (lambda (fn) (funcall fn jetpacs-files--file))
                                    jetpacs-files-editor-actions-functions))))
+   :fab (when jetpacs-files--file
+          (funcall jetpacs-files-editor-fab-function jetpacs-files--file))
    :snackbar snackbar))
 
 (jetpacs-shell-define-view "files"
