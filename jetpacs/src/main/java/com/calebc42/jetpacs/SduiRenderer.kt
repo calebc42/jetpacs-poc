@@ -228,6 +228,7 @@ fun SduiNode(node: JSONObject, surfaceId: String = "", revision: Int = 0, modifi
         }
         "card" -> {
             val actionJson = node.optJSONObject("on_tap")
+            val longTapJson = node.optJSONObject("on_long_tap")
             val swipeJson = node.optJSONObject("on_swipe")
             // Per-side swipe actions (SPEC §9): {icon, label, color?,
             // on_trigger}. When present they win over the legacy
@@ -239,7 +240,20 @@ fun SduiNode(node: JSONObject, surfaceId: String = "", revision: Int = 0, modifi
                     modifier = baseModifier
                         .fillMaxWidth()
                         .then(containerModifier(node, RoundedCornerShape(12.dp)))
-                        .clickable(enabled = actionJson != null) { if (actionJson != null) dispatch(actionJson) }
+                        .then(
+                            // Long-press (SPEC §9 `on_long_tap`) complements tap —
+                            // e.g. a share-sheet of ops alongside an in-card menu.
+                            // Same combinedClickable shape as `card`'s sibling nodes.
+                            if (longTapJson != null) {
+                                @OptIn(ExperimentalFoundationApi::class)
+                                Modifier.combinedClickable(
+                                    onClick = { if (actionJson != null) dispatch(actionJson) },
+                                    onLongClick = { dispatch(longTapJson) }
+                                )
+                            } else {
+                                Modifier.clickable(enabled = actionJson != null) { if (actionJson != null) dispatch(actionJson) }
+                            }
+                        )
                 ) {
                     Box(modifier = Modifier.padding(16.dp)) {
                         RenderChildren(node.optJSONArray("children"), surfaceId, revision, dispatch)

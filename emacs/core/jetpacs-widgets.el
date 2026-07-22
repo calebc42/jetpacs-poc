@@ -290,17 +290,19 @@ the size (dp), :fill-fraction (0.0-1.0) sets a fraction of parent width, and
 full swipe fires the action and the card springs back (push the updated list
 in the handler).  They win over the legacy single-action :on-swipe.  Old
 companions render no gesture, so a swipe action must also be reachable by tap
-or menu.  :on-tap, :padding and :weight as named.  :key gives the card a
-stable identity as a `lazy_column' child, so reconciliation preserves its
-client-side state, scroll anchor, and animation across pushes that
-insert/remove/reorder rows (SPEC §9; falls back to a stateful child's id,
-then position)."
+or menu.  :on-tap fires on tap; :on-long-tap fires on long-press (e.g. to open
+a share-sheet-style action dialog, complementing an in-card overflow menu);
+:padding and :weight as named.  :key gives the card a stable identity as a
+`lazy_column' child, so reconciliation preserves its client-side state, scroll
+anchor, and animation across pushes that insert/remove/reorder rows (SPEC §9;
+falls back to a stateful child's id, then position)."
   (let* ((split (jetpacs--children-and-opts args))
          (opts (cdr split)))
     (jetpacs--node "card"
                 'children (vconcat (jetpacs--as-children (car split)))
                 'key (plist-get opts :key)
                 'on_tap (plist-get opts :on-tap)
+                'on_long_tap (plist-get opts :on-long-tap)
                 'on_swipe (plist-get opts :on-swipe)
                 'swipe_start (plist-get opts :swipe-start)
                 'swipe_end (plist-get opts :swipe-end)
@@ -323,8 +325,8 @@ revealed background (hex; defaults to a theme container color)."
               'color color))
 
 (cl-defun jetpacs-list-item (&key leading title subtitle overline trailing
-                                  on-tap swipe-start swipe-end padding key
-                                  (spacing 12))
+                                  on-tap on-long-tap swipe-start swipe-end
+                                  padding key (spacing 12))
   "An elevated list-item card with a flexible middle and pinned edges — the
 standard \"leading · title/subtitle · trailing\" list row, laid out so the
 trailing controls are never pushed off-screen.
@@ -334,8 +336,9 @@ OVERLINE / TITLE / SUBTITLE build the flexible text column (any subset): TITLE
 is `body', OVERLINE a `label' above it, SUBTITLE a `caption' below.
 TRAILING is a single node, or a list of nodes, pinned at the end (a status
 badge, icon buttons) — each keeps its intrinsic width.
-ON-TAP makes the whole card tappable; SWIPE-START / SWIPE-END attach swipe
-actions; PADDING pads the card; SPACING is the gap between the row's parts.
+ON-TAP makes the whole card tappable; ON-LONG-TAP fires on long-press;
+SWIPE-START / SWIPE-END attach swipe actions; PADDING pads the card; SPACING
+is the gap between the row's parts.
 KEY rides the outer card as its stable `lazy_column' identity (see
 `jetpacs-card') — give every dynamic list row one (the org id, the file
 path) so reorders and inserts never smear state across rows.
@@ -360,7 +363,8 @@ intrinsic-width leaf (a `jetpacs-text' badge, `jetpacs-icon-button') — a neste
     (jetpacs-card
      (list (apply #'jetpacs-row
                   (append children (list :align "center" :spacing spacing))))
-     :on-tap on-tap :swipe-start swipe-start :swipe-end swipe-end
+     :on-tap on-tap :on-long-tap on-long-tap
+     :swipe-start swipe-start :swipe-end swipe-end
      :padding padding :key key)))
 
 (cl-defun jetpacs-tab-item (label &key icon)

@@ -239,44 +239,69 @@ not itself the landing — one tap to the /sdcard tree Termux exposes at
        :on-tap (jetpacs-action "files.cd"
                             :args `((dir . ,(directory-file-name shared))))))))
 
+(defun jetpacs-files--entry-ops (path)
+  "Single-file operations for PATH as (LABEL ICON ACTION) triples.
+Each ACTION is one allowlisted, root-guarded handler — never arbitrary
+dispatch (the command-dispatch boundary).  The single source both the
+overflow menu (`jetpacs-files--entry-menu') and the long-press sheet
+\(`jetpacs-files--entry-sheet') render, so the two interaction models never
+drift out of sync."
+  (list
+   (list "Rename"    "edit"            (jetpacs-action "files.rename"    :args `((file . ,path))))
+   (list "Move"      "drive_file_move" (jetpacs-action "files.move"      :args `((file . ,path))))
+   (list "Duplicate" "content_copy"    (jetpacs-action "files.duplicate" :args `((file . ,path))))
+   (list "Delete"    "delete"          (jetpacs-action "files.delete"    :args `((file . ,path))))))
+
 (defun jetpacs-files--entry-menu (path)
-  "Overflow menu of single-file operations for PATH.
-Each item is an allowlisted action (see the command-dispatch boundary): the
-handler runs one specific, root-guarded operation — never arbitrary dispatch."
+  "Overflow (more_vert) dropdown of single-file operations for PATH."
   (jetpacs-menu
-   (list
-    (jetpacs-menu-item "Rename"
-                    (jetpacs-action "files.rename" :args `((file . ,path)))
-                    :icon "edit")
-    (jetpacs-menu-item "Delete"
-                    (jetpacs-action "files.delete" :args `((file . ,path)))
-                    :icon "delete"))))
+   (mapcar (lambda (op) (jetpacs-menu-item (nth 0 op) (nth 2 op) :icon (nth 1 op)))
+           (jetpacs-files--entry-ops path))))
+
+(defun jetpacs-files--entry-sheet (path)
+  "A share-sheet-style bottom sheet of single-file operations for PATH.
+The long-press counterpart of `jetpacs-files--entry-menu' — same ops, a
+sheet of tappable rows instead of a dropdown, so both interaction models
+reach every operation."
+  (apply #'jetpacs-column
+         (jetpacs-text (file-name-nondirectory (directory-file-name path)) 'title)
+         (mapcar (lambda (op)
+                   (jetpacs-list-item :leading (jetpacs-icon (nth 1 op))
+                                   :title (nth 0 op)
+                                   :on-tap (nth 2 op)))
+                 (jetpacs-files--entry-ops path))))
 
 (defun jetpacs-files--card-for (path)
-  "A tappable card for PATH — a folder (cd) or a file (open), with an op menu."
-  (if (file-directory-p path)
-      (jetpacs-card
-       (list (jetpacs-row
-              (jetpacs-icon "folder")
-              (jetpacs-box (list (jetpacs-text (file-name-nondirectory
-                                          (directory-file-name path))
-                                         'body))
-                        :weight 1)
-              (jetpacs-files--entry-menu path)))
-       :on-tap (jetpacs-action "files.cd" :args `((dir . ,path))))
-    (let ((size (or (file-attribute-size (file-attributes path)) 0)))
-      (jetpacs-card
-       (list (apply #'jetpacs-row
-                    (delq nil
-                          (list
-                           (jetpacs-icon "description")
-                           (jetpacs-box (list (jetpacs-column
-                                            (jetpacs-text (file-name-nondirectory path) 'body)
-                                            (jetpacs-text (file-size-human-readable size) 'caption)))
-                                     :weight 1)
-                           (jetpacs-files--rendered-button path)
-                           (jetpacs-files--entry-menu path)))))
-       :on-tap (jetpacs-action "files.open" :args `((file . ,path)))))))
+  "A tappable card for PATH — a folder (cd) or a file (open).
+Tap navigates/opens; the trailing overflow menu and a long-press share
+sheet (`files.entry-menu') both reach the single-file operations."
+  (let ((long-tap (jetpacs-action "files.entry-menu"
+                               :args `((file . ,path)) :when-offline "drop")))
+    (if (file-directory-p path)
+        (jetpacs-card
+         (list (jetpacs-row
+                (jetpacs-icon "folder")
+                (jetpacs-box (list (jetpacs-text (file-name-nondirectory
+                                            (directory-file-name path))
+                                           'body))
+                          :weight 1)
+                (jetpacs-files--entry-menu path)))
+         :on-tap (jetpacs-action "files.cd" :args `((dir . ,path)))
+         :on-long-tap long-tap)
+      (let ((size (or (file-attribute-size (file-attributes path)) 0)))
+        (jetpacs-card
+         (list (apply #'jetpacs-row
+                      (delq nil
+                            (list
+                             (jetpacs-icon "description")
+                             (jetpacs-box (list (jetpacs-column
+                                              (jetpacs-text (file-name-nondirectory path) 'body)
+                                              (jetpacs-text (file-size-human-readable size) 'caption)))
+                                       :weight 1)
+                             (jetpacs-files--rendered-button path)
+                             (jetpacs-files--entry-menu path)))))
+         :on-tap (jetpacs-action "files.open" :args `((file . ,path)))
+         :on-long-tap long-tap)))))
 
 (defun jetpacs-files--rendered-button (path)
   "The \"open rendered\" affordance for an HTML PATH, else nil.
@@ -739,6 +764,7 @@ view, and returns that path."
   ;; Allowlisted op: delete the one tapped path, root-guarded, after a
   ;; confirmation (the y/n dialog is bridged to the phone by jetpacs-minibuffer).
   (lambda (args _)
+    (jetpacs-dismiss-dialog)              ; close the long-press sheet if it opened us
     (let ((file (alist-get 'file args)))
       (when (and (stringp file)
                  (jetpacs-files--within-root-p file)
@@ -763,6 +789,7 @@ view, and returns that path."
   ;; Allowlisted op: rename within the same directory; the new name is read
   ;; through the bridged minibuffer and the target re-checked against roots.
   (lambda (args _)
+    (jetpacs-dismiss-dialog)              ; close the long-press sheet if it opened us
     (let ((file (alist-get 'file args)))
       (when (and (stringp file)
                  (jetpacs-files--within-root-p file)
@@ -788,6 +815,96 @@ view, and returns that path."
                           (format "Rename failed: %s"
                                   (error-message-string err)))))))))))
         (jetpacs-shell-push nil :switch-to "files")))))
+
+(defun jetpacs-files--duplicate-name (path)
+  "A non-colliding \"NAME copy[.EXT]\" sibling path for PATH.
+Bumps to \"NAME copy 2\", \"NAME copy 3\", ... until the name is free."
+  (let* ((path (directory-file-name path))
+         (dir (file-name-directory path))
+         (base (file-name-nondirectory path))
+         (dir-p (file-directory-p path))
+         (stem (if dir-p base (file-name-sans-extension base)))
+         (ext (if dir-p "" (or (file-name-extension base t) "")))
+         (n 0) target)
+    (while (progn
+             (setq target (expand-file-name
+                           (format "%s copy%s%s" stem
+                                   (if (zerop n) "" (format " %d" (1+ n))) ext)
+                           dir))
+             (file-exists-p target))
+      (setq n (1+ n)))
+    target))
+
+(jetpacs-defaction "files.duplicate"
+  ;; Allowlisted op: copy the tapped path beside itself under a fresh
+  ;; "NAME copy" name (root-guarded).  Directories copy recursively.
+  (lambda (args _)
+    (jetpacs-dismiss-dialog)
+    (let ((file (alist-get 'file args)))
+      (when (and (stringp file)
+                 (jetpacs-files--within-root-p file)
+                 (file-exists-p file))
+        (let ((target (jetpacs-files--duplicate-name file)))
+          (if (not (jetpacs-files--within-root-p target))
+              (jetpacs-shell-notify "Duplicate rejected (outside roots)")
+            (condition-case err
+                (progn
+                  (if (file-directory-p file)
+                      (copy-directory file target)
+                    (copy-file file target))
+                  (jetpacs-shell-notify
+                   (format "Duplicated to %s"
+                           (file-name-nondirectory (directory-file-name target)))))
+              (error (jetpacs-shell-notify
+                      (format "Duplicate failed: %s" (error-message-string err))))))))
+      (jetpacs-shell-push nil :switch-to "files"))))
+
+(jetpacs-defaction "files.move"
+  ;; Allowlisted op: move the tapped path into a destination directory read
+  ;; through the bridged minibuffer, re-checked against roots.
+  (lambda (args _)
+    (jetpacs-dismiss-dialog)
+    (let ((file (alist-get 'file args)))
+      (when (and (stringp file)
+                 (jetpacs-files--within-root-p file)
+                 (file-exists-p file))
+        (let* ((name (file-name-nondirectory (directory-file-name file)))
+               (src-dir (file-name-directory (directory-file-name file)))
+               (dest (string-trim
+                      (condition-case nil
+                          (read-string (format "Move %s to directory: " name)
+                                       (abbreviate-file-name src-dir))
+                        (quit "")))))
+          (if (string-empty-p dest)
+              (jetpacs-shell-notify "Move cancelled")
+            (let* ((destdir (expand-file-name dest))
+                   (target (expand-file-name name (file-name-as-directory destdir))))
+              (cond
+               ((not (file-directory-p destdir))
+                (jetpacs-shell-notify "Move rejected (no such directory)"))
+               ((not (jetpacs-files--within-root-p target))
+                (jetpacs-shell-notify "Move rejected (outside roots)"))
+               ((file-exists-p target)
+                (jetpacs-shell-notify "Target already exists"))
+               (t (condition-case err
+                      (progn (rename-file file target)
+                             (jetpacs-shell-notify
+                              (format "Moved to %s" (abbreviate-file-name destdir))))
+                    (error (jetpacs-shell-notify
+                            (format "Move failed: %s" (error-message-string err)))))))))))
+      (jetpacs-shell-push nil :switch-to "files"))))
+
+(jetpacs-defaction "files.entry-menu"
+  ;; The long-press share sheet: the same allowlisted single-file operations
+  ;; as the card's overflow menu, as a bottom sheet (both models reach them).
+  (lambda (args _)
+    (let ((file (alist-get 'file args)))
+      (if (and (stringp file)
+               (jetpacs-files--within-root-p file)
+               (file-exists-p file))
+          (jetpacs-send-dialog (jetpacs-files--entry-sheet file) "sheet")
+        (jetpacs-shell-notify "No such file")
+        (jetpacs-shell-push)))))
 
 ;; ─── New file / folder ───────────────────────────────────────────────────────
 
