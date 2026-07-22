@@ -19265,12 +19265,30 @@ reach every operation."
                                    :on-tap (nth 2 op)))
                  (jetpacs-files--entry-ops path))))
 
+(defvar jetpacs-files-card-swipe-function #'ignore
+  "Function of PATH returning (START . END) swipe specs for its browser card, or nil.
+The reveal-on-drag sibling of the overflow menu and the long-press sheet:
+START is the `jetpacs-swipe-action' revealed by dragging the card from the
+leading edge, END from the trailing edge (both fed to `jetpacs-card'
+:swipe-start / :swipe-end; a nil side attaches no gesture there).
+
+PLUMBING ONLY -- defaults to `ignore' (no swipe).  This is the seam; the
+per-side file ops are intentionally NOT wired yet.  Whoever implements it:
+- return a cons whose car/cdr are `jetpacs-swipe-action' specs (or nil), e.g.
+  the trailing edge revealing a Delete, the leading edge a Duplicate;
+- a DESTRUCTIVE side (Delete) should reveal-and-CONFIRM, never fire on the
+  drag alone -- route it through an action that prompts, or offer an undo;
+- keep every swipe op reachable from the menu/sheet too, since old companions
+  render no gesture (SPEC §9).")
+
 (defun jetpacs-files--card-for (path)
   "A tappable card for PATH — a folder (cd) or a file (open).
-Tap navigates/opens; the trailing overflow menu and a long-press share
-sheet (`files.entry-menu') both reach the single-file operations."
-  (let ((long-tap (jetpacs-action "files.entry-menu"
-                               :args `((file . ,path)) :when-offline "drop")))
+Tap navigates/opens; the trailing overflow menu and a long-press share sheet
+\(`files.entry-menu') both reach the single-file operations.  Per-side swipe
+gestures come from `jetpacs-files-card-swipe-function' (unwired by default)."
+  (let* ((long-tap (jetpacs-action "files.entry-menu"
+                                :args `((file . ,path)) :when-offline "drop"))
+         (swipe (funcall jetpacs-files-card-swipe-function path)))
     (if (file-directory-p path)
         (jetpacs-card
          (list (jetpacs-row
@@ -19281,7 +19299,8 @@ sheet (`files.entry-menu') both reach the single-file operations."
                           :weight 1)
                 (jetpacs-files--entry-menu path)))
          :on-tap (jetpacs-action "files.cd" :args `((dir . ,path)))
-         :on-long-tap long-tap)
+         :on-long-tap long-tap
+         :swipe-start (car swipe) :swipe-end (cdr swipe))
       (let ((size (or (file-attribute-size (file-attributes path)) 0)))
         (jetpacs-card
          (list (apply #'jetpacs-row
@@ -19295,7 +19314,8 @@ sheet (`files.entry-menu') both reach the single-file operations."
                              (jetpacs-files--rendered-button path)
                              (jetpacs-files--entry-menu path)))))
          :on-tap (jetpacs-action "files.open" :args `((file . ,path)))
-         :on-long-tap long-tap)))))
+         :on-long-tap long-tap
+         :swipe-start (car swipe) :swipe-end (cdr swipe))))))
 
 (defun jetpacs-files--rendered-button (path)
   "The \"open rendered\" affordance for an HTML PATH, else nil.
