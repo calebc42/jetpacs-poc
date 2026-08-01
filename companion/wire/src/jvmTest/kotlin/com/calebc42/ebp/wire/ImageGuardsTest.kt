@@ -17,7 +17,7 @@ import org.junit.Test
 
 class ImageGuardsTest {
 
-    private fun blocked(ip: String) = ImageGuards.isBlockedAddress(InetAddress.getByName(ip))
+    private fun blocked(ip: String) = NetGuards.isBlockedAddress(InetAddress.getByName(ip))
 
     @Test
     fun blocksLoopbackPrivateLinkLocalMulticastAndReserved() {
@@ -54,10 +54,10 @@ class ImageGuardsTest {
         val pub = InetAddress.getByName("8.8.8.8")
         val priv = InetAddress.getByName("10.0.0.5")
         // A clean public set returns the first address.
-        assertEquals(pub, ImageGuards.firstAllowedAddress(arrayOf(pub)))
+        assertEquals(pub, NetGuards.firstAllowedAddress(arrayOf(pub)))
         // Split-horizon (one public + one private) fails CLOSED.
-        assertNull(ImageGuards.firstAllowedAddress(arrayOf(pub, priv)))
-        assertNull(ImageGuards.firstAllowedAddress(arrayOf<InetAddress>()))
+        assertNull(NetGuards.firstAllowedAddress(arrayOf(pub, priv)))
+        assertNull(NetGuards.firstAllowedAddress(arrayOf<InetAddress>()))
     }
 
     @Test
@@ -65,15 +65,15 @@ class ImageGuardsTest {
         // 1x1 transparent PNG.
         val png = "data:image/png;base64," +
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-        val ok = ImageGuards.parseDataImage(png, maxBytes = 4096)
+        val ok = NetGuards.parseDataImage(png, maxBytes = 4096)
         assertNotNull(ok)
         assertTrue(ok!!.mediaType == "image/png" && ok.bytes.size > 8)
         // SVG is an active format — rejected before any decode.
-        assertNull(ImageGuards.parseDataImage("data:image/svg+xml;base64,PHN2Zy8+", 4096))
+        assertNull(NetGuards.parseDataImage("data:image/svg+xml;base64,PHN2Zy8+", 4096))
         // Non-image media type, non-base64, and malformed all reject.
-        assertNull(ImageGuards.parseDataImage("data:text/plain;base64,aGk=", 4096))
-        assertNull(ImageGuards.parseDataImage("data:image/png,notbase64", 4096))
-        assertNull(ImageGuards.parseDataImage("data:image/png;base64,***", 4096))
+        assertNull(NetGuards.parseDataImage("data:text/plain;base64,aGk=", 4096))
+        assertNull(NetGuards.parseDataImage("data:image/png,notbase64", 4096))
+        assertNull(NetGuards.parseDataImage("data:image/png;base64,***", 4096))
     }
 
     @Test
@@ -81,7 +81,7 @@ class ImageGuardsTest {
         val png = "data:image/png;base64," +
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
         // A tiny cap rejects the payload.
-        assertNull(ImageGuards.parseDataImage(png, maxBytes = 8))
+        assertNull(NetGuards.parseDataImage(png, maxBytes = 8))
     }
 
     @Test
@@ -148,10 +148,10 @@ class ImageGuardsTest {
         // "MUST NOT strip or normalize whitespace in place of rejection".
         val body =
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-        assertNotNull(ImageGuards.parseDataImage("data:image/png;base64,$body", 4096))
-        assertNull(ImageGuards.parseDataImage("data:image/png;base64, $body", 4096))
-        assertNull(ImageGuards.parseDataImage("data:image/png;base64,$body\n", 4096))
-        assertNull(ImageGuards.parseDataImage(
+        assertNotNull(NetGuards.parseDataImage("data:image/png;base64,$body", 4096))
+        assertNull(NetGuards.parseDataImage("data:image/png;base64, $body", 4096))
+        assertNull(NetGuards.parseDataImage("data:image/png;base64,$body\n", 4096))
+        assertNull(NetGuards.parseDataImage(
             "data:image/png;base64," + body.chunked(76).joinToString("\n"), 4096))
     }
 

@@ -15,6 +15,7 @@ package com.calebc42.ebp.wire
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlin.math.floor
 
 /**
  * org.json's `opt(k) !in SET_OF_STRINGS` membership test, which decided that
@@ -256,7 +257,7 @@ object SpecValidator {
             // SPEC 4.3/18.5: base_ms is a non-negative epoch-millis INTEGER,
             // not any Number (a fractional or negative timestamp is invalid).
             val base = chrono["base_ms"]?.asDoubleOrNull()
-            if (base == null || base != Math.floor(base) || base < 0)
+            if (base == null || base != floor(base) || base < 0)
                 throw ContentInvalid("$path.chronometer.base_ms",
                     "must be a non-negative epoch-millis integer")
             if ("count_down" in chrono && chrono.boolOrNull("count_down") == null)
@@ -292,7 +293,7 @@ object SpecValidator {
         if ("icon" in a) {
             val icon = a.stringOrNull("icon")
             if (icon == null || !IDENTIFIER.matches(icon) ||
-                icon.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                icon.utf8Size() > WireLimits.MAX_IDENTIFIER_OCTETS)
                 throw ContentInvalid("$path.icon", "must be an identifier")
         }
         val dismiss = a.boolOrNull("dismiss")
@@ -309,7 +310,7 @@ object SpecValidator {
             if ("key" in input) {
                 val key = input.stringOrNull("key")
                 if (key == null || !IDENTIFIER.matches(key) ||
-                    key.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                    key.utf8Size() > WireLimits.MAX_IDENTIFIER_OCTETS)
                     throw ContentInvalid("$path.input.key", "must be an identifier")
             }
         }
@@ -352,7 +353,7 @@ object SpecValidator {
                 // and the integrality rule is the floor test below.
                 val d = onTap["ttl_s"]?.asDoubleOrNull()
                     ?: throw ContentInvalid("$path.on_tap.ttl_s", "must be an integer 1..604800")
-                if (d != Math.floor(d) || d.isInfinite() || d < 1.0 || d > 604800.0)
+                if (d != floor(d) || d.isInfinite() || d < 1.0 || d > 604800.0)
                     throw ContentInvalid("$path.on_tap.ttl_s", "must be an integer 1..604800")
             }
         } else {
@@ -469,7 +470,7 @@ object SpecValidator {
             "string", "yyyy-mm" -> if (node.stringOrNull(member) == null) bad("a string")
             "identifier" -> node.stringOrNull(member).let {
                 if (it == null || !IDENTIFIER.matches(it) ||
-                    it.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                    it.utf8Size() > WireLimits.MAX_IDENTIFIER_OCTETS)
                     bad("an identifier")
             }
             "color" -> if (node.stringOrNull(member) == null) bad("a color string")
@@ -499,7 +500,7 @@ object SpecValidator {
         // SPEC 16.1: every authored node ID is unique across the document.
         node.stringOrNull("id")?.let { id ->
             if (!IDENTIFIER.matches(id) ||
-                id.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                id.utf8Size() > WireLimits.MAX_IDENTIFIER_OCTETS)
                 throw ContentInvalid("$path.id", "invalid identifier")
             if (!ctx.ids.add(id))
                 throw ContentInvalid("$path.id", "duplicate node ID")
@@ -658,7 +659,7 @@ object SpecValidator {
                 validateIntRange(node, "month_index", 1, 12, path)
                 if ("year" in node) {
                     val y = node["year"]?.asDoubleOrNull()
-                    if (y == null || y != Math.floor(y) || y < 0)
+                    if (y == null || y != floor(y) || y < 0)
                         throw ContentInvalid("$path.year", "must be a non-negative integer")
                 }
             }
@@ -746,14 +747,14 @@ object SpecValidator {
     private fun validatePositiveInt(node: JsonObject, member: String, path: String) {
         if (member !in node) return
         val n = node[member]?.asDoubleOrNull()
-        if (n == null || n != Math.floor(n) || n < 1)
+        if (n == null || n != floor(n) || n < 1)
             throw ContentInvalid("$path.$member", "must be a positive integer")
     }
 
     private fun validateIntRange(node: JsonObject, member: String, lo: Int, hi: Int, path: String) {
         if (member !in node) return
         val n = node[member]?.asDoubleOrNull()
-        if (n == null || n != Math.floor(n) || n < lo || n > hi)
+        if (n == null || n != floor(n) || n < lo || n > hi)
             throw ContentInvalid("$path.$member", "must be an integer $lo..$hi")
     }
 
@@ -791,7 +792,7 @@ object SpecValidator {
         }
         if ("initial" in node) {
             val init = node["initial"]?.asDoubleOrNull()
-            if (init == null || init != Math.floor(init) ||
+            if (init == null || init != floor(init) ||
                 init < 0 || init >= items.size)
                 throw ContentInvalid("$path.initial", "must index the item count")
         }
@@ -962,7 +963,7 @@ object SpecValidator {
                 val mark = value as? JsonObject
                     ?: throw ContentInvalid("$path.marks.$key", "must be an object")
                 val dots = mark["dots"]?.asDoubleOrNull()
-                if (dots == null || dots != Math.floor(dots) || dots < 0 || dots > 3)
+                if (dots == null || dots != floor(dots) || dots < 0 || dots > 3)
                     throw ContentInvalid("$path.marks.$key.dots", "must be an integer 0..3")
             }
         }
@@ -1091,7 +1092,7 @@ object SpecValidator {
             if ("ttl_s" in obj) {
                 val d = obj["ttl_s"]?.asDoubleOrNull()
                     ?: throw ContentInvalid("$path.ttl_s", "must be an integer 1..604800")
-                if (d != Math.floor(d) || d.isInfinite() || d < 1.0 || d > 604800.0)
+                if (d != floor(d) || d.isInfinite() || d < 1.0 || d > 604800.0)
                     throw ContentInvalid("$path.ttl_s", "must be an integer 1..604800")
             }
             // SPEC 14.1: confirm is a non-empty string when present.

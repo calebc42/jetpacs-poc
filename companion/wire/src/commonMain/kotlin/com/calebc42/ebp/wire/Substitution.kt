@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import kotlin.math.floor
 
 object Substitution {
 
@@ -116,7 +117,7 @@ object Substitution {
      */
     private fun jsonNumber(v: Number): String {
         val d = v.toDouble()
-        return if (!d.isNaN() && !d.isInfinite() && d == Math.floor(d)) v.toLong().toString()
+        return if (!d.isNaN() && !d.isInfinite() && d == floor(d)) v.toLong().toString()
         else v.toString()
     }
 

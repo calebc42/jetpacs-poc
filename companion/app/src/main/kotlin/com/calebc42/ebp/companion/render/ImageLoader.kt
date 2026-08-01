@@ -11,6 +11,7 @@ package com.calebc42.ebp.companion.render
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import com.calebc42.ebp.wire.ImageGuards
+import com.calebc42.ebp.wire.NetGuards
 import java.io.InputStream
 import java.net.InetAddress
 import java.net.URL
@@ -63,7 +64,7 @@ object ImageLoader {
     }
 
     private fun loadData(url: String, limits: Limits): Bitmap? {
-        val di = ImageGuards.parseDataImage(url, limits.maxBytes) ?: return null
+        val di = NetGuards.parseDataImage(url, limits.maxBytes) ?: return null
         return decodeGuarded(di.bytes, limits)
     }
 
@@ -89,7 +90,7 @@ object ImageLoader {
             // non-public (the split-horizon defense). The socket connects to
             // exactly this address — the check and the connect cannot diverge.
             val addrs = runCatching { InetAddress.getAllByName(host) }.getOrNull() ?: return null
-            val pinned = ImageGuards.firstAllowedAddress(addrs) ?: return null
+            val pinned = NetGuards.firstAllowedAddress(addrs) ?: return null
             val hop = fetchOnce(pinned, host, port, path, limits, deadline) ?: return null
             when (hop) {
                 is Hop.Body -> return decodeGuarded(hop.bytes, limits)
