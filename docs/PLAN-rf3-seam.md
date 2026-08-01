@@ -21,7 +21,7 @@ Expansion of [PLAN-refound-2026-07-28.md](PLAN-refound-2026-07-28.md) §RF-3
 | E2 | `test/ebp-seam-test.el` live round-trip; run-tests.sh stanza; ci.yml suite count | DONE 2026-08-01 — full `run-tests.sh` exit 0 WITH the live host: RF-2.6 suite 10/10 (plain host) + seam suite 3/3 (`--echo` host); gate (2) met live; unset → loud skip verified; ci.yml elisp name 30→31 |
 | S1 | §24 amendment drafted and routed | DONE 2026-08-01 — `DRAFT-amendment-153-extension-conformance.md` committed; **routed to Caleb, ratification pending**; prose-only (I1 exemption (a)); ratification is not an exit condition |
 | R1 | Adversarial review: 4 dimensions × 2-refuter verification over the rung diff | DONE 2026-08-01 — 13 of 21 findings survived; the two costliest were THIS rung's: both sides' capability-collision checks validated against the wrong set (host-supported / 8 gated senders) instead of the SPEC 22.1 VOCABULARY — a module capability named after an unsupported core capability would masquerade as the core grant. Fixed with `CORE_CAPABILITIES` + `ebp--core-capabilities`, both contract-pinned; plus the D2 route-gate ordering made falsifiable, the registered-but-ungranted elisp reply pinned wire-EQUAL (not member-subset), emit/dispatch arms isolated, a string-METHOD crash in `check-granted` fixed, the wants-dedup claim given its discriminating test, the live gate-3 check raised to exact member sets, and four runbook claims corrected in place (R1-10..13). 8 findings refuted by the panel |
-| EXIT | All four parent gates recorded; dual recording in PLAN-refound | — |
+| EXIT | All four parent gates recorded; dual recording in PLAN-refound | DONE 2026-08-01 — R0 `f63ab14`, K1 `ccc20d6`, K2 `ccb1dcc`, E1 `0aff08c`, E2 `f517b23`, S1 `44647b5`, R1 `a2bda16`. From clean: G-wire 41 suites/376 tests/0 fail + `:host` 7/7; G-app 30/0 + APK; G-spec OK, `ebp/` clean, pointer `83d6e08` unmoved; G-elisp exit 0 with the live host — 31 suites, both live suites green. Gates (1)-(3) met; gate (4) routed (ratification Caleb's). Push/PR/merge order rf-2c → rf-2.6 → rf-1 → rf-3 are Caleb's |
 
 ## Context (line-verified 2026-08-01, base `rf-1` @ `71d90ab`)
 
@@ -256,7 +256,9 @@ pointer bump rides it). Ratification is not an exit condition.
 inventory (completed at R1, finding R1-10 — the literal claim must name
 EVERY modified pre-RF-3 file, not only the test-side ones): seam
 implementation — `CompanionEngine.kt` (the two miss-arm forks + module
-plumbing), `emacs/ebp.el` (the seam), `Host.kt` (`--echo`); test corpus,
+plumbing), `MethodRegistry.kt` (R1: the additive `CORE_CAPABILITIES`
+constant; the registry map itself untouched, its contract pin
+diff-empty), `emacs/ebp.el` (the seam), `Host.kt` (`--echo`); test corpus,
 additive only — `ebp-wire-test.el` (new tests + fixture),
 `HostConformanceTest.kt` (two RF-3 pins appended, RF-2.6/RF-1c tests
 untouched), `ebp-host-test.el` (backwards-compatible optional arg);

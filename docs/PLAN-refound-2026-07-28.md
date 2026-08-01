@@ -42,7 +42,7 @@ by **graduating the name**, not the tree.
 | P0 | The owed pre-swap pin tests, string-literal fixtures | RF-1a | Enforced from birth, not demonstrated once |
 | C2–C6 | The conversion, on branch `rf-2b` (RF-2a/B0/B1 done — [PLAN-rf2-kmp-migration.md](PLAN-rf2-kmp-migration.md) §0) | P0, RF-1a | Nothing under `ebp/` may change (prose-only ratifications by Caleb exempt — see I1) |
 | spike-elisp | vulpea → flat rows | — (parallel now) | Zero Kotlin, zero `ebp/` |
-| RF-2c | Hoist to `commonMain` | RF-2b exit | |
+| RF-2c | Hoist to `commonMain` | RF-2b exit | **DONE 2026-08-01** (`rf-2c` @ `cfdf6d5`) — ladder-row marker backfilled at RF-3 EXIT per the dual-recording rule; the closure record is `cfdf6d5`'s commit body + PLAN-rf2's RF-2c EXIT row |
 | spike-kotlin | table + apply-rows, `:app` only, via `surface.update` + `table` | RF-2b exit | Produces the measurement that decides RF-4a's carrier |
 | RF-1b | Robolectric + **Compose** renderer *behaviour* tests | ~~RF-2b exit~~ — **unblocked** (RF-2b, RF-2c and RF-2.6 all done); in flight on `rf-1` | ~~New dependency stack + SDK-36 shadow-jar risk~~ — **row corrected 2026-08-01 (RF-1c/C2)**: there is no SDK-36 compatibility risk (Robolectric 4.16.1 runs this app at SDK 36 with no `@Config`); the real cost is a 203.5 MiB `~/.m2` download that `setup-gradle` does not cache, and 4.16 is a hard floor because 4.15.1 cannot run at all under `targetSdk=36`. Under [PLAN-rf1-close.md](PLAN-rf1-close.md) D1 this rung produces **no reference images**, so the "render snapshots, never goldens" noun stays reserved. Note the ladder order below no longer matches execution — RF-1c landed first |
 | RF-2.6 | Headless JVM loopback host | RF-2c | Nearly free once commonMain exists; four things depend on it — **DONE 2026-08-01** (`rf-2.6`) |
@@ -51,7 +51,7 @@ by **graduating the name**, not the tree.
 | RF-0.5b | Foreground service + reconnection policy + supersession rules | RF-2b exit, RF-0.5a | New Kotlin — would be converted twice if earlier |
 | RF-5a | track-changes.el — **now a prerequisite of RF-4b** | RF-1a | Promoted in the priority line |
 | RF-5c | Keystore | RF-1a | Note the reconnect interaction |
-| RF-3 | Extension seam + `jetpacs.echo` | RF-2c, RF-2.6 | Gate (2) is unrunnable without the host |
+| RF-3 | Extension seam + `jetpacs.echo` | RF-2c, RF-2.6 | Gate (2) is unrunnable without the host — **DONE 2026-08-01**, branch `rf-3` (stacked on `rf-1`), [PLAN-rf3-seam.md](PLAN-rf3-seam.md); the RF-1c loopback job runs gate (2) live in CI, so the "unrunnable" cell is historical |
 | RF-4a | `ebp.data` spec — inline changesets only | RF-3; informed by spike-kotlin; after I1 closes | Editing `ebp/` is forbidden while RF-2 is in flight |
 | RF-4b | `ebp-data.el` | RF-4a, RF-5a | |
 | RF-4c | `ebp-sqlite` (renamed from `ebp-room3`) | RF-4a, RF-2.6 | Under the producer decision, Room's constraints stop applying to a Companion-owned DB |
@@ -725,6 +725,54 @@ RF-2.6 host**; (3) tenant
 method *without* negotiation gets the §7.3 response, golden-pinned; (4) SPEC
 conformance note (if §24 needs an "extensions present" clause, that is a spec
 amendment through the normal §25 process, not a silent reinterpretation).
+
+**Status: DONE 2026-08-01** on branch `rf-3` (stacked on `rf-1` @ `71d90ab`
+— RF-1b/1c landed under the plan's feet; verified none of the rung's five
+target files moved), the R0/K1/K2/E1/E2/S1/R1 ladder of
+[PLAN-rf3-seam.md](PLAN-rf3-seam.md): `f63ab14` (runbook), `ccc20d6` (K1),
+`ccb1dcc` (K2), `0aff08c` (E1), `f517b23` (E2), `44647b5` (S1), `a2bda16`
+(R1).
+
+**Correction to this section's own text, carried in the runbook:** no core
+method lexically begins with `ebp.`, so the dispatch sentence's "`ebp.`
+methods → existing registry" maps to **registry membership**, not a prefix
+test — the seam forks exactly the two `METHOD_REGISTRY` miss arms, and the
+granted check is the route gate (unregistered OR unnegotiated ≡ the
+bit-for-bit §7.3 answer, decided before class or state, so no probe
+distinguishes a carried-but-ungranted extension from an unknown method).
+
+**Gate record.** (1) From clean: `:wire:jvmTest` 41 suites / 376 tests / 0
+failures with `postAuthDispatchRules` and `methodRegistryMatchesContract`
+diff-empty; G-app 30/0 + APK; G-spec green, `ebp/` untouched, pointer
+`83d6e08` unmoved; G-elisp exit 0 — delineation and byte-compile guards
+clean, every pre-existing test diff-empty (the additive-only inventory is
+the runbook's). (2) `jetpacs.echo` round-trips live: granted through the
+engine's real wants-intersect-supported, ping's params echoed in the Kotlin
+handler's result, the pulse notification back at ebp.el's module handler —
+and the RF-1c loopback job runs the suite in CI, so the gate is enforced,
+not demonstrated. (3) The §7.3 reply for an unnegotiated tenant method is
+pinned on both sides against fixtures captured green on the PRE-seam tree,
+and pinned wire-EQUAL to an unknown-name miss on the same session. (4)
+[DRAFT-amendment-153-extension-conformance.md](DRAFT-amendment-153-extension-conformance.md)
+routed — prose-only, I1 exemption class (a), ratification Caleb's and not
+an exit condition.
+
+**The review earned its keep, again.** Four dimensions × two-refuter
+verification left 13 of 21 findings standing, and the two costliest were
+this rung's own: both sides' capability-collision checks validated against
+the wrong set (the host's supported subset / the eight gated senders)
+instead of the SPEC 22.1 **vocabulary** — a module capability named
+`presentation.toast` or `surfaces.widget` would have masqueraded as the
+core grant (toast live on a host that withheld it; editor.sync minus its
+#84 floor; the device report minus its reserved §4.5 budget). Fixed with
+`CORE_CAPABILITIES` / `ebp--core-capabilities`, both contract-pinned; the
+D2 ordering, the ungranted-reply equality, and the emit/dispatch arms each
+got the discriminating test whose absence the panel proved by injection.
+
+**What this unblocks.** RF-4a is now unblocked on every edge (RF-3 done,
+spike-kotlin done, I1's window expired) — `ebp.data` is the seam's first
+real tenant, and its registration will exercise the runbook's recorded
+RF-4 relaxation of the no-`ebp.` rule. RF-5a remains fully parallel.
 
 ---
 
