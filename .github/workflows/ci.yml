@@ -69,6 +69,16 @@ jobs:
           distribution: temurin
           java-version: "21"
       - uses: gradle/actions/setup-gradle@v4
+      # RF-1b: Robolectric fetches its 203.5 MiB android-all-instrumented
+      # jar at TEST runtime, through its own Maven resolver into ~/.m2 —
+      # which setup-gradle does not cache. Measured: ~27 s cold vs ~6 s
+      # warm, so this cache is the whole difference. The key carries the
+      # Robolectric pin, so a version bump invalidates it correctly.
+      - name: Cache the Robolectric android-all jar
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('companion/gradle/libs.versions.toml') }}
       - name: Unit tests and APK
         working-directory: companion
         run: |
