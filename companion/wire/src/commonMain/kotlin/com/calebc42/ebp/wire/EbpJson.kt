@@ -209,19 +209,19 @@ object EbpJson {
                     val hi = hex4(i + 2)
                     i += 6
                     when {
-                        Character.isHighSurrogate(hi) -> {
+                        hi.isHighSurrogate() -> {
                             // SPEC 4.1 (LD-8): a lone surrogate escape is not
                             // a scalar value. org.json accepted it and later
                             // re-encoded it as '?' — silent content damage.
                             if (i + 1 >= s.length || s[i] != '\\' || s[i + 1] != 'u')
                                 throw WireParseError("unpaired surrogate escape")
                             val lo = hex4(i + 2)
-                            if (!Character.isLowSurrogate(lo))
+                            if (!lo.isLowSurrogate())
                                 throw WireParseError("unpaired surrogate escape")
                             i += 6
                             out.append(hi).append(lo)
                         }
-                        Character.isLowSurrogate(hi) ->
+                        hi.isLowSurrogate() ->
                             throw WireParseError("unpaired surrogate escape")
                         else -> out.append(hi)
                     }

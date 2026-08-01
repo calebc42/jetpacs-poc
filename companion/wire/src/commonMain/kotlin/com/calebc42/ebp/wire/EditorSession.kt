@@ -32,13 +32,13 @@ fun scalarPosIn(text: String, u: Utf16Pos): ScalarPos {
     var at = u.v.coerceIn(0, text.length)
     if (at in 1 until text.length &&
         text[at].isLowSurrogate() && text[at - 1].isHighSurrogate()) at -= 1
-    return ScalarPos(text.codePointCount(0, at))
+    return ScalarPos(codePointCountCompat(text, 0, at))
 }
 
 /** THE scalar -> UTF-16 conversion; clamps into range. */
 fun utf16PosIn(text: String, p: ScalarPos): Utf16Pos {
-    val n = text.codePointCount(0, text.length)
-    return Utf16Pos(text.offsetByCodePoints(0, p.v.coerceIn(0, n)))
+    val n = codePointCountCompat(text, 0, text.length)
+    return Utf16Pos(offsetByCodePointsCompat(text, 0, p.v.coerceIn(0, n)))
 }
 
 /** One half-open scalar splice, as EditorSession.diff derives it. */
@@ -62,7 +62,7 @@ class EditorSession(
     var selEnd = 0
 
     /** SPEC 19.1: length is a scalar-value count, not a UTF-16 unit count. */
-    fun scalarLength(): Int = shadow.codePointCount(0, shadow.length)
+    fun scalarLength(): Int = codePointCountCompat(shadow, 0, shadow.length)
 
     private fun offset(scalarIndex: Int): Int =
         utf16PosIn(shadow, ScalarPos(scalarIndex)).v
@@ -95,7 +95,7 @@ class EditorSession(
     fun splice(start: ScalarPos, del: Int, text: String, len: Int): Boolean {
         val n = scalarLength()
         if (start.v < 0 || del < 0 || start.v.toLong() + del > n) return false
-        val inserted = text.codePointCount(0, text.length)
+        val inserted = codePointCountCompat(text, 0, text.length)
         if (len != n - del + inserted) return false
         shadow = shadow.substring(0, offset(start.v)) + text +
             shadow.substring(offset(start.v + del))
@@ -123,7 +123,7 @@ class EditorSession(
                      cursor: ScalarPos, selStart: ScalarPos?, selEnd: ScalarPos?): Boolean {
         val n = scalarLength()
         if (start.v < 0 || del < 0 || start.v.toLong() + del > n) return false
-        val inserted = text.codePointCount(0, text.length)
+        val inserted = codePointCountCompat(text, 0, text.length)
         if (len != n - del + inserted) return false
         if (!caretValid(len, cursor.v, selStart?.v, selEnd?.v)) return false
         shadow = shadow.substring(0, offset(start.v)) + text +
@@ -153,7 +153,7 @@ class EditorSession(
             var bytes = 2L
             var i = 0
             while (i < text.length) {
-                val cp = text.codePointAt(i)
+                val cp = codePointAtCompat(text, i)
                 bytes += when {
                     cp == '"'.code || cp == '\\'.code -> 2L
                     cp == 0x08 || cp == 0x09 || cp == 0x0A ||
@@ -164,7 +164,7 @@ class EditorSession(
                     cp < 0x10000 -> 3L
                     else -> 4L
                 }
-                i += Character.charCount(cp)
+                i += charCountCompat(cp)
             }
             return bytes
         }
@@ -179,15 +179,15 @@ class EditorSession(
          * session maintains), this splice applies cleanly.
          */
         fun diff(old: String, new: String): Splice {
-            val o = old.codePoints().toArray()
-            val n = new.codePoints().toArray()
+            val o = codePointsOf(old)
+            val n = codePointsOf(new)
             var pre = 0
             val min = minOf(o.size, n.size)
             while (pre < min && o[pre] == n[pre]) pre++
             var suf = 0
             while (suf < min - pre && o[o.size - 1 - suf] == n[n.size - 1 - suf]) suf++
             val del = o.size - pre - suf
-            return Splice(ScalarPos(pre), del, String(n, pre, n.size - pre - suf))
+            return Splice(ScalarPos(pre), del, stringFromCodePoints(n, pre, n.size - pre - suf))
         }
     }
 
