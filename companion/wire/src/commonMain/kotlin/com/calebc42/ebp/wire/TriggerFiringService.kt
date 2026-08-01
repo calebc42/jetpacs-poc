@@ -15,7 +15,8 @@
 // is an internally-synchronized leaf.
 package com.calebc42.ebp.wire
 
-import java.time.ZoneId
+import kotlin.concurrent.Volatile
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -38,10 +39,12 @@ class TriggerFiringService(
     private val maxEventBytes: Long,
     private val triggerCaps: Set<String> = emptySet(),
     private val capabilityHandler: CapabilityHandler? = null,
-    private val zone: () -> ZoneId = { ZoneId.systemDefault() },
+    private val zone: () -> TimeZone = { TimeZone.currentSystemDefault() },
     /** SPEC 21.5: current device boot generation (Settings.Global.BOOT_COUNT). */
     private val bootGeneration: () -> String? = { null },
 ) {
+    private val lock = WireLock()
+
     /** SPEC 21.3/21.7: current sample for a state type (gate/edge/window). */
     @Volatile var stateProvider: (String) -> JsonObject? = { null }
     /** SPEC 21.4: post a substituted local notification from an on_fire entry. */
@@ -55,7 +58,7 @@ class TriggerFiringService(
     // AtomicReference so attach/detach are atomic: a superseded connection's
     // detach (compareAndSet on itself) can never null out a newer session that
     // attached in between (the lost-update race of a plain volatile RMW).
-    private val session = java.util.concurrent.atomic.AtomicReference<LiveSession?>()
+    private val session = AtomicRef<LiveSession?>(null)
     fun attach(s: LiveSession) { session.set(s) }
     fun detach(s: LiveSession) { session.compareAndSet(s, null) }
 
@@ -71,11 +74,10 @@ class TriggerFiringService(
         collect(block).forEach { it() }
     }
 
-    @Synchronized
-    private fun collect(block: () -> Unit): List<() -> Unit> {
+    private fun collect(block: () -> Unit): List<() -> Unit> = lock.withLock {
         pending.clear()
         block()
-        return pending.toList()
+        return@withLock pending.toList()
     }
 
     // ------------------------------------------------ observation feed
@@ -110,8 +112,7 @@ class TriggerFiringService(
      * i.e. immediately due — the host arms it now and fireScheduled coalesces).
      * The Android host arms one alarm per entry and re-queries after each fire
      * and on boot/time-change. */
-    @Synchronized
-    fun timeSchedule(): List<TimeAlarm> {
+    fun timeSchedule(): List<TimeAlarm> = lock.withLock {
         val out = ArrayList<TimeAlarm>()
         for (identity in store.identities()) for (reg in store.registrations(identity)) {
             if (reg.entry.reqString("type") != "time") continue
@@ -123,23 +124,23 @@ class TriggerFiringService(
             }
             if (due != null) out.add(TimeAlarm(identity, reg.entry.reqString("id"), due))
         }
-        return out
+        return@withLock out
     }
 
     /** SPEC 21.5: silently baseline this identity's new/changed registrations. */
-    @Synchronized
-    fun armBaselines(identity: String) = runtime.armBaselines(identity)
+    fun armBaselines(identity: String) = lock.withLock { runtime.armBaselines(identity) }
 
     /** SPEC 21.5: re-establish silent baselines for every stored identity —
      * called at process start after the sticky sources have seeded state. */
-    @Synchronized
-    fun armAllBaselines() { store.identities().forEach { runtime.armBaselines(it) } }
+    fun armAllBaselines() {
+        lock.withLock { store.identities().forEach { runtime.armBaselines(it) } }
+    }
 
     /** SPEC 21.1: replace an identity's set (durable) then re-baseline the
      * new/changed registrations. Throws on storage failure. The host time-alarm
      * re-arm runs after the monitor is released (it re-enters timeSchedule). */
     fun replaceSet(identity: String, entries: List<JsonObject>): Int {
-        val count = synchronized(this) {
+        val count = lock.withLock {
             store.replace(identity, entries).also { runtime.armBaselines(identity) }
         }
         // LD-16: the set is already durably committed and armed — a throw
@@ -247,34 +248,36 @@ class TriggerFiringService(
      * occurrence). A `drop` needs no coverage here: its marker persists before
      * any live delivery, so no torn window exists.
      */
-    @Synchronized
     fun recover() {
-        for ((seq, _) in queue.pendingLocalRecords()) queue.clearPendingLocal(seq)
-        var changed = false
-        for ((recIdentity, event) in queue.firedRecords()) {
-            if (event.stringOr("action") != "trigger.fired") continue
-            val a = event.objOrNull("args") ?: continue
-            val id = a.stringOr("id")
-            val occurred = event.longOr("occurred_at_ms", 0)
-            // Scope to the firing pairing when the record carries it; fall back
-            // to every identity for a record admitted before identity-stamping.
-            val identities = recIdentity?.let { listOf(it) } ?: store.identities()
-            for (identity in identities) {
-                val reg = store.registration(identity, id) ?: continue
-                if (occurred > (reg.throttleFloorMs ?: Long.MIN_VALUE)) {
-                    reg.throttleFloorMs = occurred; changed = true
-                }
-                val params = reg.entry.objOrNull("params")
-                if (reg.entry.reqString("type") == "time" && params != null) {
-                    if ("at_ms" in params && !reg.oneShotCompleted) {
-                        reg.oneShotCompleted = true; changed = true
-                    } else if ("every_s" in params &&
-                        occurred > (reg.lastFireFloorMs ?: Long.MIN_VALUE)) {
-                        reg.lastFireFloorMs = occurred; changed = true
+        lock.withLock {
+            for ((seq, _) in queue.pendingLocalRecords()) queue.clearPendingLocal(seq)
+            var changed = false
+            for ((recIdentity, event) in queue.firedRecords()) {
+                if (event.stringOr("action") != "trigger.fired") continue
+                val a = event.objOrNull("args") ?: continue
+                val id = a.stringOr("id")
+                val occurred = event.longOr("occurred_at_ms", 0)
+                // Scope to the firing pairing when the record carries it; fall
+                // back to every identity for a record admitted before
+                // identity-stamping.
+                val identities = recIdentity?.let { listOf(it) } ?: store.identities()
+                for (identity in identities) {
+                    val reg = store.registration(identity, id) ?: continue
+                    if (occurred > (reg.throttleFloorMs ?: Long.MIN_VALUE)) {
+                        reg.throttleFloorMs = occurred; changed = true
+                    }
+                    val params = reg.entry.objOrNull("params")
+                    if (reg.entry.reqString("type") == "time" && params != null) {
+                        if ("at_ms" in params && !reg.oneShotCompleted) {
+                            reg.oneShotCompleted = true; changed = true
+                        } else if ("every_s" in params &&
+                            occurred > (reg.lastFireFloorMs ?: Long.MIN_VALUE)) {
+                            reg.lastFireFloorMs = occurred; changed = true
+                        }
                     }
                 }
             }
+            if (changed) runCatching { store.persistRecords() }
         }
-        if (changed) runCatching { store.persistRecords() }
     }
 }

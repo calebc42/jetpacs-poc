@@ -10,10 +10,13 @@
 // later atom and simply call onSample/onExternal/armBaselines).
 package com.calebc42.ebp.wire
 
-import java.time.DayOfWeek
-import java.time.Instant
-import java.time.LocalTime
-import java.time.ZoneId
+import kotlinx.datetime.DateTimeUnit
+import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.minus
+import kotlinx.datetime.toLocalDateTime
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -28,7 +31,7 @@ class TriggerRuntime(
     /** Civil-time zone for time.window predicates — a supplier read fresh at
      * each evaluation, so a device timezone change takes effect immediately
      * (the systemDefault() default) rather than being frozen at construction. */
-    private val zone: () -> ZoneId,
+    private val zone: () -> TimeZone,
     /** Current sample object for a state type, or null if unavailable. */
     private val stateProvider: (String) -> JsonObject?,
     /**
@@ -369,8 +372,8 @@ class TriggerRuntime(
     // SPEC 21.7: local civil time in the half-open window; wraps at midnight
     // when after > before; days selects the civil day the after-portion begins.
     private fun timeWindowHolds(p: JsonObject): Boolean {
-        val zdt = Instant.ofEpochMilli(now()).atZone(zone())
-        val nowT = zdt.toLocalTime()
+        val ldt = Instant.fromEpochMilliseconds(now()).toLocalDateTime(zone())
+        val nowT = ldt.time
         val after = p.stringOr("after").takeIf { it.isNotEmpty() }?.let { LocalTime.parse(it) }
         val before = p.stringOr("before").takeIf { it.isNotEmpty() }?.let { LocalTime.parse(it) }
         // A non-string day throws, as the org.json `getString(i)` did: the
@@ -382,7 +385,11 @@ class TriggerRuntime(
         val wraps = after != null && before != null && after > before
         val inTime = when {
             after == null && before == null -> true
-            after == null -> nowT < before
+            // before is non-null here (the both-null case is the branch above),
+            // but that follows from negating a conjunction, which the compiler
+            // does not track — java.time's platform-typed compareTo accepted the
+            // nullable silently; kotlinx's does not.
+            after == null -> nowT < before!!
             before == null -> nowT >= after
             !wraps -> nowT >= after && nowT < before
             else -> nowT >= after || nowT < before // wrapping
@@ -391,7 +398,7 @@ class TriggerRuntime(
         // The civil day: for a wrapping window, the after-portion's day owns
         // the whole window, so 01:00 belongs to the prior day's after side.
         val day = if (wraps && before != null && nowT < before)
-            zdt.minusDays(1).dayOfWeek else zdt.dayOfWeek
+            ldt.date.minus(1, DateTimeUnit.DAY).dayOfWeek else ldt.date.dayOfWeek
         return DAY_KEY.getValue(day) in days
     }
 

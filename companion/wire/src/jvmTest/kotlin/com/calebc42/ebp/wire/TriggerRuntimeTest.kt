@@ -7,7 +7,7 @@
 package com.calebc42.ebp.wire
 
 import java.time.Instant
-import java.time.ZoneId
+import kotlinx.datetime.TimeZone
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
@@ -33,7 +33,7 @@ class TriggerRuntimeTest {
     private val state = HashMap<String, JsonObject>()
     private val fired = mutableListOf<Pair<String, JsonObject>>()
     private val store = TriggerStore()
-    private val rt = TriggerRuntime(store, { clock }, { ZoneId.of("UTC") },
+    private val rt = TriggerRuntime(store, { clock }, { TimeZone.of("UTC") },
         { state[it] }, emit = { reg, data, commit ->
             commit(); fired.add(reg.entry.reqString("id") to data) })
 
