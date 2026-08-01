@@ -9,6 +9,11 @@ kotlinx-serialization = "1.8.0"
 kotlinx-datetime = "0.6.2"
 junit = "4.13.2"
 compose-icons = "1.7.8"
+# RF-1b. 4.16 is a HARD FLOOR: 4.15.1 refuses to run at all while
+# targetSdk=36 ("Package targetSdkVersion=36 > maxSdkVersion=35", a
+# class-level initializationError). Literal, never a range — maven-metadata
+# reports BOTH <latest> and <release> as 4.17-beta-2.
+robolectric = "4.16.1"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -20,6 +25,11 @@ androidx-compose-material-icons = { group = "androidx.compose.material", name = 
 kotlinx-serialization-json = { group = "org.jetbrains.kotlinx", name = "kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 kotlinx-datetime = { group = "org.jetbrains.kotlinx", name = "kotlinx-datetime", version.ref = "kotlinx-datetime" }
 junit = { group = "junit", name = "junit", version.ref = "junit" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+# Both Compose test artifacts are BOM-managed (1.10.4 under compose-bom
+# 2026.02.01) — RF-1b adds no version pin beyond Robolectric itself.
+androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
