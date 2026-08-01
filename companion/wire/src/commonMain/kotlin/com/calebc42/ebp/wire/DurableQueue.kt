@@ -4,6 +4,8 @@
 // capacity limits — all over an atomic-replace QueueStore.
 package com.calebc42.ebp.wire
 
+import kotlin.concurrent.Volatile
+import kotlinx.datetime.Clock
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -37,8 +39,10 @@ class DurableQueue(
     private val store: QueueStore,
     private val maxEvents: Long,
     private val maxBytes: Long,
-    var clock: () -> Long = System::currentTimeMillis,
+    var clock: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
+    private val lock = WireLock()
+
     private var records: MutableList<JsonObject>
     private var nextSeq: Long
     private var highWater: Long
@@ -62,14 +66,11 @@ class DurableQueue(
     }
 
     /** SPEC 15.2: the effective wall clock never runs backwards. */
-    @Synchronized
-    fun effectiveNow(): Long = maxOf(clock(), highWater)
+    fun effectiveNow(): Long = lock.withLock { maxOf(clock(), highWater) }
 
-    @Synchronized
-    fun count(): Int = records.size
+    fun count(): Int = lock.withLock { records.size }
 
-    @Synchronized
-    fun head(): JsonObject? = records.minByOrNull { it.reqLong("queue_seq") }
+    fun head(): JsonObject? = lock.withLock { records.minByOrNull { it.reqLong("queue_seq") } }
 
     /**
      * SPEC 15.3/21.2: atomically pick the next deliverable head and mark it
@@ -81,26 +82,26 @@ class DurableQueue(
      * selection and the mark (the old head()+assign race). The caller MUST
      * `clearInFlight(seq)` when the delivery reaches a permanent result.
      */
-    @Synchronized
-    fun beginDelivery(barrierSeq: Long?): Delivery {
+    fun beginDelivery(barrierSeq: Long?): Delivery = lock.withLock {
         sweepExpired()
-        val record = records.minByOrNull { it.reqLong("queue_seq") } ?: return Delivery.Empty
-        if (record.boolOr("pending_local")) return Delivery.PendingLocal
+        val record = records.minByOrNull { it.reqLong("queue_seq") }
+            ?: return@withLock Delivery.Empty
+        if (record.boolOr("pending_local")) return@withLock Delivery.PendingLocal
         if (barrierSeq != null && record.reqLong("queue_seq") >= barrierSeq)
-            return Delivery.BarrierHeld
+            return@withLock Delivery.BarrierHeld
         inFlightSeq = record.reqLong("queue_seq")
-        return Delivery.Ready(record)
+        return@withLock Delivery.Ready(record)
     }
 
     /** SPEC 15.3: is a record in flight (a replay must join, not duplicate it). */
-    @Synchronized
-    fun hasInFlight(): Boolean = inFlightSeq != null
+    fun hasInFlight(): Boolean = lock.withLock { inFlightSeq != null }
 
     /** Release the in-flight marker iff it is still `seq` — owner-safe and
      * idempotent, so a stale releaser (a superseded connection's close) cannot
      * clear a newer delivery's marker. */
-    @Synchronized
-    fun clearInFlight(seq: Long?) { if (seq != null && inFlightSeq == seq) inFlightSeq = null }
+    fun clearInFlight(seq: Long?) {
+        lock.withLock { if (seq != null && inFlightSeq == seq) inFlightSeq = null }
+    }
 
     private fun persist() =
         store.replace(QueueSnapshot(records.toList(), nextSeq, highWater))
@@ -111,11 +112,9 @@ class DurableQueue(
      * event.action params (delivery payload, event_id, captured fields,
      * occurred_at_ms, queued_at_ms).
      */
-    @Synchronized
     fun admit(event: JsonObject, policy: String, dedupe: String?,
               ttlSeconds: Long, pendingLocal: Boolean = false,
-              triggerIdentity: String? = null): AdmitResult {
-        val now = effectiveNow()
+              triggerIdentity: String? = null): AdmitResult = lock.withLock {
         val draft = buildJsonObject {
             put("event", event)
             put("policy", policy)
@@ -142,15 +141,16 @@ class DurableQueue(
         val prospectiveBytes = kept.sumOf { it.toString().utf8Size() } +
             record.toString().utf8Size()
         if (kept.size >= maxEvents || prospectiveBytes > maxBytes)
-            return AdmitResult.QueueFull
+            return@withLock AdmitResult.QueueFull
         val savedRecords = records
         val savedSeq = nextSeq
         val savedWater = highWater
-        return try {
+        return@withLock try {
             records = kept
             records.add(record)
             nextSeq += 1
-            if (clock() > highWater) highWater = clock()
+            val tick = clock()
+            if (tick > highWater) highWater = tick
             persist()
             AdmitResult.Admitted(record)
         } catch (_: Exception) {
@@ -164,14 +164,13 @@ class DurableQueue(
 
     /** SPEC 15.2: delete expired records before delivery; rollback-proof
      * via the durable high-water mark. Returns the number deleted. */
-    @Synchronized
-    fun sweepExpired(): Int {
+    fun sweepExpired(): Int = lock.withLock {
         val now = effectiveNow()
         val (expired, kept) = records.partition {
             it.reqLong("expires_at_ms") <= now &&
                 it.reqLong("queue_seq") != (inFlightSeq ?: -1L)
         }
-        if (expired.isEmpty() && now <= highWater) return 0
+        if (expired.isEmpty() && now <= highWater) return@withLock 0
         records = kept.toMutableList()
         if (now > highWater) highWater = now
         try {
@@ -181,65 +180,64 @@ class DurableQueue(
             // in-memory view honest either way.
         }
         pendingExpired += expired.size
-        return expired.size
+        return@withLock expired.size
     }
 
     /** Consume the accumulated expiry count for a replay summary. */
-    @Synchronized
-    fun takeExpiredCount(): Int = pendingExpired.also { pendingExpired = 0 }
+    fun takeExpiredCount(): Int = lock.withLock { pendingExpired.also { pendingExpired = 0 } }
 
     /** The next queue_seq to be assigned — the session-barrier boundary:
      * records at or above a snapshot of this value are newly generated
      * relative to that snapshot (SPEC 10.3/15.3). */
-    @Synchronized
-    fun boundarySeq(): Long = nextSeq
+    fun boundarySeq(): Long = lock.withLock { nextSeq }
 
     /** SPEC 15.3: delete only after a permanent result. A failed persist
      * leaves the record durable; redelivery is answered `duplicate' by
      * the Emacs receipt store (14.4), so at-least-once holds either way. */
-    @Synchronized
     fun deleteRecord(seq: Long) {
-        if (records.removeAll { it.reqLong("queue_seq") == seq })
-            runCatching { persist() }
-        if (inFlightSeq == seq) inFlightSeq = null
+        lock.withLock {
+            if (records.removeAll { it.reqLong("queue_seq") == seq })
+                runCatching { persist() }
+            if (inFlightSeq == seq) inFlightSeq = null
+        }
     }
 
     /** True while the lowest-seq record is still running its on_fire (SPEC
      * 21.2): the pump MUST wait rather than deliver ahead of Step 4. */
-    @Synchronized
-    fun headIsPendingLocal(): Boolean = head()?.boolOr("pending_local") == true
+    fun headIsPendingLocal(): Boolean = lock.withLock { head()?.boolOr("pending_local") == true }
 
     /** SPEC 21.2: clear a record's pending-local marker once its on_fire has
      * completed (or recovery has resolved it), making it deliverable. */
-    @Synchronized
     fun clearPendingLocal(seq: Long) {
-        // `without` RETURNS a new record — an immutable tree cannot be cleared
-        // in place, so the result is written back into the list before the
-        // persist; dropping it would compile and silently stall the pump.
-        val i = records.indexOfFirst { it.reqLong("queue_seq") == seq }
-        if (i < 0 || "pending_local" !in records[i]) return
-        records[i] = records[i].without("pending_local")
-        runCatching { persist() }
+        lock.withLock {
+            // `without` RETURNS a new record — an immutable tree cannot be cleared
+            // in place, so the result is written back into the list before the
+            // persist; dropping it would compile and silently stall the pump.
+            val i = records.indexOfFirst { it.reqLong("queue_seq") == seq }
+            if (i < 0 || "pending_local" !in records[i]) return@withLock
+            records[i] = records[i].without("pending_local")
+            runCatching { persist() }
+        }
     }
 
     /** SPEC 21.2 recovery: every record still marked pending-local (a crash
      * during on_fire). Returns their (queue_seq, event) so the firing service
      * can resume/resolve them, then clear the markers. */
-    @Synchronized
-    fun pendingLocalRecords(): List<Pair<Long, JsonObject>> =
+    fun pendingLocalRecords(): List<Pair<Long, JsonObject>> = lock.withLock {
         records.filter { it.boolOr("pending_local") }
             .map { it.reqLong("queue_seq") to it.reqObj("event") }
+    }
 
     /** A read-only snapshot of the queued event payloads (for SPEC 21.2
      * throttle reconstruction at recovery). */
-    @Synchronized
-    fun events(): List<JsonObject> = records.map { it.reqObj("event") }
+    fun events(): List<JsonObject> = lock.withLock { records.map { it.reqObj("event") } }
 
     /** SPEC 21.2 recovery: each record's (trigger_identity, event). The identity
      * is null for a non-trigger record or one admitted before identity-stamping,
      * so recover falls back to all identities in that case. */
-    @Synchronized
-    fun firedRecords(): List<Pair<String?, JsonObject>> = records.map {
-        it.stringOr("trigger_identity").takeIf { s -> s.isNotEmpty() } to it.reqObj("event")
+    fun firedRecords(): List<Pair<String?, JsonObject>> = lock.withLock {
+        records.map {
+            it.stringOr("trigger_identity").takeIf { s -> s.isNotEmpty() } to it.reqObj("event")
+        }
     }
 }

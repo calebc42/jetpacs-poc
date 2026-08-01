@@ -18,6 +18,9 @@ kotlin {
             // :wire's public signatures consumed by :app. Tree API only; no
             // serialization compiler plugin, zero @Serializable.
             api(libs.kotlinx.serialization.json)
+            // RF-2c H6.b: civil time for triggers + the queue clock. 0.6.2 —
+            // the only pin possible on the Kotlin 2.1.10 toolchain.
+            api(libs.kotlinx.datetime)
         }
         // org.json left this module at C4 (jvmMain) and C5 (jvmTest): with
         // the jar off both classpaths, a stray re-imported org.json symbol
