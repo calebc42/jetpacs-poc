@@ -14,6 +14,10 @@
 // allocation); the ONE conversion pair lives here as named functions.
 package com.calebc42.ebp.wire
 
+// kotlin.jvm.* is a default import only on JVM compilations; the metadata
+// (common) frontend needs it spelled out. Optional-expectation: no-op off-JVM.
+import kotlin.jvm.JvmInline
+
 /** SPEC 19.1: a zero-based Unicode-scalar-value position. */
 @JvmInline
 value class ScalarPos(val v: Int)
