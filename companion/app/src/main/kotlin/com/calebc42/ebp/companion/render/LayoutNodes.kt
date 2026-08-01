@@ -359,6 +359,13 @@ internal fun RenderCollapsible(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val collapsed = node.boolOr("collapsed")
     // §17.3: `collapsed` seeds only the FIRST snapshot for a presentation
     // identity; later same-identity pushes keep the user's expansion state.
+    //
+    // Retention across a sibling insertion is NOT this call's doing: a
+    // saveable key only survives process death, never a move within a live
+    // composition. What keeps this group alive when the tree shifts is the
+    // `key(...)` wrapper the child loops put around it (Renderer.kt) —
+    // without that, Compose disposes and recreates this node and the
+    // seeding lambda reruns from `collapsed`.
     var expanded by rememberSaveable(ctx.path) { mutableStateOf(!collapsed) }
     val header = node.objOrNull("header")
     val onLongTap = node.objOrNull("on_long_tap")

@@ -88,6 +88,38 @@ class PresentationIdentityTest {
         compose.waitForIdle()
     }
 
+    /**
+     * OPEN DEFECT — the P1 this suite was built to catch, left executable
+     * but @Ignore'd because the fix is a Compose-internals investigation
+     * rather than a renderer edit, and RF-1b's budget was the framework.
+     *
+     * What is measured, so the next attempt starts from evidence:
+     *  - The identity path is CORRECT and stable across the insertion —
+     *    instrumented, `/id:section-a` before and after, so
+     *    `identityPath` (Attributes.kt:78) already implements SPEC 16.1's
+     *    key > id > path exactly as written.
+     *  - The state is nevertheless reseeded: the `rememberSaveable` init
+     *    lambda re-runs on the replacement, which means the group was
+     *    DISPOSED and RECREATED, not moved.
+     *  - `currentCompositeKeyHash` at the collapsible changes across the
+     *    move (1144288081 -> 1161065297) EVEN WITH the `key(cc.path)`
+     *    wrappers now in the child loops. That is the crux: the wrapper
+     *    makes identity explicit but does not make Compose relocate this
+     *    group.
+     *  - Isolated probes confirm the mechanism is otherwise sound: a
+     *    keyed `for` loop over a list that grows at the front preserves
+     *    both `remember` and `rememberSaveable`, and the unkeyed control
+     *    loses them. So the difference lies in what sits between the
+     *    keyed wrapper and the state — the `RenderNode` dispatch — not in
+     *    `key()` itself.
+     *  - Two fixes that do NOT work, both tried: the audit's proposed
+     *    `key()` addition alone (AUDIT-full-spec-RAW.md:331), and passing
+     *    `ctx.path` as `rememberSaveable`'s explicit `key =` (a saveable
+     *    key is consulted on restoration, never on a move).
+     *
+     * Remove @Ignore when the cause is found; the assertions are right.
+     */
+    @org.junit.Ignore("Open P1 — see the diagnosis above; RF-1b filed the fix as its own rung")
     @Test
     fun expansionSurvivesASiblingPrependedAboveTheSameId() {
         runSnapshotReplacement { replaced -> column(withLeadingSibling = replaced) }

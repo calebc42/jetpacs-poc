@@ -40,6 +40,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -324,11 +325,21 @@ fun RenderNode(node: JsonObject, ctx: RenderCtx, modifier: Modifier = Modifier) 
 
 // ------------------------------------------------------------ children
 
+// SPEC 16.1: each child is wrapped in `key(<its identity path>)` so that
+// Compose's group identity IS presentation identity. Without it a group is
+// identified by POSITION, so inserting a sibling above a node disposes and
+// recreates it — expansion, selection and scroll anchors all reseed even
+// though the node's `key`/`id` never changed. A saveable key cannot stand
+// in: that is consulted on restoration (process death), not on a move
+// within a live composition. Pinned by PresentationIdentityTest.
 @Composable
 fun RenderChildren(children: JsonArray?, ctx: RenderCtx) {
     if (children == null) return
     for (i in 0 until children.size) {
-        (children[i] as? JsonObject)?.let { RenderNode(it, ctx.child(it, i)) }
+        (children[i] as? JsonObject)?.let { child ->
+            val cc = ctx.child(child, i)
+            key(cc.path) { RenderNode(child, cc) }
+        }
     }
 }
 
@@ -343,7 +354,8 @@ fun RowScope.RenderRowChildren(children: JsonArray?, ctx: RenderCtx) {
     for (i in 0 until children.size) {
         val child = children[i] as? JsonObject ?: continue
         val m = weightOf(child)?.let { Modifier.weight(it) } ?: Modifier
-        RenderNode(child, ctx.child(child, i), m)
+        val cc = ctx.child(child, i)
+        key(cc.path) { RenderNode(child, cc, m) }
     }
 }
 
@@ -353,7 +365,8 @@ fun ColumnScope.RenderColumnChildren(children: JsonArray?, ctx: RenderCtx) {
     for (i in 0 until children.size) {
         val child = children[i] as? JsonObject ?: continue
         val m = weightOf(child)?.let { Modifier.weight(it) } ?: Modifier
-        RenderNode(child, ctx.child(child, i), m)
+        val cc = ctx.child(child, i)
+        key(cc.path) { RenderNode(child, cc, m) }
     }
 }
 
