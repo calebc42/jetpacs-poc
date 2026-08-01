@@ -3,6 +3,8 @@
 Expansion of PLAN-refound-2026-07-28.md §RF-2.6 ("CompanionEngine + the Memory stores +
 a ServerSocket … **Gate:** the ERT live-loopback suite passes against the host, with the
 elisp-scripted fake (`test/ebp-wire-test.el:331`) deleted or demoted to a unit fixture").
+[Quoted verbatim; the runbook's `:331` is itself wrong — see the drift note below, and
+the correction at source, made 2026-08-01 in RF-1c/C2.]
 Ratified by Caleb 2026-08-01, all five decisions as recommended. Branch `rf-2.6`,
 stacked on `rf-2c` (same pattern as rf-2c on rf-2b — merges after it).
 
@@ -24,6 +26,9 @@ stacked on `rf-2c` (same pattern as rf-2c on rf-2b — merges after it).
   `ebp-test--start-companion` at test/ebp-wire-test.el:379 (banner :334), returning
   `(:port P :received FN :stop FN)` over a real ephemeral-port TCP listener
   (`make-network-process :server t`).
+  [:379 was right when measured on `rf-2c`; E3's own banner rewrite (`16b6c7a`) added
+  9 lines above it, so the defun is at **:388** from that commit onward. Banner :334
+  is unchanged. Re-verified 2026-08-01, RF-1c/C2.]
 - **Fake-based census: 29 live-loopback deftests** — 27 through the fake (25 in
   ebp-wire-test.el + jetpacs-teardown-test.el:210 + jetpacs-integration-test.el:95) and
   2 raw-socket coding-system pins (:866, :1121) that hand-roll literal frames and never

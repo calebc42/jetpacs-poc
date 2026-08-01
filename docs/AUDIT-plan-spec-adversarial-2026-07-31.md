@@ -217,6 +217,14 @@ is why the generic layer still cannot use Room.
 **The live-loopback ERT suite's companion is elisp-scripted; RF-3's gate (2), RF-4's gate, and the cross-implementation CI job all assume a harness that exists nowhere and is scheduled nowhere**
 `test/ebp-wire-test.el:331`; `PLAN-refound-2026-07-28.md:225,299-302` · hand-verified
 
+> **Cite correction (2026-08-01, RF-1c/C2).** `:331` is wrong and always was: that
+> line is `(should (eq (ebp-session-step 'ready 'close) 'closed))`, a session-state
+> assertion. `ebp-test--start-companion` is at **:388** today (**:379** before
+> `16b6c7a`); its section banner is at **:334**. The finding itself was correct and
+> is now **CLOSED** — RF-2.6 built the harness (`companion/host/`,
+> `test/ebp-host-test.el`) and RF-1c's `loopback` job enforces it in CI. The wrong
+> line number propagated to six further sites before anyone opened the file.
+
 *Claim.* `ebp-test--start-companion` scripts the companion side in elisp — the
 "live-loopback" suite proves ebp.el against a fake, never against the Kotlin engine.
 RF-3's gate (2) ("tenant round-trips elisp↔Kotlin over live loopback"), RF-4's gate
@@ -224,8 +232,9 @@ RF-3's gate (2) ("tenant round-trips elisp↔Kotlin over live loopback"), RF-4's
 RF-1's ambition of a cross-implementation job all require a real Kotlin process an ERT
 suite can dial. No rung builds one.
 
-*Reproduction.* `test/ebp-wire-test.el:331`; grep for any harness that launches a JVM
-from ERT — zero matches.
+*Reproduction.* `test/ebp-wire-test.el:331` [read :388, banner :334 — see the cite
+correction above]; grep for any harness that launches a JVM from ERT — zero matches
+[as of 2026-07-31; `test/ebp-host-test.el` has launched one since RF-2.6].
 
 *Fix.* New rung RF-2.6 — a headless JVM loopback host (`CompanionEngine` + Memory
 stores + `ServerSocket`), nearly free after RF-2c; RF-1c (the cross-implementation CI

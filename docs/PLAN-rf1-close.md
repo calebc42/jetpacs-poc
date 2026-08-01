@@ -8,7 +8,7 @@ The understand phase was measured, not read: two scouts built scratch copies of
 `companion/` under `/tmp` and actually ran Robolectric, Compose UI tests, Roborazzi
 and Paparazzi against this toolchain. Everything below with a number is a measurement.
 
-## What the runbook got wrong (11 defects, line-verified 2026-08-01)
+## What the runbook got wrong (11 defects, line-verified 2026-08-01; 14 after C2)
 
 **RF-1c's paragraph (:398-401) is describing work RF-2.6 already did.**
 
@@ -39,6 +39,32 @@ and Paparazzi against this toolchain. Everything below with a number is a measur
 
 **And the deferral's own justification is measurably insufficient**: neither substitute
 protection catches an open P1 that a 60-line Robolectric test catches in 0.175 s.
+
+**Three more, found while executing C2 (2026-08-01) — the list above was a hypothesis;
+these are what line-verification added.**
+
+- **The `:331` cite has NINE sites, not six.** `grep -arn 'ebp-wire-test.el:331'` over
+  `docs/ .github/ test/ emacs/` returns PLAN-refound :401/:490/:542, PLAN-rf26-host:5,
+  PLAN-amendment-package :64 and :122, AUDIT-plan-spec-adversarial :218 and :227, and
+  this document's own line 15. (Line 15 stays as written — it names `:331` *as* the
+  falsified cite.) All eight others are annotated in place.
+- **The RF-2.6 correction block is itself stale.** PLAN-refound:542 says
+  "`ebp-test--start-companion` is at :379 today" — and the very commit that wrote that
+  sentence, `16b6c7a`, added the 9 banner/commentary lines that moved the defun to
+  **:388**. It was wrong on arrival. `:331` was never right either: it was already the
+  session-state assertion at `e8945b6`, before RF-2.6 touched the file.
+- **PLAN-refound:539 undercounts `:host:jvmTest`.** It says "3 socket-level pins";
+  `HostConformanceTest.kt` has carried **4** `@Test`s since `bd3f634` added
+  `aConfigThatFailsEngineValidationIsRejectedBeforeAnySocketExists`, which is the
+  review-findings commit that landed *before* the status block was written.
+
+**One defect on the list I read differently.** Defect 8 says the `:47` dependency row
+"drifted vs the prose on wording, blocker vocabulary, and ladder order". Wording and
+ladder order hold — the row drops "Compose", and RF-1c executed first while the table
+still lists RF-1b above it. Blocker vocabulary does *not*: the row's "RF-2b exit" and
+the prose's "deferred past C6" name the same event in the two vocabularies the table
+uses elsewhere, so that third clause is not a defect. The row was corrected for the
+first two, plus the misfiled risk.
 
 ## Decisions (made autonomously; all reversible, all recorded)
 
@@ -79,7 +105,10 @@ protection catches an open P1 that a 60-line Robolectric test catches in 0.175 s
    session's own PLAN-refound:570-581 and PLAN-rf26-host.md) assign the smoke-driver
    conversion to RF-1c, and the defect hunt is right that it dwarfs the job. But the
    runbook's RF-1c is "the cross-implementation *job*", and 33 of the 48 drivers require
-   `adb shell input` taps and can never be deviceless. RF-1c therefore delivers the job,
+   `adb shell input` taps and can never be deviceless. [The 33 is wrong — measured in C3:
+   **43** of the 48 are tap/hardware-bound and only 5 are deviceless-capable, of which 2
+   are green today. The decision's *conclusion* is if anything strengthened.] RF-1c
+   therefore delivers the job,
    the `:host:jvmTest` coverage gap, the doc corrections, and a **measured inventory**;
    the conversion of the deviceless-capable subset is re-filed as **RF-1d**. This is a
    scope correction and is called out as one.
@@ -158,12 +187,159 @@ as its own rung. That would be a documented partial, never a silent one.
 Correct RF-1b/RF-1c's paragraphs in place with dated notes, including the `:331`→`:388`
 cite at all six sites, and cross-reference the real scope that lives 170 lines away.
 
+**Done 2026-08-01.** Nine sites, not six — see the C2 addendum above. RF-1b's paragraph
+carries a four-bullet dated correction (deferral expired, fixture rule lapsed, the
+SDK-36 risk misfiled with the measured numbers, the noun rule reserved not applied) and
+no DONE row, because that rung is still in flight. RF-1c's paragraph is marked
+SUPERSEDED with the original left standing, followed by a DONE block in the RF-2.6
+idiom. The `:47` ladder row is corrected and RF-1c/RF-1d rows added.
+
 ### C3 (Fable) — the smoke inventory, and RF-1d filed
 
 Classify all 48 `test/smoke-*.el`: deviceless-capable vs tap-requiring (33 mention
 `adb shell input`/`dumpsys`), and for the capable subset record the specific blocker
 (the measured one is asserting before any `accept-process-output`). File RF-1d in
 PLAN-refound's ladder with this inventory as its input.
+
+**Done — see §RF-1d below.** The parenthetical above does not survive measurement:
+only **4** drivers mention `adb shell input` and **2** mention `dumpsys`. The 33 was a
+grep artifact. The real split is **43 tap/hardware-requiring, 5 deviceless-capable**,
+and the dominant blocker is not the `--batch` pump but the host's **8-node-type
+profile**.
+
+## RF-1d — the smoke-driver inventory (measured 2026-08-01)
+
+Every one of the 48 `test/smoke-*.el` drivers was run once against the RF-2.6 headless
+host, `emacs -Q --batch -L emacs -l test/smoke-NAME.el` from the worktree root, with a
+22 s wall clock per driver and the host launched as
+
+```
+java -jar companion/host/build/libs/host-all.jar --port 8765 --kat \
+  --caps capabilities,triggers,surfaces.notification,reminders.owner,\
+presentation.toast,presentation.pie-menu
+```
+
+i.e. the widest cap set the host will accept. `rc` below is that run's exit status:
+`0`/`1` = the driver reached its own verdict, `124` = it never concluded inside 22 s
+(it is sitting in a tap window), `255` = an uncaught elisp `error`.
+
+**Classification.** *T* = tap/hardware-required: the verdict cannot be reached without
+a finger, `adb shell input`, `adb shell dumpsys`, a force-stop/relaunch, or a human
+reading the screen. *D* = deviceless-capable: the driver only dials `127.0.0.1:8765`
+and its verdict is entirely protocol/client state.
+
+### The 5 deviceless-capable drivers
+
+| Driver | `:wants` | Default `theme`+`surfaces.dialog` enough? | rc | What still stands in the way |
+|---|---|---|---|---|
+| `smoke-attrs` | `theme` | yes | **0** | Nothing. Green against the host today. §16.5 universal attributes on core nodes; the verdict is `applied`, which is a real protocol assertion here because attributes reject rather than degrade |
+| `smoke-device` | `theme` | yes | **0** | Nothing. Green today. READY + `applied` on a core-node push — the smallest honest cross-implementation gate in the library |
+| `smoke-widgets` | `theme` | yes | **0** | Green but **vacuous**. Its 7 content nodes (`rich_text`, `icon`, `badge`, `section_header`, `empty_state`, `progress`, `date_stamp`) are not in the host's profile, and SPEC 16.2 makes an unadvertised type **degrade**, not reject (`SpecValidator.kt:87`) — so `applied` cannot distinguish "rendered" from "silently dropped". Needs the host to advertise the full node set before it means anything |
+| `smoke-parity` | `theme` | yes | **0** | Same vacuity, at 64× the size: `applied=64/64` over `ebp/goldens/widgets.golden`. The whole point of the driver is the §10.2/§16.2 gate, which this host cannot exercise. (RF-2.6 recorded `applied=0/0` for it; that was a cwd artifact — the driver reads `ebp/goldens/widgets.golden` by *relative* path, so from anywhere but the repo root it finds zero vectors and reports a vacuous pass) |
+| `smoke-amend-129-132` | `theme`, `presentation.pie-menu` | **no** — needs `--caps presentation.pie-menu` | **1** | Half green: #132 (an invalid `pie_menu.show` answered by `log.error` with `reason="pie-menu-invalid"`) **PASSES**. #129 (the welcome reports `current_view` for a present multi-view surface) **cannot** pass — it deliberately disconnects and reads the *second* welcome, and `HostServer` gives every dial a fresh set of Memory stores, so nothing survives the reconnect. Needs a host with a per-pairing store lifetime, not a per-connection one |
+
+**None of the five has the `--batch` pump defect.** Each pumps with
+`accept-process-output` before every assertion it makes.
+
+### The 43 tap/hardware-requiring drivers
+
+| Driver | rc | Why it can never be deviceless |
+|---|---|---|
+| `smoke-a8-coldstart` | 0 ⚠ | phase2 needs the button tapped *while disconnected* (adb), then a fresh process |
+| `smoke-a8-dialog-done` | 1 | orchestrator types into the field and sends KEYCODE 66 (IME Done) |
+| `smoke-a8-editor` | 1 | `adb shell input text x` after focusing the field at its end |
+| `smoke-capability` | 124 | device capabilities — `vibrate`, `clipboard.read`. The host grants the `capabilities` capability but its `deviceReport` carries no `caps`, so every invoke answers **1001 cap-unsupported** |
+| `smoke-chrome` | 124 | adb taps the fab, opens the drawer, pulls to refresh |
+| `smoke-clip` | 255 | severs the adb forward, taps a copy button, reads the device clipboard back. Also dies on `card` (unadvertised) |
+| `smoke-comint` | 124 | "type into the input row and hit Enter" |
+| `smoke-complete` | 255 | `adb shell input text e`, then tap the candidate row. Also dies on `editor` (unadvertised) |
+| `smoke-counter` | 124 | tap the +1 button |
+| `smoke-dialog` | 0 ⚠ | tap OK/Cancel on the device |
+| `smoke-dialog-prompts` | 124 | four phases, each a tap or a typed answer on the tablet |
+| `smoke-disabled` | 124 | the driver taps the Demote toolbar chip; PASS is that *no* `state.changed` follows |
+| `smoke-durable-reminder` | 0 ⚠ | the alarm fires on-device with no session; the harness inspects `ebp-reminders.json` across a force-stop |
+| `smoke-durable-trigger` | 0 ⚠ | `adb shell dumpsys battery set level 15` |
+| `smoke-editor` | 124 | type on the device; Emacs's mirror updates |
+| `smoke-enum` | 124 | tap Banana; PASS is a screenshot after a reorder |
+| `smoke-float-arg` | 124 | tap "Echo 2.0" |
+| `smoke-floor` | 124 | tap TAP ME or ping on the tablet |
+| `smoke-hypertext` | 124 | tap the Reload nav icon; the device fetches an https image |
+| `smoke-image` | 0 ⚠ | PASS is visual — a red square renders, the SSRF-rejected image shows the placeholder |
+| `smoke-inputs` | 124 | adb drives taps/swipes on checkbox/slider/disabled button |
+| `smoke-ja2` | 124 | six hardware claims, every one tap-originated |
+| `smoke-ja3` | 124 | P1-TAP-ROW / P2-TAP-FAB / P3-TAP-BACK-MX |
+| `smoke-ja4` | 255 | device taps run the org verbs. Also the only driver that passes **no `:wants` at all** (granted `[]`), and it dies on `scaffold` (unadvertised) |
+| `smoke-ja5` | 124 | "a human performs the tap named at each mark" — eight of them |
+| `smoke-ja6` | 124 | taps, long-presses, device typing, device saves |
+| `smoke-layout` | 124 ⚠ | adb taps tab B, swipes the card, drag-reorders. **Would be a false green if it ever concluded**: `ok` starts `t` and nothing sets it false when a gesture simply never lands |
+| `smoke-notif` | 124 | expand the notification shade and tap Snooze |
+| `smoke-offline` | 0 ⚠ | tap while disconnected, then force-stop and relaunch |
+| `smoke-picker` | 124 | narrow by typing *on the tablet*, then tap a candidate |
+| `smoke-pie` | 124 | the pie menu is a gesture surface; PASS is what the human selects |
+| `smoke-reminder-tap` | 124 | tap the fired notification |
+| `smoke-results` | 124 | tap a result card, then Next |
+| `smoke-sections` | 124 | long-press a section header |
+| `smoke-snackbar` | 0 ⚠ | visual only |
+| `smoke-syntax` | 0 ⚠ | PASS is a screenshot: keywords/strings/comments in distinct colours |
+| `smoke-textinput` | 124 | type into both fields and fire IME Done; masking is visual |
+| `smoke-theme` | 0 ⚠ | PASS is a screenshot of the mirrored palette |
+| `smoke-theme-mirror` | 255 | TAP-TOGGLE drives `modus.toggle`. Also dies on `badge` (unadvertised) |
+| `smoke-toolbar` | 124 | adb taps each toolbar chip. Also `editor` is unadvertised |
+| `smoke-trigger` | 124 | `adb shell dumpsys battery set level N` |
+| `smoke-views` | 124 | adb taps the `view.switch` button |
+| `smoke-viz` | 124 | tap a chart point and a day cell |
+
+⚠ = **exits 0 with no device attached.** Nine drivers (`a8-coldstart`, `dialog`,
+`durable-reminder`, `durable-trigger`, `image`, `offline`, `snackbar`, `syntax`,
+`theme`) report success against the host while proving nothing they claim to prove —
+`smoke-dialog` sets its `done` flag from the *error* callback and exits 0 on a 1201,
+`smoke-durable-trigger` exits 0 after `triggers.set` was refused 1101. Wiring any of
+these into CI as-is would install a green light on a dead gate. **RF-1d must fix the
+false greens before it converts anything**, because a driver that cannot fail is worse
+in CI than one that cannot pass.
+
+### What RF-1d is actually blocked on
+
+Ranked by how much it buys:
+
+1. **The host advertises 8 node types.** `HOST_NODE_TYPES` (`Host.kt:29-30`, wired into
+   both targets by `hostProfiles()` at `:43-56`) is the Core Node Set only, with
+   `features: []`, for both the `app` and `dialog` targets;
+   the app advertises 39. Four drivers die outright on it with an uncaught elisp
+   `error` from `jetpacs-shell--gate-spec` (`card`, `editor`, `scaffold`, `badge`), and
+   every driver whose verdict is "applied" is silently vacuous because §16.2 **degrades**
+   an unadvertised type instead of rejecting it. Nothing else on this list matters as
+   much.
+2. **`editor.sync` cannot be granted at all.** `--caps editor.sync` makes the host
+   refuse to start: `limits.max_editor_bytes must be at least 65536`, and `hostLimits()`
+   (`Host.kt:60-70`) declares only the nine-member limits core. Four drivers
+   (`a8-editor`, `complete`, `editor`, `picker`) want it.
+3. **`deviceReport` is empty by design.** No `caps` → `capability.invoke` answers 1001
+   (2 drivers). No `trigger_types` → `triggers.set` answers 1101 (2 drivers). Both are
+   deliberate — a headless host has no battery and no vibrator — so these drivers are
+   permanently device-bound, not merely blocked.
+4. **Stores are per-connection.** `HostServer` gives each dial fresh Memory stores, so
+   no driver that disconnects and reconnects can observe its own prior state
+   (`amend-129-132` #129).
+5. **The `--batch` pump defect is real but small.** Five drivers assert before their
+   first `accept-process-output` — `a8-coldstart` (:86 vs :182), `comint` (:45 vs :75),
+   `hypertext` (:90 vs :129), `results` (:53 vs :75), `sections` (:48 vs :88) — but in
+   every case the early assertion is a *local* Emacs check (a buffer exists, a mode
+   claims the skin) that passes fine in batch. **RF-2.6's diagnosis of `smoke-results`
+   was wrong**: it does pump, for up to 20 s, before its READY check, and in this run
+   it reached READY and passed six checks before parking in the tap window.
+
+**Coverage of the host's default cap pair.** 32 of the 48 drivers want only `theme`,
+only `surfaces.dialog`, or both, so the host's default grants them everything they ask
+for. The remaining 16 split as `editor.sync` 4, `capabilities` 2, `triggers` 2,
+`surfaces.notification`+`reminders.owner` 2, `reminders.owner` 1,
+`presentation.pie-menu` 2, `presentation.toast`+`surfaces.dialog` 2, and one
+(`smoke-ja4`) that asks for nothing.
+
+**Environment note.** This sweep required binding `127.0.0.1:8765`, which a live
+`adb forward` held. The forward was removed for the duration and restored identically
+afterwards; no driver ever reached the physical device. Any future run of this
+inventory must do the same, or it measures the phone instead of the host.
 
 ## EXIT
 

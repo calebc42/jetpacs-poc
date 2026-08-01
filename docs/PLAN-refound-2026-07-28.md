@@ -44,9 +44,10 @@ by **graduating the name**, not the tree.
 | spike-elisp | vulpea → flat rows | — (parallel now) | Zero Kotlin, zero `ebp/` |
 | RF-2c | Hoist to `commonMain` | RF-2b exit | |
 | spike-kotlin | table + apply-rows, `:app` only, via `surface.update` + `table` | RF-2b exit | Produces the measurement that decides RF-4a's carrier |
-| RF-1b | Robolectric + renderer tests | RF-2b exit | New dependency stack + SDK-36 shadow-jar risk |
-| RF-2.6 | Headless JVM loopback host | RF-2c | Nearly free once commonMain exists; four things depend on it |
-| RF-1c | Cross-implementation CI job | RF-2.6 | First time elisp↔Kotlin is enforced rather than assumed |
+| RF-1b | Robolectric + **Compose** renderer *behaviour* tests | ~~RF-2b exit~~ — **unblocked** (RF-2b, RF-2c and RF-2.6 all done); in flight on `rf-1` | ~~New dependency stack + SDK-36 shadow-jar risk~~ — **row corrected 2026-08-01 (RF-1c/C2)**: there is no SDK-36 compatibility risk (Robolectric 4.16.1 runs this app at SDK 36 with no `@Config`); the real cost is a 203.5 MiB `~/.m2` download that `setup-gradle` does not cache, and 4.16 is a hard floor because 4.15.1 cannot run at all under `targetSdk=36`. Under [PLAN-rf1-close.md](PLAN-rf1-close.md) D1 this rung produces **no reference images**, so the "render snapshots, never goldens" noun stays reserved. Note the ladder order below no longer matches execution — RF-1c landed first |
+| RF-2.6 | Headless JVM loopback host | RF-2c | Nearly free once commonMain exists; four things depend on it — **DONE 2026-08-01** (`rf-2.6`) |
+| RF-1c | Cross-implementation CI job | RF-2.6 | First time elisp↔Kotlin is enforced rather than assumed — **DONE 2026-08-01**, branch `rf-1`, commit `26b9fb1`: the `loopback` job, the uncovered `:host:jvmTest` pins, the runbook corrections, and the smoke inventory. Bite gate met |
+| RF-1d | Convert the deviceless-capable smoke drivers to CI; fix the false greens first | RF-1c | Re-filed out of RF-1c as a scope correction. Measured 2026-08-01 by running all 48 against the host: **5 are deviceless-capable** (`attrs`, `device`, `widgets`, `parity`, `amend-129-132`) and **43 are tap/hardware-requiring**. Two are green today, two are green-but-vacuous (§16.2 degrades unadvertised node types, and the host advertises 8 of 39), and **9 drivers exit 0 with no device at all**. Full inventory + blocker ranking: [PLAN-rf1-close.md](PLAN-rf1-close.md) §RF-1d |
 | RF-0.5b | Foreground service + reconnection policy + supersession rules | RF-2b exit, RF-0.5a | New Kotlin — would be converted twice if earlier |
 | RF-5a | track-changes.el — **now a prerequisite of RF-4b** | RF-1a | Promoted in the priority line |
 | RF-5c | Keystore | RF-1a | Note the reconnect interaction |
@@ -395,10 +396,102 @@ new dependency stack carries its own risk (SDK-36 shadow-jar). Its reference
 images are called **render snapshots**, never "goldens" — I1's noun is
 already overloaded.
 
+**Correction to the paragraph above (2026-08-01, RF-1c/C2).** Four of its
+claims no longer hold; the rung itself is still in flight, so this is an
+annotation and not a status row.
+
+- The **deferral premise has expired**. C6, RF-2b, RF-2c and RF-2.6 are all
+  done, so "the week before the conversion churns every call site" describes a
+  window that closed. RF-1b is now blocked on nothing but its own execution.
+- **The substitute protection has lapsed too.** The string-literal fixture
+  rule self-scopes to "the whole RF-1→C6 window" and is mechanically
+  unenforced — no guard, no test, no CI step reads it. It cannot be cited as
+  what stands in for renderer tests once the window it names is over.
+- **"SDK-36 shadow-jar risk" was MISFILED, not merely stale.** Measured
+  2026-08-01 on this toolchain: Robolectric **4.16.1** runs this app at SDK 36
+  with no `@Config` at all, so there is no compatibility risk to carry. What is
+  real is a **203.5 MiB download at test runtime into `~/.m2`**, which sits
+  outside everything `gradle/actions/setup-gradle@v4` caches — a CI *caching*
+  cost, not a compatibility hazard, and it belongs in the ci.yml/ledger work,
+  not in the blocker column. **4.16 is a hard floor**: 4.15.1 cannot run at all
+  while `targetSdk=36` (36 > its `maxSdkVersion=35`, a class-level
+  `initializationError`). The pin must be literal — maven-metadata reports both
+  `<latest>` and `<release>` as `4.17-beta-2`, so any range lands on a beta.
+- **"render snapshots, never goldens" HOLDS as a rule but is UNREFLECTED in
+  the tree** — 5 prose sites, 0 code, directory or `.gitignore` entries. And
+  under [PLAN-rf1-close.md](PLAN-rf1-close.md)'s ratified decision 1, RF-1b
+  asserts *behaviour* and produces **no reference images at all**, so the rule
+  stays reserved for a later rung rather than applied by this one.
+
 **RF-1c — the cross-implementation job (after RF-2.6).** The first time
 elisp↔Kotlin is *enforced* rather than assumed: the ERT live-loopback suite
 dials the RF-2.6 headless host instead of the elisp-scripted fake
 (`test/ebp-wire-test.el:331`; audit P1-7 — no such harness exists today).
+
+**The paragraph above is SUPERSEDED (2026-08-01, RF-1c/C2)** — kept as the
+historical record of what was planned, corrected here for what was true. Three
+things in it are wrong.
+
+*The cite.* `test/ebp-wire-test.el:331` is a session-state assertion
+(`(should (eq (ebp-session-step 'ready 'close) 'closed))`). The fake is
+`ebp-test--start-companion` at **:388**; its section banner is at **:334**. The
+same stale `:331` survives at five further sites — this file's :490 and :542,
+[PLAN-rf26-host.md](PLAN-rf26-host.md):5,
+[PLAN-amendment-package-2026-07-31.md](PLAN-amendment-package-2026-07-31.md):64,:122
+and [AUDIT-plan-spec-adversarial-2026-07-31.md](AUDIT-plan-spec-adversarial-2026-07-31.md):218,:227,
+each annotated in place.
+
+*The harness question.* "audit P1-7 — no such harness exists today" was already
+false when RF-1c began: **RF-2.6 built it** — `companion/host/` plus
+`test/ebp-host-test.el` (10 tests) — and this very file records that DONE about
+170 lines below (§RF-2.6). What actually remained for RF-1c was therefore not a
+harness but four narrower things: the CI job, the uncovered `:host:jvmTest`
+pins, these doc corrections, and the smoke-driver inventory.
+
+*"Instead of".* Dialing the host rather than the fake describes **RF-2.6's
+completed gate**, not RF-1c's work — and the phrasing contradicts RF-2.6's
+ratified decision 2. The fake is **DEMOTED, not replaced**: all 55 of its
+deftests still run, because it uniquely provides wire-order `:received`
+readback, scripted misbehavior, withheld and overridden replies, and
+Companion-originated pushes that no conformant headless engine can emit.
+
+**Status: DONE 2026-08-01** on branch `rf-1`, commit `26b9fb1`, per the
+C1/C2/C3 ladder of [PLAN-rf1-close.md](PLAN-rf1-close.md).
+
+**What shipped.** A fifth CI job, `loopback (elisp <-> Kotlin, live)` — the
+only one that needs both toolchains, and the only one that can go red because
+the two implementations disagree. `actions/checkout` (recursive) +
+`setup-java 21` + `setup-gradle` + `purcell/setup-emacs 30.1`, then three
+steps: `:host:jvmTest`, `:host:fatJar`, and `test/run-tests.sh` under
+`EBP_HOST_LAUNCH="java -jar companion/host/build/libs/host-all.jar --port 0
+--kat"`. The jar needs neither the Android SDK nor the `ebp` submodule.
+Measured cost ~+3.2 s on a ~49 s script. The elisp job deliberately keeps
+running *without* `EBP_HOST_LAUNCH`, so the two jobs together pin both halves
+of the opt-in: default (host suite skips, behaviour unchanged for anyone with
+no jar) and host mode.
+
+**The coverage gap it closed.** `:host:jvmTest` — the socket-level pins RF-2.6
+shipped (accept loop and KAT handshake, fresh-nonce handshake, newest-wins
+re-dial, and config rejection before any socket exists) — **ran in no job at
+all**. Four `@Test`s with zero CI coverage; the loopback job is their home
+because it owns the host. (The RF-2.6 status block at :539 says "3 socket-level
+pins"; the file has carried 4 since `bd3f634`, the review-findings commit that
+added `aConfigThatFailsEngineValidationIsRejectedBeforeAnySocketExists`.)
+
+**Bite gate met, in RF-1a's idiom.** Mutation: drop `surfaces.dialog` from the
+host's default capability set — one line in `Host.kt`. Result: `:wire:jvmTest`
+**green**, `:host:jvmTest` **green**, the elisp job **green**, and only the
+loopback job **RED**, on
+`ebp-host-test-close-fails-outstanding-locally`, because the real engine now
+grants a capability set the client did not expect. Reverted and re-verified
+green. That is a Kotlin-side regression invisible to every Kotlin gate and
+every elisp gate, caught only by running the two against each other.
+
+**Also in the commit,** because the header could not be left lying: ci.yml no
+longer claims "the four jobs, no new dependencies" (both halves now false), the
+elisp job's name went from "29 ERT suites" to 30, and the RF-1b/RF-1c
+"later rungs" line is gone. The device-test exclusion was restated — see
+RF-1d below for the measured inventory that supersedes its counts.
 
 ---
 
@@ -488,7 +581,9 @@ gate), and RF-6's desktop companion (this is its seed).
 
 **Gate:** the ERT live-loopback suite passes against the host, with the
 elisp-scripted fake (`test/ebp-wire-test.el:331`) deleted or demoted to a
-unit fixture.
+unit fixture. [Cite stale as written — :331 is a session-state assertion; the
+fake is `ebp-test--start-companion` at **:388**, banner **:334**. See the
+correction below.]
 
 **Status: DONE 2026-08-01** on branch `rf-2.6`, the K1/K2/E1/E2/E3 ladder of
 [PLAN-rf26-host.md](PLAN-rf26-host.md): `e8945b6` (the runbook), `ef8d5fe`
@@ -541,7 +636,11 @@ jar), host mode 30 suites and 0 unexpected. Both are opt-in behind
 
 **Correction to the gate's own text.** The `test/ebp-wire-test.el:331` cite
 above has drifted: `ebp-test--start-companion` is at :379 today, its section
-banner at :334. And "deleted or demoted" resolves to **DEMOTED**, because the
+banner at :334. [Corrected again 2026-08-01, RF-1c/C2: **:388**, not :379 —
+this correction was written from the pre-E3 file in the very commit
+(`16b6c7a`) whose 9 added banner lines moved the defun, so it was stale on
+arrival. Banner :334 is right.] And "deleted or demoted" resolves to
+**DEMOTED**, because the
 fake uniquely provides four things a conformant host cannot: wire-order
 `:received` readback (a real engine has no trace channel), scripted
 misbehavior (a forged `server_proof`, a welcome missing a required member),
