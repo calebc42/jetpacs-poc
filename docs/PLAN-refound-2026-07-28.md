@@ -492,8 +492,30 @@ unit fixture.
 
 **Status: DONE 2026-08-01** on branch `rf-2.6`, the K1/K2/E1/E2/E3 ladder of
 [PLAN-rf26-host.md](PLAN-rf26-host.md): `e8945b6` (the runbook), `ef8d5fe`
-(K1), `402b21f` (K2), `ef4fcea` (E2), and this rung's E3. E1 was the
-zero-discretion disposition census — document-only, no commit of its own.
+(K1), `402b21f` (K2), `ef4fcea` (E2), `16b6c7a` (E3), and `bd3f634` (the
+review's findings). E1 was the zero-discretion disposition census —
+document-only, no commit of its own.
+
+**The review earned its keep.** Five dimensions × adversarial refutation over
+the rung's own code left 4 of 25 findings standing, plus 5 from the
+completeness critic — and the two costliest were defects in this rung's work,
+not pre-existing ones. `serve()` constructed its streams and engine OUTSIDE
+the try, so any throw there skipped the only cleanup path: measured at **290
+uncaught traces over 300 sequential dials on the default config**, because
+newest-wins can close a socket before its thread reaches `getOutputStream`.
+After the fix the same run is clean — zero exceptions, no fd growth, silent
+stderr. And the teardown test's "removal drains" wait was **vacuous**:
+`jetpacs-shell--pending-removals` is populated only on error, so asserting it
+nil held before a byte was pumped; it now captures the removal's own ack and
+requires the engine to have answered `applied`. Two more: the host granted
+`surfaces.dialog` while advertising no `dialog` surface profile, leaving
+dialog content un-gated (SPEC 10.2 profiles are positive knowledge, and
+`handleDialogShow` validates against `surface_profiles.dialog.node_types`);
+and K2's newest-wins pin asserted `queued_events == 0`, structurally true
+whether or not the close happened, so it passed with the close deleted — it
+now reads the first transport to EOF. The lesson worth carrying: a test that
+migrates to a real peer can keep passing for reasons that stopped being true
+the moment the peer became real.
 
 **What shipped.** A `:host` module (`companion/host/`) — KMP with a single
 `jvm()` target, reusing the multiplatform plugin rather than adding a catalog
