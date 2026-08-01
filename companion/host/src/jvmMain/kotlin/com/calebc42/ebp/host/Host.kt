@@ -67,6 +67,12 @@ private fun hostLimits(): JsonObject = buildJsonObject {
     put("max_field_bytes", 65_536)
     put("max_input_state_bytes", 262_144)
     put("max_capture_fields", 64)
+    // A tenth member, not part of that core, so that `--caps editor.sync`
+    // is actually takeable: the engine requires this (>= 65536) the moment
+    // editor.sync is advertised, so without it the flag made the host
+    // refuse to start — an advertised option that could not be used.
+    // Inert when editor.sync is not granted.
+    put("max_editor_bytes", 262_144)
 }
 
 /**

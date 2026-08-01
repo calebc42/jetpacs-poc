@@ -65,6 +65,23 @@ stacked on `rf-2c` (same pattern as rf-2c on rf-2b — merges after it).
   > list away (`editor.sync`, `triggers`, `reminders.owner`, `capabilities`,
   > `presentation.toast`, `presentation.pie-menu`, `surfaces.notification`). That
   > per-driver work is RF-1c's, and this is its seed inventory.
+  >
+  > **The correction above was itself wrong on its diagnosis — falsified in
+  > RF-1c/C3 (2026-08-01), which ran all 48 rather than three.** Both cited
+  > symptoms had different causes than I assigned them: `smoke-parity`'s
+  > `applied=0/0` was a working-directory artifact (it opens
+  > `ebp/goldens/widgets.golden` by a relative path), and against the host from
+  > the repo root it reports `applied=64/64`. And `smoke-results` does NOT
+  > assert before pumping — it waits up to 20 s, reached READY, and passed six
+  > checks before parking in its tap window. So "written for an interactive
+  > Emacs whose idle loop pumps" was a wrong generalisation from two
+  > misread runs; **no driver has that defect**. The counts were wrong too: 43
+  > of 48 are tap/hardware-bound (not 33) and only 5 are deviceless-capable, of
+  > which 2 are honestly green. The real blocker is the host's 8-node-type
+  > profile, and the real hazard is that SPEC 16.2 DEGRADES an unadvertised
+  > node type instead of rejecting it — so nine drivers exit 0 with no device
+  > attached, and `smoke-parity`'s 64/64 proves nothing about the renderer.
+  > The measured inventory lives in [PLAN-rf1-close.md](PLAN-rf1-close.md).
 - **CI is out of scope**: ci.yml:5-13 explicitly schedules the cross-implementation
   loopback job as RF-1c. RF-2.6's gate runs locally.
 

@@ -626,7 +626,7 @@ launch the `fatJar`, not `:host:run`: a JavaExec child lives in the Gradle
 daemon's process tree, so the ERT launcher would have nothing signalable —
 the jar gives it a direct child instead.
 
-**Gate met.** `:host:jvmTest` carries 3 socket-level pins;
+**Gate met.** `:host:jvmTest` carries 4 socket-level pins (3 at RF-2.6 K2 plus the config-rejection pin added by the review-findings commit `bd3f634`);
 `test/ebp-host-test.el` runs 10/10 against the live host (plus
 `jetpacs-teardown-host-loopback-remove-on-wire` in the teardown suite);
 `test/run-tests.sh` is green in **both** modes — default 29 suites with the
@@ -678,6 +678,22 @@ were written for an interactive Emacs whose idle loop pumps, and `--batch` has
 none. The protocol side is nearly free (31 of the 48 want only
 `theme`/`surfaces.dialog`, the host's default pair; the rest are a `--caps`
 list away), so what remains is a small per-driver fix each — RF-1c's work.
+
+> **That paragraph's diagnosis is FALSIFIED (RF-1c/C3, 2026-08-01), which ran
+> all 48 instead of three.** Both cited symptoms had causes other than the one
+> assigned: `smoke-parity`'s `applied=0/0` was a working-directory artifact (a
+> relative `ebp/goldens/widgets.golden`) and reports `applied=64/64` from the
+> repo root; `smoke-results` does not assert before pumping at all — it waits
+> up to 20 s, reaches READY, and passes six checks before parking in its tap
+> window. **No driver has the assert-before-pump defect**; that was a wrong
+> generalisation from two misread runs. The counts were also wrong: **43** of
+> 48 are tap/hardware-bound (not 33) and only **5** are deviceless-capable, of
+> which 2 are honestly green. The real blocker is the host's 8-node-type
+> profile, and the real hazard is that SPEC 16.2 *degrades* an unadvertised
+> node type rather than rejecting it (`SpecValidator.kt:86-89`) — so **nine
+> drivers exit 0 with no device attached**, and `smoke-parity`'s 64/64 proves
+> nothing about the renderer. Fixing those vacuous passes comes before
+> converting anything. Inventory: [PLAN-rf1-close.md](PLAN-rf1-close.md).
 
 ---
 

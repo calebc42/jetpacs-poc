@@ -5,11 +5,13 @@
 # status note, and by RF-1c's own bite gate.
 #
 # Documented exclusions (no silent caps):
-#   - device tests stay manual: 33 of the 48 test/smoke-*.el drivers
-#     need `adb shell input` taps and can never run deviceless.  The
-#     rest CAN dial the RF-2.6 host but are not green from --batch
-#     (they assert before pumping — written for an interactive Emacs);
-#     converting them is RF-1d, with the inventory in PLAN-rf1-close;
+#   - device tests stay manual: measured driver by driver in RF-1c/C3,
+#     43 of the 48 test/smoke-*.el drivers are tap- or hardware-bound
+#     and can never run deviceless.  Only 5 are deviceless-capable and
+#     only 2 of those are honestly green — the rest pass vacuously
+#     (SPEC 16.2 DEGRADES an unadvertised node type rather than
+#     rejecting it, so an "applied" verdict can mean nothing rendered).
+#     Converting them is RF-1d; the inventory is in PLAN-rf1-close;
 #   - lint is not wired (not in RF-1a's job table; add deliberately or
 #     not at all).
 #

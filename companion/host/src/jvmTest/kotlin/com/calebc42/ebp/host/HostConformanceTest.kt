@@ -172,17 +172,37 @@ class HostConformanceTest {
 
     @Test
     fun aConfigThatFailsEngineValidationIsRejectedBeforeAnySocketExists() {
-        // The engine validates limits against advertised capabilities in its
-        // constructor, and the host builds one per CONNECTION — so a bad
-        // config would otherwise bind, print a port, and fail every dial.
-        // main() constructs a throwaway engine up front for exactly this;
-        // the pin is that the throw really does happen.
+        // The engine validates limits in its constructor, and the host builds
+        // one per CONNECTION — so a bad config would otherwise bind, print a
+        // port, and then fail every dial. main() constructs a throwaway
+        // engine up front for exactly this; the pin is that the throw really
+        // happens, so that startup validation has something to catch.
+        //
+        // The invalidity is injected rather than borrowed from a real flag:
+        // this pin previously advertised editor.sync without
+        // max_editor_bytes, which stopped being invalid once hostLimits
+        // gained that member to make `--caps editor.sync` usable. A pin that
+        // depends on a gap dies when the gap is closed.
+        val broken = hostConfig().copy(
+            limits = JsonObject(hostConfig().limits - "max_frame_bytes"))
         try {
-            CompanionEngine(hostConfig(capabilities = setOf("theme", "editor.sync"))) { }
-            fail("expected checkLimits to reject editor.sync without max_editor_bytes")
+            CompanionEngine(broken) { }
+            fail("expected checkLimits to reject limits without max_frame_bytes")
         } catch (e: IllegalArgumentException) {
             assertTrue("names the missing limit: ${e.message}",
-                e.message!!.contains("max_editor_bytes"))
+                e.message!!.contains("max_frame_bytes"))
+        }
+    }
+
+    @Test
+    fun theHostCanActuallyGrantEveryCapabilityItsCapsFlagAccepts() {
+        // --caps advertises an option; the config it produces must be one the
+        // engine will accept, or the flag is decorative. editor.sync is the
+        // one with a limits precondition, so it is the one worth pinning.
+        for (cap in listOf("editor.sync", "triggers", "capabilities",
+                "presentation.toast", "reminders.owner")) {
+            CompanionEngine(hostConfig(
+                capabilities = setOf("theme", "surfaces.dialog", cap))) { }
         }
     }
 }
