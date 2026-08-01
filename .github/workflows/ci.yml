@@ -1,15 +1,17 @@
-# RF-1a (PLAN-refound): the four jobs, no new dependencies.  Every
-# green number stops being demonstrated-once the moment this file
-# lands — red-on-regression is itself demonstrated by the three-red
-# gate recorded in the RF-1a status note.
+# RF-1a (PLAN-refound) laid down four jobs with no new dependencies;
+# RF-1c added the fifth (loopback).  Every green number stops being
+# demonstrated-once the moment this file lands — red-on-regression is
+# itself demonstrated by the three-red gate recorded in the RF-1a
+# status note, and by RF-1c's own bite gate.
 #
 # Documented exclusions (no silent caps):
-#   - device/instrumented tests stay manual (the smoke library in
-#     test/smoke-*.el runs against real hardware over adb);
+#   - device tests stay manual: 33 of the 48 test/smoke-*.el drivers
+#     need `adb shell input` taps and can never run deviceless.  The
+#     rest CAN dial the RF-2.6 host but are not green from --batch
+#     (they assert before pumping — written for an interactive Emacs);
+#     converting them is RF-1d, with the inventory in PLAN-rf1-close;
 #   - lint is not wired (not in RF-1a's job table; add deliberately or
-#     not at all);
-#   - RF-1b (Robolectric render snapshots) and RF-1c (the
-#     cross-implementation loopback job) are later rungs.
+#     not at all).
 #
 # Two non-obvious facts this file depends on (verified 2026-07-31):
 #   - the WIRE job, not the spec job, is the real cross-repo binding:
@@ -19,6 +21,11 @@
 #     touches Gradle or validate.py;
 #   - local.properties is gitignored; the :app build finds the SDK via
 #     the runner's preinstalled ANDROID_HOME.
+#
+# A third, added by RF-1c: the loopback job is the ONLY one that can
+# go red on an elisp<->Kotlin disagreement.  Every other job tests one
+# side against its own fixtures — which is exactly the "demonstrated,
+# not enforced" gap RF-1 exists to close, one level up.
 
 name: CI
 
@@ -95,7 +102,7 @@ jobs:
         run: python3 ebp/validate.py
 
   elisp:
-    name: elisp (guards + 29 ERT suites)
+    name: elisp (guards + 30 ERT suites)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -104,5 +111,48 @@ jobs:
       - uses: purcell/setup-emacs@master
         with:
           version: "30.1"
+      # No EBP_HOST_LAUNCH here on purpose: this job pins the DEFAULT
+      # path, where the RF-2.6 host suite skips and the run is exactly
+      # what it was before that rung.  The loopback job below is where
+      # the host actually runs.
       - name: run-tests.sh (delineation guard, byte-compile guard, ERT)
+        run: test/run-tests.sh
+
+  loopback:
+    # RF-1c: the first CI job that can fail because the two
+    # implementations disagree.  It needs BOTH toolchains — Java to
+    # build the host jar, Emacs to drive the client against it — which
+    # is why it is its own job and not a step in either neighbour.
+    name: loopback (elisp <-> Kotlin, live)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: "30.1"
+      # The host's socket-level pins (accept loop, framing, newest-wins,
+      # config rejection) had no CI coverage until this job existed.
+      - name: Host pins (:host:jvmTest)
+        working-directory: companion
+        run: |
+          chmod +x gradlew
+          ./gradlew :host:jvmTest --console=plain
+      # No Android SDK and no ebp.dir needed: :host depends on :wire
+      # only, and the fat jar is what the ERT launcher spawns (a
+      # JavaExec child would belong to the Gradle daemon's process
+      # tree, leaving the launcher nothing it could signal).
+      - name: Build the headless host
+        working-directory: companion
+        run: ./gradlew :host:fatJar --console=plain
+      - name: ERT against the live host
+        env:
+          EBP_HOST_LAUNCH: >-
+            java -jar companion/host/build/libs/host-all.jar --port 0 --kat
         run: test/run-tests.sh
