@@ -17,6 +17,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
 class TriggerStore(private val backing: TriggerBacking = MemoryTriggerBacking()) {
+    private val lock = WireLock()
 
     /** One armed registration: its normalized entry plus mutable runtime
      * records that outlive an unchanged replace (SPEC 21.1) and persist across
@@ -63,20 +64,20 @@ class TriggerStore(private val backing: TriggerBacking = MemoryTriggerBacking())
     private fun snapshot() = TriggerState(
         byIdentity.mapValues { (_, m) -> m.values.map { persist(it) } })
 
-    @Synchronized fun count(identity: String): Int = byIdentity[identity]?.size ?: 0
+    fun count(identity: String): Int = lock.withLock { byIdentity[identity]?.size ?: 0 }
 
-    @Synchronized fun identities(): List<String> = byIdentity.keys.toList()
+    fun identities(): List<String> = lock.withLock { byIdentity.keys.toList() }
 
-    @Synchronized fun registrations(identity: String): List<Registration> =
-        byIdentity[identity]?.values?.toList() ?: emptyList()
+    fun registrations(identity: String): List<Registration> =
+        lock.withLock { byIdentity[identity]?.values?.toList() ?: emptyList() }
 
-    @Synchronized fun registration(identity: String, id: String): Registration? =
-        byIdentity[identity]?.get(id)
+    fun registration(identity: String, id: String): Registration? =
+        lock.withLock { byIdentity[identity]?.get(id) }
 
     /** SPEC 21.2: durably persist the current runtime records (throttle floor,
      * one-shot/boot receipts, schedule anchor). Called by the firing service
      * inside the admitted-occurrence transaction. Throws on storage failure. */
-    @Synchronized fun persistRecords() = backing.replace(snapshot())
+    fun persistRecords() = lock.withLock { backing.replace(snapshot()) }
 
     /**
      * SPEC 21.1: atomically replace this identity's whole set with the
@@ -87,8 +88,7 @@ class TriggerStore(private val backing: TriggerBacking = MemoryTriggerBacking())
      * restores the prior set and rethrows. An empty list clears the identity.
      * Returns the accepted count.
      */
-    @Synchronized
-    fun replace(identity: String, entries: List<JsonObject>): Int {
+    fun replace(identity: String, entries: List<JsonObject>): Int = lock.withLock {
         val prev = byIdentity[identity]?.let { LinkedHashMap(it) }
         val old = byIdentity[identity] ?: LinkedHashMap()
         val next = LinkedHashMap<String, Registration>()
@@ -106,7 +106,7 @@ class TriggerStore(private val backing: TriggerBacking = MemoryTriggerBacking())
             if (prev == null) byIdentity.remove(identity) else byIdentity[identity] = prev
             throw ex
         }
-        return next.size
+        return@withLock next.size
     }
 
     companion object {

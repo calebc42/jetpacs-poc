@@ -13,6 +13,7 @@ package com.calebc42.ebp.wire
 import kotlinx.serialization.json.JsonObject
 
 class ReminderStore(private val backing: ReminderBacking = MemoryReminderBacking()) {
+    private val lock = WireLock()
     // owner -> (reminder id -> reminder object), insertion-ordered.
     private val owners = LinkedHashMap<String, LinkedHashMap<String, JsonObject>>()
     // Fired receipts keyed by (owner, id, at_ms).
@@ -61,19 +62,19 @@ class ReminderStore(private val backing: ReminderBacking = MemoryReminderBacking
         owners = owners.mapValues { (_, m) -> m.values.toList() },
         fired = fired.toSet())
 
-    @Synchronized fun totalCount(): Int = owners.values.sumOf { it.size }
+    fun totalCount(): Int = lock.withLock { owners.values.sumOf { it.size } }
 
-    @Synchronized fun ownerCount(owner: String): Int = owners[owner]?.size ?: 0
+    fun ownerCount(owner: String): Int = lock.withLock { owners[owner]?.size ?: 0 }
 
     /** SPEC 18.6: every owner with a live set — the host re-arms each owner's
      * alarms from the durable store after a reboot/force-stop cold start. */
-    @Synchronized fun owners(): List<String> = owners.keys.toList()
+    fun owners(): List<String> = lock.withLock { owners.keys.toList() }
 
-    @Synchronized fun reminders(owner: String): List<JsonObject> =
-        owners[owner]?.values?.toList() ?: emptyList()
+    fun reminders(owner: String): List<JsonObject> =
+        lock.withLock { owners[owner]?.values?.toList() ?: emptyList() }
 
-    @Synchronized fun reminder(owner: String, id: String): JsonObject? =
-        owners[owner]?.get(id)
+    fun reminder(owner: String, id: String): JsonObject? =
+        lock.withLock { owners[owner]?.get(id) }
 
     /**
      * SPEC 18.6: atomically replace only this owner's set. The caller has
@@ -84,8 +85,7 @@ class ReminderStore(private val backing: ReminderBacking = MemoryReminderBacking
      * leaving the prior set in force — never a claimed-but-lost accept).
      * Returns the new count for this owner.
      */
-    @Synchronized
-    fun replace(owner: String, reminders: List<JsonObject>): Int {
+    fun replace(owner: String, reminders: List<JsonObject>): Int = lock.withLock {
         val prevOwner = owners[owner]?.let { LinkedHashMap(it) }
         val prevFired = fired.toSet()
         val next = LinkedHashMap<String, JsonObject>()
@@ -104,7 +104,7 @@ class ReminderStore(private val backing: ReminderBacking = MemoryReminderBacking
             fired.clear(); fired.addAll(prevFired)
             throw e
         }
-        return next.size
+        return@withLock next.size
     }
 
     /**
@@ -114,21 +114,19 @@ class ReminderStore(private val backing: ReminderBacking = MemoryReminderBacking
      * withholds presentation (the at-most-once MUST outranks a missed
      * showing) and leaves the tuple eligible for a later retry.
      */
-    @Synchronized
-    fun markFired(owner: String, id: String): Boolean {
-        val r = owners[owner]?.get(id) ?: return false
+    fun markFired(owner: String, id: String): Boolean = lock.withLock {
+        val r = owners[owner]?.get(id) ?: return@withLock false
         val k = key(owner, id, r.atMs())
-        if (!fired.add(k)) return false
-        return try {
+        if (!fired.add(k)) return@withLock false
+        return@withLock try {
             backing.replace(snapshot()); true
         } catch (e: Exception) {
             fired.remove(k); false
         }
     }
 
-    @Synchronized
-    fun isFired(owner: String, id: String): Boolean {
-        val r = owners[owner]?.get(id) ?: return false
-        return key(owner, id, r.atMs()) in fired
+    fun isFired(owner: String, id: String): Boolean = lock.withLock {
+        val r = owners[owner]?.get(id) ?: return@withLock false
+        return@withLock key(owner, id, r.atMs()) in fired
     }
 }

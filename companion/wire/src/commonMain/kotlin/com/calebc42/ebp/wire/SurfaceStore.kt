@@ -158,7 +158,7 @@ class SurfaceStore(
     }
 
     fun isValidSurfaceId(id: String): Boolean =
-        SURFACE_ID.matches(id) && id.toByteArray(Charsets.UTF_8).size <= 128
+        SURFACE_ID.matches(id) && id.utf8Size() <= 128
 
     /** The accepted snapshot for a present surface, for rendering. */
     fun spec(surface: String): JsonObject? =
