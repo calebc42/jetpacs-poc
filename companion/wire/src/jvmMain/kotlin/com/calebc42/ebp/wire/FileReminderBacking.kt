@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Durable backing for SPEC 18.6 reminders. The accepted per-owner sets and
-// the fired receipts MUST both survive process and device restarts ("persist
-// the accepted set across process and device restarts"; "persist fired state
-// before or atomically with presentation so a restart does not deliberately
-// re-fire it"). Every mutation is one atomic whole-snapshot replace, the
-// same shape as QueueStore/SurfaceBacking.
+// The java.io half of ReminderBacking.kt, split out at RF-2c(H6.a).
 package com.calebc42.ebp.wire
 
 import kotlinx.serialization.json.Json
@@ -14,26 +9,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import java.io.File
-import java.io.FileOutputStream
-
-/** One durable state: owner -> ordered reminder list, plus the fired
- * receipts keyed "owner id at_ms" (the SPEC 18.6 at-most-once tuple). */
-data class ReminderState(
-    val owners: Map<String, List<JsonObject>>,
-    val fired: Set<String>,
-)
-
-interface ReminderBacking {
-    fun load(): ReminderState
-    /** Atomically and durably replace the whole state; throws on failure. */
-    fun replace(state: ReminderState)
-}
-
-class MemoryReminderBacking : ReminderBacking {
-    private var state = ReminderState(emptyMap(), emptySet())
-    override fun load(): ReminderState = state
-    override fun replace(state: ReminderState) { this.state = state }
-}
 
 /**
  * JSON file with write-to-temp, fsync, atomic-rename replacement, so a
@@ -75,21 +50,6 @@ class FileReminderBacking(private val file: File) : ReminderBacking {
             put("owners", JsonObject(state.owners.mapValues { (_, list) -> JsonArray(list) }))
             put("fired", JsonArray(state.fired.map { JsonPrimitive(it) }))
         }
-        val temp = File(file.parentFile, file.name + ".tmp")
-        FileOutputStream(temp).use { out ->
-            out.write(root.toString().toByteArray(Charsets.UTF_8))
-            out.fd.sync()
-        }
-        if (!temp.renameTo(file)) {
-            temp.delete()
-            throw java.io.IOException("atomic replace failed for $file")
-        }
-        // Durability of the rename itself needs a directory fsync on
-        // POSIX; best-effort — the JVM cannot demand it portably.
-        runCatching {
-            java.nio.channels.FileChannel.open(
-                file.parentFile.toPath(),
-                java.nio.file.StandardOpenOption.READ).use { it.force(true) }
-        }
+        writeJsonAtomic(file, root)
     }
 }
