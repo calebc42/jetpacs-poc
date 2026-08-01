@@ -5,6 +5,7 @@
 // :wire's suites; this file tests the SOCKET wrapping of it.
 package com.calebc42.ebp.host
 
+import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.EbpAuth
 import com.calebc42.ebp.wire.FrameDecoder
 import com.calebc42.ebp.wire.encodeFrame
@@ -19,6 +20,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Test
 
 class HostConformanceTest {
@@ -132,17 +134,32 @@ class HostConformanceTest {
     }
 
     @Test
-    fun newestWinsASecondDialCompletesItsOwnHandshake() {
+    fun newestWinsClosesThePreviousTransportAndTheNewOneHandshakes() {
         val server = HostServer(hostConfig(kat = true), 0)
         server.start()
         try {
             val first = Dial(server.port)
             handshakeFrames(first)
-            // Dial again: SPEC 5.2 — the previous transport is closed, the
-            // new one gets a fresh engine (fresh Memory stores) and must
-            // reach READY on its own.
+            // SPEC 5.2: exactly one live transport. Dialing again must CLOSE
+            // the first — asserted by reading it to EOF, which is the only
+            // falsifiable statement available here. (queued_events == 0 on
+            // the second welcome is not: with no UI to admit events it is
+            // structurally 0 whether or not the stores were fresh, so it
+            // would pass with the newest-wins close deleted.)
             Dial(server.port).use { second ->
                 handshakeFrames(second)
+                val evicted = run {
+                    val deadline = System.currentTimeMillis() + 5_000
+                    val buf = ByteArray(256)
+                    while (System.currentTimeMillis() < deadline) {
+                        val n = try { first.socket.getInputStream().read(buf) }
+                        catch (_: Exception) { -1 }   // reset counts as closed
+                        if (n < 0) return@run true
+                    }
+                    false
+                }
+                assertTrue("first transport evicted by the second dial", evicted)
+                // The survivor is fully functional, on its own fresh stores.
                 val welcome = second.replyTo("h2").jsonObject["result"]!!.jsonObject
                 assertEquals(0L,
                     welcome["queued_events"]!!.jsonPrimitive.content.toLong())
@@ -150,6 +167,22 @@ class HostConformanceTest {
             first.close()
         } finally {
             server.stop()
+        }
+    }
+
+    @Test
+    fun aConfigThatFailsEngineValidationIsRejectedBeforeAnySocketExists() {
+        // The engine validates limits against advertised capabilities in its
+        // constructor, and the host builds one per CONNECTION — so a bad
+        // config would otherwise bind, print a port, and fail every dial.
+        // main() constructs a throwaway engine up front for exactly this;
+        // the pin is that the throw really does happen.
+        try {
+            CompanionEngine(hostConfig(capabilities = setOf("theme", "editor.sync"))) { }
+            fail("expected checkLimits to reject editor.sync without max_editor_bytes")
+        } catch (e: IllegalArgumentException) {
+            assertTrue("names the missing limit: ${e.message}",
+                e.message!!.contains("max_editor_bytes"))
         }
     }
 }

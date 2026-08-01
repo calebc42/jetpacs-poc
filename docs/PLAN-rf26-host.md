@@ -46,9 +46,20 @@ stacked on `rf-2c` (same pattern as rf-2c on rf-2b — merges after it).
   app-only). Matching the fake's welcome fixture (:353-377: 8 node types, 2 builtins,
   granted `["theme"]`, the 9-member limits) maximizes test portability.
 - **Unstated win**: all 48 `test/smoke-*.el` drivers hardcode `127.0.0.1:8765` + the KAT
-  pairing (the same one DeviceBridge.kt:121-122 ships). A host defaulting to 8765 makes
-  ~40 of them runnable with no device — the same drivers used for RF-2b/2c device
-  smokes.
+  pairing (the same one DeviceBridge.kt:121-122 ships), so a host defaulting to 8765 is
+  something they can dial with no device.
+  > **Measured correction (2026-08-01, EXIT).** "~40 become runnable" was too strong.
+  > Sampling three against the live host: `smoke-offline` completed its push phase;
+  > `smoke-parity` connected but reported `applied=0/0`; `smoke-results` failed its
+  > READY check because it asserts before any `accept-process-output` — these drivers
+  > were written for an interactive Emacs whose idle loop pumps, and `--batch` has no
+  > such loop. So the host makes them **dialable**, not green: each needs its own
+  > small fix (a pump before the first assertion, a golden-path check). The capability
+  > survey says the protocol side is nearly free — 31 of 48 want only
+  > `theme`/`surfaces.dialog` (the host's default pair) and the rest are a `--caps`
+  > list away (`editor.sync`, `triggers`, `reminders.owner`, `capabilities`,
+  > `presentation.toast`, `presentation.pie-menu`, `surfaces.notification`). That
+  > per-driver work is RF-1c's, and this is its seed inventory.
 - **CI is out of scope**: ci.yml:5-13 explicitly schedules the cross-implementation
   loopback job as RF-1c. RF-2.6's gate runs locally.
 

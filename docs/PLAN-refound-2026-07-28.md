@@ -548,9 +548,15 @@ engine that actually computes wants-intersect-supported.
 **What this unblocks.** CI wiring stays RF-1c's rung, per
 `.github/workflows/ci.yml`'s own note. The seed inventory RF-1c consumes: all
 48 `test/smoke-*.el` drivers hardcode `127.0.0.1:8765` plus the KAT pairing,
-so roughly 40 of them become deviceless — dialable with no hardware at all —
-against a host started with the default `--port 8765`. Making each one
-*green* from `--batch` is per-driver work, and it is RF-1c's.
+so every one of them can now be dialed with no hardware at all against a host
+started with the default `--port 8765`. Measured at EXIT, though, dialable is
+not green: of three sampled, `smoke-offline` completed its push phase,
+`smoke-parity` reported `applied=0/0`, and `smoke-results` failed its READY
+check because it asserts before any `accept-process-output` — these drivers
+were written for an interactive Emacs whose idle loop pumps, and `--batch` has
+none. The protocol side is nearly free (31 of the 48 want only
+`theme`/`surfaces.dialog`, the host's default pair; the rest are a `--caps`
+list away), so what remains is a small per-driver fix each — RF-1c's work.
 
 ---
 

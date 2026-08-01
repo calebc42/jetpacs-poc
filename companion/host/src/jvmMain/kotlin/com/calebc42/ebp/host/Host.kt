@@ -26,17 +26,30 @@ import kotlinx.serialization.json.putJsonObject
 /** SPEC 9.3 KAT server nonce — what --kat pins nonceSource to. */
 private const val KAT_SN = "303132333435363738393a3b3c3d3e3f"
 
+private val HOST_NODE_TYPES = listOf(
+    "text", "row", "column", "box", "spacer", "divider", "button", "text_input")
+
 /** The renderer-free profile literal (the app derives its own from the
  * renderer registry, which is :app-only). Mirrors the ERT harness's welcome
- * fixture: eight node types, two builtins, no features — so a test written
- * against the fake sees the same advertisement here. */
+ * fixture — eight node types, two builtins, no features — so a test written
+ * against the fake sees the same advertisement here.
+ *
+ * The `dialog` target is advertised because the host grants
+ * `surfaces.dialog`: SPEC 10.2's profiles are POSITIVE knowledge, and
+ * `handleDialogShow` validates a dialog spec against
+ * `surface_profiles.dialog.node_types`. Granting the capability while
+ * advertising no dialog profile left dialog content un-gated — the client
+ * was told "I show dialogs" and nothing about what may go in one. */
 private fun hostProfiles(): JsonObject = buildJsonObject {
     putJsonObject("app") {
-        put("node_types", JsonArray(listOf(
-            "text", "row", "column", "box", "spacer", "divider",
-            "button", "text_input").map(::JsonPrimitive)))
+        put("node_types", JsonArray(HOST_NODE_TYPES.map(::JsonPrimitive)))
         put("builtins", JsonArray(listOf(
             "view.switch", "companion.settings.open").map(::JsonPrimitive)))
+        put("features", JsonArray(emptyList()))
+    }
+    putJsonObject("dialog") {
+        put("node_types", JsonArray(HOST_NODE_TYPES.map(::JsonPrimitive)))
+        put("builtins", JsonArray(emptyList()))
         put("features", JsonArray(emptyList()))
     }
 }
@@ -123,60 +136,107 @@ class HostServer(private val config: CompanionConfig, requestedPort: Int) {
     }
 
     private fun serve(socket: Socket) {
-        val out = socket.getOutputStream()
-        // The sink runs on whatever thread emitted. Today only the reader
-        // thread emits, but the write is locked anyway: OutputStream.write
-        // is not atomic across threads, and a future control channel must
-        // not be able to interleave a frame.
-        val engine = CompanionEngine(config) { bytes ->
-            try {
-                synchronized(out) {
-                    out.write(bytes)
-                    out.flush()
-                }
-            } catch (_: java.io.IOException) {
-                socket.runCatching { close() }
-            }
-        }
-        val input = socket.getInputStream()
-        val buffer = ByteArray(8192)
+        // EVERYTHING is inside the try, construction included. Getting the
+        // streams can throw when newest-wins closed this socket a moment
+        // ago, and the engine constructor throws on any limits/profile
+        // inconsistency (checkLimits) — with either outside, the only
+        // cleanup path is skipped, the thread dies with an uncaught
+        // exception, and the accepted socket is stranded with no reader and
+        // no writer. Measured before the fix: 290 uncaught traces over 300
+        // sequential dials on the DEFAULT config.
+        var engine: CompanionEngine? = null
         try {
+            val out = socket.getOutputStream()
+            // The sink runs on whatever thread emitted. Today only the
+            // reader thread emits, but the write is locked anyway:
+            // OutputStream.write is not atomic across threads, and a future
+            // control channel must not be able to interleave a frame.
+            engine = CompanionEngine(config) { bytes ->
+                try {
+                    synchronized(out) {
+                        out.write(bytes)
+                        out.flush()
+                    }
+                } catch (_: java.io.IOException) {
+                    socket.runCatching { close() }
+                }
+            }
+            val input = socket.getInputStream()
+            val buffer = ByteArray(8192)
             while (engine.state != SessionState.CLOSED) {
                 val n = input.read(buffer)
                 if (n < 0) break
                 engine.feed(buffer.copyOf(n))
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
             // Taxonomy throws (FrameClose and kin) already emitted their
             // error frame inside feed(); SPEC 6.2 says the session ends.
+            // A setup failure on a socket WE closed is the newest-wins race
+            // — this connection was superseded before its thread got going,
+            // which is the design working. Anything else killed the session
+            // before it could answer, and the client only sees a
+            // disconnect, so name it.
+            if (engine == null && !socket.isClosed)
+                System.err.println("EBP-HOST: connection setup failed: $e")
         } finally {
-            runCatching { engine.close("transport closed") }
+            engine?.runCatching { close("transport closed") }
             socket.runCatching { close() }
         }
     }
 }
 
+private const val USAGE =
+    "usage: host [--port N|0] [--kat] [--caps a,b,c]\n" +
+        "  --port  listen port; 0 picks an ephemeral one (default 8765)\n" +
+        "  --kat   pin the server nonce to the SPEC 9.3 public vector\n" +
+        "  --caps  EXTRA capabilities, added to theme + surfaces.dialog"
+
 fun main(args: Array<String>) {
     var port = 8765
     var kat = false
-    var capabilities: Set<String>? = null
+    var extraCaps = emptySet<String>()
     var i = 0
+    fun operand(flag: String): String? =
+        if (i + 1 < args.size) args[++i] else {
+            System.err.println("EBP-HOST: $flag needs a value\n$USAGE"); null
+        }
     while (i < args.size) {
-        when (args[i]) {
-            "--port" -> port = args[++i].toInt()
+        when (val arg = args[i]) {
+            "--port" -> {
+                val v = operand(arg) ?: return
+                port = v.toIntOrNull() ?: run {
+                    System.err.println("EBP-HOST: --port takes a number, got '$v'")
+                    return
+                }
+            }
             "--kat" -> kat = true
-            "--caps" -> capabilities = args[++i].split(',').filter { it.isNotEmpty() }.toSet()
+            // Extends, never replaces: the defaults are what the tests and
+            // smoke drivers assume, and a caller asking for one more
+            // capability should not silently lose them.
+            "--caps" -> extraCaps =
+                (operand(arg) ?: return).split(',').filter { it.isNotEmpty() }.toSet()
             else -> {
-                System.err.println("usage: host [--port N|0] [--kat] [--caps a,b,c]")
+                System.err.println("EBP-HOST: unknown argument '$arg'\n$USAGE")
                 return
             }
         }
         i++
     }
+    val capabilities = if (extraCaps.isEmpty()) null else hostConfig().supportedCapabilities + extraCaps
     if (kat) System.err.println(
         "EBP-HOST: --kat pins the server nonce to the SPEC 9.3 public vector; " +
             "the handshake authenticates NOTHING. Test use only.")
     val config = capabilities?.let { hostConfig(kat, it) } ?: hostConfig(kat)
+    // The engine validates limits against the advertised capabilities in its
+    // constructor — and it is constructed per CONNECTION, so without this a
+    // bad --caps would bind, print a port, and then fail every dial while
+    // the client saw only an immediate disconnect. Refuse to start instead.
+    try {
+        CompanionEngine(config) { }
+    } catch (e: Exception) {
+        System.err.println("EBP-HOST: refusing to start — $e")
+        kotlin.system.exitProcess(2)
+    }
     val hostServer = HostServer(config, port)
     // The launcher contract: the ERT suite reads this line to learn an
     // ephemeral port. Printed for fixed ports too — one contract, no modes.

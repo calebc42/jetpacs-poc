@@ -269,9 +269,13 @@ Ordering is load-bearing: the applied-revisions wait MUST complete
 before `jetpacs-teardown-owner', which remhashes that very key
 \(jetpacs-shell.el:290).  Waiting afterwards would hang to the deadline
 on an unsatisfiable predicate."
+  ;; The env check comes FIRST and reads the environment directly: the
+  ;; harness lives in another test file, and `require' would signal
+  ;; file-missing before the skip guard if this file is loaded on its own
+  ;; (test/ is never on load-path; run-tests.sh preloads with -l).
+  (skip-unless (getenv "EBP_HOST_LAUNCH"))
   (require 'ebp-host-test)
-  (skip-unless ebp-host-test--launch)
-  (let (client)
+  (let (client remove-status)
     (unwind-protect
         (progn
           (setq client (jetpacs-connect
@@ -294,11 +298,25 @@ on an unsatisfiable predicate."
           (should (ebp-host-test--wait
                    (lambda ()
                      (gethash "app:alpha" jetpacs--applied-revisions))))
-          (jetpacs-teardown-owner "alpha")
-          ;; The removal drains: a real Companion answers it, so the
-          ;; pending list empties instead of merely being sent.
-          (should (ebp-host-test--wait
-                   (lambda () (null jetpacs-shell--pending-removals))))
+          ;; Capture the removal's own ack. `jetpacs-shell--pending-removals'
+          ;; is NOT an observation of this: it is populated only on error, so
+          ;; asserting it is nil holds before a byte is pumped and cannot
+          ;; tell "drained" from "never sent".
+          (cl-letf* ((orig (symbol-function 'ebp-client-surface-remove))
+                     ((symbol-function 'ebp-client-surface-remove)
+                      (lambda (c surface &rest args)
+                        (let ((inner (plist-get args :callback)))
+                          (apply orig c surface
+                                 (plist-put (copy-sequence args) :callback
+                                            (lambda (status err)
+                                              (setq remove-status (or status err))
+                                              (when inner
+                                                (funcall inner status err)))))))))
+            (jetpacs-teardown-owner "alpha"))
+          ;; The real engine answered the removal, and answered it applied.
+          (should (ebp-host-test--wait (lambda () remove-status)))
+          (should (equal remove-status "applied"))
+          (should (null jetpacs-shell--pending-removals))
           (should-not (alist-get "app:alpha" jetpacs-shell--roots
                                  nil nil #'equal)))
       (when client (ignore-errors (ebp-client-close client 'test-done)))
