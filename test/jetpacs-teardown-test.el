@@ -253,5 +253,57 @@ requeued, not silently lost.  Fails against the callback-less remove."
       (jetpacs-test-reset-state)
       (funcall (plist-get server :stop)))))
 
+(ert-deftest jetpacs-teardown-host-loopback-remove-on-wire ()
+  "RF-2.6: the same tombstone, against a REAL Companion.
+
+The scripted version above reads the two frames back out of the fake's
+`:received' list.  A real host has no readback channel, so the
+assertions move to what the client can see — and they get stronger for
+it: `jetpacs--applied-revisions' is written only by
+`jetpacs-shell--confirm-applied', which requires a genuine applied ack
+with an integer revision (jetpacs-shell.el:747-753), so observing the
+entry proves the engine really accepted the push rather than that a
+frame merely left the building.
+
+Ordering is load-bearing: the applied-revisions wait MUST complete
+before `jetpacs-teardown-owner', which remhashes that very key
+\(jetpacs-shell.el:290).  Waiting afterwards would hang to the deadline
+on an unsatisfiable predicate."
+  (require 'ebp-host-test)
+  (skip-unless ebp-host-test--launch)
+  (let (client)
+    (unwind-protect
+        (progn
+          (setq client (jetpacs-connect
+                        "127.0.0.1" (plist-get (ebp-host-test--host) :port)
+                        :client-name "teardown-host-test"
+                        :client-version "0.0.1"
+                        :pairing-id ebp-host-test--kat-pid
+                        :token ebp-host-test--kat-token
+                        :wants '("theme")
+                        :client-nonce ebp-host-test--kat-cn
+                        :receipt-file (make-temp-file "teardown-host-receipts")))
+          (should (ebp-host-test--wait
+                   (lambda () (eq (ebp-client-state client) 'ready))))
+          (with-jetpacs-owner "alpha"
+            (jetpacs-shell-define-root
+             "alpha" (lambda () '(:t "text" :text "hi"))))
+          (should (integerp (with-jetpacs-owner "alpha"
+                              (jetpacs-shell-push "alpha"))))
+          ;; The engine accepted the push — BEFORE teardown clears it.
+          (should (ebp-host-test--wait
+                   (lambda ()
+                     (gethash "app:alpha" jetpacs--applied-revisions))))
+          (jetpacs-teardown-owner "alpha")
+          ;; The removal drains: a real Companion answers it, so the
+          ;; pending list empties instead of merely being sent.
+          (should (ebp-host-test--wait
+                   (lambda () (null jetpacs-shell--pending-removals))))
+          (should-not (alist-get "app:alpha" jetpacs-shell--roots
+                                 nil nil #'equal)))
+      (when client (ignore-errors (ebp-client-close client 'test-done)))
+      (jetpacs-detach)
+      (jetpacs-test-reset-state))))
+
 (provide 'jetpacs-teardown-test)
 ;;; jetpacs-teardown-test.el ends here

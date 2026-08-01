@@ -92,9 +92,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-device-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-clip-test.el \
   -f ert-run-tests-batch-and-exit
 
-# JA-2 teardown exit gate (selector mandatory: the loopback harness file
-# defines its own suite too).
-emacs -Q --batch -L emacs -l test/ebp-wire-test.el -l test/jetpacs-teardown-test.el \
+# JA-2 teardown exit gate (selector mandatory: BOTH loopback harness
+# files define their own suites too — the scripted fake's and, since
+# RF-2.6, the JVM host's).
+emacs -Q --batch -L emacs -l test/ebp-wire-test.el -l test/ebp-host-test.el \
+  -l test/jetpacs-teardown-test.el \
   --eval '(ert-run-tests-batch-and-exit "^jetpacs-teardown-")'
 
 # JA-2 buffer-view host exit gate.
@@ -196,3 +198,16 @@ emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
 # (regenerate with generate-icon-table.py after a dependency bump).
 emacs -Q --batch -l test/jetpacs-icon-lint-test.el \
   -f ert-run-tests-batch-and-exit
+
+# RF-2.6: the live loopback against a REAL Companion — the :host
+# module's CompanionEngine, not the scripted fake.  Opt-in, so
+# `emacs -Q --batch' stays self-contained: without EBP_HOST_LAUNCH every
+# test skips (and the run stays green), which is why the notice below is
+# loud.  Build the jar with `./gradlew :host:fatJar' from companion/.
+# CI wiring is RF-1c's rung, per .github/workflows/ci.yml's own note.
+if [ -z "${EBP_HOST_LAUNCH:-}" ]; then
+  echo "NOTE: EBP_HOST_LAUNCH unset — the RF-2.6 live-host suite will SKIP."
+  echo "      To run it:  EBP_HOST_LAUNCH=\"java -jar companion/host/build/libs/host-all.jar --port 0 --kat\" test/run-tests.sh"
+fi
+emacs -Q --batch -L emacs -l test/ebp-host-test.el \
+  --eval '(ert-run-tests-batch-and-exit "^ebp-host-")'

@@ -68,7 +68,13 @@ private fun hostLimits(): JsonObject = buildJsonObject {
  */
 fun hostConfig(
     kat: Boolean = false,
-    capabilities: Set<String> = setOf("theme"),
+    // What a headless Companion can honestly honor at the protocol level.
+    // surfaces.dialog belongs here: the engine accepts dialog.show and
+    // holds it outstanding per SPEC 18.1 — and with no user to act, it
+    // holds it forever, which is exactly what the sender-ceiling gate
+    // needs. A client is granted wants-intersect-supported, so asking
+    // for less still grants less.
+    capabilities: Set<String> = setOf("theme", "surfaces.dialog"),
 ): CompanionConfig = CompanionConfig(
     serverName = "headless-host",
     serverVersion = "0.1.0",
@@ -153,7 +159,7 @@ class HostServer(private val config: CompanionConfig, requestedPort: Int) {
 fun main(args: Array<String>) {
     var port = 8765
     var kat = false
-    var capabilities = setOf("theme")
+    var capabilities: Set<String>? = null
     var i = 0
     while (i < args.size) {
         when (args[i]) {
@@ -170,7 +176,8 @@ fun main(args: Array<String>) {
     if (kat) System.err.println(
         "EBP-HOST: --kat pins the server nonce to the SPEC 9.3 public vector; " +
             "the handshake authenticates NOTHING. Test use only.")
-    val hostServer = HostServer(hostConfig(kat, capabilities), port)
+    val config = capabilities?.let { hostConfig(kat, it) } ?: hostConfig(kat)
+    val hostServer = HostServer(config, port)
     // The launcher contract: the ERT suite reads this line to learn an
     // ephemeral port. Printed for fixed ports too — one contract, no modes.
     println("EBP-HOST PORT=${hostServer.port}")
