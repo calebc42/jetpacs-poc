@@ -16,9 +16,6 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
-class ContentInvalid(val path: String, val reason: String) :
-    Exception("$reason at $path")
-
 /**
  * org.json's `opt(k) !in SET_OF_STRINGS` membership test, which decided that
  * a non-string value was simply not a member. Preserved: a number, an object,
