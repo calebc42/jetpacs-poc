@@ -14,9 +14,11 @@ import java.net.Socket
 import java.net.SocketTimeoutException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -203,6 +205,66 @@ class HostConformanceTest {
                 "presentation.toast", "reminders.owner")) {
             CompanionEngine(hostConfig(
                 capabilities = setOf("theme", "surfaces.dialog", cap))) { }
+        }
+    }
+
+    // ------------------------------------------------------------- RF-3
+
+    @Test
+    fun echoConfigCarriesTheTenantAndTheDefaultCarriesNone() {
+        // The same discipline the --caps pin applies: a flag that produces a
+        // config the engine refuses is decorative. And the no-flag host must
+        // stay module-free — behavior-identical to RF-2.6.
+        val withEcho = hostConfig(echo = true)
+        assertEquals(listOf("jetpacs.echo"), withEcho.modules.map { it.namespace })
+        CompanionEngine(withEcho) { }
+        assertTrue("default host carries modules", hostConfig().modules.isEmpty())
+    }
+
+    @Test
+    fun echoTenantRoundTripsOverARealSocket() {
+        // The socket-level half of RF-3 gate (2): granted over a real dial,
+        // ping echoes its params in the reply AND the handler's pulse
+        // notification rides out after it. (The elisp half is
+        // test/ebp-seam-test.el, over this same host with --echo.)
+        val server = HostServer(hostConfig(kat = true, echo = true), 0)
+        server.start()
+        try {
+            Dial(server.port).use { dial ->
+                dial.send(request("h1", "session.hello", EbpAuth.helloParams(
+                    "rf3-pin", "0.0.1", katPid, katCn, listOf("jetpacs.echo"))))
+                assertTrue(dial.await { dial.replies.any { it["id"] == JsonPrimitive("h1") } })
+                dial.send(request("h2", "auth.response",
+                    EbpAuth.authParams(katPid, katCn, katSn, katToken)))
+                assertTrue(dial.await { dial.replies.any { it["id"] == JsonPrimitive("h2") } })
+                assertEquals(listOf("jetpacs.echo"),
+                    dial.replyTo("h2").jsonObject["result"]!!.jsonObject["granted"]!!
+                        .jsonArray.map { it.jsonPrimitive.content })
+                dial.send(request("r1", "queue.replay", JsonObject(emptyMap())))
+                assertTrue(dial.await { dial.replies.any { it["id"] == JsonPrimitive("r1") } })
+                dial.send(request("r2", "session.ready", JsonObject(emptyMap())))
+                assertTrue(dial.await { dial.replies.any { it["id"] == JsonPrimitive("r2") } })
+
+                dial.send(request("p1", "jetpacs.echo.ping",
+                    buildJsonObject { put("payload", "live") }))
+                assertTrue("reply and pulse arrive", dial.await {
+                    dial.replies.any { it["id"] == JsonPrimitive("p1") } &&
+                        dial.replies.any {
+                            it["method"] == JsonPrimitive("jetpacs.echo.pulse")
+                        }
+                })
+                val reply = dial.replyTo("p1").jsonObject["result"]!!.jsonObject
+                assertEquals("live", reply["payload"]!!.jsonPrimitive.content)
+                val pulse = dial.replies.first {
+                    it["method"] == JsonPrimitive("jetpacs.echo.pulse")
+                }
+                assertEquals("live", pulse.jsonObject["params"]!!
+                    .jsonObject["payload"]!!.jsonPrimitive.content)
+                assertTrue("pulse before reply",
+                    dial.replies.indexOf(dial.replyTo("p1")) < dial.replies.indexOf(pulse))
+            }
+        } finally {
+            server.stop()
         }
     }
 }

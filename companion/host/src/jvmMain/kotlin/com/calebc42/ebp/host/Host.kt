@@ -11,6 +11,12 @@ package com.calebc42.ebp.host
 import com.calebc42.ebp.wire.CompanionConfig
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.EbpAuth
+import com.calebc42.ebp.wire.EbpModule
+import com.calebc42.ebp.wire.MethodSpec
+import com.calebc42.ebp.wire.ModuleHandler
+import com.calebc42.ebp.wire.ModuleNotification
+import com.calebc42.ebp.wire.ModuleOutcome
+import com.calebc42.ebp.wire.Sender
 import com.calebc42.ebp.wire.SessionState
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -76,6 +82,32 @@ private fun hostLimits(): JsonObject = buildJsonObject {
 }
 
 /**
+ * RF-3 (PLAN-rf3-seam.md): the trivial tenant that proves the extension
+ * seam. One `ping` request (Emacs→Companion, echoes its params) whose
+ * handler asks the engine to emit one `pulse` notification
+ * (Companion→Emacs, same payload) — a single round trip exercises both
+ * message classes through both ends of the seam. "Lives in test code
+ * only": this host is the test/loopback fixture, the tenant rides it
+ * only behind `--echo` (default off), and the no-flag host is
+ * behavior-identical to RF-2.6. ExtensionSeamTest's echoModule() in
+ * :wire jvmTest mirrors this shape exactly.
+ */
+fun jetpacsEchoModule(): EbpModule = EbpModule(
+    namespace = "jetpacs.echo",
+    capability = "jetpacs.echo",
+    methods = mapOf(
+        "jetpacs.echo.ping" to
+            MethodSpec(Sender.EMACS, true, setOf(SessionState.READY)),
+        "jetpacs.echo.pulse" to
+            MethodSpec(Sender.COMPANION, false, setOf(SessionState.READY)),
+    ),
+    handler = ModuleHandler { _, params ->
+        ModuleOutcome.Ok(params,
+            listOf(ModuleNotification("jetpacs.echo.pulse", params)))
+    },
+)
+
+/**
  * Host configuration. The pairing is the SPEC 9.3 public KAT vector — the
  * same one DeviceBridge ships for smoke scope and the entire test corpus
  * dials. This host is a test/loopback fixture; it is not a deployment
@@ -94,6 +126,9 @@ fun hostConfig(
     // needs. A client is granted wants-intersect-supported, so asking
     // for less still grants less.
     capabilities: Set<String> = setOf("theme", "surfaces.dialog"),
+    // RF-3: carry the jetpacs.echo tenant. Off by default so the no-flag
+    // host stays behavior-identical to RF-2.6.
+    echo: Boolean = false,
 ): CompanionConfig = CompanionConfig(
     serverName = "headless-host",
     serverVersion = "0.1.0",
@@ -104,6 +139,7 @@ fun hostConfig(
     surfaceProfiles = hostProfiles(),
     limits = hostLimits(),
     nonceSource = if (kat) ({ KAT_SN }) else EbpAuth::generateNonce,
+    modules = if (echo) listOf(jetpacsEchoModule()) else emptyList(),
 )
 
 /**
@@ -192,14 +228,16 @@ class HostServer(private val config: CompanionConfig, requestedPort: Int) {
 }
 
 private const val USAGE =
-    "usage: host [--port N|0] [--kat] [--caps a,b,c]\n" +
+    "usage: host [--port N|0] [--kat] [--caps a,b,c] [--echo]\n" +
         "  --port  listen port; 0 picks an ephemeral one (default 8765)\n" +
         "  --kat   pin the server nonce to the SPEC 9.3 public vector\n" +
-        "  --caps  EXTRA capabilities, added to theme + surfaces.dialog"
+        "  --caps  EXTRA capabilities, added to theme + surfaces.dialog\n" +
+        "  --echo  carry the jetpacs.echo test tenant (RF-3)"
 
 fun main(args: Array<String>) {
     var port = 8765
     var kat = false
+    var echo = false
     var extraCaps = emptySet<String>()
     var i = 0
     fun operand(flag: String): String? =
@@ -216,6 +254,7 @@ fun main(args: Array<String>) {
                 }
             }
             "--kat" -> kat = true
+            "--echo" -> echo = true
             // Extends, never replaces: the defaults are what the tests and
             // smoke drivers assume, and a caller asking for one more
             // capability should not silently lose them.
@@ -232,7 +271,8 @@ fun main(args: Array<String>) {
     if (kat) System.err.println(
         "EBP-HOST: --kat pins the server nonce to the SPEC 9.3 public vector; " +
             "the handshake authenticates NOTHING. Test use only.")
-    val config = capabilities?.let { hostConfig(kat, it) } ?: hostConfig(kat)
+    val config = capabilities?.let { hostConfig(kat, it, echo) }
+        ?: hostConfig(kat, echo = echo)
     // The engine validates limits against the advertised capabilities in its
     // constructor — and it is constructed per CONNECTION, so without this a
     // bad --caps would bind, print a port, and then fail every dial while

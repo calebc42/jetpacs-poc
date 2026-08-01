@@ -16,7 +16,7 @@ Expansion of [PLAN-refound-2026-07-28.md](PLAN-refound-2026-07-28.md) §RF-3
 |---|---|---|
 | R0 | This runbook committed | DONE 2026-08-01 `f63ab14` |
 | K1 | Kotlin seam: `EbpModule`, `checkModules`, the negotiated route, reservation fix | DONE 2026-08-01 — capture test green pre-seam (fixture is evidence); post-seam `:wire:jvmTest` 41 suites / 371 tests / 0 failures; `postAuthDispatchRules` + `methodRegistryMatchesContract` diff-empty |
-| K2 | `:host` grows `--echo` | — |
+| K2 | `:host` grows `--echo` | DONE 2026-08-01 — `:host:jvmTest` 7/7 green (2 new: config pin + socket round-trip); fatJar smoke `--port 0 --kat --echo` prints PORT; no-flag config module-free |
 | E1 | Elisp seam: `ebp-client-register-module`, `:modules`, dispatcher gates, wants union | — |
 | E2 | `test/ebp-seam-test.el` live round-trip; run-tests.sh stanza; ci.yml suite count | — |
 | S1 | §24 amendment drafted and routed | — |
