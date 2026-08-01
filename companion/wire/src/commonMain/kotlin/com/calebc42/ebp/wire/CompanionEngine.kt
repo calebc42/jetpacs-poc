@@ -39,6 +39,10 @@ data class CompanionConfig(
     val sensitiveSubstitutionApproved: Boolean = false,
     /** Nonce source, injectable for tests. */
     val nonceSource: () -> String = EbpAuth::generateNonce,
+    /** RF-3 (PLAN-rf3-seam.md): negotiated extension modules. Validated at
+     * construction by checkModules; an empty list is the frozen pre-RF-3
+     * engine (I5). */
+    val modules: List<EbpModule> = emptyList(),
 )
 
 class CompanionEngine(
@@ -83,6 +87,18 @@ class CompanionEngine(
         private set
     private var granted: List<String> = emptyList()
 
+    // RF-3 (PLAN-rf3-seam.md): the extension-module registry, immutable per
+    // engine. With config.modules empty every structure below is empty and
+    // dispatch is the frozen pre-RF-3 path (I5).
+    private val moduleCapabilities = config.modules.map { it.capability }.toSet()
+    private val effectiveCapabilities =
+        config.supportedCapabilities + moduleCapabilities
+    private val moduleMethods: Map<String, Pair<EbpModule, MethodSpec>> =
+        buildMap {
+            for (m in config.modules)
+                for ((name, spec) in m.methods) put(name, m to spec)
+        }
+
     /** Presentation hook: called with the surface ID after an applied
      * update or remove, so a host can re-render (the mechanism is the
      * endpoint's, what to draw is the application's). */
@@ -102,6 +118,9 @@ class CompanionEngine(
     private var pendingServerNonce: String? = null
 
     init {
+        // RF-3: a malformed module registration fails construction, before
+        // any socket exists (the checkLimits pattern).
+        checkModules()
         // SPEC 4.5: the welcome reservation must hold before any session.
         checkLimits()
         // SPEC 5.2: become the firing service's live session (newest wins).
@@ -606,7 +625,9 @@ class CompanionEngine(
         if (!isValidMethodName(method))
             return respondError(id, -32601, "Method not found", "method-not-found")
         val spec = METHOD_REGISTRY[method]
-            ?: return respondError(id, -32601, "Method not found", "method-not-found")
+            // RF-3: the registry MISS is the extension route — never the
+            // registry itself (I5 freezes core dispatch).
+            ?: return dispatchModuleRequest(id, method, params)
         if (spec.sender == Sender.COMPANION || !spec.isRequest)
             // SPEC 7.3: wrong endpoint or wrong class.
             return respondError(id, -32600, "Invalid Request", "invalid-request")
@@ -1050,7 +1071,9 @@ class CompanionEngine(
         // SPEC 11 (amendment #93): a non-identifier or over-long method name
         // is dropped without consulting the registry.
         if (!isValidMethodName(method)) return
-        val spec = METHOD_REGISTRY[method] ?: return
+        val spec = METHOD_REGISTRY[method]
+            // RF-3: the registry miss is the extension route (I5).
+            ?: return dispatchModuleNotification(method, rawParams)
         if (spec.sender == Sender.COMPANION || spec.isRequest) return
         // SPEC 10.1: a notification not legal in this session state is dropped
         // (a notification has no id, so the request's 1204 has no analogue) —
@@ -1081,6 +1104,73 @@ class CompanionEngine(
             "pie_menu.dismiss" -> handlePieMenuDismiss(params)
             "diagnostics.show", "eldoc.show", "fontify.show" ->
                 handleAnnotation(method, params)
+        }
+    }
+
+    // ------------------------------------------- extension modules (RF-3)
+
+    /** The registered-and-negotiated route for a non-registry request.
+     * I5: unregistered OR unnegotiated is BIT-FOR-BIT the §7.3 unknown
+     * answer, decided before direction/class/state — no probe can
+     * distinguish a carried-but-ungranted extension from an unknown
+     * method. The core-mirroring gates apply only inside the route. */
+    private fun dispatchModuleRequest(id: JsonElement, method: String, params: JsonObject) {
+        val hit = moduleMethods[method]?.takeIf { it.first.capability in granted }
+            ?: return respondError(id, -32601, "Method not found", "method-not-found")
+        val (module, spec) = hit
+        if (spec.sender == Sender.COMPANION || !spec.isRequest)
+            // SPEC 7.3: wrong endpoint or wrong class, as the core answers it.
+            return respondError(id, -32600, "Invalid Request", "invalid-request")
+        if (state !in spec.states)
+            return respondError(id, 1204, "Not legal in this session state", "session-state")
+        val outcome = try {
+            module.handler.handle(method, params)
+        } catch (e: ContentInvalid) {
+            return respondError(id, 1201, "Invalid content", "content-invalid",
+                buildJsonObject { put("path", e.path); put("reason", e.reason) })
+        } catch (e: Exception) {
+            // SPEC 7.1: a request always concludes; a tenant bug is -32603,
+            // never an unanswered id or a dead session.
+            return respondError(id, -32603, "Internal error", "internal-error")
+        }
+        when (outcome) {
+            is ModuleOutcome.Ok -> {
+                respondResult(id, outcome.result)
+                emitModuleNotifications(module, outcome.notify)
+            }
+            is ModuleOutcome.Fail ->
+                respondError(id, outcome.code, outcome.message, outcome.kind, outcome.data)
+        }
+    }
+
+    /** The notification mirror: every refusal is the §7.3 silent drop,
+     * params-object checked LAST — the order handleNotification uses. */
+    private fun dispatchModuleNotification(method: String, rawParams: JsonElement?) {
+        val hit = moduleMethods[method]?.takeIf { it.first.capability in granted }
+            ?: return
+        val (module, spec) = hit
+        if (spec.sender == Sender.COMPANION || spec.isRequest) return
+        if (state !in spec.states) return
+        val params = rawParams as? JsonObject ?: return
+        val outcome = try {
+            module.handler.handle(method, params)
+        } catch (_: Exception) {
+            return
+        }
+        if (outcome is ModuleOutcome.Ok)
+            emitModuleNotifications(module, outcome.notify)
+    }
+
+    /** Emit a handler's requested notifications through the one outbound
+     * funnel. Each entry must be the module's own Companion-sender
+     * notification, legal in the current state — a violation is a module
+     * bug and is dropped, never emitted. */
+    private fun emitModuleNotifications(module: EbpModule, list: List<ModuleNotification>) {
+        for (n in list) {
+            val spec = module.methods[n.method] ?: continue
+            if (spec.sender == Sender.EMACS || spec.isRequest) continue
+            if (state !in spec.states) continue
+            emit(notification(n.method, n.params))
         }
     }
 
@@ -2282,7 +2372,9 @@ class CompanionEngine(
     private var sessionBoundarySeq = Long.MAX_VALUE
 
     private fun buildWelcome(token: ByteArray): JsonObject {
-        granted = lastWants.filter { it in config.supportedCapabilities }
+        // RF-3: a module's negotiation entry is grantable exactly like a
+        // core capability; unknown wants stay silently omitted (SPEC 10.2).
+        granted = lastWants.filter { it in effectiveCapabilities }
         sessionBoundarySeq = queue.boundarySeq()
         return buildJsonObject {
             put("server_proof", EbpAuth.serverProof(
@@ -2324,6 +2416,63 @@ class CompanionEngine(
                         report = report.with("state_types", empty)
                 }
                 put("device", report)
+            }
+        }
+    }
+
+    /** RF-3 (PLAN-rf3-seam.md): module registrations are validated at
+     * construction so a bad config can never reach a socket. Every message
+     * names the offending module. I3: `ebp.` is the spec's namespace —
+     * refused until a rung arrives with a ratified registry entry (the
+     * relaxation is RF-4's to make, recorded in the runbook). */
+    private fun checkModules() {
+        val namespaces = mutableListOf<String>()
+        val capabilities = mutableSetOf<String>()
+        val methodNames = mutableSetOf<String>()
+        for (m in config.modules) {
+            val who = "module ${m.namespace}"
+            require(isValidMethodName(m.namespace) &&
+                m.namespace == m.namespace.lowercase()) {
+                "$who: namespace must be a lowercase §4.4 identifier"
+            }
+            require(m.namespace != "ebp" && !m.namespace.startsWith("ebp.")) {
+                "$who: the ebp. namespace is reserved for the spec (I3)"
+            }
+            require(namespaces.none {
+                it == m.namespace || it.startsWith(m.namespace + ".") ||
+                    m.namespace.startsWith("$it.")
+            }) { "$who: namespace duplicates or nests another module's" }
+            namespaces.add(m.namespace)
+            require(isValidMethodName(m.capability) &&
+                m.capability == m.capability.lowercase()) {
+                "$who: capability must be a lowercase §4.4 identifier"
+            }
+            require(!m.capability.startsWith("ebp.")) {
+                "$who: capability claims the spec's namespace (I3)"
+            }
+            require(m.capability !in config.supportedCapabilities) {
+                "$who: capability collides with a supported core capability"
+            }
+            require(capabilities.add(m.capability)) {
+                "$who: capability collides with another module's"
+            }
+            require(m.methods.isNotEmpty()) { "$who: method table is empty" }
+            for ((name, spec) in m.methods) {
+                require(name.startsWith(m.namespace + ".")) {
+                    "$who: method $name is outside the module's namespace"
+                }
+                require(isValidMethodName(name) && name == name.lowercase()) {
+                    "$who: method $name must be a lowercase §4.4 identifier"
+                }
+                require(name !in METHOD_REGISTRY) {
+                    "$who: method $name collides with the SPEC 11 registry"
+                }
+                require(methodNames.add(name)) {
+                    "$who: method $name collides with another module's"
+                }
+                require(spec.states.isNotEmpty()) {
+                    "$who: method $name has no legal states"
+                }
             }
         }
     }
@@ -2400,7 +2549,9 @@ class CompanionEngine(
                     put("version", "a".repeat(128))
                 })
                 put("granted", buildJsonArray {
-                    config.supportedCapabilities.forEach { add(it) }
+                    // RF-3: module capabilities are grantable, so the
+                    // worst-case granted array must count them too.
+                    effectiveCapabilities.forEach { add(it) }
                 })
                 put("surface_profiles", config.surfaceProfiles)
                 put("surfaces", worstSurfaces)
