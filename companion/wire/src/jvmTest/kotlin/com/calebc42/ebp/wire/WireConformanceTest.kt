@@ -287,4 +287,30 @@ class WireConformanceTest {
             assertEquals("second", out[1].reqObj("params").reqString("m"))
         }
     }
+
+    // ------------------------------------------- RF-2c H3a compaction pin --
+
+    @Test
+    fun compactionShiftsPartialFrameAfter64KiBConsumed() {
+        // FrameDecoder.compact()'s offset > 65_536 self-overlap shift had
+        // ZERO coverage before the RF-2c ByteArray rewrite: the 4 MB test is
+        // a single frame (exits via offset == size) and the pipelining test
+        // uses two tiny frames. Here frame A (~70 KB) completes and leaves
+        // offset past the threshold with frame B's PREFIX still pending, so
+        // the in-place shift runs over live partial data — a self-overlap
+        // bug would corrupt B and ship green without this pin.
+        val bigPad = "a".repeat(70_000)
+        val frameA = encodeFrame("""{"pad":"$bigPad"}""")
+        val frameB = encodeFrame("""{"tail":"intact-after-compaction"}""")
+        val out = mutableListOf<JsonObject>()
+        val d = FrameDecoder()
+        val split = 10 // cut B mid-header: partial bytes must survive the shift
+        d.feed(frameA + frameB.copyOfRange(0, split)) { out.add(it) }
+        assertEquals(1, out.size)
+        d.feed(frameB.copyOfRange(split, frameB.size)) { out.add(it) }
+        d.finish()
+        assertEquals(2, out.size)
+        assertEquals(bigPad, out[0].reqString("pad"))
+        assertEquals("intact-after-compaction", out[1].reqString("tail"))
+    }
 }
