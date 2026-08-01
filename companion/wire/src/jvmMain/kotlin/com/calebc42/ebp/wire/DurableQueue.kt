@@ -139,8 +139,8 @@ class DurableQueue(
         // the final record; it is built here, before the byte accounting, so
         // that what is measured is exactly what is persisted and delivered.
         val record = draft.with("queue_seq", JsonPrimitive(nextSeq))
-        val prospectiveBytes = kept.sumOf { it.toString().toByteArray(Charsets.UTF_8).size } +
-            record.toString().toByteArray(Charsets.UTF_8).size
+        val prospectiveBytes = kept.sumOf { it.toString().utf8Size() } +
+            record.toString().utf8Size()
         if (kept.size >= maxEvents || prospectiveBytes > maxBytes)
             return AdmitResult.QueueFull
         val savedRecords = records

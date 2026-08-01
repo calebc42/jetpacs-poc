@@ -176,7 +176,7 @@ class TriggerFiringService(
                 put("queued_at_ms", queue.effectiveNow())
         }
         // An event that cannot be created is a failed admission: commit nothing.
-        if (params.toString().toByteArray(Charsets.UTF_8).size > maxEventBytes) return
+        if (params.toString().utf8Size() > maxEventBytes) return
         val hasLocal = entry.reqArr("on_fire").size > 0
         when (policy) {
             "queue", "wake" -> when (val r = queue.admit(params, policy,

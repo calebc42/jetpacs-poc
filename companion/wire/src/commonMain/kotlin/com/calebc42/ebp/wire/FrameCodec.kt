@@ -5,10 +5,6 @@
 package com.calebc42.ebp.wire
 
 import kotlinx.serialization.json.JsonObject
-import java.nio.ByteBuffer
-import java.nio.charset.CharacterCodingException
-import java.nio.charset.CodingErrorAction
-import java.nio.charset.StandardCharsets
 
 /**
  * Incremental SPEC 6.2 receiver. Feed transport reads of any size; complete
@@ -55,8 +51,15 @@ class FrameDecoder {
                 }
                 if (term - offset + 4 > WireLimits.MAX_HEADER_OCTETS)
                     throw FrameClose("header section too large")
+                // ISO-8859-1 by hand: the identity byte→char map is TOTAL, so
+                // a header with ≥0x80 bytes still reaches parseHeader's own
+                // "malformed header name" check instead of being folded to
+                // U+FFFD by a UTF-8 decodeToString (which would shift the
+                // taxonomy; no fixture has non-ASCII headers to catch it).
                 expected = parseHeader(
-                    String(buffer, offset, term - offset, StandardCharsets.ISO_8859_1))
+                    CharArray(term - offset) {
+                        (buffer[offset + it].toInt() and 0xFF).toChar()
+                    }.concatToString())
                 bodyStart = term + 4
             }
             if (size - bodyStart < expected) return // retain partial data
@@ -79,7 +82,7 @@ class FrameDecoder {
     private fun append(bytes: ByteArray) {
         if (size + bytes.size > buffer.size)
             buffer = buffer.copyOf(maxOf(buffer.size * 2, size + bytes.size))
-        System.arraycopy(bytes, 0, buffer, size, bytes.size)
+        bytes.copyInto(buffer, size)
         size += bytes.size
     }
 
@@ -89,7 +92,9 @@ class FrameDecoder {
         if (offset == size) {
             offset = 0; size = 0; scanned = 0
         } else if (offset > 65_536) {
-            System.arraycopy(buffer, offset, buffer, 0, size - offset)
+            // Self-overlapping shift; copyInto has arraycopy's overlap
+            // guarantee (pinned by the 64 KiB compaction test).
+            buffer.copyInto(buffer, 0, offset, size)
             size -= offset
             scanned -= offset
             offset = 0
@@ -145,10 +150,7 @@ class FrameDecoder {
      * compensating full-text re-scans this method used to run are gone. */
     private fun parseBody(body: ByteArray): JsonObject {
         val text = try {
-            StandardCharsets.UTF_8.newDecoder()
-                .onMalformedInput(CodingErrorAction.REPORT)
-                .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(body)).toString()
+            body.decodeToString(throwOnInvalidSequence = true)
         } catch (_: CharacterCodingException) {
             throw WireParseError("invalid UTF-8")
         }
@@ -163,11 +165,14 @@ class FrameDecoder {
 
 /** SPEC 6.1 sender: exact header syntax, octet-counted UTF-8 body. */
 fun encodeFrame(jsonText: String): ByteArray {
-    val body = jsonText.toByteArray(StandardCharsets.UTF_8)
+    // encodeToByteArray IS the wire's byte tape: every measuring gate goes
+    // through String.utf8Size(), the same call — measure == emit by
+    // construction, whatever the platform's lone-surrogate substitution.
+    val body = jsonText.encodeToByteArray()
     if (body.size > WireLimits.MAX_BODY_OCTETS)
         throw FrameClose("body exceeds max_frame_bytes")
-    val header = "Content-Length: ${body.size}\r\n\r\n"
-        .toByteArray(StandardCharsets.US_ASCII)
+    // The header is pure ASCII, where UTF-8 and US-ASCII bytes coincide.
+    val header = "Content-Length: ${body.size}\r\n\r\n".encodeToByteArray()
     // SPEC 4.5/6.1: a sender MUST NOT rely on a peer accepting a header
     // section longer than the 128-octet figure. The one mandatory line is far
     // inside it; this holds the line if a transport profile ever adds a field.

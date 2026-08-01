@@ -76,7 +76,7 @@ fun dispatchContextless(
         if (policy == "queue" || policy == "wake")
             put("queued_at_ms", queue.effectiveNow())
     }
-    if (params.toString().toByteArray(Charsets.UTF_8).size > maxEventBytes) {
+    if (params.toString().utf8Size() > maxEventBytes) {
         callback?.invoke(null, buildJsonObject {
             put("code", 1201)
             put("message", "Event exceeds max_event_bytes")
@@ -169,7 +169,7 @@ fun routeNotificationAction(
     // max_field_bytes — an over-limit reply is content-invalid, not dispatched
     // (so its notification is NOT dismissed).
     if (replyKey != null && replyText != null &&
-        replyText.toByteArray(Charsets.UTF_8).size.toLong() > maxFieldBytes) {
+        replyText.utf8Size().toLong() > maxFieldBytes) {
         callback?.invoke(null, buildJsonObject {
             put("code", 1201)
             put("message", "Reply exceeds max_field_bytes")

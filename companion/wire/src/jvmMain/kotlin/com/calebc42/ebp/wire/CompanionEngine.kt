@@ -2478,5 +2478,5 @@ class CompanionEngine(
      * bytes the wire carries (W6QueueTest.byteGateMeasuresWhatItEmits). */
     private fun wireSerialize(msg: JsonElement): String = msg.toString()
 
-    private fun String.utf8Len(): Int = toByteArray(Charsets.UTF_8).size
+    private fun String.utf8Len(): Int = utf8Size()
 }
