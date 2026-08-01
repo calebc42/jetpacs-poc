@@ -277,6 +277,25 @@ table — asserted here so its absence stays a decision, not drift."
     (should (null (cl-set-exclusive-or expected ebp--method-capabilities
                                        :test #'equal)))))
 
+(ert-deftest ebp-test-core-vocabulary-tables-match-contract ()
+  "RF-3 review R1-2/R1-4: the seam's two refusal vocabularies are the
+contract's, both directions.  `ebp--core-capabilities' ≡ the SPEC 22.1
+capabilities list (a module capability may claim none of them, not
+merely the eight that gate methods); `ebp--core-namespaces' ≡ the
+first dot-segments of the contract's method registry.  Like the sibling
+pin above, drift is a test failure, not a runtime surprise."
+  (let* ((contract (ebp-test--read-json
+                    (expand-file-name "contract.json" ebp-test--ebp)))
+         (caps (append (alist-get 'capabilities contract) nil))
+         (roots (delete-dups
+                 (mapcar (lambda (row)
+                           (car (split-string (symbol-name (car row)) "\\.")))
+                         (alist-get 'methods contract)))))
+    (should (null (cl-set-exclusive-or caps ebp--core-capabilities
+                                       :test #'equal)))
+    (should (null (cl-set-exclusive-or roots ebp--core-namespaces
+                                       :test #'equal)))))
+
 (ert-deftest ebp-test-granted-gate-refuses-ungranted-sends ()
   "Gated methods signal `ebp-ungranted' unless the welcome granted them.
 Fail closed pre-welcome; core methods never gate; the gate sits in the
@@ -1981,6 +2000,8 @@ signals `ebp-ungranted'."
                 (ebp-test--kat-script
                  :after-ready
                  (lambda (send)
+                   (funcall send '(:jsonrpc "2.0" :id 96 :method "no.such"
+                                   :params (:payload "x")))
                    (funcall send '(:jsonrpc "2.0" :id 97
                                    :method "jetpacs.echo.pulse"
                                    :params (:payload "x")))
@@ -1992,16 +2013,78 @@ signals `ebp-ungranted'."
                                   (push (plist-get params :payload) pulses)))))
       (should (ebp-test--wait
                (lambda ()
-                 (cl-find-if (lambda (m) (equal (alist-get 'id m) 97))
-                             (funcall (plist-get server :received))))))
-      (should (ebp-test--seven-three-error-p
-               (cl-find-if (lambda (m) (equal (alist-get 'id m) 97))
-                           (funcall (plist-get server :received)))))
+                 (let ((seen (funcall (plist-get server :received))))
+                   (and (cl-find-if (lambda (m) (equal (alist-get 'id m) 96)) seen)
+                        (cl-find-if (lambda (m) (equal (alist-get 'id m) 97)) seen))))))
+      (let* ((seen (funcall (plist-get server :received)))
+             (miss (cl-find-if (lambda (m) (equal (alist-get 'id m) 96)) seen))
+             (sealed (cl-find-if (lambda (m) (equal (alist-get 'id m) 97)) seen)))
+        (should (ebp-test--seven-three-error-p sealed))
+        ;; R1-6: the REGISTERED-but-ungranted arm pinned wire-identical to
+        ;; the unknown-name arm — full error-object equality on one
+        ;; session, not a member-subset check.  An extra data member on
+        ;; the module branch turns exactly this red.
+        (should (equal (alist-get 'error miss) (alist-get 'error sealed))))
       (should (null pulses))
       (should-error (ebp-client-notify client 'jetpacs\.echo\.ping
                                        '(:payload "x"))
                     :type 'ebp-ungranted)
       (should (eq (ebp-client-state client) 'ready)))))
+
+(ert-deftest ebp-test-module-capability-may-not-claim-core-vocabulary ()
+  "R1-2: a module capability named after ANY SPEC 22.1 capability
+refuses at registration — including the four that gate no method
+\(surfaces.widget and kin), which the session may legitimately
+negotiate for core reasons and which would then flip the module's
+granted gate open on a peer that negotiated no extension."
+  (let ((client (ebp-test--bare-module-client)))
+    (dolist (cap '("surfaces.widget" "surfaces.notification"
+                   "surfaces.tile" "offline.wake" "theme"))
+      (should-error
+       (ebp-client-register-module client "acme.widgets" cap
+                                    (list (cons "acme.widgets.sync" #'ignore)))))))
+
+(ert-deftest ebp-test-module-check-granted-accepts-string-method ()
+  "R1-3: `ebp-client--check-granted' on a STRING method must behave as
+pre-RF-3 (alist miss, no signal, no crash) — jsonrpc.el accepts string
+methods and `ebp-client-notify' is public API."
+  (let ((client (ebp-test--bare-module-client)))
+    ;; Gated core name as a string: pre-RF-3 this missed the symbol-keyed
+    ;; alist and passed; it must still pass, not wrong-type-argument.
+    (should-not (ebp-client--check-granted client "toast.show"))
+    ;; A registered module's method as a string IS gated.
+    (ebp-client-register-module client "x.test" "x.test"
+                                (list (cons "x.test.m" #'ignore)))
+    (should-error (ebp-client--check-granted client "x.test.m")
+                  :type 'ebp-ungranted)))
+
+(ert-deftest ebp-test-module-wants-dedup-is-real ()
+  "R1-8: a caller whose :wants already names the module capability gets
+ONE instance in the hello — `delete-dups' is load-bearing, since the
+Companion answers duplicate wants with -32602 and the handshake dies."
+  (let* ((ready nil)
+         (server (ebp-test--start-companion (ebp-test--kat-script)))
+         (client (ebp-connect
+                  "127.0.0.1" (plist-get server :port)
+                  :client-name "test-client" :client-version "0.0.1"
+                  :pairing-id ebp-test--kat-pid :token ebp-test--kat-token
+                  :wants '("theme" "jetpacs.echo")
+                  :client-nonce ebp-test--kat-cn
+                  :receipt-file (make-temp-file "ebp-test-receipts")
+                  :modules (list (ebp-test--echo-spec))
+                  :ready-function (lambda (_c) (setq ready t)))))
+    (unwind-protect
+        (progn
+          (should (ebp-test--wait (lambda () ready)))
+          (let* ((hello (cl-find-if
+                         (lambda (m)
+                           (equal (alist-get 'method m) "session.hello"))
+                         (funcall (plist-get server :received))))
+                 (wants (append (alist-get 'wants (alist-get 'params hello))
+                                nil)))
+            (should (equal '("theme" "jetpacs.echo") wants))))
+      (ignore-errors (ebp-client-close client 'test-done))
+      (funcall (plist-get server :stop)))))
 
 (ert-deftest ebp-test-module-granted-inbound-dispatches ()
   "Granted (scripted welcome adds jetpacs.echo): the module handler sees

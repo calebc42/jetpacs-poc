@@ -111,6 +111,14 @@ open and the probe reaches the wire."
                            (lambda (r e) (setq result r err e)))
       (should (ebp-host-test--wait (lambda () (or result err))))
       (should err)
+      ;; R1-9: exact member sets, not a subset check — an extra error or
+      ;; data member from the module branch must turn this red, matching
+      ;; the ratified golden comparison's strength.
+      (cl-flet ((keys (plist) (sort (cl-loop for (k _) on plist by #'cddr
+                                             collect (symbol-name k))
+                                    #'string<)))
+        (should (equal '(":code" ":data" ":message") (keys err)))
+        (should (equal '(":kind") (keys (plist-get err :data)))))
       (should (= (plist-get err :code) -32601))
       (should (equal (plist-get err :message) "Method not found"))
       (should (equal (plist-get (plist-get err :data) :kind)

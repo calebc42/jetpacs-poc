@@ -20,6 +20,7 @@ Expansion of [PLAN-refound-2026-07-28.md](PLAN-refound-2026-07-28.md) §RF-3
 | E1 | Elisp seam: `ebp-client-register-module`, `:modules`, dispatcher gates, wants union | DONE 2026-08-01 — elisp gate-3 capture green pre-seam (ccb1dcc); post-seam `run-tests.sh` exit 0, delineation + byte-compile guards clean, wire suite 61 tests incl. 6 `ebp-test-module-*`; one finding: `string-match-p` needed `case-fold-search` nil or the lowercase-only grammar waved uppercase through |
 | E2 | `test/ebp-seam-test.el` live round-trip; run-tests.sh stanza; ci.yml suite count | DONE 2026-08-01 — full `run-tests.sh` exit 0 WITH the live host: RF-2.6 suite 10/10 (plain host) + seam suite 3/3 (`--echo` host); gate (2) met live; unset → loud skip verified; ci.yml elisp name 30→31 |
 | S1 | §24 amendment drafted and routed | DONE 2026-08-01 — `DRAFT-amendment-153-extension-conformance.md` committed; **routed to Caleb, ratification pending**; prose-only (I1 exemption (a)); ratification is not an exit condition |
+| R1 | Adversarial review: 4 dimensions × 2-refuter verification over the rung diff | DONE 2026-08-01 — 13 of 21 findings survived; the two costliest were THIS rung's: both sides' capability-collision checks validated against the wrong set (host-supported / 8 gated senders) instead of the SPEC 22.1 VOCABULARY — a module capability named after an unsupported core capability would masquerade as the core grant. Fixed with `CORE_CAPABILITIES` + `ebp--core-capabilities`, both contract-pinned; plus the D2 route-gate ordering made falsifiable, the registered-but-ungranted elisp reply pinned wire-EQUAL (not member-subset), emit/dispatch arms isolated, a string-METHOD crash in `check-granted` fixed, the wants-dedup claim given its discriminating test, the live gate-3 check raised to exact member sets, and four runbook claims corrected in place (R1-10..13). 8 findings refuted by the panel |
 | EXIT | All four parent gates recorded; dual recording in PLAN-refound | — |
 
 ## Context (line-verified 2026-08-01, base `rf-1` @ `71d90ab`)
@@ -110,13 +111,17 @@ path: the `?:` miss arm.
 6. **Gate (3)'s golden is a local checked-in expectation, §24.5 semantic
    comparison.** `ebp/` is frozen (I1) and `validate.py` rejects
    `frames.golden` methods absent from the contract, so the pin cannot live
-   there. Both sides check in the expected §7.3 reply
-   (`{"jsonrpc":"2.0","id":…,"error":{"code":-32601,"message":"Method not
-   found","data":{"kind":"method-not-found"}}}`) and compare semantically
-   (`jsonValueEquals` / normalized plist). **Capture discipline: both
-   fixtures run green against the pre-seam tree first** — the fixture is
-   evidence, not aspiration. Probes use object params (non-object answers
-   -32602 before the registry, `:593-597`).
+   there. The Kotlin side checks in the expected §7.3 reply as a JSON
+   fixture (`{"jsonrpc":"2.0","id":…,"error":{"code":-32601,"message":
+   "Method not found","data":{"kind":"method-not-found"}}}`) compared via
+   `jsonValueEquals`; the elisp side pins the shape member-by-member
+   (`ebp-test--seven-three-error-p`) AND full error-object equality
+   against a `no.such` miss reply on the same session — wording corrected
+   at R1 (finding R1-13): the elisp pin is a predicate-plus-equality, not
+   a checked-in encoded fixture. **Capture discipline: both pins run
+   green against the pre-seam tree first** — evidence, not aspiration.
+   Probes use object params (non-object answers -32602 before the
+   registry, `:593-597`).
 
 7. **`checkModules` forbids the `ebp.` namespace — and RF-4 will relax
    exactly that.** I3 reserves `ebp.` until ratified per §25; RF-4a's tenant
@@ -198,8 +203,10 @@ module-capabilities))` (the Companion rejects duplicate wants -32602);
 the handlers hash). Tenant rows never enter `ebp--method-capabilities` (its
 contract pin is bidirectional). `test/ebp-wire-test.el` additions
 (`ebp-test-module-*`, additive only): elisp gate-3 fixture green pre-seam
-first; validation rules; `:modules` at create; wants union + dedup via the
-fake's recorded hello; ungranted request ≡ `no.such` miss reply ≡ fixture;
+first; validation rules; `:modules` at create; wants union via the fake's
+recorded hello (the dedup half got its own discriminating test at R1,
+finding R1-8: a caller whose `:wants` already names the module capability
+sends it once); ungranted request ≡ `no.such` miss reply ≡ fixture;
 ungranted notification → zero wire bytes; granted notification dispatches;
 outbound gate; forget-pairing. *Gate:* `test/run-tests.sh` fully green
 (delineation guard: `ebp.el` gains only `ebp-` symbols; floor + contract
@@ -211,12 +218,19 @@ selector, loads `ebp-host-test.el` for helpers; test symbols `ebp-seam-test-`
 bridge): (1) `tenant-round-trip` — `:modules` echo registration, granted
 contains `jetpacs.echo`, ping result echoes params, pulse recorder sees the
 payload; (2) `unnegotiated-is-unknown-live` — no modules, raw ping → -32601
-`method-not-found` (gate 3's live half); (3) `ungranted-inbound` — wants
-overridden to exclude the capability → outbound ping signals `ebp-ungranted`.
+`method-not-found` (gate 3's live half); (3)
+`registered-but-unsupported-gates-outbound` — the module registered
+against the PLAIN host, whose supported set lacks the capability, so the
+real wants-intersect-supported omits it and the outbound ping signals
+`ebp-ungranted` (description corrected at R1, finding R1-11: a wants
+override cannot produce this case — `ebp-client-start` unions module
+capabilities into wants unconditionally; host non-support is the only
+route to registered-but-ungranted).
 `ebp-host-test--start-host` gains an optional COMMAND arg
 (backwards-compatible) so the seam suite appends ` --echo`. `run-tests.sh`
 stanza after the RF-2.6 host stanza, same loud-skip discipline. `ci.yml`
-elisp job name `30 → 31 ERT suites`; the loopback job runs the suite live
+elisp job name `30 → 31 ERT suites` (verified: the live exit run counts
+exactly 31 `Ran N tests` lines); the loopback job runs the suite live
 with no further change. *Gate:*
 `EBP_HOST_LAUNCH="java -jar companion/host/build/libs/host-all.jar --port 0
 --kat" test/run-tests.sh` — host suite AND seam suite green; unset → both
@@ -239,9 +253,16 @@ pointer bump rides it). Ratification is not an exit condition.
 `:app:testDebugUnitTest :app:assembleDebug`; `python3 ebp/validate.py` +
 `git status --short ebp/` empty + submodule pointer unmoved;
 `./gradlew :host:fatJar` + `EBP_HOST_LAUNCH=… test/run-tests.sh`. Gate (1)
-inventory: every pre-RF-3 file diff-empty except the named additive edits —
-`ebp-wire-test.el` (new tests + fixture), `run-tests.sh` (stanza),
-`ebp-host-test.el` (optional arg), `ci.yml` (suite-count name). Dual
+inventory (completed at R1, finding R1-10 — the literal claim must name
+EVERY modified pre-RF-3 file, not only the test-side ones): seam
+implementation — `CompanionEngine.kt` (the two miss-arm forks + module
+plumbing), `emacs/ebp.el` (the seam), `Host.kt` (`--echo`); test corpus,
+additive only — `ebp-wire-test.el` (new tests + fixture),
+`HostConformanceTest.kt` (two RF-3 pins appended, RF-2.6/RF-1c tests
+untouched), `ebp-host-test.el` (backwards-compatible optional arg);
+harness — `run-tests.sh` (stanza), `ci.yml` (suite-count name). Every
+OTHER pre-RF-3 file is diff-empty, and within the modified test files
+every pre-existing test is diff-empty. Dual
 recording: this ledger gains SHAs; PLAN-refound's ladder row and a §RF-3
 status block land in the same commit, plus the backfilled RF-2c/RF-2.6
 ladder-row DONE markers the dual-recording rule was owed. Push, PR, CI, and

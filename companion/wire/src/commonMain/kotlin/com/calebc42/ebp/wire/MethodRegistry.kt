@@ -15,6 +15,21 @@ data class MethodSpec(
 private val SR = setOf(SessionState.SYNCING, SessionState.READY)
 private val R = setOf(SessionState.READY)
 
+// RF-3 (review finding R1-1): the SPEC 22.1 capability registry VOCABULARY,
+// not this host's supported subset. checkModules refuses a module capability
+// in it — a module capability named after a core capability the host happens
+// not to support would otherwise become grantable and flip every core
+// string-keyed granted gate (toast.show live on a host that withheld it,
+// editor.sync unlocked with its #84 limits floor skipped, the device report
+// emitted with zero reserved §4.5 budget). ExtensionSeamTest pins this
+// against contract.json's capabilities list, both directions.
+val CORE_CAPABILITIES: Set<String> = setOf(
+    "surfaces.notification", "surfaces.widget", "surfaces.tile",
+    "surfaces.dialog", "presentation.toast", "presentation.pie-menu",
+    "theme", "reminders.owner", "editor.sync", "capabilities", "triggers",
+    "offline.wake",
+)
+
 val METHOD_REGISTRY: Map<String, MethodSpec> = mapOf(
     "session.hello" to MethodSpec(Sender.EMACS, true, setOf(SessionState.CONNECTED)),
     "auth.response" to MethodSpec(Sender.EMACS, true, setOf(SessionState.CHALLENGED)),

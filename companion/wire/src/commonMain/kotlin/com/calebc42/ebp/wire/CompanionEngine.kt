@@ -2450,6 +2450,15 @@ class CompanionEngine(
             require(!m.capability.startsWith("ebp.")) {
                 "$who: capability claims the spec's namespace (I3)"
             }
+            require(m.capability !in CORE_CAPABILITIES) {
+                // Review finding R1-1: the SPEC 22.1 VOCABULARY, not just
+                // this host's supported subset — a module capability named
+                // after an unsupported core capability would masquerade as
+                // the core grant (toast.show live on a host that withheld
+                // it; editor.sync unlocked with its #84 floor skipped; the
+                // device report emitted with zero reserved §4.5 budget).
+                "$who: capability collides with a core capability name (SPEC 22.1)"
+            }
             require(m.capability !in config.supportedCapabilities) {
                 "$who: capability collides with a supported core capability"
             }

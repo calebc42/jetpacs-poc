@@ -14,6 +14,7 @@
 // — never in :wire main sources, per I2).
 package com.calebc42.ebp.wire
 
+import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -176,7 +177,17 @@ class ExtensionSeamTest {
             module(), module(namespace = "x.test.sub", capability = "x.sub",
                 methods = mapOf("x.test.sub.m" to
                     MethodSpec(Sender.EMACS, true, setOf(SessionState.READY)))))
-        assertRejected("supported core capability", module(capability = "theme"))
+        // "theme" now trips the R1-1 VOCABULARY check first; the
+        // supported-subset arm needs a host-custom (non-core) capability.
+        assertRejected("core capability name", module(capability = "theme"))
+        try {
+            CompanionEngine(config(supported = setOf("theme", "x.custom"),
+                modules = listOf(module(capability = "x.custom")))) { }
+            fail("accepted a module capability colliding with a supported host-custom capability")
+        } catch (e: IllegalArgumentException) {
+            assertTrue("message '${e.message}' lacks 'supported core capability'",
+                e.message!!.contains("supported core capability"))
+        }
         assertRejected("claims the spec's namespace", module(capability = "ebp.cap"))
         assertRejected("another module's",
             module(), module(namespace = "y.test", capability = "x.test",
@@ -389,5 +400,107 @@ class ExtensionSeamTest {
         assertTrue("module capability bytes are not counted by the reservation",
             !constructs(testLimits("max_input_state_bytes" to lo),
                 listOf(echoModule())))
+    }
+
+    // ------------------------------ R1: the adversarial review's findings
+
+    @Test
+    fun coreCapabilityVocabularyMatchesContract() {
+        // R1-1's guard is only as good as its list: CORE_CAPABILITIES must
+        // BE contract.json's capabilities, both directions — the same
+        // discipline methodRegistryMatchesContract applies to methods.
+        val ebpDir = File(System.getProperty("ebp.dir")
+            ?: error("ebp.dir system property not set"))
+        val contract = Json.parseToJsonElement(
+            ebpDir.resolve("contract.json").readText()) as JsonObject
+        val caps = contract.reqArr("capabilities")
+            .map { it.asStringOrNull()!! }.toSet()
+        assertEquals(caps, CORE_CAPABILITIES)
+    }
+
+    @Test
+    fun moduleCapabilityMayNotClaimTheCoreVocabulary() {
+        // R1-1: a module capability named after a core capability the host
+        // does NOT support must refuse at construction — grantable, it
+        // would masquerade as the core grant (toast.show live on a host
+        // that withheld it; editor.sync minus its #84 floor; the device
+        // report minus its reserved budget).
+        for (cap in listOf("presentation.toast", "capabilities",
+                "editor.sync", "surfaces.widget", "offline.wake"))
+            assertRejected("core capability name", module(capability = cap))
+    }
+
+    @Test
+    fun ungrantedRouteDecidesBeforeClassAndState() {
+        // R1-5: the D2 ordering made falsifiable. A carried-but-UNGRANTED
+        // tenant method in the wrong state answers -32601 (never 1204), and
+        // wrong-class answers -32601 (never -32600) — reordering the gates
+        // in dispatchModuleRequest turns exactly these probes red.
+        val out = mutableListOf<JsonObject>()
+        val e = engine(out, modules = listOf(echoModule()))
+        handshake(e, wants = listOf("theme"))   // module never granted
+        assertEquals(SessionState.SYNCING, e.state)
+        // READY-only tenant request in SYNCING, ungranted: unknown, not 1204.
+        e.feed(frame(request("o1", "jetpacs.echo.ping",
+            buildJsonObject { put("payload", "x") })))
+        assertEquals(-32601L, out.errorOf("o1").reqLong("code"))
+        // Notification-class tenant method as a request, ungranted, READY:
+        // unknown, not -32600.
+        e.feed(frame(request("q1", "queue.replay", JsonObject(emptyMap()))))
+        e.feed(frame(request("r1", "session.ready", JsonObject(emptyMap()))))
+        assertEquals(SessionState.READY, e.state)
+        e.feed(frame(request("o2", "jetpacs.echo.pulse", JsonObject(emptyMap()))))
+        assertEquals(-32601L, out.errorOf("o2").reqLong("code"))
+    }
+
+    @Test
+    fun grantedNotificationClassMethodAsRequestIsInvalidRequest() {
+        // R1-7's dispatch half: isolate the !isRequest disjunct — an
+        // EMACS-sender notification-class method sent as a request answers
+        // -32600 through the module route (pulse trips BOTH disjuncts, so
+        // it cannot isolate this one).
+        val notes = EbpModule("x.test", "x.test", mapOf(
+            "x.test.note" to MethodSpec(Sender.EMACS, false, setOf(SessionState.READY))),
+            ModuleHandler { _, p -> ModuleOutcome.Ok(p) })
+        val out = mutableListOf<JsonObject>()
+        val e = engine(out, modules = listOf(notes))
+        ready(e, wants = listOf("x.test"))
+        e.feed(frame(request("n1", "x.test.note", JsonObject(emptyMap()))))
+        assertEquals(-32600L, out.errorOf("n1").reqLong("code"))
+    }
+
+    @Test
+    fun notifyEmitArmsAreIsolated() {
+        // R1-7's emit half: one arm per probe. Methods: go (EMACS request,
+        // SR), out (COMPANION notification, READY-only), call (COMPANION
+        // request, READY).
+        val mod = EbpModule("x.test", "x.test", mapOf(
+            "x.test.go" to MethodSpec(Sender.EMACS, true,
+                setOf(SessionState.SYNCING, SessionState.READY)),
+            "x.test.out" to MethodSpec(Sender.COMPANION, false, setOf(SessionState.READY)),
+            "x.test.call" to MethodSpec(Sender.COMPANION, true, setOf(SessionState.READY))),
+            ModuleHandler { _, p ->
+                ModuleOutcome.Ok(p, listOf(
+                    ModuleNotification("x.test.out", p),
+                    ModuleNotification("x.test.call", p)))
+            })
+        // In SYNCING: the reply arrives; `out` is READY-only -> the STATE
+        // arm drops it; `call` is request-class -> the isRequest arm drops
+        // it (its sender is COMPANION, so the EMACS arm cannot be what
+        // fires).
+        val sink = mutableListOf<JsonObject>()
+        val e = engine(sink, modules = listOf(mod))
+        handshake(e, wants = listOf("x.test"))
+        e.feed(frame(request("g1", "x.test.go", JsonObject(emptyMap()))))
+        assertTrue(sink.any { it["id"] == JsonPrimitive("g1") })
+        assertTrue("a notify entry escaped in SYNCING",
+            sink.none { it.stringOrNull("method")?.startsWith("x.test.") == true })
+        // In READY: `out` now emits; `call` still never does.
+        e.feed(frame(request("q1", "queue.replay", JsonObject(emptyMap()))))
+        e.feed(frame(request("r1", "session.ready", JsonObject(emptyMap()))))
+        e.feed(frame(request("g2", "x.test.go", JsonObject(emptyMap()))))
+        assertTrue(sink.any { it.stringOrNull("method") == "x.test.out" })
+        assertTrue("a request-class entry was emitted",
+            sink.none { it.stringOrNull("method") == "x.test.call" })
     }
 }

@@ -694,7 +694,22 @@ A module may not root itself at one: the seam's gates consult module
 namespaces by prefix, so a module rooted at a core segment would
 capability-gate core sends and shadow core dispatch.  The Kotlin twin
 rejects per-method against `METHOD_REGISTRY'; rejecting the whole root
-here is stricter, which is the safe direction for a client library.")
+here is stricter, which is the safe direction for a client library.
+Pinned against the contract's method registry by the wire suite.")
+
+(defconst ebp--core-capabilities
+  '("surfaces.notification" "surfaces.widget" "surfaces.tile"
+    "surfaces.dialog" "presentation.toast" "presentation.pie-menu"
+    "theme" "reminders.owner" "editor.sync" "capabilities" "triggers"
+    "offline.wake")
+  "The SPEC 22.1 capability registry VOCABULARY (RF-3 review R1-2).
+A module capability may not claim any of these — not merely the eight
+that gate methods in `ebp--method-capabilities'.  A module named after
+a core capability the session legitimately negotiates for OTHER
+reasons (surfaces.widget, say) would flip the module's granted gate
+open on a peer that never negotiated any extension.  Mirrors the
+Kotlin `CORE_CAPABILITIES'; pinned against the contract by the wire
+suite.")
 
 (defun ebp-client-register-module (client namespace capability handlers)
   "RF-3 (PLAN-rf3-seam.md): register an extension module on CLIENT.
@@ -744,7 +759,9 @@ Validations mirror the Kotlin `checkModules'; each violation signals
     (when (string-prefix-p "ebp." capability)
       (error "ebp module %s: capability claims the spec's namespace (I3)"
              namespace))
-    (when (member capability (mapcar #'cdr ebp--method-capabilities))
+    (when (member capability ebp--core-capabilities)
+      ;; R1-2: the full SPEC 22.1 vocabulary, not just the eight gated
+      ;; senders' capabilities — see `ebp--core-capabilities'.
       (error "ebp module %s: capability collides with a core capability"
              namespace))
     (dolist (existing (ebp-client-modules client))
@@ -1136,8 +1153,12 @@ bug into non-conformant wire traffic."
         (signal 'ebp-ungranted (list method cap)))
     ;; RF-3: a registered module's methods are gated by the module's
     ;; capability; a name no module claims stays ungated exactly as
-    ;; before (PLAN-rf3-seam.md).
-    (when-let* ((module (ebp-client--module-of client (symbol-name method)))
+    ;; before (PLAN-rf3-seam.md).  R1-3: METHOD may be a string —
+    ;; jsonrpc.el accepts one and pre-RF-3 a string simply missed the
+    ;; alist — so never assume a symbol here.
+    (when-let* ((module (ebp-client--module-of
+                         client
+                         (if (symbolp method) (symbol-name method) method)))
                 (cap (plist-get module :capability)))
       (unless (seq-contains-p (ebp-client-granted client) cap)
         (signal 'ebp-ungranted (list method cap))))))
