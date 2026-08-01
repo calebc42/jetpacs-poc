@@ -46,14 +46,17 @@
 (defvar ebp-host-test--host nil
   "The shared host plist (:port :process :stop), one per suite run.")
 
-(defun ebp-host-test--start-host ()
-  "Launch `EBP_HOST_LAUNCH'; return (:port P :process PROC :stop FN).
+(defun ebp-host-test--start-host (&optional command)
+  "Launch COMMAND (default `EBP_HOST_LAUNCH'); return (:port P :process PROC :stop FN).
 Blocks until the \"EBP-HOST PORT=<n>\" launcher line, 30 s deadline —
-generous because a cold JVM is seconds, not milliseconds."
+generous because a cold JVM is seconds, not milliseconds.  COMMAND lets
+a suite launch a differently-flagged host (RF-3's seam suite appends
+--echo) without duplicating this plumbing."
   (let* ((buf (generate-new-buffer " *ebp-host*"))
          (proc (make-process
                 :name "ebp-host"
-                :command (split-string-shell-command ebp-host-test--launch)
+                :command (split-string-shell-command
+                          (or command ebp-host-test--launch))
                 :buffer buf :noquery t))
          (port nil)
          (deadline (+ (float-time) 30)))

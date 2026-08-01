@@ -211,3 +211,11 @@ if [ -z "${EBP_HOST_LAUNCH:-}" ]; then
 fi
 emacs -Q --batch -L emacs -l test/ebp-host-test.el \
   --eval '(ert-run-tests-batch-and-exit "^ebp-host-")'
+
+# RF-3: the extension seam's live tenant — the same host binary, launched
+# WITH --echo (the suite appends the flag itself), so it runs as its own
+# suite rather than a stanza of the RF-2.6 one.  Same opt-in: unset
+# EBP_HOST_LAUNCH skips (the note above already printed).  In CI the
+# loopback job (RF-1c) sets it, so gate (2) runs live on every PR.
+emacs -Q --batch -L emacs -l test/ebp-host-test.el -l test/ebp-seam-test.el \
+  --eval '(ert-run-tests-batch-and-exit "^ebp-seam-")'

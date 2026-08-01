@@ -18,7 +18,7 @@ Expansion of [PLAN-refound-2026-07-28.md](PLAN-refound-2026-07-28.md) §RF-3
 | K1 | Kotlin seam: `EbpModule`, `checkModules`, the negotiated route, reservation fix | DONE 2026-08-01 — capture test green pre-seam (fixture is evidence); post-seam `:wire:jvmTest` 41 suites / 371 tests / 0 failures; `postAuthDispatchRules` + `methodRegistryMatchesContract` diff-empty |
 | K2 | `:host` grows `--echo` | DONE 2026-08-01 — `:host:jvmTest` 7/7 green (2 new: config pin + socket round-trip); fatJar smoke `--port 0 --kat --echo` prints PORT; no-flag config module-free |
 | E1 | Elisp seam: `ebp-client-register-module`, `:modules`, dispatcher gates, wants union | DONE 2026-08-01 — elisp gate-3 capture green pre-seam (ccb1dcc); post-seam `run-tests.sh` exit 0, delineation + byte-compile guards clean, wire suite 61 tests incl. 6 `ebp-test-module-*`; one finding: `string-match-p` needed `case-fold-search` nil or the lowercase-only grammar waved uppercase through |
-| E2 | `test/ebp-seam-test.el` live round-trip; run-tests.sh stanza; ci.yml suite count | — |
+| E2 | `test/ebp-seam-test.el` live round-trip; run-tests.sh stanza; ci.yml suite count | DONE 2026-08-01 — full `run-tests.sh` exit 0 WITH the live host: RF-2.6 suite 10/10 (plain host) + seam suite 3/3 (`--echo` host); gate (2) met live; unset → loud skip verified; ci.yml elisp name 30→31 |
 | S1 | §24 amendment drafted and routed | — |
 | EXIT | All four parent gates recorded; dual recording in PLAN-refound | — |
 

@@ -114,7 +114,7 @@ jobs:
         run: python3 ebp/validate.py
 
   elisp:
-    name: elisp (guards + 30 ERT suites)
+    name: elisp (guards + 31 ERT suites)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
