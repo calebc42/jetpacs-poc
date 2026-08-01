@@ -7,16 +7,10 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
 
 object EbpAuth {
     private val NONCE = Regex("[0-9a-f]{32}")
     private val PROOF = Regex("[0-9a-f]{64}")
-    private val random = SecureRandom()
 
     /** SPEC 9.2/4.4: exactly 32 lowercase hexadecimal characters. */
     fun isValidNonce(s: String): Boolean = NONCE.matches(s)
@@ -30,23 +24,23 @@ object EbpAuth {
      */
     fun decodePairingToken(display: String): ByteArray {
         require(display.length == 22) { "pairing token must be 22 base64url characters" }
-        val raw = Base64.getUrlDecoder().decode(display)
+        val raw = base64UrlDecode(display)
         require(raw.size == 16) { "pairing token did not decode to 16 octets" }
         return raw
     }
 
     /** Fresh 32-hex nonce from the platform CSPRNG (SPEC 9.2). */
-    fun generateNonce(): String = ByteArray(16).also(random::nextBytes).toHex()
+    fun generateNonce(): String = secureRandomBytes(16).toHex()
 
     /** SPEC 9.3 client proof over the exact ASCII concatenation. */
     fun clientProof(token: ByteArray, pairingId: String,
                     clientNonce: String, serverNonce: String): String =
-        hmacSha256(token, "EBP/2 client:$pairingId:$clientNonce:$serverNonce").toHex()
+        hmacText(token, "EBP/2 client:$pairingId:$clientNonce:$serverNonce").toHex()
 
     /** SPEC 9.3 companion proof; note the swapped nonce order. */
     fun serverProof(token: ByteArray, pairingId: String,
                     clientNonce: String, serverNonce: String): String =
-        hmacSha256(token, "EBP/2 companion:$pairingId:$serverNonce:$clientNonce").toHex()
+        hmacText(token, "EBP/2 companion:$pairingId:$serverNonce:$clientNonce").toHex()
 
     /**
      * SPEC 9.2: the fixed dummy key the unknown-pairing-ID path verifies
@@ -63,24 +57,23 @@ object EbpAuth {
      */
     fun constantTimeEquals(a: String?, b: String?): Boolean {
         if (a == null || b == null) return a == null && b == null
-        return MessageDigest.isEqual(
-            a.toByteArray(Charsets.UTF_8), b.toByteArray(Charsets.UTF_8))
+        return constantTimeEquals(a.encodeToByteArray(), b.encodeToByteArray())
     }
 
     /** SPEC 9.3: constant-time comparison; malformed proofs never match. */
     fun verifyClientProof(proof: String, token: ByteArray, pairingId: String,
                           clientNonce: String, serverNonce: String): Boolean =
-        isValidProof(proof) && MessageDigest.isEqual(
-            proof.toByteArray(Charsets.US_ASCII),
+        isValidProof(proof) && constantTimeEquals(
+            proof.encodeToByteArray(),
             clientProof(token, pairingId, clientNonce, serverNonce)
-                .toByteArray(Charsets.US_ASCII))
+                .encodeToByteArray())
 
     fun verifyServerProof(proof: String, token: ByteArray, pairingId: String,
                           clientNonce: String, serverNonce: String): Boolean =
-        isValidProof(proof) && MessageDigest.isEqual(
-            proof.toByteArray(Charsets.US_ASCII),
+        isValidProof(proof) && constantTimeEquals(
+            proof.encodeToByteArray(),
             serverProof(token, pairingId, clientNonce, serverNonce)
-                .toByteArray(Charsets.US_ASCII))
+                .encodeToByteArray())
 
     /** SPEC 9.2 `session.hello` params (the Companion validates these). */
     fun helloParams(clientName: String, clientVersion: String, pairingId: String,
@@ -106,12 +99,11 @@ object EbpAuth {
             put("client_proof", clientProof(token, pairingId, clientNonce, serverNonce))
         }
 
-    private fun hmacSha256(key: ByteArray, message: String): ByteArray =
-        Mac.getInstance("HmacSHA256").run {
-            init(SecretKeySpec(key, "HmacSHA256"))
-            doFinal(message.toByteArray(Charsets.US_ASCII))
-        }
+    // Named hmacText (not hmacSha256) so the member never shadows the
+    // top-level expect it delegates to.
+    private fun hmacText(key: ByteArray, message: String): ByteArray =
+        hmacSha256(key, message.encodeToByteArray())
 
     private fun ByteArray.toHex(): String =
-        joinToString("") { "%02x".format(it) }
+        joinToString("") { (it.toInt() and 0xff).toString(16).padStart(2, '0') }
 }
