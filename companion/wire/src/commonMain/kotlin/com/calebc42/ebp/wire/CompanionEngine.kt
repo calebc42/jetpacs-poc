@@ -644,6 +644,20 @@ class CompanionEngine(
             "capability.invoke" -> handleCapabilityInvoke(id, params)
             "edit.apply" -> handleEditApply(id, params)
             "edit.resync" -> handleEditResync(id, params)
+            "data.schema", "data.changeset" -> {
+                // RF-4a (#154 drafted): the registry rows land with the
+                // spec; the apply lands with RF-4b/4c. The grant gate must
+                // front the not-implemented answer — without it, granted
+                // and ungranted alike would draw -32603, answering a
+                // capability-gated method without its grant (the six-fold
+                // in-handler -32601 precedent). Class/state disclosure
+                // stays core-shaped: a ratified §11 row is published
+                // surface, so SYNCING answers 1204 above, like edit.apply.
+                if ("ebp.data" !in granted)
+                    respondError(id, -32601, "Method not found", "method-not-found")
+                else
+                    respondError(id, -32603, "Not implemented at this rung", "internal-error")
+            }
             "session.ready" -> {
                 // SPEC 10.3: the {} response serializes ahead of every
                 // READY-only frame; emitting before transitioning does that.

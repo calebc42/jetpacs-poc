@@ -28,6 +28,9 @@ val CORE_CAPABILITIES: Set<String> = setOf(
     "surfaces.dialog", "presentation.toast", "presentation.pie-menu",
     "theme", "reminders.owner", "editor.sync", "capabilities", "triggers",
     "offline.wake",
+    // RF-4a (#154 drafted): the ebp.data capability — the first use of the
+    // reserved prefix, legal precisely because it is spec-ratified.
+    "ebp.data",
 )
 
 val METHOD_REGISTRY: Map<String, MethodSpec> = mapOf(
@@ -62,6 +65,10 @@ val METHOD_REGISTRY: Map<String, MethodSpec> = mapOf(
     "fontify.show" to MethodSpec(Sender.EMACS, false, R),
     "capability.invoke" to MethodSpec(Sender.EMACS, true, R),
     "triggers.set" to MethodSpec(Sender.EMACS, true, SR),
+    // SPEC 27 (#154 drafted): the data projection module — grant-gated
+    // stubs answer until RF-4b/4c land the apply.
+    "data.schema" to MethodSpec(Sender.EMACS, true, R),
+    "data.changeset" to MethodSpec(Sender.EMACS, true, R),
     "log.error" to MethodSpec(Sender.EITHER, false, SR),
     "rpc.cancel" to MethodSpec(Sender.EITHER, false, SR),
 )
