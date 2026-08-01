@@ -566,6 +566,11 @@ Events: `hello-sent', `nonce-received', `auth-sent', `welcome-verified',
                   ;        :wants, :receipt-file, and for tests :client-nonce
   connection      ; jsonrpc-process-connection
   (handlers (make-hash-table :test #'equal)) ; method-name -> fn
+  ;; RF-3 (PLAN-rf3-seam.md): registered extension modules, an alist
+  ;; NAMESPACE -> plist (:capability CAP :methods (METHOD-STRING ...)).
+  ;; Code registration like `handlers', not identity-scoped state —
+  ;; `ebp-client-forget-pairing' leaves both.
+  modules
   client-nonce
   ;; Welcome absorption (SPEC 10.2/10.3 steps 1-2).
   granted profiles surfaces limits input-state
@@ -620,9 +625,12 @@ plist plus optionally :ready-function, :state-changed-function,
 :after-replay-function (called with (CLIENT SUMMARY) when a replay pass
 settles with the backlog drained), :edit-open-function (the SPEC 19.3
 amendment-#71 seed-reconciliation seam), :receipt-file, and
-:replay-retry-delay.  Without :receipt-file the SPEC 14.4 EventId
-receipts default to `ebp-receipts' under `user-emacs-directory' —
-`accepted' always names a durable commitment."
+:replay-retry-delay, and :modules (RF-3 — a list of
+\(NAMESPACE CAPABILITY HANDLERS) specs handed to
+`ebp-client-register-module' before any connection exists, so their
+capabilities reach the hello wants).  Without :receipt-file the SPEC
+14.4 EventId receipts default to `ebp-receipts' under
+`user-emacs-directory' — `accepted' always names a durable commitment."
   (unless (plist-member config :receipt-file)
     (setq config (plist-put (copy-sequence config) :receipt-file
                             ebp-receipt-file)))
@@ -653,6 +661,12 @@ receipts default to `ebp-receipts' under `user-emacs-directory' —
                                  #'ebp-client--handle-edit-close)
     (ebp-client-register-handler client "edit.complete"
                                  #'ebp-client--handle-edit-complete)
+    ;; RF-3: extension modules from config — registered before
+    ;; `ebp-client-start' by construction, so the wants contribution and
+    ;; the SPEC 23.5 sentinel escape are guaranteed.  Each spec is
+    ;; (NAMESPACE CAPABILITY HANDLERS-ALIST).
+    (dolist (spec (plist-get config :modules))
+      (apply #'ebp-client-register-module client spec))
     (ebp-client--receipts-load client)
     client))
 
@@ -662,6 +676,120 @@ For a request, FN is called with (CLIENT PARAMS) and must return the
 result object or signal `jsonrpc-error'; the reply is the library's.
 For a notification the return value is ignored."
   (puthash method fn (ebp-client-handlers client)))
+
+(defvar ebp--method-capabilities) ; the SPEC 22.1 gate table, defined below
+
+(defconst ebp--module-name-re "\\`[a-z0-9][a-z0-9._:/-]*\\'"
+  "The lowercase half of the SPEC 4.4 identifier grammar.
+Registration is stricter than the wire on purpose (the Kotlin
+`checkModules' twin does the same): a lowercase-only namespace
+forecloses case-collision games before they can start.")
+
+(defconst ebp--core-namespaces
+  '("session" "auth" "surface" "queue" "event" "state" "dialog" "toast"
+    "pie_menu" "theme" "reminders" "edit" "diagnostics" "eldoc" "fontify"
+    "capability" "triggers" "log" "rpc")
+  "First dot-segment of every SPEC 11 core method.
+A module may not root itself at one: the seam's gates consult module
+namespaces by prefix, so a module rooted at a core segment would
+capability-gate core sends and shadow core dispatch.  The Kotlin twin
+rejects per-method against `METHOD_REGISTRY'; rejecting the whole root
+here is stricter, which is the safe direction for a client library.")
+
+(defun ebp-client-register-module (client namespace capability handlers)
+  "RF-3 (PLAN-rf3-seam.md): register an extension module on CLIENT.
+NAMESPACE (a string) owns every method in HANDLERS, an alist of
+METHOD-STRING to FN with `ebp-client-register-handler's contract.
+CAPABILITY is the module's negotiation entry: `ebp-client-start' adds
+it to the hello `wants', and the session grants it iff the Companion
+supports it.  Inbound dispatch of a module method requires the grant —
+ungranted, a request answers -32601 and a notification is
+logged-and-ignored, wire-identical to an unknown method (I5's elisp
+mirror).  Outbound sends of module methods pass through
+`ebp-client--check-granted' under the same capability.
+
+Register BEFORE `ebp-client-start' — the `:modules' config key of
+`ebp-client-create' does, by construction.  Wants are built at hello
+time and the SPEC 23.5 obarray defense substitutes unregistered method
+names at decode time, so a later registration still dispatches inbound
+frames but that session never negotiates the capability.
+
+Validations mirror the Kotlin `checkModules'; each violation signals
+`error' naming the module."
+  (cl-flet ((valid-name-p (s)
+              ;; case-fold-search nil: the grammar is lowercase-only ON
+              ;; PURPOSE, and the default fold would wave uppercase through.
+              (and (stringp s) (<= (length s) 128)
+                   (let ((case-fold-search nil))
+                     (string-match-p ebp--module-name-re s)))))
+    (unless (valid-name-p namespace)
+      (error "ebp module %s: namespace must be a lowercase identifier"
+             namespace))
+    (when (or (equal namespace "ebp") (string-prefix-p "ebp." namespace))
+      (error "ebp module %s: the ebp. namespace is reserved for the spec (I3)"
+             namespace))
+    (when (member (car (split-string namespace "\\.")) ebp--core-namespaces)
+      (error "ebp module %s: namespace roots at a core method segment"
+             namespace))
+    (dolist (existing (ebp-client-modules client))
+      (let ((ns (car existing)))
+        (when (or (equal ns namespace)
+                  (string-prefix-p (concat ns ".") namespace)
+                  (string-prefix-p (concat namespace ".") ns))
+          (error "ebp module %s: namespace duplicates or nests module %s"
+                 namespace ns))))
+    (unless (valid-name-p capability)
+      (error "ebp module %s: capability must be a lowercase identifier"
+             namespace))
+    (when (string-prefix-p "ebp." capability)
+      (error "ebp module %s: capability claims the spec's namespace (I3)"
+             namespace))
+    (when (member capability (mapcar #'cdr ebp--method-capabilities))
+      (error "ebp module %s: capability collides with a core capability"
+             namespace))
+    (dolist (existing (ebp-client-modules client))
+      (when (equal capability (plist-get (cdr existing) :capability))
+        (error "ebp module %s: capability collides with module %s"
+               namespace (car existing))))
+    (unless handlers
+      (error "ebp module %s: method table is empty" namespace))
+    (let ((prefix (concat namespace ".")))
+      (dolist (entry handlers)
+        (let ((method (car entry)))
+          (unless (and (valid-name-p method) (string-prefix-p prefix method))
+            (error "ebp module %s: method %s is invalid or outside the namespace"
+                   namespace method))
+          (when (gethash method (ebp-client-handlers client))
+            (error "ebp module %s: method %s collides with a registered handler"
+                   namespace method))
+          (unless (functionp (cdr entry))
+            (error "ebp module %s: method %s has no handler function"
+                   namespace method)))))
+    ;; Store the registration, then the handlers DIRECTLY — no wrapper.
+    ;; Only the dispatchers know an inbound message's class, so the
+    ;; granted gate lives there (-32601 for a request, logged-ignore for
+    ;; a notification), sharing the literal §7.3 miss arms.
+    (push (cons namespace (list :capability capability
+                                :methods (mapcar #'car handlers)))
+          (ebp-client-modules client))
+    (dolist (entry handlers)
+      (ebp-client-register-handler client (car entry) (cdr entry)))))
+
+(defun ebp-client--module-of (client method-name)
+  "The module plist owning METHOD-NAME (a string), or nil.
+Ownership is namespace-prefix; registration guarantees no nesting, so
+at most one module matches."
+  (cdr (cl-find-if (lambda (entry)
+                     (string-prefix-p (concat (car entry) ".") method-name))
+                   (ebp-client-modules client))))
+
+(defun ebp-client--module-ungranted-p (client method-name)
+  "Non-nil when METHOD-NAME is a module method this session did not grant.
+`granted' is the welcome's raw vector — membership via `seq-contains-p'.
+Nil for a name no module claims: those keep their pre-RF-3 behavior."
+  (when-let* ((module (ebp-client--module-of client method-name)))
+    (not (seq-contains-p (ebp-client-granted client)
+                         (plist-get module :capability)))))
 
 (defun ebp-client-close (client reason)
   "Enter `closed' (SPEC 10.1: any state may transition to CLOSED)."
@@ -699,7 +827,10 @@ reference alone would leave the secret live in the caller's structure.
 The receipt store is process-wide, not partitioned by pairing.  Under
 `android-loopback-tcp' that is exact — the profile permits exactly one
 paired authority (SPEC 5.2) — but a multi-authority profile MUST
-partition it before reusing this."
+partition it before reusing this.
+
+Registered extension modules survive (RF-3): like the handlers table,
+a module registration is code, not identity-scoped state."
   (ebp-client-close client 'forget-pairing)
   (let ((ok t))
     (when-let* ((file (plist-get (ebp-client-config client) :receipt-file)))
@@ -1000,9 +1131,16 @@ gate above this (`jetpacs-granted-p' branches) never reach the signal,
 so their user-visible taxonomy is unchanged; a caller that reaches it
 has a gating bug, and the reference endpoint refuses to convert that
 bug into non-conformant wire traffic."
-  (when-let* ((cap (alist-get method ebp--method-capabilities)))
-    (unless (seq-contains-p (ebp-client-granted client) cap)
-      (signal 'ebp-ungranted (list method cap)))))
+  (if-let* ((cap (alist-get method ebp--method-capabilities)))
+      (unless (seq-contains-p (ebp-client-granted client) cap)
+        (signal 'ebp-ungranted (list method cap)))
+    ;; RF-3: a registered module's methods are gated by the module's
+    ;; capability; a name no module claims stays ungated exactly as
+    ;; before (PLAN-rf3-seam.md).
+    (when-let* ((module (ebp-client--module-of client (symbol-name method)))
+                (cap (plist-get module :capability)))
+      (unless (seq-contains-p (ebp-client-granted client) cap)
+        (signal 'ebp-ungranted (list method cap))))))
 
 (defun ebp-client--request (client method params callback &optional timeout)
   "Send a request through jsonrpc.el; ids are the library's integers.
@@ -1129,7 +1267,14 @@ not granted (SPEC 24.2; fail closed before any welcome)."
                        (plist-get config :client-version)
                        (plist-get config :pairing-id)
                        nonce
-                       (plist-get config :wants))
+                       ;; RF-3: module capabilities join the caller's
+                       ;; wants.  Dedup is mandatory — the Companion
+                       ;; rejects duplicate wants with -32602.
+                       (delete-dups
+                        (append (plist-get config :wants)
+                                (mapcar (lambda (entry)
+                                          (plist-get (cdr entry) :capability))
+                                        (ebp-client-modules client)))))
      (lambda (result error) (ebp-client--on-nonce client result error)))
     (ebp-client--step client 'hello-sent)))
 
@@ -1374,8 +1519,12 @@ either error itself."
     ;; never receives the handshake methods, so every inbound request does.
     (unless (ebp-client--authenticated-p client)
       (ebp-client--error client 1200 "Not authenticated" "not-authenticated"))
-    (let ((handler (gethash (symbol-name method) (ebp-client-handlers client))))
-      (if handler
+    (let* ((name (symbol-name method))
+           (handler (gethash name (ebp-client-handlers client))))
+      ;; RF-3: a registered module's method without its grant takes the
+      ;; SAME -32601 arm as an unknown name — wire-identical by
+      ;; construction (I5's elisp mirror; PLAN-rf3-seam.md).
+      (if (and handler (not (ebp-client--module-ungranted-p client name)))
           (ebp-client--serializable client (funcall handler client params))
         (ebp-client--error client -32601 "Method not found"
                            "method-not-found")))))
@@ -1407,13 +1556,17 @@ Before authentication all notifications are logged locally and dropped
 without `log.error' (SPEC 10.1); afterwards an unknown notification is
 logged and ignored (SPEC 7.3)."
   (ebp--with-dispatch client
-    (cond
-     ((not (ebp-client--authenticated-p client))
-      (message "ebp: pre-auth notification %s dropped" method))
-     ((gethash (symbol-name method) (ebp-client-handlers client))
-      (funcall (gethash (symbol-name method) (ebp-client-handlers client))
-               client params))
-     (t (message "ebp: unknown notification %s ignored" method)))))
+    (let ((name (symbol-name method)))
+      (cond
+       ((not (ebp-client--authenticated-p client))
+        (message "ebp: pre-auth notification %s dropped" method))
+       ;; RF-3: an ungranted module notification falls through to the
+       ;; logged-ignore arm — §7.3's other half, shared literally.
+       ((and (gethash name (ebp-client-handlers client))
+             (not (ebp-client--module-ungranted-p client name)))
+        (funcall (gethash name (ebp-client-handlers client))
+                 client params))
+       (t (message "ebp: unknown notification %s ignored" method))))))
 
 ;;;; Actions and events (SPEC 14), the Emacs endpoint half
 

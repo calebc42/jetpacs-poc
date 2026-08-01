@@ -1847,5 +1847,192 @@ still ignored, over the live path with the sentinel in place."
                       (error :signalled))))
         (ignore replies)))))
 
+;;;; RF-3: the extension seam (PLAN-rf3-seam.md), elisp half
+
+;; Gate (3)'s elisp golden.  Capture discipline: this fixture and
+;; `ebp-test-module-unnegotiated-request-is-unknown' ran GREEN against the
+;; pre-seam ebp.el (rf-3 @ ccb1dcc) before any E1 code landed — the
+;; fixture is evidence, not aspiration.  SPEC 24.5: the comparison is
+;; member-by-member (semantic), never encoded bytes.
+
+(defun ebp-test--seven-three-error-p (response)
+  "Whether RESPONSE (a decoded reply alist) is the §7.3 unknown answer."
+  (let ((err (alist-get 'error response)))
+    (and err
+         (= (alist-get 'code err) -32601)
+         (equal (alist-get 'message err) "Method not found")
+         (equal (alist-get 'kind (alist-get 'data err)) "method-not-found"))))
+
+(ert-deftest ebp-test-module-unnegotiated-request-is-unknown ()
+  "RF-3 gate (3): a tenant method this session never negotiated answers
+the exact §7.3 shape — and IDENTICALLY to a name no module ever claimed.
+Both probes ride one session so the equality is between wire replies of
+the same client, not between two encoders."
+  (ebp-test--with-companion
+      (server client
+              (ebp-test--kat-script
+               :after-ready
+               (lambda (send)
+                 (funcall send `(:jsonrpc "2.0" :id 98 :method "no.such"
+                                 :params ,ebp--empty-object))
+                 (funcall send '(:jsonrpc "2.0" :id 99
+                                 :method "jetpacs.echo.ping"
+                                 :params (:payload "x"))))))
+    (should (ebp-test--wait
+             (lambda ()
+               (let ((seen (funcall (plist-get server :received))))
+                 (and (cl-find-if (lambda (m) (equal (alist-get 'id m) 98)) seen)
+                      (cl-find-if (lambda (m) (equal (alist-get 'id m) 99)) seen))))))
+    (let* ((seen (funcall (plist-get server :received)))
+           (miss (cl-find-if (lambda (m) (equal (alist-get 'id m) 98)) seen))
+           (tenant (cl-find-if (lambda (m) (equal (alist-get 'id m) 99)) seen)))
+      (should (ebp-test--seven-three-error-p miss))
+      (should (ebp-test--seven-three-error-p tenant))
+      ;; Same client, same serializer, same decoder: the error objects
+      ;; must be EQUAL, not merely similar.
+      (should (equal (alist-get 'error miss) (alist-get 'error tenant))))
+    (should (eq (ebp-client-state client) 'ready))))
+
+(defun ebp-test--bare-module-client (&rest extra)
+  "A connectionless client for registration-rule tests.
+Always carries a temp :receipt-file — the default would be the USER's
+receipt store, and `ebp-client-forget-pairing' deletes that file."
+  (apply #'ebp-client-create
+         :client-name "t" :client-version "0" :pairing-id ebp-test--kat-pid
+         :token "tok" :receipt-file (make-temp-file "ebp-test-receipts")
+         extra))
+
+(defun ebp-test--echo-spec (&optional recorder)
+  "The jetpacs.echo module spec, RECORDER (fn) as the pulse handler."
+  `("jetpacs.echo" "jetpacs.echo"
+    (("jetpacs.echo.pulse" . ,(or recorder #'ignore)))))
+
+(ert-deftest ebp-test-module-registration-validation ()
+  "Each `ebp-client-register-module' rule signals, naming the module;
+a valid registration lands in the modules slot AND the handlers table."
+  (let ((client (ebp-test--bare-module-client))
+        (fn #'ignore))
+    (cl-flet ((rejects (ns cap handlers)
+                (should-error
+                 (ebp-client-register-module client ns cap handlers))))
+      (rejects "X.test" "x.test" `(("X.test.m" . ,fn)))   ; uppercase
+      (rejects ".bad" "x.test" `((".bad.m" . ,fn)))       ; grammar
+      (rejects "ebp" "x.test" `(("ebp.m" . ,fn)))         ; reserved
+      (rejects "ebp.data" "x.test" `(("ebp.data.m" . ,fn)))
+      (rejects "edit" "x.test" `(("edit.m" . ,fn)))       ; core root
+      (rejects "surface" "x.test" `(("surface.update" . ,fn)))
+      (rejects "x.test" "theme" `(("x.test.m" . ,fn)))    ; core capability
+      (rejects "x.test" "ebp.cap" `(("x.test.m" . ,fn))) ; spec-ns capability
+      (rejects "x.test" "x.test" nil)                     ; empty table
+      (rejects "x.test" "x.test" `(("y.other.m" . ,fn)))  ; outside namespace
+      (rejects "x.test" "x.test" `(("x.test.m" . "nofn"))))
+    ;; A valid registration, then the collision rules against it.
+    (ebp-client-register-module client "x.test" "x.test"
+                                (list (cons "x.test.m" fn)))
+    (should (equal '(:capability "x.test" :methods ("x.test.m"))
+                   (cdr (assoc "x.test" (ebp-client-modules client)))))
+    (should (eq fn (gethash "x.test.m" (ebp-client-handlers client))))
+    (should-error   ; duplicate namespace
+     (ebp-client-register-module client "x.test" "x.two"
+                                 (list (cons "x.test.n" fn))))
+    (should-error   ; nested namespace
+     (ebp-client-register-module client "x.test.sub" "x.sub"
+                                 (list (cons "x.test.sub.m" fn))))
+    (should-error   ; capability collides with the registered module's
+     (ebp-client-register-module client "y.test" "x.test"
+                                 (list (cons "y.test.m" fn))))))
+
+(ert-deftest ebp-test-module-config-key-registers-at-create ()
+  "The :modules config key registers before any connection exists, and
+`ebp-client-forget-pairing' leaves the registration (code, not
+identity-scoped state)."
+  (let ((client (ebp-test--bare-module-client
+                 :modules (list (ebp-test--echo-spec)))))
+    (should (assoc "jetpacs.echo" (ebp-client-modules client)))
+    (should (gethash "jetpacs.echo.pulse" (ebp-client-handlers client)))
+    (ebp-client-forget-pairing client)
+    (should (assoc "jetpacs.echo" (ebp-client-modules client)))))
+
+(ert-deftest ebp-test-module-capability-joins-wants ()
+  "RF-3: the hello's wants is the caller's union the module capabilities,
+deduplicated — the Companion answers duplicate wants with -32602."
+  (ebp-test--with-companion
+      (server client (ebp-test--kat-script)
+              :modules (list (ebp-test--echo-spec)))
+    (should (ebp-test--wait
+             (lambda ()
+               (cl-find-if (lambda (m)
+                             (equal (alist-get 'method m) "session.hello"))
+                           (funcall (plist-get server :received))))))
+    (let* ((hello (cl-find-if
+                   (lambda (m) (equal (alist-get 'method m) "session.hello"))
+                   (funcall (plist-get server :received))))
+           (wants (append (alist-get 'wants (alist-get 'params hello)) nil)))
+      (should (equal '("theme" "jetpacs.echo") wants)))))
+
+(ert-deftest ebp-test-module-ungranted-inbound-is-sealed ()
+  "Registered but ungranted (default welcome grants only theme): an
+inbound module request answers the §7.3 shape, an inbound module
+notification never reaches the handler, and an outbound module send
+signals `ebp-ungranted'."
+  (let ((pulses nil))
+    (ebp-test--with-companion
+        (server client
+                (ebp-test--kat-script
+                 :after-ready
+                 (lambda (send)
+                   (funcall send '(:jsonrpc "2.0" :id 97
+                                   :method "jetpacs.echo.pulse"
+                                   :params (:payload "x")))
+                   (funcall send '(:jsonrpc "2.0"
+                                   :method "jetpacs.echo.pulse"
+                                   :params (:payload "x")))))
+                :modules (list (ebp-test--echo-spec
+                                (lambda (_c params)
+                                  (push (plist-get params :payload) pulses)))))
+      (should (ebp-test--wait
+               (lambda ()
+                 (cl-find-if (lambda (m) (equal (alist-get 'id m) 97))
+                             (funcall (plist-get server :received))))))
+      (should (ebp-test--seven-three-error-p
+               (cl-find-if (lambda (m) (equal (alist-get 'id m) 97))
+                           (funcall (plist-get server :received)))))
+      (should (null pulses))
+      (should-error (ebp-client-notify client 'jetpacs\.echo\.ping
+                                       '(:payload "x"))
+                    :type 'ebp-ungranted)
+      (should (eq (ebp-client-state client) 'ready)))))
+
+(ert-deftest ebp-test-module-granted-inbound-dispatches ()
+  "Granted (scripted welcome adds jetpacs.echo): the module handler sees
+an inbound notification's params, and an outbound module send passes the
+gate and reaches the wire."
+  (let ((pulses nil))
+    (ebp-test--with-companion
+        (server client
+                (ebp-test--kat-script
+                 :welcome-fn
+                 (lambda (welcome)
+                   (plist-put (copy-sequence welcome)
+                              :granted ["theme" "jetpacs.echo"]))
+                 :after-ready
+                 (lambda (send)
+                   (funcall send '(:jsonrpc "2.0"
+                                   :method "jetpacs.echo.pulse"
+                                   :params (:payload "live")))))
+                :modules (list (ebp-test--echo-spec
+                                (lambda (_c params)
+                                  (push (plist-get params :payload) pulses)))))
+      (should (ebp-test--wait (lambda () pulses)))
+      (should (equal '("live") pulses))
+      (ebp-client-notify client 'jetpacs\.echo\.ping '(:payload "out"))
+      (should (ebp-test--wait
+               (lambda ()
+                 (cl-find-if (lambda (m)
+                               (equal (alist-get 'method m)
+                                      "jetpacs.echo.ping"))
+                             (funcall (plist-get server :received))))))
+      (should (eq (ebp-client-state client) 'ready)))))
+
 (provide 'ebp-wire-test)
 ;;; ebp-wire-test.el ends here
