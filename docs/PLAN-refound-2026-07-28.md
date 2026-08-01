@@ -490,6 +490,68 @@ gate), and RF-6's desktop companion (this is its seed).
 elisp-scripted fake (`test/ebp-wire-test.el:331`) deleted or demoted to a
 unit fixture.
 
+**Status: DONE 2026-08-01** on branch `rf-2.6`, the K1/K2/E1/E2/E3 ladder of
+[PLAN-rf26-host.md](PLAN-rf26-host.md): `e8945b6` (the runbook), `ef8d5fe`
+(K1), `402b21f` (K2), `ef4fcea` (E2), and this rung's E3. E1 was the
+zero-discretion disposition census — document-only, no commit of its own.
+
+**What shipped.** A `:host` module (`companion/host/`) — KMP with a single
+`jvm()` target, reusing the multiplatform plugin rather than adding a catalog
+plugin alias. `Host.kt`'s `HostServer` binds eagerly so the port is readable
+before `start`, accepts newest-wins per SPEC 5.2, gives each connection one
+engine over fresh Memory stores, leaves all 14 engine listener hooks null
+(nothing on the host has a UI to admit events from), and serializes every
+frame write behind a lock on the sink. Flags are `--port` (0 for ephemeral),
+`--kat` (pins the server nonce to the SPEC 9.3 public vector), and `--caps`;
+the launcher contract is the single line `EBP-HOST PORT=<n>` on stdout,
+printed for fixed ports too so there is one contract and no modes. Tests
+launch the `fatJar`, not `:host:run`: a JavaExec child lives in the Gradle
+daemon's process tree, so the ERT launcher would have nothing signalable —
+the jar gives it a direct child instead.
+
+**Gate met.** `:host:jvmTest` carries 3 socket-level pins;
+`test/ebp-host-test.el` runs 10/10 against the live host (plus
+`jetpacs-teardown-host-loopback-remove-on-wire` in the teardown suite);
+`test/run-tests.sh` is green in **both** modes — default 29 suites with the
+10 host tests skipped and exit 0 (behavior unchanged for anyone without a
+jar), host mode 30 suites and 0 unexpected. Both are opt-in behind
+`EBP_HOST_LAUNCH`.
+
+**Correction to the gate's own text.** The `test/ebp-wire-test.el:331` cite
+above has drifted: `ebp-test--start-companion` is at :379 today, its section
+banner at :334. And "deleted or demoted" resolves to **DEMOTED**, because the
+fake uniquely provides four things a conformant host cannot: wire-order
+`:received` readback (a real engine has no trace channel), scripted
+misbehavior (a forged `server_proof`, a welcome missing a required member),
+withheld and overridden replies, and Companion-originated pushes
+(`event.action`, `state.changed`, floods) that no headless engine emits
+because nothing admits events without a UI. E3 re-scoped that file's banner
+and docstrings to say so; all 55 deftests there still run and still matter.
+
+**The census.** Of the 29 live-loopback tests: 6 migrate whole, 5 split with
+the client-observable half migrating, 16 stay, and 2 never migrate at all —
+`ebp-test-transport-coding-is-pinned` and
+`ebp-test-live-socket-carries-non-ascii` hand-roll literal frames over a raw
+socket, which is the point of them. Three adversarial verification lenses
+confirmed every STAY.
+
+**Two discoveries recorded for the rungs that follow.** (1) `dialog.show` is
+capability-gated *client-side* (`ebp--method-capabilities` →
+`surfaces.dialog`) and a conformant engine holds the request outstanding per
+SPEC 18.1 — which is exactly what makes the sender-ceiling test deterministic
+against a real host rather than timing-dependent. (2) The fake's connect
+helper listed its own defaults ahead of the caller's `&rest` plist, so a
+caller's `:wants` override was **inert** — invisible for as long as the fake
+forced `granted` from the welcome side, and immediately loud against an
+engine that actually computes wants-intersect-supported.
+
+**What this unblocks.** CI wiring stays RF-1c's rung, per
+`.github/workflows/ci.yml`'s own note. The seed inventory RF-1c consumes: all
+48 `test/smoke-*.el` drivers hardcode `127.0.0.1:8765` plus the KAT pairing,
+so roughly 40 of them become deviceless — dialable with no hardware at all —
+against a host started with the default `--port 8765`. Making each one
+*green* from `--batch` is per-driver work, and it is RF-1c's.
+
 ---
 
 ## RF-3 — Extension-dispatch seam

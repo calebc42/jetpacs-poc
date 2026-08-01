@@ -331,12 +331,21 @@ notify funnel ahead of any wire write."
   (should (eq (ebp-session-step 'ready 'close) 'closed))
   (should (eq (ebp-session-step 'connected 'close) 'closed)))
 
-;;;; W3/W4: the jsonrpc-backed client against a scripted loopback companion
+;;;; W3/W4: the scripted loopback companion, a unit fixture since RF-2.6
 
-;; The client under test is the real `ebp-connect' live path (core
-;; jsonrpc.el, decision log #2).  The scripted companion on the other end
-;; of the loopback speaks through the reference encoder/decoder, so both
-;; conformance layers exercise each other.
+;; Since RF-2.6 the conformant-path coverage lives in
+;; `test/ebp-host-test.el', against a real Companion — the :host module's
+;; `CompanionEngine' over a socket.  What stays here is the fixture for
+;; what a conformant host cannot produce: wire-order readback through
+;; `:received' (no real engine offers a trace channel), scripted
+;; misbehavior (a forged `server_proof', a welcome missing a required
+;; member), withheld and overridden replies, and Companion-originated
+;; pushes — `event.action', `state.changed', floods — that no headless
+;; engine emits, because nothing admits events without a UI.  The old
+;; text conceded the circularity here: the fake answers through ebp.el's
+;; own encoder/decoder, so both layers only check each other.  That is
+;; exactly why the real-host suite exists.  Demotion is about scope, not
+;; trust — every test below still passes and is still required.
 
 (defconst ebp-test--kat-token (ebp-decode-pairing-token "AAECAwQFBgcICQoLDA0ODw"))
 (defconst ebp-test--kat-pid "101112131415161718191a1b1c1d1e1f")
@@ -378,7 +387,12 @@ SURFACES overrides the empty surfaces map."
 
 (defun ebp-test--start-companion (script)
   "Loopback scripted companion; returns (:port P :received FN :stop FN).
-SCRIPT is called with (MSG SEND) per decoded inbound message."
+SCRIPT is called with (MSG SEND) per decoded inbound message.
+The `:received' readback — every decoded inbound message in wire order —
+is the capability the RF-2.6 headless host deliberately does not offer,
+since a conformant engine has no trace channel to expose.  Tests that
+assert on what crossed the wire, and in what order, therefore cannot
+migrate to `test/ebp-host-test.el' and stay on this fixture."
   (let* ((received '())
          (decoders (make-hash-table :test #'eq))
          (server
@@ -405,7 +419,12 @@ SCRIPT is called with (MSG SEND) per decoded inbound message."
                                      replay-fn)
   "The default conformant companion script over the KAT pairing.
 REPLAY-FN, when given, is called with the 1-based replay call number and
-returns that call's summary plist."
+returns that call's summary plist.
+WELCOME-FN, AFTER-READY, SURFACE-FN and REPLAY-FN together are the
+scripting surface a conformant engine has no equivalent for — forging a
+welcome, withholding or overriding a reply, pushing from the Companion
+side — which is why the misbehavior and Companion-push tests stay on
+this fixture instead of moving to `test/ebp-host-test.el'."
   (let ((replay-calls 0))
     (lambda (msg send)
       (let* ((method (alist-get 'method msg))
