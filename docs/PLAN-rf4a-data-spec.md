@@ -1,0 +1,243 @@
+# PLAN — RF-4a: the `ebp.data` module spec (ratified 2026-08-01)
+
+Expansion of [PLAN-refound-2026-07-28.md](PLAN-refound-2026-07-28.md) §RF-4
+(:779-881). RF-4a's slice of the RF-4 gate: **contract entries + goldens for
+every `ebp.data` method, with the enforcement named** (`check_spec_sync`
+covers 2 of 31 contract registries — audit P3-1 — so the actual enforcement
+is stated below, tool by tool); the schema-drift case and the wide-integer
+round-trip golden-pinned. The elisp↔Kotlin loopback scenario (declare →
+push → kill Companion → restart → revision resume) and the offline
+write-back replay are **RF-4b/4c's gates** — RF-4a writes their conformance
+cases with explicit deferral markers (the #141/#152 pattern), it does not
+run them.
+
+## §0 STATE — execution ledger (update at every checkpoint)
+
+| Checkpoint | What | Status |
+|---|---|---|
+| R0 | This runbook; base verification (`origin/slop-fork/main` == `83d6e08`) | — |
+| S1 | `DRAFT-amendments-154-155-ebp-data.md` + scratchpad validate.py dry-run | — |
+| M1 | Mirror prep on scratch branch, deliberately red, compile-checked | — |
+| **G1** | **Caleb ratifies** (per-row ratify/hold + option selections) | — |
+| L1 | ebp landing commit(s) on submodule branch `slop-fork/main` | — |
+| L2 | Parent mirror commit: pointer + full inventory, one commit | — |
+| E1 | Exit: ledger, enforcement checklist, publication-order note, dual-recording corrections | — |
+
+## Context
+
+**The rung's shape.** RF-4a is spec authorship: the deliverable is amendment
+text + artifacts landed in the `ebp/` submodule through §25, with the
+repo-side pin mirrors in the same parent commit. **G1 is a human gate — the
+rung parks there for an unbounded interval.** R0/S1/M1 complete before it,
+so the post-ratification tail (L1/L2/E1) is mechanical.
+
+**Decisions locked by Caleb (2026-08-01), with the arguments of record:**
+
+1. **Dispatch home: core registry rows** — the #152/#141 shape. The pin
+   argument is decisive, not aesthetic: `methodRegistryMatchesContract`
+   asserts contract `methods` keys **==** `METHOD_REGISTRY` keys, and the
+   RF-3 seam dispatches only on the registry **miss** — so a "seam tenant
+   with ratified contract entries" is self-contradictory as the code
+   stands (handler unreachable behind the registry hit; `checkModules`
+   rejects the namespace and, once the capability is contract-listed and
+   `CORE_CAPABILITIES`-pinned, the capability too; and routed #153 scopes
+   extension modules to names outside `ebp.`). The fallback (seam home)
+   would require a contract-format core-vs-module marker, two pin
+   subtractions, the D7 relaxation, and a #153 redraft — strictly more
+   machinery. **Dual-recording correction owed at exit:** PLAN-refound's
+   "the seam's first real tenant" (:785) and PLAN-rf3-seam D7 —
+   *ratification graduates a module INTO core; the seam incubates
+   unratified (`jetpacs.*`) tenants only.* No `ebp.` rejection is relaxed,
+   anywhere.
+2. **Method names: bare `data.*`** (`data.schema`, `data.changeset`) —
+   every core method is one dot deep, and validate.py's §11 regex is
+   `[a-z_.]+` (no digits, no hyphens — a naming constraint carried
+   forward). Capability name **`ebp.data`** (I4's own listing; the first
+   use of the reserved prefix in the artifacts, legal precisely because it
+   is spec-ratified). Root `data` joins `ebp--core-namespaces` via its
+   contract pin — recorded behavior change: module registration thereafter
+   rejects third-party namespaces rooted at `data`.
+3. **SPEC placement: appended top-level section after §26**, with a
+   one-line pointer where §19-21 cluster. Zero renumbering — every §N
+   reference in SPEC prose, SPEC-CHANGES history, contract prose, and the
+   dozens of "SPEC 22.x"-style code comments across both implementations
+   stays valid. A release-time reorder note at 2.0.0-final fixes document
+   order.
+
+**The spike numbers, transcribed (the durable record).** Both spikes'
+RESULTS.md live only on unmerged branches (`2ef84ca` elisp, `a727558`
+kotlin — neither an ancestor of this line); the numbers that bound the
+schema design are recorded here so they survive branch deletion.
+
+- *elisp (live vault, 586 notes / 8 files, `~/.emacs.d/vulpea.db` 1.75 MB;
+  `max_frame_bytes` = 4,194,304):* full-row projection (every struct
+  scalar + properties) **307,737 B = 7.34% of ONE frame** (~8,002 notes to
+  fill a frame); minimal row 105,383 B = 2.51% (~23,455 notes); bound —
+  every org file's raw source 458,191 B = 10.9%; whole vault, projection
+  AND source together, under 20% of a single frame. **No tail**: full row
+  p50 528 B / p95 581 B / max 679 B (1.3× median-to-max — per-note
+  chunking would have nothing to chunk). Encoding is not a cost:
+  `json-serialize` is 1.1 ms of an 8.4 ms full-row pass (12.7%); struct
+  walking dominates. **The one re-measure trigger: a schema carrying body
+  text per row** (vulpea indexes metadata; body was measured only as a
+  bound).
+- *kotlin (synthetic rows matched to the elisp distribution, real engine,
+  full frame path):* the binding limit for presentation-ridden rows is
+  **`max_table_cells` (4096 aggregate), never the frame** — 5-col vault =
+  2,930 cells applied in 2.8 ms; 16-col = 9,376 cells rejected 1201 with
+  437,872 B never mattering; boundary exact at 4096/4097; chunked at
+  floor(4096/16) = 256 rows/update → 3 updates, 7.0 ms total accept;
+  apply-rows read-back 586/586 unique ids in 0.72 ms. Consequence, argued
+  in PLAN-refound :477-483: **changesets must be data with their own
+  schema, never presentation nodes.**
+- Verdict carried: Decision 9 upheld by measurement — inline changesets
+  are the only carrier; the reserved bulk shape (hash-verified gzipped
+  NDJSON blob at a negotiated URI) stays reserved.
+
+**The pin blast radius** (why L2 is one commit). Unlike #152/#141
+(capability `core`, existing roots — zero elisp), `ebp.data` rows trip
+both implementations at once: `methodRegistryMatchesContract` (keys +
+sender/class/states) → `MethodRegistry.kt` rows; `coreCapabilityVocabularyMatchesContract`
+→ `CORE_CAPABILITIES` += `ebp.data`; `ebp-test-method-capability-table-matches-contract`
+→ `ebp--method-capabilities` rows for every emacs/either-sender `data.*`
+method (this arms the outbound `ebp-ungranted` gate immediately —
+harmless, fail-closed is the table's contract);
+`ebp-test-core-vocabulary-tables-match-contract` → `ebp--core-capabilities`
++= `ebp.data` AND `ebp--core-namespaces` += `data`. Avoided by design: new
+`limits.fixed` keys (SpecLimitsTest pins them 1:1 against `WireLimits` —
+all module limits go in `limits.welcome`); any `contract_format` bump
+(VocabularyDriftTest + two vocabulary regens); host/app
+`supportedCapabilities` changes (nothing advertises `ebp.data` until
+RF-4b/4c).
+
+**Submodule mechanics + publication order.** The `ebp/` checkout is
+detached at `83d6e08`; `slop-fork/main` exists only as a remote ref
+(**verified `83d6e08` after fetch, 2026-08-01 — the base has not
+moved**); the local `main` is an unrelated restarted line, never touched.
+L1: `git -C ebp switch -c slop-fork/main 83d6e08` + upstream, author
+there, parent `git add ebp`. Nothing runs remotely until push, so **local
+`python3 validate.py` IS the ebp-side gate** (named per the
+enforcement-naming rule). Publication order is hard: **push ebp
+`slop-fork/main` first** (fires the ebp validate workflow; a parent PR
+cannot even check out `submodules: recursive` until the pinned sha is
+public), then any parent push. The submodule gitdir is worktree-scoped —
+ratified commits are invisible to other checkouts until pushed.
+
+## Ratified decisions (2026-08-01)
+
+1. Core-rows dispatch home, `data.*` names, `ebp.data` capability,
+   appended section — Caleb, above.
+2. **Two SPEC-CHANGES rows, one ebp commit, one pointer bump**: #154 (the
+   module) + #155 (the wide-integer canonical string encoding). Rows are
+   the unit of ratification AND of hold (#149 precedent); multi-row
+   commits are the norm (f926f60 carried five). **Honesty item standing
+   for G1: a #155 hold blocks the rung exit** — the RF-4 gate names the
+   wide-int golden; the split preserves per-row mechanics, it does not
+   make the encoding optional.
+3. **Day-1 stub arms (Kotlin only), grouped, placed AFTER class/state
+   checks** like every core method: first line `"ebp.data" !in granted` →
+   `-32601 method-not-found` (the six-fold in-handler precedent:
+   reminders/triggers/capability/edit.apply/edit.resync/dialog), else
+   `-32603 "Not implemented at this rung"` (the surface.release arm, now
+   grant-gated — without the gate, granted and ungranted alike would draw
+   -32603, answering a capability-gated method without its grant). A
+   ratified §11 row is published surface — #153 scopes wire-invisibility
+   to extensions, and `edit.apply` in SYNCING answers 1204 regardless of
+   grant; data rows must not become a distinguishable subclass of core
+   methods. Elisp needs **no dispatch code**: no handler ⇒ the existing
+   -32601/logged-ignore path.
+4. **The draft carries options, not blockers** — every open sub-decision
+   ships as option A (recommended) / option B in the draft doc for G1:
+   welcome member name (`data_state` rec.), single-frame snapshot boundary
+   with `replace`-sequence fallback (rec.) vs multi-part snapshots, JCS
+   scope (identity/hash/keys + sizing only, rec.) vs wire-canonical
+   bodies, `1201`+`data-limit` (rec.) vs a new 16xx code, `truncate`
+   keep/trim, provenance spelling `file|db` (rec.), no `data.desync` in
+   v1 (rec.), §24.6 cases drafted-now-with-deferrals (rec.), #149
+   cross-reference treatment, and the optional `check_spec_sync`
+   State/Capability-column extension.
+5. **The scratchpad dry-run is S1's gate**: copy `ebp/` into the session
+   scratchpad, apply the draft's artifact changes mechanically (contract
+   rows, golden lines, generated wire fixtures), run `python3 validate.py`
+   green there — the package is proven coherent before a human reads it,
+   and the submodule stays untouched until ratification.
+6. **M1 is deliberately red.** The mirror diff cannot go green until the
+   pointer moves — its four contract pins compare against the still-pinned
+   `83d6e08` contract. Compile-check only; the red pins are the proof that
+   L2's one-commit atomicity is real, not a defect.
+
+## Enforcement, named (the RF-4a gate's "name what gates them")
+
+Every `ebp.data` contract entry is enforced as follows. §11 rows ↔
+contract (method/sender/class, both directions): `validate.py
+check_spec_sync`. Contract-row internal coherence (result-presence ↔
+class, sender enum, `errors` ⊆ `error_codes`): `check_contract`.
+Per-method golden coverage: the coverage floor (validate.py :763-767).
+Golden params exactly the contract row's required/optional keys:
+`check_params`. Contract methods (keys, sender, class, states) ↔ Kotlin:
+`methodRegistryMatchesContract`. Contract capabilities ↔ the Kotlin
+vocabulary: `coreCapabilityVocabularyMatchesContract`. Contract gated
+emacs/either-sender rows (including each row's `capability` field) ↔ the
+elisp outbound gate: `ebp-test-method-capability-table-matches-contract`.
+Contract capabilities + method roots ↔ the elisp refusal vocabularies:
+`ebp-test-core-vocabulary-tables-match-contract`. Wire fixtures ↔ both
+decoders at three chunkings: `wireGoldensBehavePerManifestAtAllChunkings`
++ the elisp fixture loop. The capability/states **runtime** enforcement at
+this rung is the elisp capability table plus the Kotlin registry rows and
+the stub granted-gate — named here as the actual enforcement in place of a
+`check_spec_sync` extension. **Unenforced residue, recorded per the
+enforcement-naming rule:** the §11 table's State and Capability columns
+*as SPEC text* have no text↔contract tool (`check_spec_sync`'s regex
+captures method/sender/class only); states are enforced one hop away
+(contract↔Kotlin), and the capability column only for gated emacs-sender
+rows (contract↔elisp). Extending `check_spec_sync` to those columns is an
+optional ebp-side artifact change (the d48075d class) — Caleb's call at
+G1; declined, the residue stays recorded as a wish, not an invariant.
+
+## The ladder
+
+**R0 — this runbook** (`docs(plan)` commit, ahead of everything). Base
+verification done: `origin/slop-fork/main` == `83d6e08`.
+
+**S1 — the draft package.** `docs/DRAFT-amendments-154-155-ebp-data.md`,
+house format (per DRAFT-amendments-67-73): per amendment a SPEC-CHANGES
+row ready to paste, the precise SPEC.md edits, and the artifact changes
+(contract rows, exact key-sorted-compact `frames.golden` lines at the next
+ordinals, wire fixtures 23-25 + manifest entries, the ~20-line
+`check_params` extension in the d48075d class) — plus the option table of
+decision 4. *Gate:* the scratchpad dry-run (decision 5), expected `OK:
+40+N frames … 17+3 wire fixtures x3 chunkings`. An adversarial review
+pass over the draft precedes the commit (the RF-2.6/RF-3 house pattern).
+
+**M1 — mirror prep** (scratch branch off rf-4a, never merged as-is).
+`MethodRegistry.kt` rows + `CORE_CAPABILITIES`; the CompanionEngine stub
+arm; stub pins (`EbpDataRungTest.kt`: ungranted → full-error-object
+-32601 wire-equal via `jsonValueEquals`; granted (test-only supported
+set) → -32603; notification → zero emissions); `ebp.el` three-table
+update. *Gate:* `:wire:compileKotlinJvm` + byte-compile `ebp.el` clean;
+contract pins red by design.
+
+**G1 — Caleb ratifies.** Input: the draft + this runbook. Output: per-row
+ratify/hold, option selections, text amendments. L1/L2/E1 block here.
+
+**L1 — the ebp landing.** Submodule branch per Context; apply exactly the
+ratified text; SPEC-CHANGES rows appended in ratification order; commit
+`spec: amendments #154-#155 — …`, body "Ratified by Caleb <date>
+(options …)", Artifacts paragraph naming tools. *Gate:* `python3
+validate.py` green in the submodule.
+
+**L2 — the parent mirror commit** (`docs(spec): ratify #154+#155 —
+pointer to ebp <sha>, mirror + records`). Pointer + the entire M1
+inventory (re-anchored to ratified text) + the dual-recording corrections
++ ledger — one commit; the pin radius forbids splitting. *Gate:* the
+five-suite battery from clean: spec (`ebp/validate.py` + pointer in-sync
++ `git status --short ebp/` empty), wire (`:wire:jvmTest`), app
+(`:app:testDebugUnitTest :app:assembleDebug`), elisp (`test/run-tests.sh`
+31 suites), loopback (`:host:jvmTest :host:fatJar` +
+`EBP_HOST_LAUNCH=… test/run-tests.sh` — nothing data-specific runs live
+at this rung; the job proves the implementations still agree post-mirror).
+
+**E1 — exit.** Ledger with SHAs; the gate-slice checklist discharged with
+each item's named enforcement; the publication-order note; PLAN-refound +
+PLAN-rf3-seam dual-recording corrections. Push, PR, merge order
+(rf-2c → rf-2.6 → rf-1 → rf-3 → rf-4a; **ebp first**) are Caleb's.
