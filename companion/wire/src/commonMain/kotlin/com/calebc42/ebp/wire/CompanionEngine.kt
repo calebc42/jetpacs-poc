@@ -75,6 +75,8 @@ class CompanionEngine(
         capabilityHandler = config.capabilityHandler),
     private val sink: (ByteArray) -> Unit,
 ) : LiveSession {
+    private val lock = WireLock()
+
     var state: SessionState = SessionState.CONNECTED
         private set
     var closeReason: String? = null
@@ -108,100 +110,102 @@ class CompanionEngine(
 
     // Synchronized with sendRequest/dispatchAction/publishState: the UI
     // thread and the reader thread share one ordered sink (SPEC 7.4).
-    @Synchronized
     fun feed(bytes: ByteArray) {
-        if (state == SessionState.CLOSED) return
-        // A recoverable body fault unwinds the decoder's drain loop, so any
-        // frames PIPELINED BEHIND the bad one stay buffered. Re-entering with
-        // no new bytes drains them: the decoder already advanced past the bad
-        // frame before throwing, so the stream is still synchronized. Without
-        // this, a request behind a malformed frame is never dispatched and
-        // never answered until more bytes happen to arrive — the unbounded
-        // stall amendment #91 forbids. Terminates: every pass either drains
-        // to completion or consumes at least one more whole frame.
-        var input: ByteArray? = bytes
-        while (input != null) {
-            val chunk = input
-            input = null
-            try {
-                decoder.feed(chunk) { msg ->
-                    if (state != SessionState.CLOSED) {
-                        try {
-                            dispatch(msg)
-                        } catch (e: Exception) {
-                            // A dispatch failure must fail closed, never
-                            // crash-loop the host (review: poison-record).
-                            close("dispatch failure: ${e.message}")
+        lock.withLock {
+            if (state == SessionState.CLOSED) return@withLock
+            // A recoverable body fault unwinds the decoder's drain loop, so any
+            // frames PIPELINED BEHIND the bad one stay buffered. Re-entering with
+            // no new bytes drains them: the decoder already advanced past the bad
+            // frame before throwing, so the stream is still synchronized. Without
+            // this, a request behind a malformed frame is never dispatched and
+            // never answered until more bytes happen to arrive — the unbounded
+            // stall amendment #91 forbids. Terminates: every pass either drains
+            // to completion or consumes at least one more whole frame.
+            var input: ByteArray? = bytes
+            while (input != null) {
+                val chunk = input
+                input = null
+                try {
+                    decoder.feed(chunk) { msg ->
+                        if (state != SessionState.CLOSED) {
+                            try {
+                                dispatch(msg)
+                            } catch (e: Exception) {
+                                // A dispatch failure must fail closed, never
+                                // crash-loop the host (review: poison-record).
+                                close("dispatch failure: ${e.message}")
+                            }
                         }
                     }
+                } catch (e: FrameClose) { return@withLock close("frame: ${e.message}") }
+                catch (e: FrameIncomplete) { return@withLock close("frame: ${e.message}") }
+                catch (e: WireParseError) {
+                    // SPEC 6.2: a complete body that is invalid UTF-8 or JSON gets
+                    // a Parse Error with id:null; the stream stayed synchronized,
+                    // so the connection MAY (and here does) continue.
+                    emitFramingError(-32700, "Parse error", "parse-error")
+                    if (state != SessionState.CLOSED) input = EMPTY_CHUNK
+                } catch (e: InvalidRequest) {
+                    // SPEC 6.2/4.1: a non-object top level, batch array, or
+                    // duplicate member names get one Invalid Request with
+                    // id:null; continue.
+                    emitFramingError(-32600, "Invalid Request", "invalid-request")
+                    if (state != SessionState.CLOSED) input = EMPTY_CHUNK
                 }
-            } catch (e: FrameClose) { return close("frame: ${e.message}") }
-            catch (e: FrameIncomplete) { return close("frame: ${e.message}") }
-            catch (e: WireParseError) {
-                // SPEC 6.2: a complete body that is invalid UTF-8 or JSON gets
-                // a Parse Error with id:null; the stream stayed synchronized,
-                // so the connection MAY (and here does) continue.
-                emitFramingError(-32700, "Parse error", "parse-error")
-                if (state != SessionState.CLOSED) input = EMPTY_CHUNK
-            } catch (e: InvalidRequest) {
-                // SPEC 6.2/4.1: a non-object top level, batch array, or
-                // duplicate member names get one Invalid Request with
-                // id:null; continue.
-                emitFramingError(-32600, "Invalid Request", "invalid-request")
-                if (state != SessionState.CLOSED) input = EMPTY_CHUNK
             }
         }
     }
 
-    @Synchronized
     fun close(reason: String) {
-        state = SessionState.CLOSED
-        closeReason = reason
-        // LD-18: leave the device-lifetime slot FIRST — a throw from any
-        // host callout below must never park a dead engine in the firing
-        // service's AtomicReference for the connection's afterlife.
-        firing.detach(this)
-        // P0 (review): the in-flight marker is connection state. If this
-        // engine's request dies with the connection, the record MUST
-        // return to plain queued so the next session's replay can move
-        // (SPEC 15.3: events without a permanent result remain queued).
-        queue.clearInFlight(myInFlightSeq)
-        myInFlightSeq = null
-        // SPEC 22.3 (LD-13): outstanding requests fail locally — every
-        // pending callback gets one synthetic terminal error, so no caller
-        // waits forever on a response the dead transport will never carry.
-        if (pending.isNotEmpty()) {
-            val callbacks = pending.values.toList()
-            pending.clear()
-            val err = buildJsonObject {
-                put("code", -32603)
-                put("message", "Connection closed")
-                put("data", buildJsonObject { put("kind", "connection-closed") })
+        lock.withLock {
+            state = SessionState.CLOSED
+            closeReason = reason
+            // LD-18: leave the device-lifetime slot FIRST — a throw from any
+            // host callout below must never park a dead engine in the firing
+            // service's AtomicReference for the connection's afterlife.
+            firing.detach(this)
+            // P0 (review): the in-flight marker is connection state. If this
+            // engine's request dies with the connection, the record MUST
+            // return to plain queued so the next session's replay can move
+            // (SPEC 15.3: events without a permanent result remain queued).
+            queue.clearInFlight(myInFlightSeq)
+            myInFlightSeq = null
+            // SPEC 22.3 (LD-13): outstanding requests fail locally — every
+            // pending callback gets one synthetic terminal error, so no caller
+            // waits forever on a response the dead transport will never carry.
+            if (pending.isNotEmpty()) {
+                val callbacks = pending.values.toList()
+                pending.clear()
+                val err = buildJsonObject {
+                    put("code", -32603)
+                    put("message", "Connection closed")
+                    put("data", buildJsonObject { put("kind", "connection-closed") })
+                }
+                callbacks.forEach { cb -> runCatching { cb(null, err) } }
             }
-            callbacks.forEach { cb -> runCatching { cb(null, err) } }
+            // SPEC 18.1: on transport loss every outstanding dialog is
+            // dismissed locally; its request dies with the connection.
+            // LD-18: callouts are best-effort — a throwing host listener must
+            // not abort the rest of teardown (serve()'s finally has no retry).
+            if (dialogs.isNotEmpty()) {
+                val ids = dialogs.keys.toList()
+                dialogs.clear()
+                dialogEditors.clear() // sessions die with the connection anyway
+                dialogDefaults.clear()
+                ids.forEach { runCatching { dialogListener?.invoke(it, null) } }
+            }
+            // SPEC 18.3: pie menus are ephemeral to the session — dismiss all.
+            if (pieMenus.isNotEmpty()) {
+                val ids = pieMenus.keys.toList()
+                pieMenus.clear()
+                ids.forEach { runCatching { pieMenuListener?.invoke(it, null) } }
+            }
+            // SPEC 19: transport loss closes all editor sessions locally; the
+            // session IDs are dead and new sessions are created after reconnect.
+            editors.values.forEach { it.state = EditorSession.State.CLOSED }
+            editors.clear()
+            surfaceEditors.clear()
         }
-        // SPEC 18.1: on transport loss every outstanding dialog is
-        // dismissed locally; its request dies with the connection.
-        // LD-18: callouts are best-effort — a throwing host listener must
-        // not abort the rest of teardown (serve()'s finally has no retry).
-        if (dialogs.isNotEmpty()) {
-            val ids = dialogs.keys.toList()
-            dialogs.clear()
-            dialogEditors.clear() // sessions die with the connection anyway
-            dialogDefaults.clear()
-            ids.forEach { runCatching { dialogListener?.invoke(it, null) } }
-        }
-        // SPEC 18.3: pie menus are ephemeral to the session — dismiss all.
-        if (pieMenus.isNotEmpty()) {
-            val ids = pieMenus.keys.toList()
-            pieMenus.clear()
-            ids.forEach { runCatching { pieMenuListener?.invoke(it, null) } }
-        }
-        // SPEC 19: transport loss closes all editor sessions locally; the
-        // session IDs are dead and new sessions are created after reconnect.
-        editors.values.forEach { it.state = EditorSession.State.CLOSED }
-        editors.clear()
-        surfaceEditors.clear()
     }
 
     /** The queue_seq this engine's connection put in flight, if any. */
@@ -263,28 +267,29 @@ class CompanionEngine(
      * wrong, because `onPumpResult` reads any error as a PEER response and
      * would pause the pump and report `blocked_by: "overloaded"` for an error
      * the peer never sent, stalling durable delivery on our own load. */
-    @Synchronized
     fun sendRequest(method: String, params: JsonObject,
                     bounded: Boolean = true,
                     callback: (JsonObject?, JsonObject?) -> Unit) {
-        if (pendingHeld && pending.size <= PENDING_RESUME) pendingHeld = false
-        if (bounded && (pendingHeld || pending.size >= PENDING_HOLD)) {
-            pendingHeld = true
-            callback(null, buildJsonObject {
-                put("code", 1401)
-                put("message", "Outstanding requests exhausted")
-                put("data", buildJsonObject { put("kind", "overloaded") })
+        lock.withLock {
+            if (pendingHeld && pending.size <= PENDING_RESUME) pendingHeld = false
+            if (bounded && (pendingHeld || pending.size >= PENDING_HOLD)) {
+                pendingHeld = true
+                callback(null, buildJsonObject {
+                    put("code", 1401)
+                    put("message", "Outstanding requests exhausted")
+                    put("data", buildJsonObject { put("kind", "overloaded") })
+                })
+                return@withLock
+            }
+            val id = ++nextOutboundId
+            pending[id] = callback
+            emit(buildJsonObject {
+                put("jsonrpc", "2.0")
+                put("id", id)
+                put("method", method)
+                put("params", params)
             })
-            return
         }
-        val id = ++nextOutboundId
-        pending[id] = callback
-        emit(buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", id)
-            put("method", method)
-            put("params", params)
-        })
     }
 
     // ---------------------------------------- actions and input (SPEC 14)
@@ -319,41 +324,43 @@ class CompanionEngine(
     fun dispatchDialogAction(dialogId: String, descriptor: JsonObject,
                              hookValue: JsonElement?, fields: JsonObject?,
                              callback: ((String?, JsonObject?) -> Unit)? = null) {
-        if ("builtin" in descriptor) return  // builtins are the renderer's
-        if (state != SessionState.READY) return
-        if (!dialogs.containsKey(dialogId)) return
-        // R4: the authored args share directly — immutable trees need no
-        // deep copy — and the injection is a single-builder merge (R3).
-        val args = buildJsonObject {
-            descriptor.objOrNull("args")?.forEach { (k, v) -> put(k, v) }
-            // SPEC 14.3: the hook's produced value is injected, never
-            // authored. The null guard survives AS a guard: a null hookValue
-            // means NO value member, exactly as before the swap.
-            if (hookValue != null) put("value", hookValue)
-        }
-        val params = buildJsonObject {
-            put("event_id", EbpAuth.generateNonce())
-            put("action", descriptor.reqString("action"))
-            put("dialog_id", dialogId)
-            put("occurred_at_ms", queue.effectiveNow())
-            if (args.isNotEmpty()) put("args", args)
-            val capture = descriptor.arrOrNull("capture_fields")
-            if (capture != null && capture.isNotEmpty())
-                put("fields", buildJsonObject {
-                    for (el in capture) {
-                        // Accept-time validation makes every entry a string.
-                        val fieldId = el.asStringOrNull() ?: continue
-                        // An uncaptured field IS a JSON null (SPEC 14.1), not
-                        // an absent member — JsonNull here is deliberate.
-                        put(fieldId, fields?.get(fieldId) ?: JsonNull)
-                    }
-                })
-        }
-        // SPEC 14.4/15.4: the COMPLETE params against max_event_bytes.
-        if (wireSerialize(params).utf8Len() >
-            config.limits.reqLong("max_event_bytes")) return
-        sendRequest("event.action", params) { result, error ->
-            callback?.invoke(result?.stringOr("status"), error)
+        lock.withLock {
+            if ("builtin" in descriptor) return@withLock  // builtins are the renderer's
+            if (state != SessionState.READY) return@withLock
+            if (!dialogs.containsKey(dialogId)) return@withLock
+            // R4: the authored args share directly — immutable trees need no
+            // deep copy — and the injection is a single-builder merge (R3).
+            val args = buildJsonObject {
+                descriptor.objOrNull("args")?.forEach { (k, v) -> put(k, v) }
+                // SPEC 14.3: the hook's produced value is injected, never
+                // authored. The null guard survives AS a guard: a null hookValue
+                // means NO value member, exactly as before the swap.
+                if (hookValue != null) put("value", hookValue)
+            }
+            val params = buildJsonObject {
+                put("event_id", EbpAuth.generateNonce())
+                put("action", descriptor.reqString("action"))
+                put("dialog_id", dialogId)
+                put("occurred_at_ms", queue.effectiveNow())
+                if (args.isNotEmpty()) put("args", args)
+                val capture = descriptor.arrOrNull("capture_fields")
+                if (capture != null && capture.isNotEmpty())
+                    put("fields", buildJsonObject {
+                        for (el in capture) {
+                            // Accept-time validation makes every entry a string.
+                            val fieldId = el.asStringOrNull() ?: continue
+                            // An uncaptured field IS a JSON null (SPEC 14.1), not
+                            // an absent member — JsonNull here is deliberate.
+                            put(fieldId, fields?.get(fieldId) ?: JsonNull)
+                        }
+                    })
+            }
+            // SPEC 14.4/15.4: the COMPLETE params against max_event_bytes.
+            if (wireSerialize(params).utf8Len() >
+                config.limits.reqLong("max_event_bytes")) return@withLock
+            sendRequest("event.action", params) { result, error ->
+                callback?.invoke(result?.stringOr("status"), error)
+            }
         }
     }
 
@@ -401,7 +408,6 @@ class CompanionEngine(
      * dropped, which is exactly `when_offline: "drop"` — the durable
      * queue and wake policies land at W6, builtins at W7.
      */
-    @Synchronized
     fun dispatchAction(surface: String, descriptor: JsonObject, hookValue: JsonElement?,
                        injected: JsonObject? = null,
                        extraFields: JsonObject? = null,
@@ -410,120 +416,122 @@ class CompanionEngine(
                         * hooks so the §19 read-only rule can be enforced. */
                        sourceId: String? = null,
                        callback: ((String?, JsonObject?) -> Unit)? = null) {
-        // SPEC 19: "A synchronized editor MUST become read-only whenever the
-        // connection is not READY. It MUST NOT create an offline input draft,
-        // delta, save, completion, or editor command." Its every other path
-        // is READY-gated in this class; a hook owned by the editor node —
-        // `on_save`, `on_enter` — reaches the DURABLE queue through the
-        // generic dispatch, so it is gated here rather than in the renderer.
-        if (sourceId != null && state != SessionState.READY &&
-            surfaceEditors[surface]?.containsKey(sourceId) == true) return
-        if ("builtin" in descriptor) return executeBuiltin(surface, descriptor)
-        val revision = surfaces.revisionOf(surface) ?: return
-        // R3/R4: authored args + hook value + multi-member injections merge
-        // in ONE builder; the immutable authored tree shares, no deep copy.
-        val args = buildJsonObject {
-            descriptor.objOrNull("args")?.forEach { (k, v) -> put(k, v) }
-            // SPEC 14.3: the hook's produced value is injected, never
-            // authored. The null guard survives AS a guard — null means no
-            // member, not a JsonNull write.
-            if (hookValue != null) put("value", hookValue)
-            // SPEC 14.3: multi-member hooks (on_reorder from/to/order,
-            // on_add_row/on_add_col index, swipe on_trigger direction) inject
-            // their produced members; authored conflicts were rejected at
-            // accept time.
-            injected?.forEach { (k, v) -> put(k, v) }
-        }
-        // SPEC 14.1: capture_fields is one occurrence-time snapshot,
-        // stored inside the durable record for queued policies (15.1).
-        val fields = buildJsonObject {
-            descriptor.arrOrNull("capture_fields")?.let { capture ->
-                for (el in capture) {
-                    // Accept-time validation makes every entry a string.
-                    val fieldId = el.asStringOrNull() ?: continue
-                    // An uncaptured field IS a JSON null (SPEC 14.1) — the
-                    // JsonNull write is deliberate, not a collapsed guard.
-                    put(fieldId, surfaces.currentValue(surface, fieldId) ?: JsonNull)
-                }
+        lock.withLock {
+            // SPEC 19: "A synchronized editor MUST become read-only whenever the
+            // connection is not READY. It MUST NOT create an offline input draft,
+            // delta, save, completion, or editor command." Its every other path
+            // is READY-gated in this class; a hook owned by the editor node —
+            // `on_save`, `on_enter` — reaches the DURABLE queue through the
+            // generic dispatch, so it is gated here rather than in the renderer.
+            if (sourceId != null && state != SessionState.READY &&
+                surfaceEditors[surface]?.containsKey(sourceId) == true) return@withLock
+            if ("builtin" in descriptor) return@withLock executeBuiltin(surface, descriptor)
+            val revision = surfaces.revisionOf(surface) ?: return@withLock
+            // R3/R4: authored args + hook value + multi-member injections merge
+            // in ONE builder; the immutable authored tree shares, no deep copy.
+            val args = buildJsonObject {
+                descriptor.objOrNull("args")?.forEach { (k, v) -> put(k, v) }
+                // SPEC 14.3: the hook's produced value is injected, never
+                // authored. The null guard survives AS a guard — null means no
+                // member, not a JsonNull write.
+                if (hookValue != null) put("value", hookValue)
+                // SPEC 14.3: multi-member hooks (on_reorder from/to/order,
+                // on_add_row/on_add_col index, swipe on_trigger direction) inject
+                // their produced members; authored conflicts were rejected at
+                // accept time.
+                injected?.forEach { (k, v) -> put(k, v) }
             }
-            // SPEC 14.6: a value the renderer supplies at occurrence time — a
-            // text_input password's on_submit, whose secret has no retained
-            // draft for currentValue() to read (it never emits state.changed).
-            extraFields?.forEach { (k, v) -> put(k, v) }
-        }
-        val policy = descriptor.stringOr("when_offline", OFFLINE_DEFAULT)
-        val params = buildJsonObject {
-            put("event_id", EbpAuth.generateNonce())
-            put("action", descriptor.reqString("action"))
-            put("surface", surface)
-            put("revision_seen", revision)
-            put("occurred_at_ms", queue.effectiveNow())
-            if (args.isNotEmpty()) put("args", args)
-            if (fields.isNotEmpty()) put("fields", fields)
-            // SPEC 15.1: a durable policy persists a queued_at_ms; it is part
-            // of the stored and replayed params, so add it BEFORE the size
-            // check.
-            if (policy == "queue" || policy == "wake")
-                put("queued_at_ms", queue.effectiveNow())
-        }
-        // SPEC 14.4/15.4: verify the COMPLETE params against max_event_bytes
-        // before persistence or transmission; an oversized occurrence is a
-        // local diagnostic, never a frame or a record.
-        if (wireSerialize(params).utf8Len() >
-            config.limits.reqLong("max_event_bytes")) {
-            callback?.invoke(null, buildJsonObject {
-                put("code", 1201)
-                put("message", "Event exceeds max_event_bytes")
-                put("data", buildJsonObject {
-                    put("kind", "content-invalid")
-                    put("reason", "event-too-large")
-                })
-            })
-            return
-        }
-        when (policy) {
-            "queue", "wake" -> {
-                // SPEC 22.3/15.1: durable admission precedes every wake or
-                // delivery attempt, including when READY right now.
-                // ttl_s reads by VALUE (integralLongOrNull): SpecValidator
-                // bounds it to an integral number and PreSwapNumberTest pins
-                // the binary64 spelling 60.0 as accepted-and-functional —
-                // org.json's getLong truncated it; a strict integer-spelling
-                // read would refuse a legal older peer. Same shape as
-                // dispatchContextless (C3).
-                when (queue.admit(params, policy,
-                        descriptor.stringOr("dedupe").takeIf { it.isNotEmpty() },
-                        integralLongOrNull(descriptor["ttl_s"])
-                            ?: throw NoSuchElementException("ttl_s"))) {
-                    is AdmitResult.Admitted -> {
-                        if (policy == "wake" && state != SessionState.READY &&
-                            queue.effectiveNow() - lastWakeMs >= 60_000) {
-                            lastWakeMs = queue.effectiveNow()
-                            wakeListener?.invoke()
-                        }
-                        callback?.invoke("queued", null)
-                        pumpAdvance() // no-op unless READY and unpaused
+            // SPEC 14.1: capture_fields is one occurrence-time snapshot,
+            // stored inside the durable record for queued policies (15.1).
+            val fields = buildJsonObject {
+                descriptor.arrOrNull("capture_fields")?.let { capture ->
+                    for (el in capture) {
+                        // Accept-time validation makes every entry a string.
+                        val fieldId = el.asStringOrNull() ?: continue
+                        // An uncaptured field IS a JSON null (SPEC 14.1) — the
+                        // JsonNull write is deliberate, not a collapsed guard.
+                        put(fieldId, surfaces.currentValue(surface, fieldId) ?: JsonNull)
                     }
-                    AdmitResult.QueueFull ->
-                        // SPEC 15.1: the 1601 queue-full equivalent, local.
-                        callback?.invoke(null, buildJsonObject {
-                            put("code", 1601)
-                            put("message", "Queue full")
-                            put("data", buildJsonObject { put("kind", "queue-full") })
-                        })
-                    AdmitResult.StorageFailed ->
-                        // SPEC 15.1: MUST NOT claim the interaction queued.
-                        callback?.invoke(null, buildJsonObject {
-                            put("code", -32603)
-                            put("message", "Storage failed")
-                            put("data", buildJsonObject { put("kind", "internal-error") })
-                        })
                 }
+                // SPEC 14.6: a value the renderer supplies at occurrence time — a
+                // text_input password's on_submit, whose secret has no retained
+                // draft for currentValue() to read (it never emits state.changed).
+                extraFields?.forEach { (k, v) -> put(k, v) }
             }
-            else -> { // drop: live delivery only (SPEC 15.1)
-                if (state != SessionState.READY) return
-                sendRequest("event.action", params) { result, error ->
-                    callback?.invoke(result?.stringOr("status"), error)
+            val policy = descriptor.stringOr("when_offline", OFFLINE_DEFAULT)
+            val params = buildJsonObject {
+                put("event_id", EbpAuth.generateNonce())
+                put("action", descriptor.reqString("action"))
+                put("surface", surface)
+                put("revision_seen", revision)
+                put("occurred_at_ms", queue.effectiveNow())
+                if (args.isNotEmpty()) put("args", args)
+                if (fields.isNotEmpty()) put("fields", fields)
+                // SPEC 15.1: a durable policy persists a queued_at_ms; it is part
+                // of the stored and replayed params, so add it BEFORE the size
+                // check.
+                if (policy == "queue" || policy == "wake")
+                    put("queued_at_ms", queue.effectiveNow())
+            }
+            // SPEC 14.4/15.4: verify the COMPLETE params against max_event_bytes
+            // before persistence or transmission; an oversized occurrence is a
+            // local diagnostic, never a frame or a record.
+            if (wireSerialize(params).utf8Len() >
+                config.limits.reqLong("max_event_bytes")) {
+                callback?.invoke(null, buildJsonObject {
+                    put("code", 1201)
+                    put("message", "Event exceeds max_event_bytes")
+                    put("data", buildJsonObject {
+                        put("kind", "content-invalid")
+                        put("reason", "event-too-large")
+                    })
+                })
+                return@withLock
+            }
+            when (policy) {
+                "queue", "wake" -> {
+                    // SPEC 22.3/15.1: durable admission precedes every wake or
+                    // delivery attempt, including when READY right now.
+                    // ttl_s reads by VALUE (integralLongOrNull): SpecValidator
+                    // bounds it to an integral number and PreSwapNumberTest pins
+                    // the binary64 spelling 60.0 as accepted-and-functional —
+                    // org.json's getLong truncated it; a strict integer-spelling
+                    // read would refuse a legal older peer. Same shape as
+                    // dispatchContextless (C3).
+                    when (queue.admit(params, policy,
+                            descriptor.stringOr("dedupe").takeIf { it.isNotEmpty() },
+                            integralLongOrNull(descriptor["ttl_s"])
+                                ?: throw NoSuchElementException("ttl_s"))) {
+                        is AdmitResult.Admitted -> {
+                            if (policy == "wake" && state != SessionState.READY &&
+                                queue.effectiveNow() - lastWakeMs >= 60_000) {
+                                lastWakeMs = queue.effectiveNow()
+                                wakeListener?.invoke()
+                            }
+                            callback?.invoke("queued", null)
+                            pumpAdvance() // no-op unless READY and unpaused
+                        }
+                        AdmitResult.QueueFull ->
+                            // SPEC 15.1: the 1601 queue-full equivalent, local.
+                            callback?.invoke(null, buildJsonObject {
+                                put("code", 1601)
+                                put("message", "Queue full")
+                                put("data", buildJsonObject { put("kind", "queue-full") })
+                            })
+                        AdmitResult.StorageFailed ->
+                            // SPEC 15.1: MUST NOT claim the interaction queued.
+                            callback?.invoke(null, buildJsonObject {
+                                put("code", -32603)
+                                put("message", "Storage failed")
+                                put("data", buildJsonObject { put("kind", "internal-error") })
+                            })
+                    }
+                }
+                else -> { // drop: live delivery only (SPEC 15.1)
+                    if (state != SessionState.READY) return@withLock
+                    sendRequest("event.action", params) { result, error ->
+                        callback?.invoke(result?.stringOr("status"), error)
+                    }
                 }
             }
         }
@@ -537,28 +545,29 @@ class CompanionEngine(
      */
     private val syncingDirty = LinkedHashSet<Pair<String, String>>()
 
-    @Synchronized
     fun publishState(surface: String, id: String, value: JsonElement?) {
-        // SPEC 14.6: a password node MUST NOT emit state.changed, and
-        // only stateful nodes in the accepted snapshot have a wire
-        // address at all.
-        if (!surfaces.isStatefulNode(surface, id)) return
-        if (surfaces.isPasswordNode(surface, id)) return
-        surfaces.putDraft(surface, id, value)
-        if (state != SessionState.READY) {
-            // SPEC 10.3: divergent values changed before READY flush on
-            // entering READY, ahead of any released event.
-            syncingDirty.add(surface to id)
-            return
+        lock.withLock {
+            // SPEC 14.6: a password node MUST NOT emit state.changed, and
+            // only stateful nodes in the accepted snapshot have a wire
+            // address at all.
+            if (!surfaces.isStatefulNode(surface, id)) return@withLock
+            if (surfaces.isPasswordNode(surface, id)) return@withLock
+            surfaces.putDraft(surface, id, value)
+            if (state != SessionState.READY) {
+                // SPEC 10.3: divergent values changed before READY flush on
+                // entering READY, ahead of any released event.
+                syncingDirty.add(surface to id)
+                return@withLock
+            }
+            val revision = surfaces.revisionOf(surface) ?: return@withLock
+            // R6: Kotlin null means JSON null at this seam — the elvis survives.
+            emit(notification("state.changed", buildJsonObject {
+                put("surface", surface)
+                put("revision_seen", revision)
+                put("id", id)
+                put("value", value ?: JsonNull)
+            }))
         }
-        val revision = surfaces.revisionOf(surface) ?: return
-        // R6: Kotlin null means JSON null at this seam — the elvis survives.
-        emit(notification("state.changed", buildJsonObject {
-            put("surface", surface)
-            put("revision_seen", revision)
-            put("id", id)
-            put("value", value ?: JsonNull)
-        }))
     }
 
     private fun handleRequest(id: JsonElement, method: String, rawParams: JsonElement?) {
@@ -875,8 +884,8 @@ class CompanionEngine(
     /** SPEC 14.1/18.1 (T3/LD-3): the authored values for an outstanding
      * dialog's stateful nodes, so `capture_fields` can resolve a field the
      * user never touched to its LOGICAL value instead of inventing one. */
-    @Synchronized
-    fun dialogDefaults(dialogId: String): JsonObject? = dialogDefaults[dialogId]
+    fun dialogDefaults(dialogId: String): JsonObject? =
+        lock.withLock { dialogDefaults[dialogId] }
 
     /** SPEC 19/4.5: distinct synchronized-editor identities presented right
      * now, across accepted surface AND dialog documents. */
@@ -1181,26 +1190,27 @@ class CompanionEngine(
      * the descriptor's args, dismisses the ephemeral menu, and dispatches
      * the drop-only, context-less event.
      */
-    @Synchronized
     fun selectPieMenu(menuId: String, categoryIndex: Int, itemIndex: Int? = null) {
-        val categories = pieMenus[menuId] ?: return
-        val category = categories.getOrNull(categoryIndex) as? JsonObject ?: return
-        val descriptor = if (itemIndex != null)
-            (category.arrOrNull("items")?.getOrNull(itemIndex) as? JsonObject)
-                ?.objOrNull("on_tap")
-        else category.objOrNull("on_tap")
-        descriptor ?: return
-        // R3/R4: the injected members merge into a single builder over the
-        // shared (immutable) authored args — no deep copy, no dropped result.
-        val args = buildJsonObject {
-            descriptor.objOrNull("args")?.forEach { (k, v) -> put(k, v) }
-            put("menu_id", menuId)
-            put("category_index", categoryIndex)
-            if (itemIndex != null) put("item_index", itemIndex)
+        lock.withLock {
+            val categories = pieMenus[menuId] ?: return@withLock
+            val category = categories.getOrNull(categoryIndex) as? JsonObject ?: return@withLock
+            val descriptor = if (itemIndex != null)
+                (category.arrOrNull("items")?.getOrNull(itemIndex) as? JsonObject)
+                    ?.objOrNull("on_tap")
+            else category.objOrNull("on_tap")
+            descriptor ?: return@withLock
+            // R3/R4: the injected members merge into a single builder over the
+            // shared (immutable) authored args — no deep copy, no dropped result.
+            val args = buildJsonObject {
+                descriptor.objOrNull("args")?.forEach { (k, v) -> put(k, v) }
+                put("menu_id", menuId)
+                put("category_index", categoryIndex)
+                if (itemIndex != null) put("item_index", itemIndex)
+            }
+            pieMenus.remove(menuId)
+            pieMenuListener?.invoke(menuId, null)
+            dispatchDescriptorContextless(descriptor, args)
         }
-        pieMenus.remove(menuId)
-        pieMenuListener?.invoke(menuId, null)
-        dispatchDescriptorContextless(descriptor, args)
     }
 
     /**
@@ -1219,24 +1229,26 @@ class CompanionEngine(
     // service); invoked never while the caller holds another module's monitor.
 
     /** SPEC 15.1: a drop event.action delivers live only while READY. */
-    @Synchronized
     override fun deliverLiveDrop(params: JsonObject,
                                  callback: ((String?, JsonObject?) -> Unit)?) {
-        if (state != SessionState.READY) return
-        sendRequest("event.action", params) { result, error ->
-            callback?.invoke(result?.stringOr("status"), error)
+        lock.withLock {
+            if (state != SessionState.READY) return@withLock
+            sendRequest("event.action", params) { result, error ->
+                callback?.invoke(result?.stringOr("status"), error)
+            }
         }
     }
 
     /** SPEC 15.3: after a durable admit, wake (for `wake`) and advance the pump. */
-    @Synchronized
     override fun onDurableAdmitted(policy: String) {
-        if (policy == "wake" && state != SessionState.READY &&
-            queue.effectiveNow() - lastWakeMs >= 60_000) {
-            lastWakeMs = queue.effectiveNow()
-            wakeListener?.invoke()
+        lock.withLock {
+            if (policy == "wake" && state != SessionState.READY &&
+                queue.effectiveNow() - lastWakeMs >= 60_000) {
+                lastWakeMs = queue.effectiveNow()
+                wakeListener?.invoke()
+            }
+            pumpAdvance()
         }
-        pumpAdvance()
     }
 
     // ------------------------------------------------------ reminders (18.6)
@@ -1337,18 +1349,18 @@ class CompanionEngine(
 
     /** SPEC 18.6: mark a reminder presented (once per tuple). Returns true
      * when the host should present it now, false if already fired. */
-    @Synchronized
     fun markReminderFired(owner: String, reminderId: String): Boolean =
-        reminders.markFired(owner, reminderId)
+        lock.withLock { reminders.markFired(owner, reminderId) }
 
     /** SPEC 18.6: an explicit tap enters the Section 14 pipeline with the
      * authored offline policy; owner and reminder_id are injected. A
      * reminder with no on_tap dispatches nothing (dismissal is not a tap). */
-    @Synchronized
     fun dispatchReminderTap(owner: String, reminderId: String,
                             callback: ((String?, JsonObject?) -> Unit)? = null) {
-        routeReminderTap(reminders, queue, config.limits.reqLong("max_event_bytes"),
-            owner, reminderId, this, callback)
+        lock.withLock {
+            routeReminderTap(reminders, queue, config.limits.reqLong("max_event_bytes"),
+                owner, reminderId, this, callback)
+        }
     }
 
     // -------------------------------------------- device triggers (SPEC 21)
@@ -1372,21 +1384,20 @@ class CompanionEngine(
     /** SPEC 21.5: a level-type observation. Firing lives in the device-lifetime
      * service and needs no live session (SPEC 21.1/21.2); the observe entry
      * points remain for a session-driven source and delegate to it. */
-    @Synchronized
     fun observeTriggerSample(type: String, sample: JsonObject) =
-        firing.observeSample(type, sample)
+        lock.withLock { firing.observeSample(type, sample) }
 
     /** SPEC 21.5: an external occurrence (package/sms/boot/time/timezone/manual). */
-    @Synchronized
     fun observeTriggerEvent(type: String, data: JsonObject) =
-        firing.observeExternal(type, data)
+        lock.withLock { firing.observeExternal(type, data) }
 
     /** SPEC 21.4/21.5: a `manual` trigger fired via the builtin or trigger.fire. */
-    @Synchronized
     fun fireManualTrigger(triggerId: String, source: String) {
-        val id = pendingPairingId ?: return
-        if ("triggers" !in granted) return
-        firing.fireManual(id, triggerId, source)
+        lock.withLock {
+            val id = pendingPairingId ?: return@withLock
+            if ("triggers" !in granted) return@withLock
+            firing.fireManual(id, triggerId, source)
+        }
     }
 
     /**
@@ -1516,9 +1527,8 @@ class CompanionEngine(
     /** SPEC 19: create a fresh session and seed it, sending edit.open. Called
      * by the host when a synchronized editor node first becomes present in
      * READY (the surface-node lifecycle wiring is a later atom). */
-    @Synchronized
     fun openEditor(document: String, editorId: String, seed: String,
-                   cursor: ScalarPos = ScalarPos(0)): EditorSession {
+                   cursor: ScalarPos = ScalarPos(0)): EditorSession = lock.withLock {
         val s = EditorSession(document, editorId, EbpAuth.generateNonce())
         s.shadow = seed
         s.setCaret(ScalarPos(cursor.v.coerceIn(0, s.scalarLength())), null, null)
@@ -1539,18 +1549,17 @@ class CompanionEngine(
         // with nothing to reconcile it against (the amendment-#100 base gate
         // would then refuse every keystroke). Publishing here reseeds it.
         editorListener?.invoke(s)
-        return s
+        return@withLock s
     }
 
     /** SPEC 19.3: a local edit applies to the shadow immediately, advances
      * seq, and mirrors as an edit.delta. Read-only unless OPEN and READY. */
-    @Synchronized
     fun localEditorEdit(document: String, editorId: String,
                         start: ScalarPos, del: Int, text: String,
-                        base: String? = null): Boolean {
-        val s = editors[document to editorId] ?: return false
+                        base: String? = null): Boolean = lock.withLock {
+        val s = editors[document to editorId] ?: return@withLock false
         if (s.state != EditorSession.State.OPEN || state != SessionState.READY)
-            return false
+            return@withLock false
         // SPEC 19.3 (amendment #100): a local edit derived from a document
         // state that is no longer the shadow MUST NOT be applied. On a
         // Companion whose editing surface is a separate view (every Compose /
@@ -1561,13 +1570,13 @@ class CompanionEngine(
         // is self-satisfying and only the bounds check stands between a stale
         // keystroke and silent corruption. BASE is the view's pre-edit text;
         // a mismatch refuses the edit, and the host re-presents the shadow.
-        if (base != null && base != s.shadow) return false
+        if (base != null && base != s.shadow) return@withLock false
         // SPEC 19.4 (amendment #84): a local edit that would carry the
         // document past max_editor_bytes is refused as if read-only.
         if (s.spliceJcsBytes(start, del, text) >
-            config.limits.longOr("max_editor_bytes", Long.MAX_VALUE)) return false
-        val len = s.scalarLength() - del + text.codePointCount(0, text.length)
-        if (!s.splice(start, del, text, len)) return false
+            config.limits.longOr("max_editor_bytes", Long.MAX_VALUE)) return@withLock false
+        val len = s.scalarLength() - del + codePointCountCompat(text, 0, text.length)
+        if (!s.splice(start, del, text, len)) return@withLock false
         s.seq += 1
         emit(notification("edit.delta", buildJsonObject {
             put("document", document)
@@ -1579,33 +1588,36 @@ class CompanionEngine(
             put("text", text)
             put("len", len)
         }))
-        return true
+        return@withLock true
     }
 
     /** SPEC 19.3: best-effort caret context; throttled at the source.
      * T2/LD-4: takes Compose UTF-16 positions and converts against the
      * shadow — the one text authority — clamped, ordered, never splitting a
      * surrogate pair; the wire carries scalars only. */
-    @Synchronized
     fun localEditorCaret(document: String, editorId: String, cursor: Utf16Pos,
                          selStart: Utf16Pos? = null, selEnd: Utf16Pos? = null) {
-        val s = editors[document to editorId] ?: return
-        if (s.state != EditorSession.State.OPEN || state != SessionState.READY) return
-        val (c, lo, hi) = scalarCaret(s.shadow, cursor, selStart, selEnd) ?: return
-        if (!s.setCaret(c, lo, hi)) return
-        emit(notification("edit.caret", buildJsonObject {
-            put("document", document)
-            put("editor_id", editorId)
-            put("session", s.sessionId)
-            put("seq", s.seq)
-            put("cursor", s.cursor)
-            // The guard survives: no selection means NO sel members, not a
-            // pair of JSON nulls.
-            if (lo != null) {
-                put("sel_start", s.selStart)
-                put("sel_end", s.selEnd)
-            }
-        }))
+        lock.withLock {
+            val s = editors[document to editorId] ?: return@withLock
+            if (s.state != EditorSession.State.OPEN || state != SessionState.READY)
+                return@withLock
+            val (c, lo, hi) = scalarCaret(s.shadow, cursor, selStart, selEnd)
+                ?: return@withLock
+            if (!s.setCaret(c, lo, hi)) return@withLock
+            emit(notification("edit.caret", buildJsonObject {
+                put("document", document)
+                put("editor_id", editorId)
+                put("session", s.sessionId)
+                put("seq", s.seq)
+                put("cursor", s.cursor)
+                // The guard survives: no selection means NO sel members, not a
+                // pair of JSON nulls.
+                if (lo != null) {
+                    put("sel_start", s.selStart)
+                    put("sel_end", s.selEnd)
+                }
+            }))
+        }
     }
 
     /** SPEC 19.1/19.3 (LD-4): convert a Compose caret to the scalar domain
@@ -1633,13 +1645,13 @@ class CompanionEngine(
      * durable queue. args carry command + full editor context; Emacs allowlists
      * edit.command and then the nested command, never evaluating either string.
      */
-    @Synchronized
     fun editorCommand(surface: String, document: String, editorId: String,
                       command: String, cursor: Utf16Pos,
-                      selStart: Utf16Pos, selEnd: Utf16Pos): Boolean {
-        val s = editors[document to editorId] ?: return false
-        if (s.state != EditorSession.State.OPEN || state != SessionState.READY) return false
-        val revision = surfaces.revisionOf(surface) ?: return false
+                      selStart: Utf16Pos, selEnd: Utf16Pos): Boolean = lock.withLock {
+        val s = editors[document to editorId] ?: return@withLock false
+        if (s.state != EditorSession.State.OPEN || state != SessionState.READY)
+            return@withLock false
+        val revision = surfaces.revisionOf(surface) ?: return@withLock false
         // SPEC 19.1 / SPEC.md 2590+2640 (LD-4): Compose UTF-16 positions are
         // converted to scalars against the shadow BEFORE they reach the wire,
         // and the pair is ordered — ten emoji with the caret at the end is
@@ -1647,7 +1659,7 @@ class CompanionEngine(
         // sel_start > sel_end. This was the one editor path bypassing
         // EditorSession's conversions.
         val (c, lo, hi) = scalarCaret(s.shadow, cursor, selStart, selEnd)
-            ?: return false
+            ?: return@withLock false
         val params = buildJsonObject {
             put("event_id", EbpAuth.generateNonce())
             put("action", "edit.command")
@@ -1666,23 +1678,24 @@ class CompanionEngine(
             })
         }
         if (wireSerialize(params).utf8Len() >
-            config.limits.reqLong("max_event_bytes")) return false
+            config.limits.reqLong("max_event_bytes")) return@withLock false
         sendRequest("event.action", params) { _, _ -> }
-        return true
+        return@withLock true
     }
 
     /** SPEC 19: close a session (removal, identity/document change). */
-    @Synchronized
     fun closeEditor(document: String, editorId: String) {
-        val s = editors.remove(document to editorId) ?: return
-        if (s.state == EditorSession.State.CLOSED) return
-        s.state = EditorSession.State.CLOSED
-        if (state == SessionState.READY)
-            emit(notification("edit.close", buildJsonObject {
-                put("document", document)
-                put("editor_id", editorId)
-                put("session", s.sessionId)
-            }))
+        lock.withLock {
+            val s = editors.remove(document to editorId) ?: return@withLock
+            if (s.state == EditorSession.State.CLOSED) return@withLock
+            s.state = EditorSession.State.CLOSED
+            if (state == SessionState.READY)
+                emit(notification("edit.close", buildJsonObject {
+                    put("document", document)
+                    put("editor_id", editorId)
+                    put("session", s.sessionId)
+                }))
+        }
     }
 
     private fun editorStale(id: JsonElement) = respondError(id, 1201, "Invalid content",
@@ -1781,7 +1794,7 @@ class CompanionEngine(
         // too large — a range- or length-invalid one is stale, as before.
         val grown = s.spliceJcsBytes(ScalarPos(start), del, text)
         if (grown >= 0 &&
-            len == s.scalarLength() - del + text.codePointCount(0, text.length) &&
+            len == s.scalarLength() - del + codePointCountCompat(text, 0, text.length) &&
             grown > config.limits.longOr("max_editor_bytes", Long.MAX_VALUE))
             return respondError(id, 1201, "Invalid content", "content-invalid",
                 buildJsonObject { put("reason", "editor-too-large") })
@@ -1834,46 +1847,49 @@ class CompanionEngine(
      * moved while the user read the list) the check exists to catch.
      * Candidate selection is a later local edit via [selectCompletion].
      * Non-durable, session-scoped. */
-    @Synchronized
     fun requestCompletion(document: String, editorId: String,
                           callback: (String, JsonArray, String, Long, Int) -> Unit) {
-        val s = editors[document to editorId] ?: return
-        if (s.state != EditorSession.State.OPEN || state != SessionState.READY) return
-        val atSession = s.sessionId
-        val atSeq = s.seq
-        val atCursor = s.cursor
-        sendRequest("edit.complete", buildJsonObject {
-            put("document", document)
-            put("editor_id", editorId)
-            put("session", atSession)
-            put("seq", atSeq)
-            put("cursor", atCursor)
-        }) { result, error ->
-            // SPEC 19.3: "The result and each candidate are closed objects.
-            // `prefix` MUST be a string and `candidates` MUST be an array.
-            // Each candidate MUST contain a non-empty string `label`."
-            // optString() coerced instead: an ABSENT prefix became "", which
-            // selectCompletion's substring check then trivially satisfied, so
-            // a malformed result INSERTED at the cursor without replacing —
-            // §19.2's "never a wrong edit". A non-conforming result is
-            // discarded whole; a completion has no response to carry an error.
-            if (error == null && result != null &&
-                editors[document to editorId]?.sessionId == atSession) {
-                val prefix = result.stringOrNull("prefix") ?: return@sendRequest
-                val cands = result.arrOrNull("candidates") ?: return@sendRequest
-                for (k in result.keys)
-                    if (k != "prefix" && k != "candidates") return@sendRequest
-                for (el in cands) {
-                    val c = el as? JsonObject ?: return@sendRequest
-                    if (c.stringOrNull("label").isNullOrEmpty()) return@sendRequest
-                    if ("annotation" in c && c.stringOrNull("annotation") == null)
-                        return@sendRequest
-                    if ("insert" in c && c.stringOrNull("insert") == null) return@sendRequest
-                    for (k in c.keys)
-                        if (k != "label" && k != "annotation" && k != "insert")
+        lock.withLock {
+            val s = editors[document to editorId] ?: return@withLock
+            if (s.state != EditorSession.State.OPEN || state != SessionState.READY)
+                return@withLock
+            val atSession = s.sessionId
+            val atSeq = s.seq
+            val atCursor = s.cursor
+            sendRequest("edit.complete", buildJsonObject {
+                put("document", document)
+                put("editor_id", editorId)
+                put("session", atSession)
+                put("seq", atSeq)
+                put("cursor", atCursor)
+            }) { result, error ->
+                // SPEC 19.3: "The result and each candidate are closed objects.
+                // `prefix` MUST be a string and `candidates` MUST be an array.
+                // Each candidate MUST contain a non-empty string `label`."
+                // optString() coerced instead: an ABSENT prefix became "", which
+                // selectCompletion's substring check then trivially satisfied, so
+                // a malformed result INSERTED at the cursor without replacing —
+                // §19.2's "never a wrong edit". A non-conforming result is
+                // discarded whole; a completion has no response to carry an error.
+                if (error == null && result != null &&
+                    editors[document to editorId]?.sessionId == atSession) {
+                    val prefix = result.stringOrNull("prefix") ?: return@sendRequest
+                    val cands = result.arrOrNull("candidates") ?: return@sendRequest
+                    for (k in result.keys)
+                        if (k != "prefix" && k != "candidates") return@sendRequest
+                    for (el in cands) {
+                        val c = el as? JsonObject ?: return@sendRequest
+                        if (c.stringOrNull("label").isNullOrEmpty()) return@sendRequest
+                        if ("annotation" in c && c.stringOrNull("annotation") == null)
                             return@sendRequest
+                        if ("insert" in c && c.stringOrNull("insert") == null)
+                            return@sendRequest
+                        for (k in c.keys)
+                            if (k != "label" && k != "annotation" && k != "insert")
+                                return@sendRequest
+                    }
+                    callback(prefix, cands, atSession, atSeq, atCursor)
                 }
-                callback(prefix, cands, atSession, atSeq, atCursor)
             }
         }
     }
@@ -1884,29 +1900,31 @@ class CompanionEngine(
      * Companion replace that prefix with `insert` as one local edit (an
      * edit.delta); otherwise it discards the result without changing text.
      */
-    @Synchronized
     fun selectCompletion(document: String, editorId: String, atSession: String,
-                         atSeq: Long, atCursor: Int, prefix: String, insert: String): Boolean {
-        val s = editors[document to editorId] ?: return false
-        if (s.state != EditorSession.State.OPEN || state != SessionState.READY) return false
-        if (s.sessionId != atSession || s.seq != atSeq || s.cursor != atCursor) return false
-        val prefixLen = prefix.codePointCount(0, prefix.length)
+                         atSeq: Long, atCursor: Int, prefix: String,
+                         insert: String): Boolean = lock.withLock {
+        val s = editors[document to editorId] ?: return@withLock false
+        if (s.state != EditorSession.State.OPEN || state != SessionState.READY)
+            return@withLock false
+        if (s.sessionId != atSession || s.seq != atSeq || s.cursor != atCursor)
+            return@withLock false
+        val prefixLen = codePointCountCompat(prefix, 0, prefix.length)
         val start = atCursor - prefixLen
-        if (start < 0) return false
+        if (start < 0) return@withLock false
         // The prefix must still be the text immediately before the cursor.
-        val from = s.shadow.offsetByCodePoints(0, start)
-        val to = s.shadow.offsetByCodePoints(0, atCursor)
-        if (s.shadow.substring(from, to) != prefix) return false
-        return localEditorEdit(document, editorId, ScalarPos(start), prefixLen, insert)
+        val from = offsetByCodePointsCompat(s.shadow, 0, start)
+        val to = offsetByCodePointsCompat(s.shadow, 0, atCursor)
+        if (s.shadow.substring(from, to) != prefix) return@withLock false
+        return@withLock localEditorEdit(document, editorId, ScalarPos(start),
+            prefixLen, insert)
     }
 
     /** T2/LD-5: run F over a live editor session under the engine monitor —
      * the host's one safe read path for shadow/caret state (the mirror it
      * publishes to the display, and the snap-back after a refused edit). */
-    @Synchronized
     fun <T> withEditor(document: String, editorId: String,
                        f: (EditorSession) -> T): T? =
-        editors[document to editorId]?.let(f)
+        lock.withLock { editors[document to editorId]?.let(f) }
 
     private fun handleAnnotation(method: String, params: JsonObject) {
         if ("editor.sync" !in granted) return
@@ -2134,49 +2152,51 @@ class CompanionEngine(
     /** SPEC 18.1: dialog.submit builtin completes the request as submitted.
      * VALUE is the builtin's authored value; FIELDS the captured node
      * values (the renderer holds dialog-local state, SPEC 18.1). */
-    @Synchronized
     fun completeDialogSubmit(dialogId: String, value: JsonElement? = null,
                              fields: JsonObject? = null) {
-        val reqId = dialogs[dialogId] ?: return
-        // The null guard survives AS a guard: a null VALUE means the member is
-        // absent from the result, exactly as org.json's put(k, null) removal
-        // behaved (an authored JSON null arrives as JsonNull, which is
-        // non-null here and is written through).
-        val result = buildJsonObject {
-            put("status", "submitted")
-            if (value != null) put("value", value)
-            if (fields != null && fields.isNotEmpty()) put("fields", fields)
+        lock.withLock {
+            val reqId = dialogs[dialogId] ?: return@withLock
+            // The null guard survives AS a guard: a null VALUE means the member is
+            // absent from the result, exactly as org.json's put(k, null) removal
+            // behaved (an authored JSON null arrives as JsonNull, which is
+            // non-null here and is written through).
+            val result = buildJsonObject {
+                put("status", "submitted")
+                if (value != null) put("value", value)
+                if (fields != null && fields.isNotEmpty()) put("fields", fields)
+            }
+            // SPEC 18.1: serialize the prospective complete response FIRST. If its
+            // body would exceed max_frame_bytes, write no part of it and do NOT
+            // complete the dialog — the dialog stays outstanding so the user can
+            // shrink the input, and the host concludes any password attempt with a
+            // §14.6 erasure. This ordering prevents orphaning the request in
+            // encodeFrame after the dialog was already removed.
+            val body = wireSerialize(buildJsonObject {
+                put("jsonrpc", "2.0")
+                put("id", reqId)
+                put("result", result)
+            }).utf8Len()
+            if (body > WireLimits.MAX_BODY_OCTETS) {
+                dialogOverflowListener?.invoke(dialogId)
+                return@withLock
+            }
+            dialogs.remove(dialogId)
+            closeDialogEditors(dialogId)
+            dialogDefaults.remove(dialogId)
+            respondResult(reqId, result)
+            dialogListener?.invoke(dialogId, null)
         }
-        // SPEC 18.1: serialize the prospective complete response FIRST. If its
-        // body would exceed max_frame_bytes, write no part of it and do NOT
-        // complete the dialog — the dialog stays outstanding so the user can
-        // shrink the input, and the host concludes any password attempt with a
-        // §14.6 erasure. This ordering prevents orphaning the request in
-        // encodeFrame after the dialog was already removed.
-        val body = wireSerialize(buildJsonObject {
-            put("jsonrpc", "2.0")
-            put("id", reqId)
-            put("result", result)
-        }).utf8Len()
-        if (body > WireLimits.MAX_BODY_OCTETS) {
-            dialogOverflowListener?.invoke(dialogId)
-            return
-        }
-        dialogs.remove(dialogId)
-        closeDialogEditors(dialogId)
-        dialogDefaults.remove(dialogId)
-        respondResult(reqId, result)
-        dialogListener?.invoke(dialogId, null)
     }
 
     /** SPEC 18.1: dialog.dismiss builtin or a platform dismissal. */
-    @Synchronized
     fun completeDialogDismiss(dialogId: String) {
-        val reqId = dialogs.remove(dialogId) ?: return
-        closeDialogEditors(dialogId)
-        dialogDefaults.remove(dialogId)
-        respondResult(reqId, buildJsonObject { put("status", "dismissed") })
-        dialogListener?.invoke(dialogId, null)
+        lock.withLock {
+            val reqId = dialogs.remove(dialogId) ?: return@withLock
+            closeDialogEditors(dialogId)
+            dialogDefaults.remove(dialogId)
+            respondResult(reqId, buildJsonObject { put("status", "dismissed") })
+            dialogListener?.invoke(dialogId, null)
+        }
     }
 
     // ----------------------------------------------------------- handshake
@@ -2437,14 +2457,15 @@ class CompanionEngine(
 
     /** null when the body cannot be encoded. Both arms stay across the
      * kotlinx swap: an Exception where org.json returned null from
-     * `toString()`, and a StackOverflowError for a deep host-supplied tree. */
+     * `toString()`, and — now through the common catchingStackOverflow seam —
+     * a StackOverflowError for a deep host-supplied tree. */
     private fun serializeReply(msg: JsonObject): String? =
-        try {
-            wireSerialize(msg)
-        } catch (e: Exception) {
-            null
-        } catch (e: StackOverflowError) {
-            null
+        catchingStackOverflow {
+            try {
+                wireSerialize(msg)
+            } catch (e: Exception) {
+                null
+            }
         }
 
     private fun respondError(id: JsonElement, code: Int, message: String, kind: String,
