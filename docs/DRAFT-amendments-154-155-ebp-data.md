@@ -54,7 +54,7 @@ chunkings`.
 
 ### SPEC-CHANGES row (ready to paste)
 
-> | 154 | 2026-08-01 | §27 (new), §4.5, §7.4, §10.2, §11, §22.1, §22.2, §23.5, §24.3, §24.6 (cross-ref §14, §15, I7; contract) | **The data projection module — a durable, schema-declared, changeset-maintained mirror.** Consumers of Emacs-authored data (typed Android layers, widgets, queries) previously had two bad options: re-parse the authored source (rejected permanently — Emacs is the sole interpreter of source formats) or ride presentation nodes (measured: the node-aggregate caps bind at 4,096 cells, one real vault already needs 3 chunked updates — a `table` is a view with a view's limits). The module makes the Companion the holder of a durable materialized projection: Emacs declares a schema with identity `{id, version, hash}` (`data.schema`), then maintains the projection exclusively through revisioned inline changesets (`data.changeset`) — snapshots, deltas with parent chaining, row upserts/deletes and provenance-scoped `replace` (the producer's rewrite-all-rows-per-unit pattern as one atomic op). The projection is pairing-scoped and durable; the welcome's `data_state` member reports schema identity and last durably applied revision, so restart-resume is a welcome-read, not a probe. Single-writer v1: Emacs is authoritative; Companion-side mutations are ordinary §14 actions riding the §15 durable queue (descriptors delivered with the schema; no generic row-write verbs; no second sync machinery) and the projection changes only when the round-trip changeset lands. Drift is negotiated, not erred: `refused`/`dynamic` results let pinned typed consumers detect mismatch before any changeset flows. Ops are closed objects and the member names `site`/`clock`/`cols`/`merge` are reserved for a future negotiated merge-discipline capability — CRDT-ready vocabulary, not CRDT machinery. Exhaustion per the #151 duty: one totally ordered per-pairing revision stream, persisted, no wrap, reclaimed only by schema-epoch change; no retained tombstones (the floor is one durable number, unlike §13.1's raced per-surface streams). Five conditional welcome limits (`max_data_*`); the §4.5 reservation gains `data_state`'s bounded worst case. Additive per §25: a new OPTIONAL capability with positive discovery and safe fallback; no existing message, golden, or fixture is modified. Conformance cases for the loopback kill/restart scenario and offline write-back are drafted with explicit deferral to the implementation rungs (llm-poc-2 PLAN-refound RF-4b/4c), recorded here so the deferral is explicit, not silent. | contract `methods` += `data.schema`, `data.changeset`; `capabilities` += `ebp.data`; `limits.welcome` += 5 `max_data_*` members; goldens/frames.golden += 3 frames (coverage floor); goldens/wire += `23-data-schema-accept`, `24-data-schema-drift` (+ manifest); validate.py `check_params` data arm (enforcement named in-row) | |
+> | 154 | 2026-08-01 | §27 (new), §4.5, §7.4, §10.2, §11, §22.1, §22.2, §23.5, §24.3, §24.6 (cross-ref §3 item 3, §14, §15; contract) | **The data projection module — a durable, schema-declared, changeset-maintained mirror.** Consumers of Emacs-authored data (typed Android layers, widgets, queries) previously had two bad options: re-parse the authored source (rejected permanently — Emacs is the sole interpreter of source formats) or ride presentation nodes (measured: the node-aggregate caps bind at 4,096 cells, one real vault already needs 3 chunked updates — a `table` is a view with a view's limits). The module makes the Companion the holder of a durable materialized projection: Emacs declares a schema with identity `{id, version, hash}` (`data.schema`), then maintains the projection exclusively through revisioned inline changesets (`data.changeset`) — snapshots, deltas with parent chaining, row upserts/deletes and provenance-scoped `replace` (the producer's rewrite-all-rows-per-unit pattern as one atomic op). The projection is pairing-scoped and durable; the welcome's `data_state` member reports schema identity and last durably applied revision, so restart-resume is a welcome-read, not a probe. Single-writer v1: Emacs is authoritative; Companion-side mutations are ordinary §14 actions riding the §15 durable queue (descriptors delivered with the schema; no generic row-write verbs; no second sync machinery) and the projection changes only when the round-trip changeset lands. Drift is negotiated, not erred: `refused`/`dynamic` results let pinned typed consumers detect mismatch before any changeset flows. Ops are closed objects and the member names `site`/`clock`/`cols`/`merge` are reserved for a future negotiated merge-discipline capability — CRDT-ready vocabulary, not CRDT machinery. Exhaustion per the #151 duty: one totally ordered per-pairing revision stream, persisted, no wrap, reclaimed only by schema-epoch change; no retained tombstones (the floor is one durable number, unlike §13.1's raced per-surface streams). Five conditional welcome limits (`max_data_*`); the §4.5 reservation gains `data_state`'s bounded worst case. Additive per §25: a new OPTIONAL capability with positive discovery and safe fallback; no existing message, golden, or fixture is modified. Conformance cases for the loopback kill/restart scenario and offline write-back are drafted with explicit deferral to the implementation rungs (llm-poc-2 PLAN-refound RF-4b/4c), recorded here so the deferral is explicit, not silent. | contract `methods` += `data.schema`, `data.changeset`; `capabilities` += `ebp.data`; `limits.welcome` += 5 `max_data_*` members; goldens/frames.golden += 3 frames (coverage floor); goldens/wire += `23-data-schema-accept`, `24-data-schema-drift` (+ manifest); validate.py `check_params` data arm (enforcement named in-row) | |
 
 ### SPEC.md edits
 
@@ -203,10 +203,12 @@ The result is `{status, revision?, reason?}`, `status` one of:
   requiring the pinned schema are disabled and MUST NOT observe this
   projection.
 
-On a declaration whose `id` matches the held projection but whose
-`version` or `hash` differs, a schema-generic Companion MUST atomically
-drop the projection, re-create the declared tables, and answer `accepted`
-with no `revision` — a schema-epoch change. The projection is disposable
+A Companion holds at most one projection per pairing. On a declaration
+whose `{id, version, hash}` differs in any member from the held
+projection's — a new `id` included — a schema-generic Companion MUST
+atomically drop the held projection, including any tables the new
+declaration does not declare, re-create the declared tables, and answer
+`accepted` with no `revision` — a schema-epoch change. The projection is disposable
 by construction; the authored source is not.
 
 Emacs MUST send `data.schema` and receive `accepted` or `dynamic` on each
@@ -231,8 +233,10 @@ racing a mid-session epoch change; mismatch is `1201` with
 integer. `snapshot` defaults to false. `parent` is REQUIRED exactly when
 `snapshot` is absent or false and MUST be absent when `snapshot` is true.
 
-Emacs MUST assign data revisions from one durable, strictly increasing,
-per-pairing counter. Gaps in numbering are allowed. Revisions MUST NOT
+Emacs MUST assign data revisions from one durable, per-pairing counter
+that is strictly increasing within a schema epoch; a schema-epoch change
+begins a new revision stream, with which the counter MAY restart
+(Section 27.6). Gaps in numbering are allowed. Revisions MUST NOT
 wrap and MUST NOT be reused within a schema epoch.
 
 A **delta** whose `revision` is greater than the floor MUST carry `parent`
@@ -315,8 +319,16 @@ A descriptor's `dedupe` member here is the enum `row | none` (default
 `none`). For `row`, the Companion MUST author the Section 15.2 queue key
 as the action name, `:`, the table name, `:`, and the first 32 lowercase
 hexadecimal characters of SHA-256 over the [RFC8785] serialization of the
-row's primary-key object — deterministic, Section 4.4-legal, and
-intent-encoding as Section 15.2 requires.
+row's primary-key object — deterministic and intent-encoding as Section
+15.2 requires. The composed key MUST satisfy Section 4.4's 128-octet
+bound; the available action-name budget is therefore reduced by the table
+name's length plus 34 octets. Emacs MUST NOT declare a `dedupe: "row"`
+descriptor whose action name exceeds that budget for any table the
+descriptor may name, and a Companion receiving one MUST reject the
+declaration with `1201` and `data.reason: "data-value-invalid"`. A
+Companion MUST NOT truncate a composed key to fit — truncation would
+discard the primary-key digest and collide distinct rows under Section
+15.2's flat key space.
 
 Every mutation occurrence is an `event.action` omitting `surface`,
 `revision_seen`, and `dialog_id` (Section 14.4's context-exclusivity),
@@ -372,7 +384,8 @@ windows for write-back are inherited unchanged from Sections 14.4 and
 **2. §4.5 — five rows appended to the welcome-limits table:**
 
 ```markdown
-| `max_data_schema_bytes` | REQUIRED when `ebp.data` is granted; maximum encoded bytes (Section 4.5 JCS sizing) of one complete `data.schema` params object; at least `65536` |
+| `max_data_schema_bytes` | REQUIRED when `ebp.data` is granted; maximum encoded bytes (Section 4.5 JCS sizing) of one complete `data.schema` params object; at least `65536` and no
+greater than `max_frame_bytes - 256` |
 | `max_data_tables` | REQUIRED when `ebp.data` is granted; declared tables per schema; at least `16` |
 | `max_data_columns` | REQUIRED when `ebp.data` is granted; declared columns per table; at least `64` |
 | `max_data_changeset_bytes` | REQUIRED when `ebp.data` is granted; maximum bytes of the exact UTF-8 JSON encoding of one complete `data.changeset` params object chosen for transmission, no longer than the value's JCS form; at least `262144` and no greater than `max_frame_bytes - 256` |
@@ -485,7 +498,7 @@ here so the deferral is explicit, not silent.)*"
 += the five members:
 
 ```json
-"max_data_schema_bytes": {"requirement": "when ebp.data granted", "min": 65536},
+"max_data_schema_bytes": {"requirement": "when ebp.data granted", "min": 65536, "max_expr": "max_frame_bytes - 256"},
 "max_data_tables": {"requirement": "when ebp.data granted", "min": 16},
 "max_data_columns": {"requirement": "when ebp.data granted", "min": 64},
 "max_data_changeset_bytes": {"requirement": "when ebp.data granted", "min": 262144, "max_expr": "max_frame_bytes - 256"},
@@ -579,45 +592,66 @@ SPEC-CHANGES row.
 
 ---
 
-## Review status (2026-08-01) — read before ratifying
+## Review status (2026-08-01) — verification COMPLETE
 
-Four independent reviewers plus a two-model refutation panel ran over this
-package. **Applied above:** the redelivered-delta contradiction (stale now
-takes precedence over the parent chain, both rules scoped to disjoint
-inputs); the false #155 hold-severability claim (now discloses the
-artifact re-authoring the hold forces); placeholder schema hashes (now
-real digests from a generator, which also removes the draft-vs-bytes drift
-class); the hash input's treatment of an absent `mutations` member; the
-undefined floor before first apply; `jetpacs.` out of the goldens.
+Four independent reviewers produced 35 findings; a triage pass merged them
+to 24 unique; every one now carries at least one adversarial verdict from
+a Sonnet and/or Opus refuter instructed to default to refutation. **Nine
+findings were upheld and all nine are fixed in the text above; fifteen
+were refuted with reasons.** Nothing is left unverified.
 
-**Recorded, NOT yet dispositioned — the verification panel was cut short by
-a usage limit, so these carry finder-level confidence only and each needs
-Caleb's eye or another pass before ratification:** §27.4's dedupe key can
-exceed the 128-octet identifier bound for long action/table names, and its
-`args.revision_seen` shadows a top-level `event.action` member with
-different semantics (P1-class, unrefuted); §23.5's storage bound is
-enforceable but unreported by any welcome limit; `max_data_schema_bytes`
-carries no frame cap while §27's preamble claims both bounds frame;
-`max_data_changeset_bytes`' JCS-ceiling clause vs ordinary elisp float
-encodings (interacts with O3); §22.2's class-2 graft asserts a
-gap-makes-stale/resync rule this module does not have; §7.4 and §22.2
-disagree on whether `data.schema` is order-protected; "pinned typed
-consumer" is undefined, so the §24.6 drift case may be unconstructible; a
-declaration bearing a **new** `id` has no defined transition though it is
-the stated version-exhaustion escape; the §12 closed-object override is
-express only for ops, not table/column definitions; §27.3's
-"strictly increasing" vs §27.6's epoch restart; O9's claimed #149
-cross-reference is absent from the drafted text; #155's artifacts
-paragraph claims a deferral its SPEC-CHANGES row does not record; O2's
-13.6× headroom is measured against the frame, not the drafted
-`max_data_changeset_bytes` floor; #153 and this package both splice at the
-end of §24.6.
+*Process note, recorded because it nearly shipped a false record:* the
+first verification pass was cut short by a usage limit, and its harness
+counted a finding with ZERO returned verdicts as "refuted" — silently
+converting unverified into killed. Fourteen findings were mis-filed that
+way. The harness now distinguishes UNVERIFIED from REFUTED, and every
+mis-filed finding was re-verified rather than trusted.
+
+**Upheld and fixed** — the redelivered-delta contradiction (stale now
+takes precedence, the two rules scoped to disjoint inputs); the false
+#155 hold-severability claim (now discloses the artifact re-authoring a
+hold forces); decorative placeholder schema hashes in a package whose own
+§27.2 computes them (now real digests from `tools/gen-rf4a-artifacts.py`,
+which also removes the draft-vs-bytes drift class); the hash input's
+treatment of an absent `mutations` member; the floor before first apply;
+`jetpacs.` out of the goldens; **§27.4's dedupe key, which could exceed
+§4.4's 128-octet bound — the worst legal composition is 226 octets, and
+an implementer who clamped rather than rejected would truncate away the
+primary-key digest and silently dedupe-collide distinct rows under
+§15.2's flat key space** (the key is now bounded, over-long descriptors
+are rejected, and truncation is forbidden outright); §27.3's
+"strictly increasing" contradicting §27.6's epoch restart (monotonicity
+is now epoch-scoped, the restart named); `max_data_schema_bytes` lacking
+the frame-fitting ceiling §27's preamble promised; a declaration bearing
+a **new** `id` having no defined transition though §27.6 names it the
+version-exhaustion escape (now one projection per pairing, any identity
+change is an epoch change); #155's row not recording the deferral its
+prose claimed; and #154's row citing `I7`, which resolves nowhere inside
+`ebp` (now §3 item 3, the in-repo statement of the same invariant).
+
+**Refuted, with reasons on file** — §27.4's `args.revision_seen`
+"shadowing" (the two members never coexist and the draft assigns them the
+same §14.5 semantics; but see the residue below); the §12 closed-object
+override's scope; §22.2's class-2 graft; §7.4-vs-§22.2 ordering and the
+concurrent-request permission; surface-presented mutations colliding with
+§14.4; "pinned typed consumer" being unconstructible; O2's headroom
+figure; O9's #149 cross-reference; the #153 splice-point collision; and
+five smaller items.
+
+**Residue for G1, surfaced by a refuting verdict rather than a finding:**
+§14.3's injection table is closed ("Hooks without an entry in this table
+inject nothing") and lists no `revision_seen`, yet §27.4 requires the
+Companion to inject one into `args`. That is an unamended cross-reference,
+distinct from the shadowing claim that was refuted, and it needs either a
+§14.3 edit or an express local override in §27.4. It is the one known
+open item in this package.
+
 
 ## #155 — the canonical wide-integer string encoding
 
 ### SPEC-CHANGES row (ready to paste)
 
-> | 155 | 2026-08-01 | §27.1.1 (within #154's new section; cross-ref §4.2; contract) | **64-bit integers cross the 2^53 wire as canonical strings, schema-typed.** §4.2 hard-caps JSON numbers at ±(2^53−1) with a Parse Error, and rightly — but SQLite `INTEGER` is 64-bit and a projection of real rows carries rowids and values beyond the safe range (audit P2-7 named this before the first changeset could flow). A `wide_integer` column therefore always carries a JSON string in one canonical decimal spelling (optional `-`, no leading zeros, no `+`, no `-0`, range exactly [−2^63, 2^63−1]); a JSON number in a `wide_integer` column is rejected, so no value has two encodings, and a receiver MUST NOT widen an out-of-range JSON number anywhere (§4.2 unchanged). Schema-typed strings, not a self-describing wrapper: changesets are never schema-less (§27.2's declaration gate), so a `{"$i64":…}` envelope would be redundant nesting; a flat typed string keeps rows flat and gives the canonical grammar one place to bind. Non-canonical spellings are `1201 data-value-invalid`. Additive; the negative raw-number case is already pinned by wire fixture 22. | goldens/wire += `25-data-wide-int` (+ manifest); frames.golden line 41 carries the +2^63−1 boundary; validate.py `check_params` canonical-grammar check over `wide_integer` golden values | |
+> | 155 | 2026-08-01 | §27.1.1 (within #154's new section; cross-ref §4.2; contract) | **64-bit integers cross the 2^53 wire as canonical strings, schema-typed.** §4.2 hard-caps JSON numbers at ±(2^53−1) with a Parse Error, and rightly — but SQLite `INTEGER` is 64-bit and a projection of real rows carries rowids and values beyond the safe range (audit P2-7 named this before the first changeset could flow). A `wide_integer` column therefore always carries a JSON string in one canonical decimal spelling (optional `-`, no leading zeros, no `+`, no `-0`, range exactly [−2^63, 2^63−1]); a JSON number in a `wide_integer` column is rejected, so no value has two encodings, and a receiver MUST NOT widen an out-of-range JSON number anywhere (§4.2 unchanged). Schema-typed strings, not a self-describing wrapper: changesets are never schema-less (§27.2's declaration gate), so a `{"$i64":…}` envelope would be redundant nesting; a flat typed string keeps rows flat and gives the canonical grammar one place to bind. Non-canonical spellings are `1201 data-value-invalid`. Engine-side rejection and its §24.6 non-canonical case are deferred to the implementation rungs (llm-poc-2 PLAN-refound RF-4b/4c) — in-repo enforcement is validate.py's canonical-grammar check over golden values only — recorded here so the deferral is explicit, not silent. Additive; the negative raw-number case is already pinned by wire fixture 22. | goldens/wire += `25-data-wide-int` (+ manifest); frames.golden line 41 carries the +2^63−1 boundary; validate.py `check_params` canonical-grammar check over `wide_integer` golden values | |
 
 ### Artifacts
 
