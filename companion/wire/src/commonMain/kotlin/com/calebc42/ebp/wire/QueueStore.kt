@@ -5,12 +5,7 @@
 // the kill-matrix witness — a process death is "re-open the same file".
 package com.calebc42.ebp.wire
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.put
 
 /** One durable state of the queue: records plus the two counters that
  * must survive restart (SPEC 15.1 queue_seq; SPEC 15.2 clock mark). */
