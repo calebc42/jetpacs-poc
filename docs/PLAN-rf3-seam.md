@@ -130,6 +130,13 @@ path: the `?:` miss arm.
    registry entry") is RF-4's to make. Recorded so the check reads as a
    decision, not an accident.
 
+   **Superseded (recorded 2026-08-02, RF-4a L2):** the relaxation was
+   never needed. Ratification GRADUATES a module into core — #154 landed
+   `data.*` as §11 registry rows with the `ebp.data` capability in the
+   core vocabulary, dispatched by the core `when`, and the seam's `ebp.`
+   rejections stand unrelaxed. The seam incubates unratified
+   (`jetpacs.*`) tenants only.
+
 8. **The seam fixes a reservation defect it would otherwise create.**
    `checkLimits()`'s prospective §4.5 welcome reservation builds its
    worst-case `granted` array from `config.supportedCapabilities` alone

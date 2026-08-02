@@ -782,8 +782,10 @@ RF-4 relaxation of the no-`ebp.` rule. RF-5a remains fully parallel.
 schema-generic layer cannot use Room, so the module must not be named after
 it.)
 
-The seam's first real tenant, and the strategic module: read-mostly mirror
-now, CRDT-ready vocabulary later.
+~~The seam's first real tenant~~ **(corrected 2026-08-02, RF-4a L2:
+ratification graduates a module INTO core — #154 landed `data.*` as §11
+registry rows; the seam incubates unratified tenants only)** — the
+strategic module: read-mostly mirror now, CRDT-ready vocabulary reserved.
 
 **The producer decision (2026-07-31, superseding the bulk-transfer
 capability ratified 2026-07-30):** the Companion materializes its own
@@ -938,8 +940,11 @@ points here.
   Emacs cannot durably publish a shared artifact at all). The vault-location
   onboarding choice per I8 is a Jetpacs application question, not a spec or
   plan rung.
-- **CRDT merge capability** — vocabulary is CRDT-ready (RF-4a); the
-  capability itself waits for a multi-writer use case.
+- **CRDT merge capability** — vocabulary is CRDT-ready (RF-4a's reserved
+  members are the seams for it), and the capability itself is **entirely
+  out of scope for this proof of concept — a hard wall, ratified by Caleb
+  2026-08-02**, regardless of use case: the project line's stated climax,
+  and precisely therefore not attempted at this line's ambitions.
 - **An authenticated + encrypted transport profile** (amendment #146's
   option B) — deferred, direction recorded (Caleb, 2026-07-31): #146's
   honest re-scope of the loopback threat model is the interim; a profile

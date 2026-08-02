@@ -6,6 +6,11 @@ ratify, SPEC-CHANGES appends in ratification order as separate ebp
 commits). Source plan: [PLAN-rf4a-data-spec.md](PLAN-rf4a-data-spec.md);
 parent §RF-4 (PLAN-refound :779-881).
 
+> **RATIFIED (Caleb, 2026-08-02) and APPLIED — ebp @ `37fb456`.** The
+> per-entry text below is the ratified draft of record; the authoritative
+> applied text is SPEC.md + SPEC-CHANGES.md in the submodule (the
+> DRAFT-amendments-67-73 disposition convention).
+
 **These are drafts for ratification, not applied edits.** Each amendment
 gives (a) the SPEC-CHANGES row ready to paste, (b) the precise normative
 SPEC.md edits, (c) the artifact changes (contract, goldens, fixtures,

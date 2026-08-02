@@ -688,7 +688,9 @@ forecloses case-collision games before they can start.")
 (defconst ebp--core-namespaces
   '("session" "auth" "surface" "queue" "event" "state" "dialog" "toast"
     "pie_menu" "theme" "reminders" "edit" "diagnostics" "eldoc" "fontify"
-    "capability" "triggers" "log" "rpc")
+    "capability" "triggers" "log" "rpc"
+    ;; RF-4a (#154, ratified 2026-08-02): the data projection module's method root.
+    "data")
   "First dot-segment of every SPEC 11 core method.
 A module may not root itself at one: the seam's gates consult module
 namespaces by prefix, so a module rooted at a core segment would
@@ -701,7 +703,10 @@ Pinned against the contract's method registry by the wire suite.")
   '("surfaces.notification" "surfaces.widget" "surfaces.tile"
     "surfaces.dialog" "presentation.toast" "presentation.pie-menu"
     "theme" "reminders.owner" "editor.sync" "capabilities" "triggers"
-    "offline.wake")
+    "offline.wake"
+    ;; RF-4a (#154, ratified 2026-08-02): the first spec-ratified use of the reserved
+    ;; prefix as a capability name.
+    "ebp.data")
   "The SPEC 22.1 capability registry VOCABULARY (RF-3 review R1-2).
 A module capability may not claim any of these — not merely the eight
 that gate methods in `ebp--method-capabilities'.  A module named after
@@ -1128,7 +1133,11 @@ Doubles as a drain point: a paused reader resumes at the low-water mark."
     (eldoc\.show        . "editor.sync")
     (fontify\.show      . "editor.sync")
     (capability\.invoke . "capabilities")
-    (triggers\.set      . "triggers"))
+    (triggers\.set      . "triggers")
+    ;; RF-4a (#154, ratified 2026-08-02): the data projection module's Emacs-sender
+    ;; requests — rows arm the outbound gate before RF-4b ever sends.
+    (data\.schema       . "ebp.data")
+    (data\.changeset    . "ebp.data"))
   "Emacs-sender method → the SPEC 22.1 capability that gates it.
 Mirrors the `capability' field of the contract's method registry for
 every unconditionally gated Emacs-or-either-sender method; the wire
