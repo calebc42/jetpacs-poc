@@ -148,5 +148,50 @@ wire.  Dials the PLAIN host (no --echo) — the shared RF-2.6 one."
                         :type 'ebp-ungranted))
       (ignore-errors (ebp-client-close client 'test-done)))))
 
+(ert-deftest ebp-seam-test-array-of-objects-round-trips-jsonrpc ()
+  "RF-4a follow-up: the LIVE jsonrpc.el path carries a data-shaped
+params — an ARRAY OF OBJECTS with a null, a boolean, and a canonical
+wide-integer string — bit-intact through elisp → jsonrpc.el serialize →
+Kotlin parse → Kotlin serialize → jsonrpc.el parse.  Pinned because the
+same data shape exposed a latent bug in the OFFLINE test comparator
+(`ebp-test--json-equal', fixed 2026-08-02), and the natural next
+question was whether the live path has an array problem too.  It does
+not: jsonrpc.el parses with `:object-type' plist and the DEFAULT
+`:array-type' array, so arrays at any depth are vectors of plists both
+ways.  jsonrpc.el's real array limitations are elsewhere and already
+spec-foreclosed: positional array PARAMS are prohibited by §4.1 (the
+engine answers -32602, pinned) and top-level batch arrays by §6
+(wire fixture 18).  RF-4b sender guidance pinned here: elisp nil is
+JSON null and `:json-false' is false on this path."
+  (let ((result nil) (err nil)
+        (payload `(:ops [(:op "put"
+                          :row (:body_hash nil
+                                :file "a.org"
+                                :nullable_flag :json-false
+                                :pos "9223372036854775807"
+                                :title "Hello")
+                          :table "notes")
+                         (:key (:dst "b" :src "a") :op "del"
+                          :table "links")]
+                   :revision 7)))
+    (ebp-seam-test--with-ready-client
+        (client :modules `(("jetpacs.echo" "jetpacs.echo"
+                            (("jetpacs.echo.pulse" . ignore)))))
+      (ebp-client--request client 'jetpacs\.echo\.ping payload
+                           (lambda (r e) (setq result r err e)))
+      (should (ebp-host-test--wait (lambda () (or result err))))
+      (should-not err)
+      ;; The echo tenant returns params verbatim: structural equality
+      ;; proves every element of the array of objects survived, the
+      ;; null came back as nil, the false as :json-false, and the
+      ;; wide-integer string was never coerced to a number.
+      (should (equal payload result))
+      (let* ((row (plist-get (aref (plist-get result :ops) 0) :row)))
+        (should (stringp (plist-get row :pos)))
+        (should (equal (plist-get row :pos) "9223372036854775807"))
+        (should (eq (plist-get row :nullable_flag) :json-false))
+        (should (plist-member row :body_hash))
+        (should (null (plist-get row :body_hash)))))))
+
 (provide 'ebp-seam-test)
 ;;; ebp-seam-test.el ends here
