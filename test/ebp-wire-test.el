@@ -40,9 +40,17 @@
 
 (defun ebp-test--json-equal (a b)
   "Structural JSON equality over parsed alist/list values (SPEC 4.3-ish).
-Alists compare as unordered member sets; lists as ordered arrays."
+Alists compare as unordered member sets; lists as ordered arrays.
+An object's elements are (SYMBOL . VALUE) pairs, so the alist branch
+additionally requires a symbol car — without it, a JSON ARRAY of
+objects (whose elements are themselves alists, cons cars) is
+misclassified as an object and its members `assq'd by cons identity,
+which can never match.  Latent since this helper's birth; exposed by
+wire fixture 23's `mutations', the goldens' first array of objects
+(RF-4a E1, 2026-08-02)."
   (cond
-   ((and (consp a) (consp (car-safe a)) (consp b) (consp (car-safe b)))
+   ((and (consp a) (consp (car-safe a)) (symbolp (caar a))
+         (consp b) (consp (car-safe b)) (symbolp (caar b)))
     (and (= (length a) (length b))
          (cl-every (lambda (pair)
                      (let ((other (assq (car pair) b)))

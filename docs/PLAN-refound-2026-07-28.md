@@ -52,7 +52,7 @@ by **graduating the name**, not the tree.
 | RF-5a | track-changes.el — **now a prerequisite of RF-4b** | RF-1a | Promoted in the priority line |
 | RF-5c | Keystore | RF-1a | Note the reconnect interaction |
 | RF-3 | Extension seam + `jetpacs.echo` | RF-2c, RF-2.6 | Gate (2) is unrunnable without the host — **DONE 2026-08-01**, branch `rf-3` (stacked on `rf-1`), [PLAN-rf3-seam.md](PLAN-rf3-seam.md); the RF-1c loopback job runs gate (2) live in CI, so the "unrunnable" cell is historical |
-| RF-4a | `ebp.data` spec — inline changesets only | RF-3; informed by spike-kotlin; after I1 closes | Editing `ebp/` is forbidden while RF-2 is in flight |
+| RF-4a | `ebp.data` spec — inline changesets only | RF-3; informed by spike-kotlin; after I1 closes | **DONE 2026-08-02**, branch `rf-4a`, [PLAN-rf4a-data-spec.md](PLAN-rf4a-data-spec.md) — amendments **#154/#155 ratified by Caleb** (`ebp` @ `37fb456`, SPEC §27 + contract + goldens); multi-part snapshots per Caleb's O2; CRDT scoped out of the POC (hard wall); mirror + stubs landed with the pointer in one commit |
 | RF-4b | `ebp-data.el` | RF-4a, RF-5a | |
 | RF-4c | `ebp-sqlite` (renamed from `ebp-room3`) | RF-4a, RF-2.6 | Under the producer decision, Room's constraints stop applying to a Companion-owned DB |
 | RF-5b | WorkManager, **rewritten gate** | RF-1a | |
