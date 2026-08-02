@@ -340,7 +340,11 @@ Every mutation occurrence is an `event.action` omitting `surface`,
 `revision_seen`, and `dialog_id` (Section 14.4's context-exclusivity),
 carrying its source identity in validated `args`; the module REQUIRES
 `args.revision_seen` — the last applied data revision at the moment of
-the occurrence — and Emacs applies Section 14.5's semantics to it. The
+the occurrence — and Emacs applies Section 14.5's semantics to it. This
+is an express, module-scoped addition to Section 14.3's closed injection
+set: a data-mutation occurrence is not a surface hook, the member is
+authored by the Companion as part of the descriptor's declared contract,
+and Section 14.3's table remains closed for every other case. The
 Companion MUST NOT write the materialized projection to reflect a pending
 mutation; optimistic presentation is an overlay reconciled when the
 round-trip changeset arrives (Section 13.6's draft discipline applied to
