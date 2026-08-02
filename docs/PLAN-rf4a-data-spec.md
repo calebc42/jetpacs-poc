@@ -161,6 +161,16 @@ ratified commits are invisible to other checkouts until pushed.
    rows, golden lines, generated wire fixtures), run `python3 validate.py`
    green there — the package is proven coherent before a human reads it,
    and the submodule stays untouched until ratification.
+6. **CRDT is out of scope for the POC — a hard wall, ratified (Caleb,
+   2026-08-02, G1 input #2).** The crown-jewel climax of the project
+   line, and precisely therefore not attempted here: single-user need,
+   and neither party convinced of a correct merge-discipline
+   implementation at this line's ambitions. The §27 reservations
+   (closed ops, reserved `site`/`clock`/`cols`/`merge`, column-keyed
+   rows) are the only CRDT artifacts this line produces. E1's
+   dual-recording list gains the PLAN-refound non-goals strengthening
+   ("waits for a multi-writer use case" → out of POC scope entirely).
+
 6. **M1 is deliberately red.** The mirror diff cannot go green until the
    pointer moves — its four contract pins compare against the still-pinned
    `83d6e08` contract. Compile-check only; the red pins are the proof that

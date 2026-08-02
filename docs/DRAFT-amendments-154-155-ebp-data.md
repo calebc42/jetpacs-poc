@@ -48,6 +48,8 @@ chunkings`.
 | O9 | #149 (held) interaction | #154's exhaustion language mirrors held-#149's drafted shape and cross-references it, so a later #149 ratification generalizes rather than forks | module-local wording, no cross-reference |
 | O10 | `check_spec_sync` State/Capability columns | decline; the residue stays recorded as a wish (runbook enforcement paragraph) | extend the tool (ebp-side, d48075d class) |
 
+**Ratified scoping (Caleb, 2026-08-02): CRDT is entirely out of scope for the proof of concept.** It remains the project line's stated climax, and the reservations below exist precisely so a future line can attach it — but no rung of this plan implements any merge discipline, regardless of use case. The reserved member names (`site`/`clock`/`cols`/`merge`), the closed-object ops, and the column-keyed rows are the ONLY CRDT artifacts this line produces; "CRDT-ready vocabulary, not CRDT machinery" is a hard wall, not a deferral. Grounds: single-user need today, and an honest assessment that correct merge-discipline implementation exceeds this POC's ambitions. PLAN-refound's non-goals entry ("waits for a multi-writer use case") is strengthened accordingly at E1's dual recording.
+
 ---
 
 ## #154 — the data projection module (`ebp.data`, Section 27)
