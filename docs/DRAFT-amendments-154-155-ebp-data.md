@@ -38,7 +38,7 @@ chunkings`.
 | # | Decision | A (recommended) | B |
 |---|---|---|---|
 | O1 | Welcome member name | `data_state` (avoids overloaded bare `data`: `error.data`, `${data.*}` trigger templates) | `data` |
-| O2 | Snapshot capacity | one frame (`max_data_changeset_bytes`), `replace`-sequence fallback for oversized re-syncs; measurement gives 13.6× headroom | multi-part snapshot protocol now |
+| O2 | Snapshot capacity | ~~one frame~~ | **RESOLVED (Caleb, 2026-08-02): B — multi-part snapshot sequences, drafted in §27.3.** The measured vault is embryonic and NOT representative; the single-frame ceiling was a floor-case number promoted into a design envelope |
 | O3 | JCS scope | identity/hash/dedupe-keys + §4.5 sizing only; wire bodies stay §24.5-semantic (elisp never ES6-formats floats) | wire-canonical changeset bodies (byte-exact data goldens become possible; every `real` needs ES6 shortest-round-trip in elisp) |
 | O4 | Storage-exhaustion refusal | `1201` + `data.reason:"data-limit"` (no new code) | new 16xx code |
 | O5 | `truncate` op | keep (4-op vocabulary) | trim (`replace` + snapshot cover most uses) |
@@ -54,7 +54,7 @@ chunkings`.
 
 ### SPEC-CHANGES row (ready to paste)
 
-> | 154 | 2026-08-01 | §27 (new), §4.5, §7.4, §10.2, §11, §22.1, §22.2, §23.5, §24.3, §24.6 (cross-ref §3 item 3, §14, §15; contract) | **The data projection module — a durable, schema-declared, changeset-maintained mirror.** Consumers of Emacs-authored data (typed Android layers, widgets, queries) previously had two bad options: re-parse the authored source (rejected permanently — Emacs is the sole interpreter of source formats) or ride presentation nodes (measured: the node-aggregate caps bind at 4,096 cells, one real vault already needs 3 chunked updates — a `table` is a view with a view's limits). The module makes the Companion the holder of a durable materialized projection: Emacs declares a schema with identity `{id, version, hash}` (`data.schema`), then maintains the projection exclusively through revisioned inline changesets (`data.changeset`) — snapshots, deltas with parent chaining, row upserts/deletes and provenance-scoped `replace` (the producer's rewrite-all-rows-per-unit pattern as one atomic op). The projection is pairing-scoped and durable; the welcome's `data_state` member reports schema identity and last durably applied revision, so restart-resume is a welcome-read, not a probe. Single-writer v1: Emacs is authoritative; Companion-side mutations are ordinary §14 actions riding the §15 durable queue (descriptors delivered with the schema; no generic row-write verbs; no second sync machinery) and the projection changes only when the round-trip changeset lands. Drift is negotiated, not erred: `refused`/`dynamic` results let pinned typed consumers detect mismatch before any changeset flows. Ops are closed objects and the member names `site`/`clock`/`cols`/`merge` are reserved for a future negotiated merge-discipline capability — CRDT-ready vocabulary, not CRDT machinery. Exhaustion per the #151 duty: one totally ordered per-pairing revision stream, persisted, no wrap, reclaimed only by schema-epoch change; no retained tombstones (the floor is one durable number, unlike §13.1's raced per-surface streams). Five conditional welcome limits (`max_data_*`); the §4.5 reservation gains `data_state`'s bounded worst case. Additive per §25: a new OPTIONAL capability with positive discovery and safe fallback; no existing message, golden, or fixture is modified. Conformance cases for the loopback kill/restart scenario and offline write-back are drafted with explicit deferral to the implementation rungs (llm-poc-2 PLAN-refound RF-4b/4c), recorded here so the deferral is explicit, not silent. | contract `methods` += `data.schema`, `data.changeset`; `capabilities` += `ebp.data`; `limits.welcome` += 5 `max_data_*` members; goldens/frames.golden += 3 frames (coverage floor); goldens/wire += `23-data-schema-accept`, `24-data-schema-drift` (+ manifest); validate.py `check_params` data arm (enforcement named in-row) | |
+> | 154 | 2026-08-01 | §27 (new), §4.5, §7.4, §10.2, §11, §22.1, §22.2, §23.5, §24.3, §24.6 (cross-ref §3 item 3, §14, §15; contract) | **The data projection module — a durable, schema-declared, changeset-maintained mirror.** Consumers of Emacs-authored data (typed Android layers, widgets, queries) previously had two bad options: re-parse the authored source (rejected permanently — Emacs is the sole interpreter of source formats) or ride presentation nodes (measured: the node-aggregate caps bind at 4,096 cells, one real vault already needs 3 chunked updates — a `table` is a view with a view's limits). The module makes the Companion the holder of a durable materialized projection: Emacs declares a schema with identity `{id, version, hash}` (`data.schema`), then maintains the projection exclusively through revisioned inline changesets (`data.changeset`) — snapshots, deltas with parent chaining, row upserts/deletes and provenance-scoped `replace` (the producer's rewrite-all-rows-per-unit pattern as one atomic op). The projection is pairing-scoped and durable; the welcome's `data_state` member reports schema identity and last durably applied revision, so restart-resume is a welcome-read, not a probe. Single-writer v1: Emacs is authoritative; Companion-side mutations are ordinary §14 actions riding the §15 durable queue (descriptors delivered with the schema; no generic row-write verbs; no second sync machinery) and the projection changes only when the round-trip changeset lands. Drift is negotiated, not erred: `refused`/`dynamic` results let pinned typed consumers detect mismatch before any changeset flows. Ops are closed objects and the member names `site`/`clock`/`cols`/`merge` are reserved for a future negotiated merge-discipline capability — CRDT-ready vocabulary, not CRDT machinery. Exhaustion per the #151 duty: one totally ordered per-pairing revision stream, persisted, no wrap, reclaimed only by schema-epoch change; no retained tombstones (the floor is one durable number, unlike §13.1's raced per-surface streams). Seven welcome limits (`max_data_*`, one optional); the §4.5 reservation gains `data_state`'s bounded worst case. Additive per §25: a new OPTIONAL capability with positive discovery and safe fallback; no existing message, golden, or fixture is modified. Conformance cases for the loopback kill/restart scenario and offline write-back are drafted with explicit deferral to the implementation rungs (llm-poc-2 PLAN-refound RF-4b/4c), recorded here so the deferral is explicit, not silent. | contract `methods` += `data.schema`, `data.changeset`; `capabilities` += `ebp.data`; `limits.welcome` += 7 `max_data_*` members; goldens/frames.golden += 3 frames (coverage floor); goldens/wire += `23-data-schema-accept`, `24-data-schema-drift` (+ manifest); validate.py `check_params` data arm (enforcement named in-row) | |
 
 ### SPEC.md edits
 
@@ -90,10 +90,12 @@ Emacs MUST NOT send a `data.changeset` whose encoded params exceed
 declaration exceeds `max_data_schema_bytes`; both bounds are chosen so an
 allowed message also frames within `max_frame_bytes` (Section 4.5).
 
-> Informative: the module's carrier is inline changesets only, upheld by
-> measurement — a real vault's full-row projection is 7.34% of one frame,
-> with per-row sizes showing no tail. A bulk carrier is deliberately not
-> specified; if measurement ever justifies one, the reserved shape is a
+> Informative: the module's carrier is inline changesets only. The one
+> measured vault (young and small — a floor case, not a design envelope)
+> projects to 7.34% of a single frame, but the multi-part snapshot rules
+> of Section 27.3 are the capacity story: a projection of any size crosses
+> as a staged sequence of frame-sized parts. A bulk carrier is
+> deliberately not specified; if measurement ever justifies one, the reserved shape is a
 > hash-verified compressed changeset artifact at a negotiated URI whose
 > integrity failure falls back to inline changesets, which remain the
 > complete floor.
@@ -231,7 +233,9 @@ equal the accepted declaration's hash — the guard against a changeset
 racing a mid-session epoch change; mismatch is `1201` with
 `data.reason: "data-schema-mismatch"`. `revision` is a non-negative safe
 integer. `snapshot` defaults to false. `parent` is REQUIRED exactly when
-`snapshot` is absent or false and MUST be absent when `snapshot` is true.
+`snapshot` is absent or false and MUST be absent when `snapshot` is true;
+`part` and `final` are legal only when `snapshot` is true (Section
+27.3's staging rules).
 
 Emacs MUST assign data revisions from one durable, per-pairing counter
 that is strictly increasing within a schema epoch; a schema-epoch change
@@ -345,7 +349,8 @@ delivering connection's grants or schema state — the queue is core.
 
 Module failures are `1201 content-invalid` with a `data.reason` string:
 `data-undeclared`, `data-schema-mismatch`, `data-revision-gap` (with
-`data.applied_revision`), `data-value-invalid`, `data-limit`. Wrong
+`data.applied_revision`), `data-snapshot-invalid`, `data-value-invalid`,
+`data-limit`. Wrong
 session state is `1204` as everywhere. There is no `data.resync` method
 and no Companion→Emacs data method: every recovery need is met by the
 welcome report and the gap error (Section 27.3), and a Companion that
@@ -359,7 +364,9 @@ The five welcome limits are `max_data_schema_bytes`,
 durable acceptance of a declaration; changeset limits before the apply
 transaction. `max_data_ops` counts each `replace` row individually —
 interpretation cost MUST be bounded independently of byte size (Section
-23.5). No pending-write-back limit exists: mutations are Section 15
+23.5). A Companion advertising `max_data_storage_bytes` names the total
+materialized bound its Section 23.5 refusal enforces; staged snapshot
+parts count against the same bound. No pending-write-back limit exists: mutations are Section 15
 events, already bounded by `max_queued_events` and `max_queued_bytes`; a
 second bound would double-count.
 
@@ -388,7 +395,9 @@ windows for write-back are inherited unchanged from Sections 14.4 and
 greater than `max_frame_bytes - 256` |
 | `max_data_tables` | REQUIRED when `ebp.data` is granted; declared tables per schema; at least `16` |
 | `max_data_columns` | REQUIRED when `ebp.data` is granted; declared columns per table; at least `64` |
-| `max_data_changeset_bytes` | REQUIRED when `ebp.data` is granted; maximum bytes of the exact UTF-8 JSON encoding of one complete `data.changeset` params object chosen for transmission, no longer than the value's JCS form; at least `262144` and no greater than `max_frame_bytes - 256` |
+| `max_data_changeset_bytes` | REQUIRED when `ebp.data` is granted; maximum bytes of the exact UTF-8 JSON encoding of one complete `data.changeset` params object chosen for transmission; at least `262144` and no greater than `max_frame_bytes - 256` |
+| `max_data_snapshot_parts` | REQUIRED when `ebp.data` is granted; parts the Companion accepts in one staged snapshot sequence (Section 27.3); at least `16` |
+| `max_data_storage_bytes` | OPTIONAL when `ebp.data` is granted; the total materialized-projection bytes the Companion sustains; a refusal past it is `1201` with `data.reason: "data-limit"` citing this bound |
 | `max_data_ops` | REQUIRED when `ebp.data` is granted; ops per changeset, counting each `replace` row individually; at least `8192` |
 ```
 
@@ -463,7 +472,9 @@ application); the Section 27.1.1 boundary values round-tripping exactly
 and non-canonical spellings rejected; Companion process death and restart
 with the welcome reporting the surviving `(schema, revision)` and a
 parent-chained delta applying; a mid-changeset failure leaving revision
-and every table unchanged; a redelivered revision answering `stale`
+and every table unchanged; a snapshot sequence interrupted by process
+death or a mid-sequence gap leaving the floor and every table unchanged
+with the staging discarded; a redelivered revision answering `stale`
 without re-application; and an offline-queued mutation surviving replay
 with the projection changing only on the round-trip changeset.
 *(Reference implementation: the process-death, replay, and materialized
@@ -487,7 +498,7 @@ here so the deferral is explicit, not silent.)*"
   "sender": "emacs", "class": "request", "states": ["READY"],
   "capability": "ebp.data",
   "params": {"required": ["schema_hash", "revision", "ops"],
-             "optional": ["snapshot", "parent"]},
+             "optional": ["snapshot", "parent", "part", "final"]},
   "result": {"required": ["status", "revision"], "optional": []},
   "result_status": ["applied", "stale"],
   "errors": [1201, -32602]
@@ -502,6 +513,8 @@ here so the deferral is explicit, not silent.)*"
 "max_data_tables": {"requirement": "when ebp.data granted", "min": 16},
 "max_data_columns": {"requirement": "when ebp.data granted", "min": 64},
 "max_data_changeset_bytes": {"requirement": "when ebp.data granted", "min": 262144, "max_expr": "max_frame_bytes - 256"},
+"max_data_snapshot_parts": {"requirement": "when ebp.data granted", "min": 16},
+"max_data_storage_bytes": {"requirement": "optional when ebp.data granted"},
 "max_data_ops": {"requirement": "when ebp.data granted", "min": 8192}
 ```
 
@@ -565,6 +578,8 @@ def check_data_params(method, params, path):
                 problem(f"{path}: table `{tname}` pk invalid")
         return
     snapshot = params.get("snapshot", False)
+    if not snapshot and ("part" in params or "final" in params):
+        problem(f"{path}: part/final without snapshot")
     if snapshot and "parent" in params:
         problem(f"{path}: snapshot changeset carries parent")
     if not snapshot and "parent" not in params:
@@ -599,6 +614,17 @@ to 24 unique; every one now carries at least one adversarial verdict from
 a Sonnet and/or Opus refuter instructed to default to refutation. **Nine
 findings were upheld and all nine are fixed in the text above; fifteen
 were refuted with reasons.** Nothing is left unverified.
+
+*Disposition correction (2026-08-02):* the "verification COMPLETE"
+summary below itself dropped two pass-one-confirmed P2s — the §23.5
+storage bound being enforceable but unreported, and the JCS-ceiling
+clause on `max_data_changeset_bytes` outlawing ordinary elisp float
+encodings. Both are now fixed (the optional `max_data_storage_bytes`
+welcome member names the bound; the JCS-ceiling clause is struck — a
+sender counts its actual transmitted bytes, and inflating its own
+encoding only hurts itself). Recorded here because a review whose
+summary loses findings is the same defect class as a harness that
+mis-files them.
 
 *Process note, recorded because it nearly shipped a false record:* the
 first verification pass was cut short by a usage limit, and its harness
