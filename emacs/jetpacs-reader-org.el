@@ -327,13 +327,18 @@ its editor is deliberately plain and section-scoped."
 
 (defun jetpacs-reader-org-register ()
   "Register the Org reader adapter and its actions, idempotently."
+  ;; Always reassert the adapter.  Another app may deliberately replace
+  ;; the stable `org' slot while it is loaded, then call this registrar
+  ;; during teardown to restore the foundation implementation.  Keeping
+  ;; this inside the one-time action block would make that restoration a
+  ;; no-op merely because the stock actions were still registered.
+  (jetpacs-reader-register
+   'org :predicate #'jetpacs-reader-org-path-p
+   :render #'jetpacs-reader-org--render
+   :actions #'jetpacs-reader-org--actions
+   :transition #'jetpacs-reader-org--transition)
   (unless jetpacs-reader-org--registered
     (setq jetpacs-reader-org--registered t)
-    (jetpacs-reader-register
-     'org :predicate #'jetpacs-reader-org-path-p
-     :render #'jetpacs-reader-org--render
-     :actions #'jetpacs-reader-org--actions
-     :transition #'jetpacs-reader-org--transition)
     (jetpacs-defaction "jetpacs.reader.org.reader-mode"
                        #'jetpacs-reader-org--reader-mode-action)
     (jetpacs-defaction "jetpacs.reader.org.visibility"

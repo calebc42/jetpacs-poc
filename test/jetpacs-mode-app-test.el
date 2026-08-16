@@ -65,6 +65,25 @@
                      '(:surface "app:files"))
                     'stale))))))
 
+(ert-deftest jetpacs-reader-org-register-reasserts-replaced-slot ()
+  "An already-registered stock adapter can be restored after replacement."
+  (let ((jetpacs-reader--adapters nil)
+        ;; Model the real GR-2 lifecycle: stock actions remain installed
+        ;; while another app temporarily owns adapter id `org'.
+        (jetpacs-reader-org--registered t))
+    (jetpacs-reader-register
+     'org :predicate #'jetpacs-reader-org-path-p
+     :render (lambda (_path) (jetpacs-text "replacement"))
+     :actions #'ignore :transition #'ignore)
+    (jetpacs-reader-org-register)
+    (let ((adapter (jetpacs-reader-adapter-for "/tmp/restored.org")))
+      (should (eq (jetpacs-reader-adapter-render adapter)
+                  #'jetpacs-reader-org--render))
+      (should (eq (jetpacs-reader-adapter-actions adapter)
+                  #'jetpacs-reader-org--actions))
+      (should (eq (jetpacs-reader-adapter-transition adapter)
+                  #'jetpacs-reader-org--transition)))))
+
 (ert-deftest jetpacs-reader-org-rents-built-in-search-and-visibility ()
   "Plain/regexp search uses org-occur; sparse filters use Org's matcher."
   (jetpacs-mode-app-test--with-org-file
