@@ -58,6 +58,25 @@ Written only by `app.open' — set by a routed open, cleared by a plain
 one — so the app-primary tabs can indicate the selected place (the
 M3 navigation-bar contract).")
 
+;;;; App-surface refresh
+
+(defun jetpacs-app-defer-refresh (&optional params)
+  "Defer a re-push of PARAMS' or the current flow's app surface.
+PARAMS is an `event.action' plist and may be nil.  An explicit
+`:surface' wins; otherwise `jetpacs-flow-surface' supplies the
+device-flow origin.  If neither exists, the deferred call preserves
+the flow's owner and `jetpacs-shell-push' applies its normal D1
+default.
+
+The push is deliberately outside the dispatch extent (D2), and a
+render refusal is presentation failure after the handler's effect —
+it must not escape a timer and rewrite an already-returned status."
+  (let ((surface (or (plist-get params :surface)
+                     (jetpacs-flow-surface))))
+    (jetpacs-flow-continue
+     (lambda ()
+       (ignore-errors (jetpacs-shell-push surface))))))
+
 ;;;; Registry
 
 (defun jetpacs-apps--check-destination-list (dests)

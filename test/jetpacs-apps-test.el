@@ -31,6 +31,36 @@
 (defun jetpacs-apps-test--labels (items)
   (mapcar (lambda (i) (plist-get i :label)) items))
 
+(ert-deftest jetpacs-apps-defer-refresh-is-d2-and-surface-scoped ()
+  "The public app refresh seam defers and preserves the flow surface.
+An explicit event surface wins over the ambient flow; a failed render
+is isolated inside the continuation because the handler's status has
+already returned."
+  (let (continuations pushed)
+    (cl-letf (((symbol-function 'jetpacs-flow-surface)
+               (lambda () "app:flow-owner"))
+              ((symbol-function 'jetpacs-flow-continue)
+               (lambda (fn) (push fn continuations)))
+              ((symbol-function 'jetpacs-shell-push)
+               (lambda (surface &rest _)
+                 (push surface pushed))))
+      (jetpacs-app-defer-refresh)
+      (jetpacs-app-defer-refresh '(:surface "app:explicit"))
+      (should-not pushed)
+      (funcall (pop continuations))
+      (funcall (pop continuations))
+      (should (equal pushed '("app:flow-owner" "app:explicit"))))
+    (let ((continuations nil))
+      (cl-letf (((symbol-function 'jetpacs-flow-surface) #'ignore)
+                ((symbol-function 'jetpacs-flow-continue)
+                 (lambda (fn) (push fn continuations)))
+                ((symbol-function 'jetpacs-shell-push)
+                 (lambda (&rest _) (error "render refused"))))
+        (jetpacs-app-defer-refresh)
+        (should-not (condition-case nil
+                        (progn (funcall (pop continuations)) nil)
+                      (error t)))))))
+
 (ert-deftest jetpacs-apps-zero-apps-is-byte-identical-core ()
   "With no registered apps the composed dock IS the core items."
   (jetpacs-apps-test--env

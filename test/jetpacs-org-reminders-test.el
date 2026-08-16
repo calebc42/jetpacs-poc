@@ -18,7 +18,7 @@
   "Glasspane delegates to the one extractor cached under org-mode."
   (should (eq (symbol-function 'glasspane-org--agenda-scope)
               'jetpacs-org-mode--agenda-scope))
-  (should (eq (symbol-function 'glasspane-org--agenda-items)
+  (should (eq (symbol-function 'glasspane-org-agenda-items)
               'jetpacs-org-mode--agenda-items))
   (should (eq (symbol-function 'glasspane-org--agenda-items-1)
               'jetpacs-org-mode--agenda-items-1))
@@ -40,15 +40,15 @@
                        (cl-incf calls)
                        fixture)))
             (should (equal (jetpacs-org-mode--agenda-items 'day) fixture))
-            (should (equal (glasspane-org--agenda-items 'day) fixture))
+            (should (equal (glasspane-org-agenda-items 'day) fixture))
             (should (= calls 1))
             ;; Clearing Glasspane's namespace cannot evict the canonical
             ;; projection; clearing Org Mode's namespace must do so.
             (ebp-org-cache-invalidate 'glasspane)
-            (glasspane-org--agenda-items 'day)
+            (glasspane-org-agenda-items 'day)
             (should (= calls 1))
             (ebp-org-cache-invalidate 'org-mode)
-            (glasspane-org--agenda-items 'day)
+            (glasspane-org-agenda-items 'day)
             (should (= calls 2))))
       (ebp-org-cache-invalidate))))
 
