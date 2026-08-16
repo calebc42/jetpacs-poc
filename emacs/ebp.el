@@ -2023,17 +2023,30 @@ state under a fresh session at seq 0."
              :session (plist-get ed :session))
        (lambda (result error)
          (unless error
-           (puthash (cons document editor-id)
-                    (list :session (plist-get result :session) :seq 0
-                          :text (plist-get result :text)
-                          :cursor (plist-get result :cursor))
-                    (ebp-client-editors client))
-           ;; Amendment #172: the fresh session restarts seq at 0, which
-           ;; can re-reach a retained value — the session comparand alone
-           ;; would be the only guard, so drop the cell with the epoch.
-           (remhash (cons document editor-id)
-                    (ebp-client-candidate-replies client))
-           (ebp-client--editor-changed client document editor-id)))))))
+           (let* ((key (cons document editor-id))
+                  (prior (gethash key (ebp-client-editors client)))
+                  (text (plist-get result :text)))
+             (puthash key
+                      (list :session (plist-get result :session) :seq 0
+                            :text text
+                            :cursor (plist-get result :cursor))
+                      (ebp-client-editors client))
+             ;; Amendment #172: the fresh session restarts seq at 0, which
+             ;; can re-reach a retained value — the session comparand alone
+             ;; would be the only guard, so drop the cell with the epoch,
+             ;; before application hooks can observe the new session.
+             (remhash key (ebp-client-candidate-replies client))
+             ;; A successful resync result is the same full-state seed as
+             ;; `edit.open', just carried by a request result.  Hand it to
+             ;; the same reconciliation hooks: replacing only ebp.el's
+             ;; mirror left an attached `ebp-sync' buffer on the losing
+             ;; text forever, so its next edit was computed against a
+             ;; different document — precisely the wrong-edit boundary
+             ;; resynchronization exists to close.
+             (dolist (fn (ebp-client-edit-open-functions client))
+               (funcall fn client document editor-id text
+                        (plist-get prior :text)))
+             (ebp-client--editor-changed client document editor-id))))))))
 
 ;;;; Surface push (SPEC 13.1-13.3), the client half
 

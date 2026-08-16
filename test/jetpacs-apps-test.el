@@ -287,11 +287,15 @@ verb dispatched directly from the host surface refuses."
               ;; The route handler accepted, so NO redundant home push.
               (should-not pushed)
               ;; A vanished route is stale — the row outlived its
-              ;; registry.
+              ;; registry — but S1 still opens the app's stable home.
               (should (eq (jetpacs-apps--action-open
                            '(:app "routed" :route "ghost") nil)
                           'stale))
+              (should (equal pushed '("routed.main")))
+              (should (equal jetpacs-apps--current "routed"))
+              (should-not jetpacs-apps--current-route)
               ;; A refusing route still opens the app: home fallback.
+              (setq pushed nil)
               (with-jetpacs-owner "routed"
                 (jetpacs-defaction "routed.open"
                                    (lambda (_a _p) 'rejected)))

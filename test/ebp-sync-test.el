@@ -111,6 +111,31 @@ Each element of `sent' is (METHOD PARAMS CALLBACK), newest first."
     (should-not ebp-sync--queue)
     (should-not ebp-sync--inflight)))
 
+(ert-deftest ebp-sync-resync-result-reseeds-the-attached-buffer ()
+  "The full-state result reconciles the buffer, not only ebp.el's mirror.
+A losing local edit must disappear from both before another splice can be
+computed; retaining it after the fresh session would make the next edit a
+wrong edit against a different document."
+  (ebp-sync-test--with "device wins"
+    (goto-char (point-max))
+    (insert " WRONG-LOCAL")
+    ;; The real refusal/race path clears tracker state before requesting.
+    (ebp-sync--resync (current-buffer))
+    (pcase-let ((`(edit.resync ,_params ,callback)
+                 (cl-find 'edit.resync sent :key #'car)))
+      (funcall callback
+               (list :session (make-string 32 ?b) :seq 0
+                     :text "device wins" :cursor 3)
+               nil))
+    (should (equal (buffer-string) "device wins"))
+    (should (equal (ebp-client-editor-text client "doc:1" "body")
+                   "device wins"))
+    (should-not ebp-sync--queue)
+    (should-not ebp-sync--inflight)
+    (setq sent nil)
+    (ebp-sync-flush)
+    (should-not (cl-find 'edit.apply sent :key #'car))))
+
 (ert-deftest ebp-sync-race-drops-local-and-resyncs ()
   "A remote splice racing an unflushed local edit never guesses:
 local pending state drops and one resync goes out."

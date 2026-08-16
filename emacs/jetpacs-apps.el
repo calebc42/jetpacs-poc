@@ -483,9 +483,9 @@ verb is re-dispatched through `jetpacs--dispatch' with the app's OWN
 home surface as the event surface — the D1 gate passes because the
 context is genuinely the app's, which is what retires the
 `:any-surface' workaround for host-side rows.  A vanished route is
-`stale' (the row outlived the registry it was rendered from); the
-route's own status is adopted with a plain home push as the fallback
-when it refused — the app still opens."
+`stale' (the row outlived the registry it was rendered from) but still
+opens the app's plain home, as does a route whose handler refuses — a
+dead deep link must never strand an obsolete host screen."
   (let* ((id (plist-get args :app))
          (entry (and (stringp id) (assoc id jetpacs-apps--registry)))
          (route (plist-get args :route)))
@@ -499,7 +499,20 @@ when it refused — the app still opens."
                                  :test #'equal)))
              (home (jetpacs-apps--home-surface entry)))
         (if (and route (null dest))
-            'stale
+            (progn
+              ;; Preserve the stale receipt — the tapped row really did
+              ;; outlive its registry — while satisfying S1's navigation
+              ;; contract: the app still opens at its stable home.  This
+              ;; must be deferred for the same D2 reason as every other
+              ;; push in this handler.
+              (setq jetpacs-apps--current id
+                    jetpacs-apps--current-route nil)
+              (jetpacs-flow-continue
+               (lambda ()
+                 (ignore-errors
+                   (jetpacs-shell-push
+                    (or home "jetpacs.app-store")))))
+              'stale)
           (setq jetpacs-apps--current id
                 jetpacs-apps--current-route (and dest route))
           (jetpacs-flow-continue
