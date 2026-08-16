@@ -368,16 +368,19 @@
   (let* ((now (encode-time 0 0 12 14 8 2026))
          (items
           (list
-           '(:headline "Meeting" :file "/vault/a.org" :pos 42
-             :time "13:30......" :date "2026-08-14" :type "scheduled")
-           '(:headline "Meeting" :file "/vault/a.org" :pos 42
-             :time "13:30......" :date "2026-08-14" :type "deadline")
-           '(:headline "Date only" :file "/vault/a.org" :pos 90
-             :time nil :date "2026-08-14" :type "scheduled")
-           '(:headline "Too late" :file "/vault/b.org" :pos 7
-             :time "13:30" :date "2026-08-15" :type "scheduled"))))
+           '((headline . "Meeting") (file . "/vault/a.org") (pos . 42)
+             (time . "13:30......") (date . "2026-08-14")
+             (type . "scheduled"))
+           '((headline . "Meeting") (file . "/vault/a.org") (pos . 42)
+             (time . "13:30......") (date . "2026-08-14")
+             (type . "deadline"))
+           '((headline . "Date only") (file . "/vault/a.org") (pos . 90)
+             (time) (date . "2026-08-14") (type . "scheduled"))
+           '((headline . "Too late") (file . "/vault/b.org") (pos . 7)
+             (time . "13:30") (date . "2026-08-15")
+             (type . "scheduled")))))
     (cl-letf (((symbol-function 'jetpacs-org-mode--agenda-items)
-               (lambda (_days) items)))
+               (lambda (_span &optional _start-day) items)))
       (let ((reminders (jetpacs-org-mode--upcoming-reminders 24 now)))
         (should (= 1 (length reminders)))
         (should (equal (plist-get (car reminders) :title) "Meeting"))
@@ -466,8 +469,8 @@
     (should-not (memq #'jetpacs-org-mode--sync-reminders
                       jetpacs-shell-after-push-hook))))
 
-(ert-deftest jetpacs-org-mode-reminder-hook-follows-mitigation-flag ()
-  "GR-0 installs the legacy reminder hook iff its flag is enabled."
+(ert-deftest jetpacs-org-mode-legacy-reminder-hook-is-always-inert ()
+  "GR-3 never installs the legacy reminder hook, even if its flag is true."
   (unwind-protect
       (progn
         (jetpacs-org-mode-unregister)
@@ -478,8 +481,8 @@
           (jetpacs-org-mode-unregister))
         (let ((jetpacs-org-mode-reminders-enabled t))
           (jetpacs-org-mode-register)
-          (should (memq #'jetpacs-org-mode--sync-reminders
-                        jetpacs-shell-after-push-hook))))
+          (should-not (memq #'jetpacs-org-mode--sync-reminders
+                            jetpacs-shell-after-push-hook))))
     (jetpacs-org-mode-unregister)
     (jetpacs-org-mode-register)))
 

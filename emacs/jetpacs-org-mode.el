@@ -35,6 +35,7 @@
 (require 'jetpacs-reader-org)
 (require 'jetpacs-editor-org)
 (require 'jetpacs-org-habits)
+(require 'jetpacs-org-reminders)
 
 (defconst jetpacs-org-mode-owner "org-mode"
   "Owner and app id for the Org Mode app.")
@@ -48,20 +49,11 @@
 (defvar jetpacs-org-mode--registered nil
   "Non-nil while the Org Mode app is registered.")
 
-(defcustom jetpacs-org-mode-reminder-horizon-hours 24
-  "How far ahead timed Org Agenda items become device reminders.
-A date-only scheduled item is not an alarm.  Repeating timestamps are
-expanded by Org Agenda before reminders are built."
-  :type 'natnum :group 'jetpacs-org)
-
 (defvar jetpacs-org-mode-reminders-enabled nil
   "Non-nil when the legacy inline Org Mode reminder hook is enabled.
 This pipeline has no device history and stays disabled while reminder
 ownership moves to the dedicated Org reminder module.  Keep the flag
 until that cutover's rollback window closes.")
-
-(defconst jetpacs-org-mode--agenda-buffer "*Jetpacs Org Mode Agenda*"
-  "Private Org Agenda buffer used while deriving reminder data.")
 
 (defvar jetpacs-org-mode--last-reminders 'unset
   "Last reminder set confirmed by the Companion.")
@@ -285,69 +277,7 @@ forces the existing safe headless finalization path."
        (lambda () (jetpacs-org-mode--capture-now body subject)))
       'accepted)))
 
-;;;; Agenda reminders
-
-(defun jetpacs-org-mode--agenda-scope ()
-  "Return existing local Org agenda files, expanding directories."
-  (cl-mapcan
-   (lambda (entry)
-     (cond
-      ((file-directory-p entry)
-       (directory-files entry t org-agenda-file-regexp))
-      ((file-exists-p entry) (list entry))))
-   (ebp-org-agenda-files)))
-
-(defun jetpacs-org-mode--agenda-items-1 (days)
-  "Extract the next DAYS of Org Agenda entries needed for reminders."
-  (let ((files (jetpacs-org-mode--agenda-scope)))
-    (when files
-      (let ((org-agenda-span days)
-            (org-agenda-start-day nil)
-            (org-agenda-files files)
-            (org-agenda-buffer-tmp-name jetpacs-org-mode--agenda-buffer)
-            (org-agenda-sticky nil)
-            (inhibit-redisplay t)
-            items)
-        (unwind-protect
-            (save-window-excursion
-              (let ((org-agenda-window-setup 'current-window))
-                (ebp-org--with-clamped-io (org-agenda nil "a")))
-              (with-current-buffer jetpacs-org-mode--agenda-buffer
-                (goto-char (point-min))
-                (while (not (eobp))
-                  (let* ((marker (get-text-property (point) 'org-marker))
-                         (time (get-text-property (point) 'time))
-                         (type (get-text-property (point) 'type))
-                         (raw-date (get-text-property (point) 'date))
-                         (date
-                          (cond
-                           ((consp raw-date) raw-date)
-                           ((numberp raw-date)
-                            (calendar-gregorian-from-absolute raw-date)))))
-                    (when (and marker date)
-                      (with-current-buffer (marker-buffer marker)
-                        (save-excursion
-                          (goto-char marker)
-                          (push
-                           (list
-                            :headline (nth 4 (org-heading-components))
-                            :file (buffer-file-name)
-                            :pos (marker-position marker)
-                            :time time
-                            :date (format "%04d-%02d-%02d"
-                                          (nth 2 date) (nth 0 date)
-                                          (nth 1 date))
-                            :type (and type (format "%s" type)))
-                           items)))))
-                  (forward-line 1))))
-          (when-let ((buffer (get-buffer jetpacs-org-mode--agenda-buffer)))
-            (kill-buffer buffer)))
-        (nreverse items)))))
-
-(defun jetpacs-org-mode--agenda-items (days)
-  "Memoized reminder projection for the next DAYS of Org Agenda."
-  (ebp-org-with-cache 'org-mode (list 'reminder-agenda days)
-    (jetpacs-org-mode--agenda-items-1 days)))
+;;;; Legacy inline agenda reminders (inert until GR-9 removal)
 
 (defun jetpacs-org-mode--item-hour-minute (raw)
   "Normalize Org Agenda RAW time-grid text to HH:MM, or nil."
@@ -361,23 +291,23 @@ forces the existing safe headless finalization path."
 (defun jetpacs-org-mode--upcoming-reminders (&optional horizon-hours now)
   "Return timed Org Agenda reminders within HORIZON-HOURS of NOW.
 NOW is an Emacs time value and defaults to `current-time'."
-  (let* ((hours (or horizon-hours jetpacs-org-mode-reminder-horizon-hours))
+  (let* ((hours (or horizon-hours jetpacs-org-reminders-horizon-hours))
          (horizon (* hours 3600))
          (now-seconds (float-time (or now (current-time))))
          (days (max 1 (1+ (ceiling (/ hours 24.0)))))
          reminders
          seen)
-    (dolist (item (jetpacs-org-mode--agenda-items days))
-      (when-let* ((date (plist-get item :date))
+    (dolist (item (jetpacs-org-mode--agenda-items days nil))
+      (when-let* ((date (alist-get 'date item))
                   (hm (jetpacs-org-mode--item-hour-minute
-                       (plist-get item :time))))
+                       (alist-get 'time item))))
         (let ((at (float-time
                    (org-time-string-to-time (concat date " " hm)))))
           (when (and (> at now-seconds) (< (- at now-seconds) horizon))
             (let* ((identity
                     (format "%sT%s|%s|%s" date hm
-                            (or (plist-get item :file) "")
-                            (or (plist-get item :pos) 0)))
+                            (or (alist-get 'file item) "")
+                            (or (alist-get 'pos item) 0)))
                    (id (format "org-rem-%s"
                                (substring (sha1 identity) 0 20))))
               ;; A heading scheduled and deadlined for the same instant
@@ -387,11 +317,11 @@ NOW is an Emacs time value and defaults to `current-time'."
                 (push
                  (list :id id
                        :at_ms (truncate (* at 1000))
-                       :title (or (plist-get item :headline)
+                       :title (or (alist-get 'headline item)
                                   "Org reminder")
                        :body (concat hm
                                      (when-let ((type
-                                                 (plist-get item :type)))
+                                                 (alist-get 'type item)))
                                        (concat " · " type))))
                  reminders)))))))
     (nreverse reminders)))
@@ -530,6 +460,11 @@ NOW is an Emacs time value and defaults to `current-time'."
 
 (defun jetpacs-org-mode-register ()
   "Register the Org adapters, root surface, and app identity."
+  ;; GR-3 makes this legacy hook inert under every value of its retained
+  ;; rollback-window flag, including a live reload over GR-0 code.
+  (remove-hook 'jetpacs-shell-after-push-hook
+               #'jetpacs-org-mode--sync-reminders)
+  (jetpacs-org-reminders-register)
   (unless jetpacs-org-mode--registered
     (setq jetpacs-org-mode--registered t)
     (jetpacs-reader-install)
@@ -553,9 +488,6 @@ NOW is an Emacs time value and defaults to `current-time'."
                          :any-surface t
                          :doc "Capture text shared from another app")
       (setq jetpacs-org-mode--owns-share-action t))
-    (when jetpacs-org-mode-reminders-enabled
-      (add-hook 'jetpacs-shell-after-push-hook
-                #'jetpacs-org-mode--sync-reminders))
     (jetpacs-defapp
      jetpacs-org-mode-owner
      :label jetpacs-org-mode-title
@@ -569,10 +501,11 @@ NOW is an Emacs time value and defaults to `current-time'."
 
 (defun jetpacs-org-mode-unregister ()
   "Unregister the Org Mode app and its mode adapters."
+  (remove-hook 'jetpacs-shell-after-push-hook
+               #'jetpacs-org-mode--sync-reminders)
+  (jetpacs-org-reminders-unregister)
   (when jetpacs-org-mode--registered
     (setq jetpacs-org-mode--registered nil)
-    (remove-hook 'jetpacs-shell-after-push-hook
-                 #'jetpacs-org-mode--sync-reminders)
     (setq jetpacs-org-mode--last-reminders 'unset)
     (jetpacs-undefaction "org-mode.capture")
     (jetpacs-undefaction "org-mode.open-seed")

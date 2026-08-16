@@ -243,6 +243,12 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-render-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
   -f ert-run-tests-batch-and-exit
 
+# GR-3 reminder-owner cutover: canonical agenda extraction, horizon/id/dedupe,
+# confirmed-set suppression, and the three-pipeline hook singleton.
+emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+  -l test/jetpacs-org-reminders-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JA-5d exit gate: the org dialogs — profile-pinned specs, drop-only
 # remote descriptors, fresh ids, 23.2 re-validation, the engine-backed
 # sheet mutations, token+confirm Archive, and the can-bridge gate.
