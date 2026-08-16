@@ -595,8 +595,8 @@ adopts as before."
 
 ;; ------------------------------------------------- language tooling arm --
 ;;
-;; POC 1 port (PLAN-glasspane-completion.md R1; behavior reference
-;; jetpacs-sync.el).  This bridge binds real buffers, so eglot needs no
+;; POC 1 completion-ladder port (behavior reference: jetpacs-sync.el).
+;; This bridge binds real buffers, so eglot needs no
 ;; special buffer strategy — the LSP session lives in the very buffer
 ;; being synced — but three of POC 1's mobile lessons apply verbatim:
 ;;

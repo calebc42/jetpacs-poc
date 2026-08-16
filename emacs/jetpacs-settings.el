@@ -315,12 +315,12 @@ owner for the app-identity layer to filter once it exists."
 ;;;; The one-live-settings-dialog slot (§3 step 2: foundation-owned)
 ;;
 ;; Settings management dialogs — the org-workflow editors
-;; (jetpacs-org-settings.el), Glasspane's saved-search editors app-side
+;; (jetpacs-org-settings.el) and downstream saved-search editors
 ;; — share ONE live request slot: nowhere in settings shows two dialogs
 ;; at once, and a single writer is what lets a Save fired from INSIDE a
 ;; dialog find the params the dialog was opened from (a dialog-context
-;; event carries no `:surface', SPEC 14.4).  Moved from glasspane-ui so
-;; the app's writers stop reaching across modules into a private slot.
+;; event carries no `:surface', SPEC 14.4).  Promoted so app writers do not
+;; reach across modules into a private slot.
 
 (defvar jetpacs-settings--dialog nil
   "The live settings dialog, (:request-id ID :params PARAMS), or nil.

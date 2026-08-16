@@ -53,6 +53,16 @@ if [ "$ebp_guard_count" -lt 5 ]; then
   exit 1
 fi
 
+# Dependency direction is EBP -> Jetpacs -> downstream apps.  Foundation
+# Elisp must not name a downstream app even in a soft require or declaration;
+# keeping the source name-free also prevents documentary assumptions from
+# turning into the next reverse edge.  App code, integration tests, and plans
+# are outside this deliberately narrow boundary.
+if rg -n -i 'glasspane' emacs/*.el; then
+  echo "layering guard: foundation Elisp must not know Glasspane" >&2
+  exit 1
+fi
+
 # Byte-compile guard: free-variable and undefined-function warnings are
 # treated as errors (catches unescaped-quote docstrings and typos before
 # they reach a device).
@@ -241,6 +251,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-render-test.el \
 # adapters' built-in search/visibility/crypt behavior, synchronized-only
 # toolbar commands, and `jetpacs-org-mode' app identity.
 emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
+  -f ert-run-tests-batch-and-exit
+
+# GR-4 capture-owner cutover: picker/form conclusions, share stash and 1301
+# successor safety, protocol forms, prefix filtering, cache scope, and D1.
+emacs -Q --batch -L emacs -l test/jetpacs-org-capture-test.el \
   -f ert-run-tests-batch-and-exit
 
 # GR-3 reminder-owner cutover: canonical agenda extraction, horizon/id/dedupe,

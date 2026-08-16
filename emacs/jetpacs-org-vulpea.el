@@ -9,9 +9,8 @@
 ;; Jetpacs is vanilla Emacs optimized for mobile (the R2 frame), and
 ;; vulpea is a third-party package — so the note-index engine arm lives
 ;; ABOVE the base boundary.  This file stages it in the rewrite's idiom
-;; until the Tier-1 rung that consumes it exists (the PKM layer:
-;; glasspane / orgseq territory), at which point it migrates to the app
-;; repo.  NO base module may ever require it.
+;; until the Tier-1 PKM rung that consumes it exists, at which point it
+;; migrates to that app's repo.  NO base module may ever require it.
 ;;
 ;; What base provides instead is the seam: `ebp-org-matches-p' is
 ;; accessor-pluggable, and this file is its first above-base consumer —

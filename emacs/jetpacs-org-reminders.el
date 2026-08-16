@@ -6,8 +6,8 @@
 ;;; Commentary:
 
 ;; The one Org agenda extraction and device-reminder pipeline owned by the
-;; Org Mode app.  Glasspane remains a screen consumer of the richer agenda
-;; projection during its rollback soak, but no longer performs extraction.
+;; Org Mode app.  Downstream screens may consume the richer agenda projection,
+;; but extraction and reminder delivery remain native Org machinery here.
 ;; Registration is explicit from `jetpacs-org-mode', and the rollout flag is
 ;; deliberately independent of the inert legacy inline pipeline's flag.
 
@@ -27,7 +27,6 @@
 (declare-function jetpacs-error-label "jetpacs-surfaces" (err))
 (declare-function jetpacs-reminders-set "jetpacs-device"
                   (reminders &rest args))
-(declare-function glasspane-agenda--sync-reminders "glasspane-agenda" ())
 
 (defconst jetpacs-org-reminders-owner "org-mode"
   "Owner of the canonical Org agenda reminder set.")
@@ -227,10 +226,6 @@ is an Emacs time value and defaults to `current-time'."
   (remove-hook 'jetpacs-shell-after-push-hook
                #'jetpacs-org-reminders--sync-reminders)
   (when jetpacs-org-reminders-enabled
-    ;; Winner precedence makes an accidental both-true configuration
-    ;; hook-singleton while the Glasspane rollback code remains in-tree.
-    (remove-hook 'jetpacs-shell-after-push-hook
-                 #'glasspane-agenda--sync-reminders)
     (add-hook 'jetpacs-shell-after-push-hook
               #'jetpacs-org-reminders--sync-reminders))
   t)

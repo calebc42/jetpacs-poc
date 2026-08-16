@@ -10,17 +10,16 @@
 ;; the companion-mirror note, the current-theme header card, the
 ;; light/dark grouped picker, and the customize cross-link.  A concrete
 ;; screen supplies its provider functions (theme list, current, dark-p,
-;; palette color) and its action names; glasspane-ef is the first
-;; instantiation, for Prot's ef-themes — and it STAYS app-side, because
-;; ef-themes is in the app's package set, not the foundation's.
+;; palette color) and its action names.  Concrete theme packages remain
+;; downstream because their providers are app dependencies, not foundation
+;; dependencies.
 ;;
 ;; Foundation module by the ratified §3 step-3 promotion
 ;; (docs/PLAN-jetpacs-debt-and-scaffold.md), REVERSING the
-;; FOUNDATION-GAPS #8 ruling (docs/PLAN-glasspane-app.md) that had
-;; landed the G8 port app-local as glasspane-theme-picker.el pending a
-;; second consumer.  The reversal costs nothing because the closure was
+;; earlier app-local ruling that had parked the picker beside its first
+;; consumer pending a second one.  The reversal costs nothing because the closure was
 ;; foundation-only from the day it landed — cl-lib, jetpacs-widgets,
-;; jetpacs-theme, zero glasspane symbols — so under the 2026-08-06
+;; jetpacs-theme, and zero downstream symbols — so under the 2026-08-06
 ;; naming rule (a prefix is a claim about the require closure) the old
 ;; prefix overclaimed, and the rename IS the whole promotion.
 ;;

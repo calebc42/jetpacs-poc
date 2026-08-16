@@ -48,6 +48,9 @@
       (progn
         (should (featurep 'jetpacs))
         (should (featurep 'jetpacs-init))
+        ;; Downstream apps load from user configuration or their own package;
+        ;; requiring Jetpacs must never discover one by name and activate it.
+        (should-not (featurep 'glasspane))
         (should (equal jetpacs-install-root
                        (expand-file-name "jetpacs/" user-emacs-directory)))
         (should (equal jetpacs-vault-directory jetpacs-entry-test--vault))

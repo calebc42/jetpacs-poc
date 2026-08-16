@@ -441,8 +441,8 @@ globals, not a creation act."
 Authored-wins costs the globals their SLOT, never their REACH: a
 screen authoring its own `:fab' keeps it untouched and the globals
 fall back to the top-bar join instead — M-x must keep a home on
-every screen (the S3 build-within promise; glasspane's capture FAB,
-the buffer screen's palette FAB and the m3 demos all author fabs).
+every screen (the S3 build-within promise; downstream capture FABs, the
+buffer screen's palette FAB and the m3 demos all author fabs).
 Items whose `:on-tap' action already appears in the authored top bar
 are dropped first — the top-bar join's own token-delimited search —
 so a screen that authors M-x itself never grows a SECOND M-x in

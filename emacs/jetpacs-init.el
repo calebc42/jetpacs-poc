@@ -165,13 +165,6 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; the Apps view also gains an Org Mode home.  This is the template a
 ;; future `jetpacs-elisp-mode' app can reuse.
 (require 'jetpacs-org-mode)
-;; Glasspane is an in-tree app in this development bundle.  It registers its
-;; own routes and config subtree; the Org reader remains owned by Org Mode, so
-;; loading Glasspane cannot replace the Files/manual reading path.
-(when (require 'glasspane nil t)
-  (when (and (not noninteractive)
-             (fboundp 'glasspane-config-ensure))
-    (glasspane-config-ensure)))
 ;; The Material 3 Compose Catalog (owner `m3catalog'): 41 components
 ;; and 279 examples of the node vocabulary, on its own surface.  It is
 ;; also the tree's first `jetpacs-defapp' registration, so its "Catalog"

@@ -6,8 +6,8 @@
 ;;; Commentary:
 
 ;; The ratified settings relocation (docs/PLAN-jetpacs-debt-and-scaffold
-;; §3, step 1 + the step-4 ruling): the schema-driven org sections
-;; Glasspane's G6 rung used to register — Org Workflow, Org Agenda, Org
+;; §3, step 1 + the step-4 ruling): the schema-driven org sections a
+;; downstream PKM app used to register — Org Workflow, Org Agenda, Org
 ;; Editing & Display, User Defaults, Calendar & Location, and the
 ;; reader's two Reader rows — are foundation content, because every
 ;; symbol in them is a built-in or foundation defcustom.  Only the babel
@@ -28,15 +28,15 @@
 ;; EVERY consumer's org-derived views, not just the writer's, and a
 ;; full drop is benign: the next render recomputes.
 ;;
-;; The seeding tail is the step-4 ruling: the phone-generic half of
-;; Glasspane's managed org-defaults.el (the inbox capture target while
+;; The seeding tail is the step-4 ruling: the phone-generic half of the
+;; former app-managed org-defaults.el (the inbox capture target while
 ;; `org-default-notes-file' is still org's stock ~/.notes, the
 ;; org-directory mkdir, the agenda-files fallback, the LOGBOOK drawer,
 ;; babel languages) seeds HERE at load, each arm guarded so a
 ;; customized or already-divergent value is never touched.  Capture
-;; templates are NOT here — they stay Glasspane's opinion, in its
-;; managed config subtree.  The load-time call is interactive-only (the
-;; glasspane-config precedent): a batch load must not mkdir the
+;; templates are NOT here — they remain a downstream app opinion in its
+;; managed config subtree.  The load-time call is interactive-only: a batch
+;; load must not mkdir the
 ;; runner's `org-directory' or pull babel language files.
 
 ;;; Code:
@@ -123,9 +123,9 @@ rendering, installs."
 
 (defun jetpacs-org-settings-seed ()
   "Seed the phone-generic org wiring, only where still at stock values.
-The step-4 content of Glasspane's managed org-defaults.el, foundation-
-owned now.  Every arm is guarded, which also makes the call idempotent
-— after one pass each guard turns false:
+The phone-generic content of the former app-managed org-defaults.el is
+foundation-owned now.  Every arm is guarded, which also makes the call
+idempotent — after one pass each guard turns false:
 - capture lands in an inbox inside `org-directory', only while
   `org-default-notes-file' is still org's stock ~/.notes;
 - `org-directory' must exist or that inbox can never be created;
@@ -155,7 +155,7 @@ owned now.  Every arm is guarded, which also makes the call idempotent
 ;;
 ;; Managed-UI settings the schema registry cannot express: a LIST of
 ;; TODO sequences edited through a dialog, and the tag vocabulary as an
-;; editable chip set.  Moved from Glasspane's G3/G5 rungs — every
+;; editable chip set.  Moved from a downstream app — every
 ;; symbol they manage is org's own.  The verbs register OWNERLESS at
 ;; load (the settings.set precedent), which is what dissolves the
 ;; app-era `:any-surface' dance: the editors draw on the Settings root
@@ -173,7 +173,7 @@ owned now.  Every arm is guarded, which also makes the call idempotent
 
 (defun jetpacs-org-settings-global-todo-keywords ()
   "Flat list of all global TODO keywords from `org-todo-keywords'.
-Public: task-filter chips (glasspane-agenda) build from it too."
+Public: downstream task-filter chips may build from it too."
   (let ((kws nil))
     (dolist (seq (default-value 'org-todo-keywords))
       (dolist (w (cdr seq))
@@ -229,8 +229,8 @@ Returns non-nil when persisting succeeded."
 
 (defun jetpacs-org-settings-tag-options ()
   "The global tag names from `org-tag-alist', strings only, distinct.
-Public: the workflow chip list here and Glasspane's detail-view tag
-picker both build from the same vocabulary.
+Public: workflow and downstream detail-view tag pickers can build from
+the same vocabulary.
 Group markers (`:startgroup' and friends) are cons-free symbols the
 enum cannot carry; duplicates would fail the widget's SPEC 4.3
 distinctness check at build time."
@@ -544,7 +544,7 @@ Fired from a workflow card or the edit dialog's Delete button."
                    #'jetpacs-org-settings--on-todo-delete)
 (jetpacs-settings-add-link 50 #'jetpacs-org-settings--link)
 
-;; Interactive-only, the glasspane-config.el precedent: a batch load
+;; Interactive-only: a batch load
 ;; (the ERT suites, byte-compile closure walks) runs under the REAL
 ;; HOME and would mkdir `org-directory' and load babel language files
 ;; there.  The device Emacs and the desktop daemon are both

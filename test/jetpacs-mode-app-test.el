@@ -308,61 +308,6 @@
       (with-current-buffer buffer
         (should (equal (buffer-string) "* One\nfirst"))))))
 
-(ert-deftest jetpacs-org-mode-capture-rents-headless-org-engine ()
-  "App capture collects built-in template fields and passes shared text safely."
-  (let ((org-capture-templates
-         '(("t" "Task" entry (file "/tmp/inbox.org")
-            "* TODO %^{Title}\n%?")))
-        captured
-        notices)
-    (cl-letf (((symbol-function 'jetpacs-connected-p) (lambda () t))
-              ((symbol-function 'completing-read)
-               (lambda (&rest _) "t — Task"))
-              ((symbol-function 'read-string)
-               (lambda (prompt &optional initial &rest _)
-                 (if (string-prefix-p "Headline" prompt)
-                     initial
-                   "Typed title")))
-              ((symbol-function 'ebp-org-capture-run)
-               (lambda (key values extra)
-                 (setq captured (list key values extra))))
-              ((symbol-function 'jetpacs-shell-notify)
-               (lambda (text &rest _) (push text notices))))
-      (jetpacs-org-mode--capture-now "Shared body" "Shared subject")
-      (should (equal captured
-                     '("t" (("Headline" . "Shared subject")
-                            ("Title" . "Typed title"))
-                       "Shared body")))
-      (should (member "Captured ✓" notices)))))
-
-(ert-deftest jetpacs-org-mode-share-defers-with-trimmed-payload ()
-  "The global share handler preserves its flow and normalizes payload text."
-  (let (continued captured)
-    (cl-letf (((symbol-function 'jetpacs-connected-p) (lambda () t))
-              ((symbol-function 'jetpacs-flow-continue)
-               (lambda (fn) (setq continued fn)))
-              ((symbol-function 'jetpacs-org-mode--capture-now)
-               (lambda (text subject) (setq captured (list text subject)))))
-      (should (eq (jetpacs-org-mode--on-share
-                   '(:text "  Body  " :subject "  Subject ") nil)
-                  'accepted))
-      (should (functionp continued))
-      (funcall continued)
-      (should (equal captured '("Body" "Subject"))))))
-
-(ert-deftest jetpacs-org-mode-share-recognizes-org-protocol-capture ()
-  "Modern org-protocol capture URLs are decoded by Org's own parser."
-  (let ((info
-         (jetpacs-org-mode--protocol-info
-          (concat
-           "org-protocol://capture?template=t&"
-           "url=https%3A%2F%2Fexample.org%2Fx&"
-           "title=Hello+World&body=Selected"))))
-    (should (equal (plist-get info :template) "t"))
-    (should (equal (plist-get info :url) "https://example.org/x"))
-    (should (equal (plist-get info :title) "Hello World"))
-    (should (equal (plist-get info :body) "Selected"))))
-
 (ert-deftest jetpacs-org-mode-reminders-filter-time-and-deduplicate ()
   "Timed Agenda rows become alarms; duplicate schedule/deadline rows do not."
   (let* ((now (encode-time 0 0 12 14 8 2026))

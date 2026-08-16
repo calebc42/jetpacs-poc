@@ -55,7 +55,7 @@
 ;; target advertises `editor.candidate_kind' (the sender-omit rule),
 ;; and only values from `ebp-complete-kind-vocabulary' ever cross.
 ;;
-;; R0 of the completion ladder (docs/PLAN-glasspane-completion.md): the
+;; R0 of the completion ladder: the
 ;; shadow is not the only arm any more.  When `ebp-sync' holds a live
 ;; attached buffer for the document — the jetpacs-files editor screen
 ;; and the hub REPL attach exactly this way — the harvest runs THERE,

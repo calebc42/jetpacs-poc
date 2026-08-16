@@ -1022,12 +1022,11 @@ New configurations should load `jetpacs-org-mode' instead."
 
 (defun jetpacs-org-render-rendered-p (path)
   "Non-nil when PATH presents as the RENDERED org view, not plain text.
-PUBLIC — the D-4 advisory landed as the accessor itself (the in-tree
-ruling makes the base repo's review THIS repo's): Glasspane's reader
-keys its body and actions seams off this exact question, and it did so
-through the double-hyphen private, so a rename of the mode-table
-internals would have snapped the reader with no tripwire.  App layers
-call THIS; the table stays private."
+PUBLIC — the D-4 advisory landed as the accessor itself: downstream
+readers key body and action seams off this exact question, and the first
+consumer had done so through the double-hyphen private, so a rename of
+the mode-table internals would have snapped the reader with no tripwire.
+App layers call THIS; the table stays private."
   (if (fboundp 'jetpacs-reader-active-p)
       (jetpacs-reader-active-p path)
     (and (jetpacs-org-render--org-path-p path)
