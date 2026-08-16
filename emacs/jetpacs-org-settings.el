@@ -562,9 +562,7 @@ Fired from a workflow card or the edit dialog's Delete button."
                   "jetpacs.org.todo.edit" "jetpacs.org.todo.save"
                   "jetpacs.org.todo.delete"))
     (jetpacs-undefaction verb))
-  (setq jetpacs-settings-links
-        (cl-remove #'jetpacs-org-settings--link jetpacs-settings-links
-                   :key #'cadr))
+  (jetpacs-settings-remove-link #'jetpacs-org-settings--link)
   nil)
 
 (provide 'jetpacs-org-settings)

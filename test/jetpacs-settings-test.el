@@ -85,6 +85,22 @@
                  '(7)))
   (should-not (jetpacs-settings--decode 'jetpacs-settings-test--count "x")))
 
+(ert-deftest jetpacs-settings-link-add-remove-pair ()
+  "The public pair preserves order and removal deletes every duplicate.
+Removing an absent builder is idempotent, so register/unregister cycles
+do not require callers to mutate the foundation registry themselves."
+  (jetpacs-settings-test--env
+    (jetpacs-settings-add-link 30 #'car)
+    (jetpacs-settings-add-link 20 #'cdr)
+    (jetpacs-settings-add-link 10 #'car)
+    (should (equal (mapcar #'cadr jetpacs-settings-links)
+                   '(car cdr car)))
+    (jetpacs-settings-remove-link #'car)
+    (should (equal (mapcar #'cadr jetpacs-settings-links) '(cdr)))
+    (let ((remaining jetpacs-settings-links))
+      (jetpacs-settings-remove-link #'car)
+      (should (equal jetpacs-settings-links remaining)))))
+
 (ert-deftest jetpacs-settings-apply-validates-against-schema ()
   "Schema-invalid values toast and refuse; valid ones save through."
   (jetpacs-settings-test--env

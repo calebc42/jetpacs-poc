@@ -148,6 +148,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-package-browser-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-settings-test.el \
   -f ert-run-tests-batch-and-exit
 
+# GR-7b promotion: pure locale-stable date arithmetic is Jetpacs-owned,
+# independently gated rather than hidden inside a downstream app suite.
+emacs -Q --batch -L emacs -l test/jetpacs-dates-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # The relocated org/calendar settings sections + phone-generic seeding
 # (PLAN-jetpacs-debt-and-scaffold §3 step 1 + the step-4 ruling).
 emacs -Q --batch -L emacs -l test/jetpacs-org-settings-test.el \

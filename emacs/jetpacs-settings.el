@@ -292,6 +292,14 @@ owner for the app-identity layer to filter once it exists."
                     jetpacs-settings-links)
               (lambda (a b) (< (car a) (car b))))))
 
+(defun jetpacs-settings-remove-link (builder)
+  "Remove every settings satellite link registered with BUILDER.
+Safe before registration and after prior removal.  Removing every
+match makes an add-after-remove registration idempotent even when an
+older caller accidentally registered the same builder more than once."
+  (setq jetpacs-settings-links
+        (cl-remove builder jetpacs-settings-links :key #'cadr)))
+
 (defun jetpacs-settings-sections ()
   "The settings body: registry sections, then the satellite links."
   (append

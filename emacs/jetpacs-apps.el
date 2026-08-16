@@ -44,10 +44,10 @@ POC 1's \"views not claimed by any app show everywhere\".")
 
 (defvar jetpacs-apps--registry nil
   "Ordered alist of APP-ID -> plist
-\(:label :icon :surfaces :dock :destinations :chrome :order).
+\(:label :icon :surfaces :dock :destinations :fab :chrome :order).
 :dock is a list of dock item plists or a function (SURFACE) -> items;
-:destinations is the S1 route registry and :chrome the integration
-pole — see `jetpacs-defapp'.")
+:destinations is the S1 route registry; :fab is the app-default FAB;
+and :chrome is the integration pole — see `jetpacs-defapp'.")
 
 (defvar jetpacs-apps--current nil
   "The current app's id, or nil before any `app.open'.")
@@ -55,8 +55,8 @@ pole — see `jetpacs-defapp'.")
 (defvar jetpacs-apps--current-route nil
   "The current app's last-opened destination key, or nil.
 Written only by `app.open' — set by a routed open, cleared by a plain
-one — so the app-primary tabs can indicate the selected place (the
-M3 navigation-bar contract).")
+one — so the app-primary navigation-bar entries can indicate the
+selected place (the M3 navigation-bar contract).")
 
 ;;;; App-surface refresh
 
@@ -105,6 +105,11 @@ resolved value safe to MAP, and a function or circular cell is not."
         (jetpacs-check-identifier icon "destination :icon"))
       (when-let* ((sub (plist-get d :subtitle)))
         (jetpacs-require-string sub "destination :subtitle"))
+      (when (plist-member d :badge)
+        (let ((badge (plist-get d :badge)))
+          (unless (or (null badge) (stringp badge) (functionp badge))
+            (error "jetpacs-defapp: destination :badge %S must be a string or nullary function"
+                   badge))))
       (when (member (plist-get d :key) keys)
         (error "jetpacs-defapp: duplicate destination key %S"
                (plist-get d :key)))
@@ -120,7 +125,7 @@ build-time-validation house rule."
       dests
     (jetpacs-apps--check-destination-list dests)))
 
-(cl-defun jetpacs-defapp (id &key label icon surfaces dock destinations
+(cl-defun jetpacs-defapp (id &key label icon surfaces dock destinations fab
                              chrome (order 100))
   "Register (or replace) app ID.
 LABEL and ICON draw its Apps-grid card; SURFACES is the list of surface
@@ -129,18 +134,27 @@ item plists in the chrome seam's shape, or a function of the surface.
 
 DESTINATIONS is the S1 route registry (CHROME-VOCABULARY v3, the
 build-within pole; poc-1's `:views' restored onto chrome screens): a
-list of plists (:key :label :verb [:icon :subtitle]) — or a function
-of no arguments returning one — naming the screens the app offers the
-HOST.  Each is opened via the global `app.open' with `:route KEY',
-which re-dispatches the destination's VERB on the app's own home
-surface — so the verb stays owner-scoped and no `:any-surface'
-declaration is ever needed for a host-side row.
+list of plists (:key :label :verb [:icon :subtitle :badge]) — or a
+function of no arguments returning one — naming the screens the app
+offers the HOST.  A destination's optional BADGE is a string or a
+nullary function returning a string/nil; it is resolved when the bar
+is built.  Each destination is opened via the global `app.open' with
+`:route KEY', which re-dispatches the destination's VERB on the app's
+own home surface — so the verb stays owner-scoped and no
+`:any-surface' declaration is ever needed for a host-side row.
+
+FAB is a typed node, or a function (SURFACE) returning one, used as
+the app's default creation action on its own screens.  A screen's
+authored `:fab' wins.  The result is resolved per screen through
+`jetpacs-apps-default-fab', isolated, and never crosses onto a surface
+the app does not claim.
 
 CHROME is the app's integration pole (CHROME-VOCABULARY v3):
 nil (default) composes into the shell as today; `primary' makes the
 dock APP-PRIMARY while this app is current — core collapses to its
-first item, the app's DESTINATIONS become the tabs (through the same
-`app.open' `:route' deep link), the Apps entry folds into the drawer;
+first item, the app's DESTINATIONS become peer navigation-bar entries
+(through the same `app.open' `:route' deep link), the Apps entry folds
+into the drawer;
 `standalone' withdraws the core dock items and the global-actions
 injection for the app's OWN surfaces and keeps the app's items off
 foreign ones — the app authors its chrome whole.  Returns ID."
@@ -150,10 +164,15 @@ foreign ones — the app authors its chrome whole.  Returns ID."
     (error "jetpacs-defapp: :chrome must be nil, standalone, or primary, got %S"
            chrome))
   (when destinations (jetpacs-apps--check-destinations destinations))
+  (when (and fab (not (functionp fab))
+             (not (jetpacs-root-node-p fab)))
+    (error "jetpacs-defapp: :fab must be a typed node or function, got %S"
+           fab))
   (setf (alist-get id jetpacs-apps--registry nil nil #'equal)
         (list :label (or label id) :icon (or icon "apps")
               :surfaces surfaces :dock dock
-              :destinations destinations :chrome chrome :order order))
+              :destinations destinations :fab fab
+              :chrome chrome :order order))
   (setq jetpacs-apps--registry
         (sort jetpacs-apps--registry
               (lambda (a b) (< (plist-get (cdr a) :order)
@@ -205,6 +224,25 @@ Colon-aware on both sides, mirroring the flow resolver."
                       (jetpacs-shell-surface-for owner))))
            (plist-get (cdr entry) :surfaces)))
 
+(defun jetpacs-apps-default-fab (screen-owner surface)
+  "SCREEN-OWNER's registered default FAB for SURFACE, or nil.
+The app id is its owner id.  Both identities must agree: the screen
+must belong to the app, and SURFACE must be one of that app's declared
+surfaces.  Consequently an app screen presented as an S4 guest on a
+foreign surface gets no default, and a foreign guest on the app's own
+surface can never inherit the host app's FAB.
+
+A function-valued `:fab' receives SURFACE.  Signals and malformed
+results cost only the default; a screen's own node remains renderable."
+  (when-let* ((entry (and (stringp screen-owner)
+                          (assoc screen-owner jetpacs-apps--registry)))
+              ((jetpacs-apps--entry-owns-surface-p entry surface))
+              (fab (plist-get (cdr entry) :fab)))
+    (condition-case nil
+        (let ((node (if (functionp fab) (funcall fab surface) fab)))
+          (and (jetpacs-root-node-p node) node))
+      (error nil))))
+
 (defun jetpacs-apps-for-surface (surface)
   "The registry entry (ID . PLIST) of the app claiming SURFACE, or nil.
 THE public identity read: the launcher takes a claimed surface's
@@ -253,15 +291,24 @@ malformed result costs this app's items only."
     (error nil)))
 
 (defun jetpacs-apps--destination-tabs (entry &optional limit)
-  "ENTRY's destinations as dock tabs — the S2 app-primary form.
-Each tab deep-links through the global `app.open' `:route' (the S1
-mechanism powering S2), capped at LIMIT (four by default) so the host
-core plus tabs stays inside the M3 five-item budget; `:selected'
-follows the route this verb last opened."
+  "ENTRY's destinations as navigation-bar items — the S2 primary form.
+The private name predates the placement ruling; these are peer
+persistent bar destinations, not content tabs.  Each item deep-links
+through the global `app.open' `:route' (the S1 mechanism powering S2),
+capped at LIMIT (four by default) so the host core plus entries stays
+inside the M3 five-item budget; `:selected' follows the route this verb
+last opened."
   (pcase-let ((`(,id . ,_plist) entry))
     (mapcar (lambda (d)
               (list :label (plist-get d :label)
                     :icon (or (plist-get d :icon) "circle")
+                    :badge (let ((badge (plist-get d :badge)))
+                             (condition-case nil
+                                 (let ((value (if (functionp badge)
+                                                  (funcall badge)
+                                                badge)))
+                                   (and (stringp value) value))
+                               (error nil)))
                     :on-tap (jetpacs-action
                              "app.open"
                              :args (list :app id
@@ -619,6 +666,10 @@ dead deep link must never strand an obsolete host screen."
 ;; adopt — the host seeds `jetpacs-apps-core-drawer-rows' instead
 ;; (defvar-before-load, the core-global-actions pattern).
 (setq jetpacs-chrome-drawer-function #'jetpacs-apps-drawer)
+;; The GR-7b app-default FAB seam.  Chrome supplies the owner of EACH
+;; screen (not merely the surface owner); the resolver above enforces
+;; the app's declared-surface boundary before returning a node.
+(setq jetpacs-chrome-app-fab-function #'jetpacs-apps-default-fab)
 
 (provide 'jetpacs-apps)
 ;;; jetpacs-apps.el ends here

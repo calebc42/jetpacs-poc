@@ -110,6 +110,18 @@ non-node degrades the same way and never fails the build.  Every
 descriptor the drawer ships must be a GLOBAL VERB or scoped to the
 surfaces it appears on — it renders on every chrome surface's root.")
 
+(defvar jetpacs-chrome-app-fab-function nil
+  "Function (SCREEN-OWNER SURFACE) -> app-default FAB node, or nil.
+The GR-7b app seam.  Chrome resolves SCREEN-OWNER per stacked screen:
+a sanctioned S4 guest carries its recorded foreign owner, while a
+native screen carries the surface owner.  This distinction prevents a
+host app's creation action from leaking onto a guest settings screen.
+
+The result joins every scaffold that does not author `:fab' itself,
+before shell globals are placed, so an app's primary creation action
+outranks a global requesting the same slot.  A signal, malformed node,
+or live-profile refusal costs the default only, never the screen.")
+
 ;;;; Composition
 
 (cl-defun jetpacs-chrome-screen (title body &key back actions fab drawer
@@ -716,6 +728,14 @@ together, on every rebuild."
                                         (not (plist-member n :rail)))
                                (setq n (append n (list (car dock)
                                                        (cdr dock)))))
+                             ;; App-default FABs join before shell
+                             ;; globals: the app's creation action owns
+                             ;; this slot, while a global set to `fab'
+                             ;; falls back to the top bar.  Resolution
+                             ;; is per SCREEN owner, so guests never
+                             ;; inherit the host app's default.
+                             (setq n (jetpacs-chrome--join-app-fab
+                                      surface id n))
                              ;; The shell globals join EVERY screen (the
                              ;; dock's rule, not the drawer's root-only
                              ;; one) in whichever slot
@@ -842,6 +862,38 @@ A row grants nothing by itself — `jetpacs-chrome--guest-delegate-p'
 requires the id to still be ON the surface's live stack, so a back
 truncation or pop revokes without bookkeeping here; stale rows are
 inert and swept when their owner tears down.")
+
+(defun jetpacs-chrome--screen-owner (surface id)
+  "Owner of screen ID on SURFACE, distinguishing sanctioned guests.
+Guest ownership is the S4 record minted at push time; native screens
+fall back to the owner that registered the surface root."
+  (or (alist-get id (gethash surface jetpacs-chrome--guests)
+                 nil nil #'equal)
+      (jetpacs--owner-of "surface" surface)))
+
+(defun jetpacs-chrome--join-app-fab (surface id node)
+  "Inject ID's app-default FAB into scaffold NODE when its slot is free.
+Authored-wins is absolute.  The seam receives the screen owner rather
+than inferring an app from SURFACE, which is what keeps host defaults
+off S4 guests."
+  (if (or (null jetpacs-chrome-app-fab-function)
+          (not (jetpacs-root-node-p node))
+          (not (equal (plist-get node :t) "scaffold"))
+          (plist-member node :fab))
+      node
+    (let ((fab
+           (condition-case err
+               (funcall jetpacs-chrome-app-fab-function
+                        (jetpacs-chrome--screen-owner surface id)
+                        surface)
+             (error
+              (message "jetpacs-chrome: app fab failed: %s"
+                       (jetpacs-error-label err))
+              nil))))
+      (if (and (jetpacs-root-node-p fab)
+               (ignore-errors (jetpacs-chrome--gate-view surface fab) t))
+          (append node (list :fab fab))
+        node))))
 
 (defun jetpacs-chrome--guest-delegate-p (owner surface)
   "Non-nil when OWNER has a guest screen live on SURFACE's stack.

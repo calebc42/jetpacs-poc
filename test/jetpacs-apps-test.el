@@ -265,6 +265,170 @@ re-checked (and isolated) per read."
                               :key)
                    "one"))))
 
+(ert-deftest jetpacs-apps-destination-badges-validate-and-resolve ()
+  "Destination badges are checked at registration and resolved per bar.
+The empty string survives as the bare attention dot; nil, a signalling
+function, and a function returning the wrong type cost only that badge."
+  (jetpacs-apps-test--env
+    (should-error
+     (jetpacs-defapp
+      "bad-badge" :surfaces '("bad-badge.main")
+      :destinations
+      '((:key "bad" :label "Bad" :verb "bad-badge.open" :badge 7))))
+    (let ((count 0))
+      (jetpacs-defapp
+       "badged" :surfaces '("badged.main")
+       :destinations
+       (list
+        '(:key "dot" :label "Dot" :verb "badged.dot" :badge "")
+        (list :key "live" :label "Live" :verb "badged.live"
+              :badge (lambda () (number-to-string (cl-incf count))))
+        '(:key "zero" :label "Zero" :verb "badged.zero" :badge nil)
+        (list :key "wrong" :label "Wrong" :verb "badged.wrong"
+              :badge (lambda () 3))
+        (list :key "broken" :label "Broken" :verb "badged.broken"
+              :badge (lambda () (error "boom")))))
+      (let* ((entry (assoc "badged" jetpacs-apps--registry))
+             (items (jetpacs-apps--destination-tabs entry 5)))
+        (should (equal (mapcar (lambda (item) (plist-get item :badge))
+                               items)
+                       '("" "1" nil nil nil)))
+        ;; The function is live data, not memoised by the registry.
+        (should (equal (plist-get
+                        (cadr (jetpacs-apps--destination-tabs entry 5))
+                        :badge)
+                       "2"))
+        ;; A bad badge never drops its otherwise usable destination.
+        (should (equal (jetpacs-apps-test--labels items)
+                       '("Dot" "Live" "Zero" "Wrong" "Broken")))))))
+
+(ert-deftest jetpacs-apps-default-fab-validates-and-resolves ()
+  "The app registry accepts static and surface-aware default FAB nodes.
+Malformed static values refuse at registration; dynamic failure or a
+foreign surface degrades to no default."
+  (jetpacs-apps-test--env
+    (should-error
+     (jetpacs-defapp "bad-fab" :surfaces '("bad-fab")
+                     :fab '(:icon "add")))
+    (let ((static (jetpacs-icon-button
+                   "add" (jetpacs-action "jetpacs.noop")
+                   :content-description "create"))
+          seen)
+      (jetpacs-defapp "static" :surfaces '("static") :fab static)
+      (should (eq (jetpacs-apps-default-fab "static" "app:static")
+                  static))
+      (should-not (jetpacs-apps-default-fab "static" "app:foreign"))
+      (jetpacs-defapp
+       "dynamic" :surfaces '("dynamic")
+       :fab (lambda (surface)
+              (setq seen surface)
+              (jetpacs-icon-button
+               "edit" (jetpacs-action "jetpacs.noop")
+               :content-description "edit")))
+      (should (equal
+               (plist-get (jetpacs-apps-default-fab
+                           "dynamic" "app:dynamic")
+                          :icon)
+               "edit"))
+      (should (equal seen "app:dynamic"))
+      (jetpacs-defapp "wrong" :surfaces '("wrong")
+                      :fab (lambda (_surface) '(:icon "add")))
+      (jetpacs-defapp "broken" :surfaces '("broken")
+                      :fab (lambda (_surface) (error "boom")))
+      (should-not (jetpacs-apps-default-fab "wrong" "app:wrong"))
+      (should-not (jetpacs-apps-default-fab "broken" "app:broken")))))
+
+(ert-deftest jetpacs-apps-default-fab-is-screen-owner-scoped ()
+  "The GR-7b FAB join pins all four ownership and precedence arms.
+A native screen with a free slot gets its app default, authored FABs
+win, a foreign surface gets nothing, and an S4 guest on the host
+surface never inherits the host default.  The app default also claims
+the slot before a shell global requesting FAB placement."
+  (jetpacs-apps-test--env
+    (let* ((jetpacs-chrome--stacks (make-hash-table :test #'equal))
+           (jetpacs-chrome--guests (make-hash-table :test #'equal))
+           (jetpacs-chrome-dock-function nil)
+           (jetpacs-chrome-dock-items-function nil)
+           (jetpacs-chrome-drawer-function nil)
+           (jetpacs-chrome-global-actions-function nil)
+           (jetpacs-chrome-global-items-function nil)
+           (jetpacs-chrome-app-fab-function
+            #'jetpacs-apps-default-fab)
+           (host-fab
+            (jetpacs-icon-button
+             "add" (jetpacs-action "host.capture")
+             :content-description "capture"))
+           (guest-fab
+            (jetpacs-icon-button
+             "star" (jetpacs-action "guest.create")
+             :content-description "guest create")))
+      (jetpacs-defapp "host" :surfaces '("host") :fab host-fab)
+      (jetpacs-defapp "guest" :surfaces '("guest") :fab guest-fab)
+      (puthash
+       "app:host"
+       (list
+        (cons "guest-guest-settings"
+              (lambda (back)
+                (jetpacs-chrome-screen
+                 "Guest" (jetpacs-text "guest") :back back)))
+        (cons "authored"
+              (lambda (back)
+                (jetpacs-chrome-screen
+                 "Authored" (jetpacs-text "authored") :back back
+                 :fab (jetpacs-icon-button
+                       "edit" (jetpacs-action "host.edit")
+                       :content-description "edit"))))
+        (cons "root"
+              (lambda (_back)
+                (jetpacs-chrome-screen "Root" (jetpacs-text "root")))))
+       jetpacs-chrome--stacks)
+      (puthash "app:host" '(("guest-guest-settings" . "guest"))
+               jetpacs-chrome--guests)
+      (puthash
+       "app:foreign"
+       (list (cons "root"
+                   (lambda (_back)
+                     (jetpacs-chrome-screen
+                      "Foreign" (jetpacs-text "foreign")))))
+       jetpacs-chrome--stacks)
+      (cl-letf (((symbol-function 'jetpacs-client) (lambda () nil))
+                ((symbol-function 'jetpacs--owner-of)
+                 (lambda (_kind surface)
+                   (cond ((equal surface "app:host") "host")
+                         ((equal surface "app:foreign") "foreign")))))
+        (let* ((host (jetpacs-chrome--build "app:host"))
+               (views (plist-get host :views)))
+          ;; No authored FAB: app default.
+          (should (equal (plist-get (gethash "root" views) :fab)
+                         host-fab))
+          ;; Authored always wins.
+          (should (equal (plist-get
+                          (plist-get (gethash "authored" views) :fab)
+                          :icon)
+                         "edit"))
+          ;; Guest identity wins over host-surface identity; neither
+          ;; app may cross the declared-surface boundary.
+          (should-not (plist-member
+                       (gethash "guest-guest-settings" views) :fab)))
+        ;; Foreign surface: no registered owner and no leaked host FAB.
+        (let* ((foreign (jetpacs-chrome--build "app:foreign"))
+               (view (gethash "root" (plist-get foreign :views))))
+          (should-not (plist-member view :fab)))
+        ;; The app resolves before S10 globals.  Its FAB keeps the
+        ;; single slot and M-x falls back to the native top bar.
+        (let* ((jetpacs-chrome-global-actions-placement 'fab)
+               (jetpacs-chrome-global-items-function
+                (lambda (_surface)
+                  (list (list :icon "terminal" :label "M-x"
+                              :on-tap
+                              (jetpacs-action "jetpacs.emacs.mx")))))
+               (host (jetpacs-chrome--build "app:host"))
+               (view (gethash "root" (plist-get host :views))))
+          (should (equal (plist-get (plist-get view :fab) :icon) "add"))
+          (should (string-search
+                   "jetpacs.emacs.mx" (format "%S" (plist-get view
+                                                               :top_bar)))))))))
+
 (ert-deftest jetpacs-apps-open-route-redispatches-on-the-apps-surface ()
   "The S1 deep link end to end, WITH the D1 gate live: the row's tap
 arrives from a HOST surface, `app.open' is ownerless so the gate lets
