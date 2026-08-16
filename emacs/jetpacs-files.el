@@ -223,6 +223,14 @@ This public identity seam lets mode apps validate a device action
 against the document that was actually presented."
   (plist-get jetpacs-files--edit :path))
 
+(defun jetpacs-files-current-edit-context ()
+  "Return a copy of the current Files edit record, or nil.
+Mode apps use this public read-only seam together with
+`jetpacs-files-current-edit-path' when behavior depends on whether the
+presented editor is plain or synchronized.  Callers must not mutate the
+returned plist; the authoritative record remains private to Files."
+  (and jetpacs-files--edit (copy-sequence jetpacs-files--edit)))
+
 (defun jetpacs-files-downgrade-current-editor (&optional path)
   "Downgrade the current PATH edit session from synchronized to plain.
 The current visiting buffer remains authoritative for the replacement
