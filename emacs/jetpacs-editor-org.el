@@ -9,7 +9,10 @@
 ;; formatting and insertion snippets on every editor rung, built-in Org
 ;; structural commands on synchronized editors, the add-heading FAB,
 ;; Org Crypt re-encryption before a real buffer save, and cache
-;; invalidation after a durable Files save.
+;; invalidation after a durable Files save.  It also owns the public
+;; synchronous Org save policy used by engine mutations: pre-write
+;; transforms, durable save, optional Vulpea refresh, and whole-cache
+;; invalidation remain one foundation operation.
 ;;
 ;; Commands use the existing SPEC 17.7 `edit.command' path.  They run in
 ;; the attached Org buffer at the device caret and pass through
@@ -30,6 +33,11 @@
 
 (defvar jetpacs-editor-org--registered nil
   "Non-nil while the Org editor adapter is registered.")
+
+(defvar jetpacs-editor-org--previous-file-save-function nil
+  "The `ebp-org-file-save-function' displaced by the Org adapter.")
+
+(declare-function vulpea-db-update-file "ext:vulpea-db-extract" (file))
 
 (defun jetpacs-editor-org--synced-p ()
   "Whether the Files builder is authoring a synchronized editor."
@@ -152,6 +160,72 @@ subtree and records its Emacs-owned splice identity for the save gate."
   (with-current-buffer buffer
     (when (derived-mode-p 'org-mode)
       (org-encrypt-entries))))
+
+(defun jetpacs-editor-org--run-prewrite (path buffer)
+  "Run the mandatory Files pre-write chain for PATH and BUFFER.
+If a transform signals, restore BUFFER's text, restriction, point, and
+modified state to their exact pre-transform values before re-signaling.
+The caller has not attempted disk I/O yet, so this is an unambiguous
+pre-durability rollback."
+  (with-current-buffer buffer
+    (let* ((original-beg (point-min))
+           (original-end (point-max))
+           (original-point (point))
+           (original-modified (buffer-modified-p))
+           (original-full
+            (save-restriction
+              (widen)
+              (buffer-substring-no-properties (point-min) (point-max)))))
+      (condition-case err
+          (run-hook-with-args 'jetpacs-files-before-buffer-save-hook
+                              path buffer)
+        (error
+         (let ((inhibit-read-only t)
+               (buffer-undo-list t))
+           (widen)
+           (delete-region (point-min) (point-max))
+           (insert original-full)
+           (narrow-to-region original-beg original-end)
+           (goto-char (min (max original-point (point-min)) (point-max)))
+           (set-buffer-modified-p original-modified))
+         (signal (car err) (cdr err)))))))
+
+(defun jetpacs-editor-org--refresh-vulpea (file)
+  "Synchronously refresh FILE in Vulpea when its optional API is present.
+Index maintenance is post-durability: a broken optional package is
+reported locally but cannot turn a completed write into a rejected
+device receipt."
+  (when (and (stringp file) (fboundp 'vulpea-db-update-file))
+    (condition-case err
+        (vulpea-db-update-file file)
+      (error
+       (message "jetpacs-editor-org: vulpea refresh failed: %s"
+                (error-message-string err))))))
+
+;;;###autoload
+(defun jetpacs-editor-org-save-policy (&optional buffer)
+  "Synchronously and safely save BUFFER, defaulting to the current buffer.
+Run every Files pre-write transform before `save-buffer', refresh the
+optional Vulpea index after the write, and invalidate the whole Org
+projection cache.  A pre-write failure restores the buffer and aborts
+the disk write; optional post-durability work is isolated."
+  (let ((buffer (or buffer (current-buffer))))
+    (unless (buffer-live-p buffer)
+      (user-error "Org save target is not a live buffer"))
+    (with-current-buffer buffer
+      (let* ((file (or buffer-file-name
+                       (user-error "Buffer is not visiting a file")))
+             (true (file-truename file))
+             (save-silently t))
+        (jetpacs-editor-org--run-prewrite true buffer)
+        (save-buffer)
+        ;; Capture the file before optional callbacks: the durable save
+        ;; is complete, and neither indexing nor cache cleanup may revise
+        ;; that verdict.
+        (unwind-protect
+            (jetpacs-editor-org--refresh-vulpea true)
+          (ebp-org-cache-invalidate)))))
+  t)
 
 (defun jetpacs-editor-org--commit-narrowed
     (true path value record buffer)
@@ -311,6 +385,11 @@ allowlist and makes the built-in before-save scan retain the entry."
      :after-save #'jetpacs-editor-org--after-save)
     (jetpacs-defaction "jetpacs.editor.org.save-narrowed"
                        #'jetpacs-editor-org--save-narrowed))
+  (unless (eq ebp-org-file-save-function
+              #'jetpacs-editor-org-save-policy)
+    (setq jetpacs-editor-org--previous-file-save-function
+          ebp-org-file-save-function
+          ebp-org-file-save-function #'jetpacs-editor-org-save-policy))
   t)
 
 (defun jetpacs-editor-org-unregister ()
@@ -319,6 +398,12 @@ allowlist and makes the built-in before-save scan retain the entry."
     (setq jetpacs-editor-org--registered nil)
     (jetpacs-editor-unregister 'org)
     (jetpacs-undefaction "jetpacs.editor.org.save-narrowed"))
+  (when jetpacs-editor-org--previous-file-save-function
+    (when (eq ebp-org-file-save-function
+              #'jetpacs-editor-org-save-policy)
+      (setq ebp-org-file-save-function
+            jetpacs-editor-org--previous-file-save-function))
+    (setq jetpacs-editor-org--previous-file-save-function nil))
   t)
 
 (defun jetpacs-editor-org-unload-function ()

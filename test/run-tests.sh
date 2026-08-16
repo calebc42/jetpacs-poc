@@ -253,6 +253,13 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-render-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
   -f ert-run-tests-batch-and-exit
 
+# GR-6b save-policy seam: encryption-abort rollback, optional Vulpea,
+# whole-cache coherence, EBP seam ownership, the additive downstream editor
+# adapter, and SRS durability inside the engine form.
+emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+  -l test/jetpacs-editor-org-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # GR-4 capture-owner cutover: picker/form conclusions, share stash and 1301
 # successor safety, protocol forms, prefix filtering, cache scope, and D1.
 emacs -Q --batch -L emacs -l test/jetpacs-org-capture-test.el \
