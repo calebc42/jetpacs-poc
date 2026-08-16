@@ -36,6 +36,7 @@
 (require 'jetpacs-org-habits)
 (require 'jetpacs-org-reminders)
 (require 'jetpacs-org-capture)
+(require 'jetpacs-org-clock)
 
 (defconst jetpacs-org-mode-owner "org-mode"
   "Owner and app id for the Org Mode app.")
@@ -318,6 +319,7 @@ NOW is an Emacs time value and defaults to `current-time'."
                #'jetpacs-org-mode--sync-reminders)
   (jetpacs-org-reminders-register)
   (jetpacs-org-capture-register)
+  (jetpacs-org-clock-register)
   (unless jetpacs-org-mode--registered
     (setq jetpacs-org-mode--registered t)
     (jetpacs-reader-install)
@@ -347,6 +349,7 @@ NOW is an Emacs time value and defaults to `current-time'."
                #'jetpacs-org-mode--sync-reminders)
   (jetpacs-org-reminders-unregister)
   (jetpacs-org-capture-unregister)
+  (jetpacs-org-clock-unregister)
   (when jetpacs-org-mode--registered
     (setq jetpacs-org-mode--registered nil)
     (setq jetpacs-org-mode--last-reminders 'unset)

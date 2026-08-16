@@ -258,6 +258,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-org-capture-test.el \
   -f ert-run-tests-batch-and-exit
 
+# GR-5 clock-owner cutover: chronometer shape, durable pre-READY dispatch,
+# lifecycle/grant settlement, and the Org Crypt guard on deferred saves.
+emacs -Q --batch -L emacs -l test/jetpacs-org-clock-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # GR-3 reminder-owner cutover: canonical agenda extraction, horizon/id/dedupe,
 # confirmed-set suppression, and the three-pipeline hook singleton.
 emacs -Q --batch -L emacs -L emacs/apps/glasspane \
