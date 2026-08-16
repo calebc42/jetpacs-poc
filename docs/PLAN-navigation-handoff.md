@@ -8,6 +8,13 @@ forward IA program is docs/PLAN-glasspane-para.md (ratified), riding
 docs/PLAN-glasspane-rework.md GR-0..GR-7 and the S-ledger in
 docs/PLAN-jetpacs-debt-and-scaffold.md §4.
 
+> **Forward-IA correction (Caleb, 2026-08-16):** PARA's content model still
+> stands, but its five-tab/core-suppression navigation mechanism does not.
+> Agenda/Projects/Areas/Resources/Review are peer NavBar/BottomAppBar entries
+> beside Eval and Files; Apps is NavDrawer-only.  The authoritative stop/replan
+> note is at the top of `docs/PLAN-glasspane-para.md`.  Do not execute PA-1 or
+> PA-3's stale placement mechanics after GR-7b.
+
 ## 1. What landed (slop-fork/main, in order)
 
 | Commit | Rung | One line |
