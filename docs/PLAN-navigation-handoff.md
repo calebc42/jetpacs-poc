@@ -77,9 +77,11 @@ home), and the substring dedup (`...mxyz` swallowing `...mx`).
 
 ## 4. Handoff — in execution order
 
-1. **Device smoke of S8–S11** (the one open verification debt: all of
-   it is ERT/JVM-proven only). Folds into GR-1's hardware floor and the
-   PA-3 device batch. Minimum arms: drawer present on every app root
+1. **Device smoke of S8–S11** remains a broad verification debt and folds
+   into GR-1's hardware floor and the PA-3 device batch. S11's online
+   Glasspane path is now spot-verified on hardware: Projects → system Back
+   returned to Agenda without exiting; system Back at Agenda exited; relaunch
+   resumed Agenda. Remaining minimum arms: drawer present on every app root
    (hub, Files, Settings, app-store, SQL, Project, Org Mode, Habits,
    catalog, launcher, Clipboard) with identical canonical contents;
    back arrows on the sql picker / project find+switch working with the
@@ -88,8 +90,10 @@ home), and the substring dedup (`...mxyz` swallowing `...mx`).
    phone's Appearance settings, including the authored-FAB fallback
    screens (glasspane home, Buffers) and the three self-authoring bars.
 2. **The PARA ladder** (docs/PLAN-glasspane-para.md, ratified) is the
-   forward IA program. S11 was PA-3b's hard precondition — satisfied at
-   commit level; APK deploy is still pending.
+   forward IA program. S11 was PA-3b's hard precondition and is now deployed:
+   the tablet's installed APK is hash-identical to the local S11 BackHandler
+   build. The PA-3b spot arm is green; its full cross-destination gesture
+   matrix remains part of the consolidated PA-3 device batch.
 3. **GR-0..GR-7 survive** (docs/PLAN-glasspane-rework.md). GR-7b's
    `:badge` + per-app FAB registry feeds PA-3a — and must OUTRANK the
    S10 globals in the `:fab` slot (comment already at the join,

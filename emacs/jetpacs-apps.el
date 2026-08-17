@@ -58,8 +58,9 @@ APP-PRIMARY app; chrome itself ignores that metadata.")
 
 (defvar jetpacs-apps--current-route nil
   "The current app's last-opened destination key, or nil.
-Written by `app.open' and `jetpacs-apps-seed-current' — set by a
-routed open, cleared by a plain one — so the app-primary
+Written by `app.open', `jetpacs-apps-seed-current', and
+`jetpacs-apps-note-route' — set by a routed open or an app's own
+navigation, cleared by a plain/reset open — so the app-primary
 navigation-bar entries can indicate the selected place (the M3
 navigation-bar contract).")
 
@@ -267,6 +268,32 @@ Return ID."
   (setq jetpacs-apps--current id
         jetpacs-apps--current-route route)
   id)
+
+(defun jetpacs-apps-note-route (id route)
+  "Record app ID's current destination ROUTE without navigating.
+ROUTE is a registered destination key, or nil to clear the selection
+when ID resets to a routeless root.  This is the runtime counterpart
+of `jetpacs-apps-seed-current': app-owned verbs and companion-local
+Back handlers use it when navigation did not enter through `app.open'.
+
+ID and a non-nil ROUTE must already exist in the registry.  Return
+non-nil only when the selected app/route pair actually changed, so a
+caller can bound any presentation refresh it schedules."
+  (unless (and (stringp id) (assoc id jetpacs-apps--registry))
+    (error "jetpacs-apps-note-route: unknown app %S" id))
+  (when (and route
+             (not (and (stringp route)
+                       (cl-find route (jetpacs-apps-destinations id)
+                                :key (lambda (dest)
+                                       (plist-get dest :key))
+                                :test #'equal))))
+    (error "jetpacs-apps-note-route: unknown route %S for app %S"
+           route id))
+  (let ((changed (not (and (equal jetpacs-apps--current id)
+                           (equal jetpacs-apps--current-route route)))))
+    (setq jetpacs-apps--current id
+          jetpacs-apps--current-route route)
+    changed))
 
 (defun jetpacs-apps--home-surface (entry)
   (car (plist-get (cdr entry) :surfaces)))

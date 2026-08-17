@@ -217,6 +217,25 @@ signalling core seed costs the tail rows, never the drawer."
     (should-not jetpacs-apps--current-route)
     (should-not pushed)))
 
+(ert-deftest jetpacs-apps-note-route-is-validated-and-change-sensitive ()
+  "App-owned navigation can record or clear a route without a push."
+  (jetpacs-apps-test--env
+    (jetpacs-defapp "notes" :label "Notes" :surfaces '("notes.main")
+                    :destinations
+                    '((:key "inbox" :label "Inbox" :verb "notes.inbox")
+                      (:key "review" :label "Review" :verb "notes.review")))
+    (should-error (jetpacs-apps-note-route "missing" "inbox"))
+    (should-error (jetpacs-apps-note-route "notes" "missing"))
+    (should-error (jetpacs-apps-note-route "notes" 7))
+    (should (jetpacs-apps-note-route "notes" "review"))
+    (should (equal jetpacs-apps--current "notes"))
+    (should (equal jetpacs-apps--current-route "review"))
+    (should-not (jetpacs-apps-note-route "notes" "review"))
+    (should (jetpacs-apps-note-route "notes" nil))
+    (should-not jetpacs-apps--current-route)
+    (should-not (jetpacs-apps-note-route "notes" nil))
+    (should-not pushed)))
+
 (ert-deftest jetpacs-apps-sole-app-is-current-by-default ()
   "With exactly one app registered it IS the current app, unopened."
   (jetpacs-apps-test--env
