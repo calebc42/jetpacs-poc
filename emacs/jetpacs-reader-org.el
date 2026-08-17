@@ -40,7 +40,9 @@
 
 (defun jetpacs-reader-org-path-p (path)
   "Whether PATH names an Org document."
-  (and (stringp path) (string-suffix-p ".org" path t)))
+  (and (stringp path)
+       (let ((case-fold-search t))
+         (string-match-p "\\.org\\(_archive\\)?\\'" path))))
 
 (defun jetpacs-reader-org--buffer (path)
   "Visit PATH and return its Org buffer."

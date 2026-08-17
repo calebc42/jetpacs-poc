@@ -952,8 +952,18 @@ list and the FAB whose descriptor was minted WITH its record."
     (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
                (lambda (&rest _) (cl-incf busted))))
       (jetpacs-org-render--files-after-save "/x/notes.org")
+      (jetpacs-org-render--files-after-save "/x/notes.org_archive")
       (jetpacs-org-render--files-after-save "/x/notes.txt")
-      (should (= 1 busted)))))
+      (should (= 2 busted)))))
+
+(ert-deftest jetpacs-org-render-legacy-path-p-includes-native-archives ()
+  "The compatibility Files seams recognize Org's archive filenames."
+  (dolist (path '("/tmp/note.org" "/tmp/note.ORG"
+                  "/tmp/note.org_archive" "/tmp/note.ORG_ARCHIVE"))
+    (should (jetpacs-org-render--org-path-p path)))
+  (dolist (path '("/tmp/note.org_archive.bak" "/tmp/note_archive"
+                  "/tmp/note.orgx_archive" nil))
+    (should-not (jetpacs-org-render--org-path-p path))))
 
 (provide 'jetpacs-org-render-test)
 ;;; jetpacs-org-render-test.el ends here

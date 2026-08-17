@@ -1002,14 +1002,14 @@ New configurations should load `jetpacs-org-mode' instead."
   :type 'boolean :group 'jetpacs-org)
 
 ;; JA-6's tap-to-open path builds the PLAIN editor screen and publishes
-;; five seams; the org experience claims `.org' paths through them,
+;; five seams; the org experience claims `.org' and `.org_archive' paths,
 ;; using only public names.  The per-path VIEW MODE decides which face
 ;; a file shows: `rendered' (default — the body seam replaces the
 ;; editor with this skin's output) or `plain' (the body function
 ;; passes, files builds its own editor, which then picks up the org
 ;; toolbar through the toolbar seam).  The actions seam contributes
 ;; the toggle; the FAB seam the add-heading affordance; the after-save
-;; hook busts the org cache when a device-side save lands on a `.org'.
+;; hook busts the org cache when a device-side save lands on either form.
 ;; Seam functions are PURE BUILDERS — they must never push (the JA-6
 ;; audit names a pushing body function as unexplored territory).
 
@@ -1018,7 +1018,8 @@ New configurations should load `jetpacs-org-mode' instead."
 
 (defun jetpacs-org-render--org-path-p (path)
   (and (stringp path)
-       (string-suffix-p ".org" path t)))
+       (let ((case-fold-search t))
+         (string-match-p "\\.org\\(_archive\\)?\\'" path))))
 
 (defun jetpacs-org-render-rendered-p (path)
   "Non-nil when PATH presents as the RENDERED org view, not plain text.
