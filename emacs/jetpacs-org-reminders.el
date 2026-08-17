@@ -63,6 +63,10 @@ current buffer."
       ((file-exists-p entry) (list entry))))
    (ebp-org-agenda-files)))
 
+(defalias 'jetpacs-org-mode-agenda-scope
+  #'jetpacs-org-mode--agenda-scope
+  "Public access to Org Mode's canonical local agenda-file scope.")
+
 (defun jetpacs-org-mode--agenda-items (&optional span start-day)
   "Return rich agenda items for SPAN beginning at START-DAY.
 SPAN accepts Org Agenda's day/week/month names or an integer day

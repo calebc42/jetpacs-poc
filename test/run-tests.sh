@@ -371,6 +371,13 @@ emacs -Q --batch -L emacs -L emacs/apps/glasspane \
   -l test/glasspane-test.el \
   -f ert-run-tests-batch-and-exit
 
+# PARA ladder gates (docs/PLAN-glasspane-para.md): PA-2a creates the suite
+# with Areas' category layering, cache/rotten-file discipline, staged route,
+# and public-seam boundaries.  Later PARA rungs accumulate here.
+emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+  -l test/glasspane-para-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # Icon lint: SPEC 17.1's placeholder degrade means a misspelled icon
 # never fails at runtime — this is the only gate that catches a typo.
 # Ground truth is the generated docs/lookup-tables/M3-ICON-REFERENCE.org
