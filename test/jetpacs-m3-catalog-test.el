@@ -425,18 +425,18 @@ callers before the catalog became one."
 
 (ert-deftest jetpacs-m3-catalog-dock-composes-after-the-core ()
   "The composed dock is the HOST's core items plus the catalog's, in
-that order — and with exactly one registered app the launcher grid
-stays off (`jetpacs-apps--multi-p' nil), which is the single-app
-contract."
+that order.  The app switcher remains drawer-only, including under the
+single-app contract."
   (let ((jetpacs-apps-core-dock-items
          (lambda (_surface)
            (list (list :label "Home" :icon "home")
                  (list :label "Files" :icon "folder_open")))))
-    (should-not (jetpacs-apps--multi-p))
+    (should (= (length jetpacs-apps--registry) 1))
     (should (equal (car (jetpacs-apps-current)) jetpacs-m3-owner))
-    (should (equal (mapcar (lambda (i) (plist-get i :label))
-                           (jetpacs-apps-dock-items "app:hub"))
-                   '("Home" "Files" "Catalog")))
+    (let ((labels (mapcar (lambda (i) (plist-get i :label))
+                          (jetpacs-apps-dock-items "app:hub"))))
+      (should (equal labels '("Home" "Files" "Catalog")))
+      (should-not (member "Apps" labels)))
     ;; The destination reads selected only on the catalog's own surface.
     (let ((home (jetpacs-shell-surface-for jetpacs-m3-owner)))
       (cl-flet ((catalog-item (surface)

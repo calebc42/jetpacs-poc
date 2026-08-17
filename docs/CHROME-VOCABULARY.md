@@ -100,11 +100,13 @@ slot, and defapp/drawer/theming/resume all compose.  What the pole
 grows into: the app CONTRIBUTES destinations to the host hub through
 the defapp registry (S1 — the poc-1 `:views` mechanism restored;
 llm-poc/emacs/core/jetpacs-apps.el:88 is the reference); the dock can
-go APP-PRIMARY — core collapses to one Home, the app's own
-destinations become the tabs, within the M3 3–5 budget — or, when the
-app declares the full-bar form, to none: the app's destinations fill
-the M3 3–5 budget whole, and every core destination remains reachable
-in the navigation drawer (M-x parity is the floor, not the bar) (S2); shell
+go APP-PRIMARY — core remains intact and the app's own destinations fill
+the remaining M3 3–5 budget — or, with `:dock-core nil`, core contributes
+none and the app's destinations fill the budget whole. With
+`:drawer-core`, the app declares which suppressed core destinations
+relocate to the navigation drawer and must explicitly account for every
+other suppressed destination through an app destination that subsumes it
+(M-x parity is the floor, not the bar) (S2); shell
 globals (M-x) persist into the app's top bar (S3); and a screen pushed
 onto a FOREIGN stack is a sanctioned GUEST — scoped event delegation,
 prefixed ids, foreign-stack teardown — never an `:any-surface` workaround

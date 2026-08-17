@@ -8,12 +8,15 @@ forward IA program is docs/PLAN-glasspane-para.md (ratified), riding
 docs/PLAN-glasspane-rework.md GR-0..GR-7 and the S-ledger in
 docs/PLAN-jetpacs-debt-and-scaffold.md §4.
 
-> **Forward-IA correction (Caleb, 2026-08-16):** PARA's content model still
-> stands, but its five-tab/core-suppression navigation mechanism does not.
-> Agenda/Projects/Areas/Resources/Review are peer NavBar/BottomAppBar entries
-> beside Eval and Files; Apps is NavDrawer-only.  The authoritative stop/replan
-> note is at the top of `docs/PLAN-glasspane-para.md`.  Do not execute PA-1 or
-> PA-3's stale placement mechanics after GR-7b.
+> **Forward-IA correction (Caleb, 2026-08-16):** the persistent
+> NavBar/BottomAppBar has exactly five destinations — Agenda, Projects, Areas,
+> Resources, Review. Agenda alone contains Day/Week/Month content tabs;
+> Projects succeeds POC-1 Tasks; Resources wraps and replaces the separate
+> Files entry by opening Jetpacs' native explorer at the vault root, not by
+> implementing another browser. Archive, Eval, and Apps/the app switcher live in the NavDrawer.
+> PA-1 and PA-3 in `docs/PLAN-glasspane-para.md` have been rewritten around
+> that exact map. Jetpacs supplies only generic composition seams; the PARA
+> choices remain entirely downstream in Glasspane.
 
 ## 1. What landed (slop-fork/main, in order)
 
@@ -60,8 +63,8 @@ home), and the substring dedup (`...mxyz` swallowing `...mx`).
   seams yield the slot to a screen's own chrome but must re-home the
   affordance, not drop it.
 - **Drawer is root-only** (S8, v4-ratified): SPEC 16.1 document-wide id
-  uniqueness is why; the dock sidesteps only because its tabs carry no
-  literal keys.
+  uniqueness is why; the dock sidesteps because its generated bar items
+  carry no literal widget keys.
 - **System back = the authored arrow, nothing else** (S11): the
   extractor matches the top bar's leading spine only — a drawer row or
   body button carrying `view.switch` must never claim the gesture.

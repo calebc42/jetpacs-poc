@@ -75,11 +75,13 @@ and the full composed drawer over them."
     (should (jetpacs-apps-drawer "app:hub"))))
 
 (ert-deftest jetpacs-home-dock-exposes-eval-and-files-globally ()
-  "The host core names both persistent destinations honestly."
+  "The host core names and stably keys both native destinations."
   (jetpacs-home-test--load-hub-defuns)
-  (should (equal (mapcar (lambda (item) (plist-get item :label))
-                         (jetpacs-hub--dock-items "app:hub"))
-                 '("Eval" "Files"))))
+  (let ((items (jetpacs-hub--dock-items "app:hub")))
+    (should (equal (mapcar (lambda (item) (plist-get item :label)) items)
+                   '("Eval" "Files")))
+    (should (equal (mapcar (lambda (item) (plist-get item :key)) items)
+                   '("eval" "files")))))
 
 (provide 'jetpacs-home-test)
 ;;; jetpacs-home-test.el ends here

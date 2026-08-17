@@ -12,8 +12,8 @@
 ;; The single-app contract (POC 1's, kept): with zero registered apps
 ;; the composed dock is byte-identical to the host-seeded core items;
 ;; with one app its destinations merge after core and nothing else
-;; appears.  The launcher machinery — the Apps grid surface and the
-;; trailing "Apps" destination — exists only from the second app on.
+;; appears.  The Apps grid is reached from the composed drawer and
+;; never consumes a persistent navigation slot.
 ;;
 ;; THIS IS THE ENTRY POINT for a Tier 1 app:
 ;;
@@ -40,23 +40,28 @@
   "The host's own dock destinations: a function (SURFACE) -> items.
 Seeded by the device init (which used to set the chrome seam
 directly); these render in EVERY app — the dock-as-data restatement of
-POC 1's \"views not claimed by any app show everywhere\".")
+POC 1's \"views not claimed by any app show everywhere\".  An item may
+carry a stable string `:key' for selective relocation by an
+APP-PRIMARY app; chrome itself ignores that metadata.")
 
 (defvar jetpacs-apps--registry nil
   "Ordered alist of APP-ID -> plist
-\(:label :icon :surfaces :dock :destinations :fab :chrome :order).
+\(:label :icon :surfaces :dock :destinations :fab :chrome :dock-core
+ :drawer-core :order).
 :dock is a list of dock item plists or a function (SURFACE) -> items;
 :destinations is the S1 route registry; :fab is the app-default FAB;
-and :chrome is the integration pole — see `jetpacs-defapp'.")
+`:dock-core' and `:drawer-core' parameterize the APP-PRIMARY pole; and
+:chrome is the integration pole — see `jetpacs-defapp'.")
 
 (defvar jetpacs-apps--current nil
-  "The current app's id, or nil before any `app.open'.")
+  "The current app's id, or nil before `app.open' or an explicit seed.")
 
 (defvar jetpacs-apps--current-route nil
   "The current app's last-opened destination key, or nil.
-Written only by `app.open' — set by a routed open, cleared by a plain
-one — so the app-primary navigation-bar entries can indicate the
-selected place (the M3 navigation-bar contract).")
+Written by `app.open' and `jetpacs-apps-seed-current' — set by a
+routed open, cleared by a plain one — so the app-primary
+navigation-bar entries can indicate the selected place (the M3
+navigation-bar contract).")
 
 ;;;; App-surface refresh
 
@@ -110,6 +115,10 @@ resolved value safe to MAP, and a function or circular cell is not."
           (unless (or (null badge) (stringp badge) (functionp badge))
             (error "jetpacs-defapp: destination :badge %S must be a string or nullary function"
                    badge))))
+      (when (and (plist-member d :bar)
+                 (not (memq (plist-get d :bar) '(nil t))))
+        (error "jetpacs-defapp: destination :bar must be t or nil, got %S"
+               (plist-get d :bar)))
       (when (member (plist-get d :key) keys)
         (error "jetpacs-defapp: duplicate destination key %S"
                (plist-get d :key)))
@@ -125,22 +134,39 @@ build-time-validation house rule."
       dests
     (jetpacs-apps--check-destination-list dests)))
 
+(defun jetpacs-apps--check-drawer-core (keys)
+  "Signal unless KEYS is a proper list of distinct core identifiers.
+Return KEYS.  The identifiers name stable `:key' metadata on items
+returned by `jetpacs-apps-core-dock-items'."
+  (unless (proper-list-p keys)
+    (error "jetpacs-defapp: :drawer-core must be a proper list, got %S"
+           keys))
+  (let (seen)
+    (dolist (key keys)
+      (jetpacs-check-identifier key ":drawer-core entry")
+      (when (member key seen)
+        (error "jetpacs-defapp: duplicate :drawer-core key %S" key))
+      (push key seen)))
+  keys)
+
 (cl-defun jetpacs-defapp (id &key label icon surfaces dock destinations fab
-                             chrome (order 100))
+                             chrome (dock-core t) drawer-core (order 100))
   "Register (or replace) app ID.
 LABEL and ICON draw its Apps-grid card; SURFACES is the list of surface
 names it claims (the first is its home); DOCK is its destinations —
 item plists in the chrome seam's shape, or a function of the surface.
 
-DESTINATIONS is the S1 route registry (CHROME-VOCABULARY v3, the
+DESTINATIONS is the S1 route registry (CHROME-VOCABULARY v4, the
 build-within pole; poc-1's `:views' restored onto chrome screens): a
-list of plists (:key :label :verb [:icon :subtitle :badge]) — or a
-function of no arguments returning one — naming the screens the app
+list of plists (:key :label :verb [:icon :subtitle :badge :bar]) — or
+a function of no arguments returning one — naming the screens the app
 offers the HOST.  A destination's optional BADGE is a string or a
 nullary function returning a string/nil; it is resolved when the bar
-is built.  Each destination is opened via the global `app.open' with
-`:route KEY', which re-dispatches the destination's VERB on the app's
-own home surface — so the verb stays owner-scoped and no
+is built.  Optional BAR is boolean and defaults to t; nil keeps the
+destination in the drawer/deep-link registry but excludes it from the
+persistent bar.  Each destination is opened via the global `app.open'
+with `:route KEY', which re-dispatches the destination's VERB on the
+app's own home surface — so the verb stays owner-scoped and no
 `:any-surface' declaration is ever needed for a host-side row.
 
 FAB is a typed node, or a function (SURFACE) returning one, used as
@@ -149,12 +175,14 @@ authored `:fab' wins.  The result is resolved per screen through
 `jetpacs-apps-default-fab', isolated, and never crosses onto a surface
 the app does not claim.
 
-CHROME is the app's integration pole (CHROME-VOCABULARY v3):
+CHROME is the app's integration pole (CHROME-VOCABULARY v4):
 nil (default) composes into the shell as today; `primary' makes the
-dock APP-PRIMARY while this app is current — core collapses to its
-first item, the app's DESTINATIONS become peer navigation-bar entries
-(through the same `app.open' `:route' deep link), the Apps entry folds
-into the drawer;
+dock APP-PRIMARY while this app is current.  DOCK-CORE defaults to t;
+nil lets the app's DESTINATIONS own all five M3 bar slots.  DRAWER-CORE
+is a list of stable host-core item keys to relocate into the composed
+drawer while core is suppressed.  These two options are valid only
+for the `primary' pole, and DRAWER-CORE is meaningful only when
+DOCK-CORE is nil.  Apps always remains in the drawer;
 `standalone' withdraws the core dock items and the global-actions
 injection for the app's OWN surfaces and keeps the app's items off
 foreign ones — the app authors its chrome whole.  Returns ID."
@@ -163,6 +191,15 @@ foreign ones — the app authors its chrome whole.  Returns ID."
   (unless (memq chrome '(nil standalone primary))
     (error "jetpacs-defapp: :chrome must be nil, standalone, or primary, got %S"
            chrome))
+  (unless (memq dock-core '(nil t))
+    (error "jetpacs-defapp: :dock-core must be t or nil, got %S"
+           dock-core))
+  (jetpacs-apps--check-drawer-core drawer-core)
+  (when (and (null dock-core) (not (eq chrome 'primary)))
+    (error "jetpacs-defapp: :dock-core nil requires :chrome 'primary"))
+  (when (and drawer-core
+             (not (and (eq chrome 'primary) (null dock-core))))
+    (error "jetpacs-defapp: :drawer-core requires :chrome 'primary and :dock-core nil"))
   (when destinations (jetpacs-apps--check-destinations destinations))
   (when (and fab (not (functionp fab))
              (not (jetpacs-root-node-p fab)))
@@ -172,7 +209,8 @@ foreign ones — the app authors its chrome whole.  Returns ID."
         (list :label (or label id) :icon (or icon "apps")
               :surfaces surfaces :dock dock
               :destinations destinations :fab fab
-              :chrome chrome :order order))
+              :chrome chrome :dock-core dock-core
+              :drawer-core drawer-core :order order))
   (setq jetpacs-apps--registry
         (sort jetpacs-apps--registry
               (lambda (a b) (< (plist-get (cdr a) :order)
@@ -201,9 +239,6 @@ caller."
     (setq jetpacs-apps--current nil
           jetpacs-apps--current-route nil)))
 
-(defun jetpacs-apps--multi-p ()
-  (> (length jetpacs-apps--registry) 1))
-
 (defun jetpacs-apps-current ()
   "The current app's registry entry (ID . PLIST), or nil.
 Defaults to the sole registered app when only one exists."
@@ -211,6 +246,27 @@ Defaults to the sole registered app when only one exists."
            (assoc jetpacs-apps--current jetpacs-apps--registry))
       (and (= (length jetpacs-apps--registry) 1)
            (car jetpacs-apps--registry))))
+
+(defun jetpacs-apps-seed-current (id &optional route)
+  "Seed current app ID and optional destination ROUTE without navigating.
+This is the READY-time counterpart of `app.open': it establishes
+honest APP-PRIMARY selection before the first device event but neither
+dispatches a destination verb nor pushes a surface.  ID and ROUTE must
+already exist in the registry; configuration mistakes fail eagerly.
+Return ID."
+  (unless (and (stringp id) (assoc id jetpacs-apps--registry))
+    (error "jetpacs-apps-seed-current: unknown app %S" id))
+  (when (and route
+             (not (and (stringp route)
+                       (cl-find route (jetpacs-apps-destinations id)
+                                :key (lambda (dest)
+                                       (plist-get dest :key))
+                                :test #'equal))))
+    (error "jetpacs-apps-seed-current: unknown route %S for app %S"
+           route id))
+  (setq jetpacs-apps--current id
+        jetpacs-apps--current-route route)
+  id)
 
 (defun jetpacs-apps--home-surface (entry)
   (car (plist-get (cdr entry) :surfaces)))
@@ -278,6 +334,20 @@ declared pole changes composition."
 
 ;;;; The composed dock
 
+(defun jetpacs-apps--core-items (surface)
+  "The host core items for SURFACE, resolved and isolated.
+A signalling or malformed core builder costs the core contribution,
+never the rest of the app navigation."
+  (when jetpacs-apps-core-dock-items
+    (condition-case nil
+        (let ((items (funcall jetpacs-apps-core-dock-items surface)))
+          (and (proper-list-p items)
+               (cl-every (lambda (item)
+                           (and (listp item) (plist-get item :label)))
+                         items)
+               items))
+      (error nil))))
+
 (defun jetpacs-apps--app-items (entry surface)
   "ENTRY's dock destinations for SURFACE, isolated: a signal or a
 malformed result costs this app's items only."
@@ -290,14 +360,13 @@ malformed result costs this app's items only."
              items))
     (error nil)))
 
-(defun jetpacs-apps--destination-tabs (entry &optional limit)
+(defun jetpacs-apps--destination-bar-items (entry &optional limit)
   "ENTRY's destinations as navigation-bar items — the S2 primary form.
-The private name predates the placement ruling; these are peer
-persistent bar destinations, not content tabs.  Each item deep-links
-through the global `app.open' `:route' (the S1 mechanism powering S2),
-capped at LIMIT (four by default) so the host core plus entries stays
-inside the M3 five-item budget; `:selected' follows the route this verb
-last opened."
+Only destinations whose optional `:bar' is not nil participate;
+drawer-only destinations remain in the S1 registry.  Each item
+deep-links through the global `app.open' `:route' (the S1 mechanism
+powering S2), capped at LIMIT (five by default) to respect the M3
+budget; `:selected' follows the route this verb last opened."
   (pcase-let ((`(,id . ,_plist) entry))
     (mapcar (lambda (d)
               (list :label (plist-get d :label)
@@ -317,20 +386,24 @@ last opened."
                     :selected (and (equal id jetpacs-apps--current)
                                    (equal (plist-get d :key)
                                           jetpacs-apps--current-route))))
-            (seq-take (jetpacs-apps-destinations id) (or limit 4)))))
+            (seq-take
+             (cl-remove-if
+              (lambda (d)
+                (and (plist-member d :bar) (null (plist-get d :bar))))
+              (jetpacs-apps-destinations id))
+             (or limit 5)))))
 
 (defun jetpacs-apps-dock-items (surface)
   "THE `jetpacs-chrome-dock-items-function', by integration pole.
-Default (build-within, no declared pole): core + current app + Apps —
-with fewer than two registered apps this composes to the core items
-\(plus the sole app's, when one exists) and nothing more, the
-single-app contract.  STANDALONE: on the app's own surfaces only its
-authored `:dock' items ship (none authored: no dock at all — the app's
-chrome is its own); on foreign surfaces a standalone current app
-contributes NOTHING.  PRIMARY while current: core collapses to its
-first item, the app's destinations become the tabs, and the Apps
-entry folds into the drawer (`jetpacs-apps-drawer-row' already lives
-there)."
+Default (build-within, no declared pole): core + current app, with the
+Apps switcher living only in the drawer.  With fewer than two
+registered apps this is the original single-app contract.  STANDALONE:
+on the app's own surfaces only its authored `:dock' items ship (none
+authored: no dock at all — the app's chrome is its own); on foreign
+surfaces a standalone current app contributes NOTHING.  PRIMARY while
+current: core remains in the bar by default, or `:dock-core nil' lets
+the app's `:bar'-eligible destinations fill all five slots; Apps stays
+in the drawer."
   (let ((surface-pole (jetpacs-apps--surface-chrome surface))
         (entry (jetpacs-apps-current)))
     (cond
@@ -338,38 +411,23 @@ there)."
      ;; whole (CHROME-VOCABULARY v3, the ratified withdrawal).
      ((eq surface-pole 'standalone)
       (and entry (jetpacs-apps--app-items entry surface)))
-     ;; The current app is PRIMARY: global host destinations remain global;
-     ;; its tabs fill the remaining slots in Material's five-item budget.
+     ;; The current app is PRIMARY: retain core by default, or let a
+     ;; full-bar declaration suppress it.  App destinations fill the
+     ;; remaining slots in Material's five-item budget.
      ((and entry (eq (plist-get (cdr entry) :chrome) 'primary))
-      (let* ((core (when jetpacs-apps-core-dock-items
-                     (condition-case nil
-                         (funcall jetpacs-apps-core-dock-items surface)
-                       (error nil))))
+      (let* ((core (and (plist-get (cdr entry) :dock-core)
+                        (jetpacs-apps--core-items surface)))
              (room (max 0 (- 5 (length core)))))
-        (append core (jetpacs-apps--destination-tabs entry room))))
+        (append core (jetpacs-apps--destination-bar-items entry room))))
      ;; Build-within default.
      (t
       (append
-       (when jetpacs-apps-core-dock-items
-         (condition-case nil
-             (funcall jetpacs-apps-core-dock-items surface)
-           (error nil)))
+       (jetpacs-apps--core-items surface)
        ;; A standalone CURRENT app keeps its items off foreign
        ;; surfaces — they are its own chrome, not a contribution.
        (when (and entry
                   (not (eq (plist-get (cdr entry) :chrome) 'standalone)))
-         (jetpacs-apps--app-items entry surface))
-       (when (jetpacs-apps--multi-p)
-         (list (list :label "Apps" :icon "apps"
-                     ;; Use the same guarded global switch verb as the
-                     ;; drawer.  The retired app.grid wrapper swallowed push
-                     ;; failures and produced a visibly dead destination.
-                     :on-tap (jetpacs-action
-                              "jetpacs.launcher.open"
-                              :args '(:surface "app:jetpacs.app-store")
-                              :when-offline "drop")
-                     :selected (equal surface
-                                      "app:jetpacs.app-store")))))))))
+         (jetpacs-apps--app-items entry surface)))))))
 
 ;;;; The global-actions wrapper (S3, standalone-aware)
 
@@ -419,21 +477,50 @@ app-identity head — the Apps row and the destination nests — by
 `jetpacs-apps-drawer'.  Isolated: a signal or a non-list costs the
 host rows, never the drawer.")
 
+(defun jetpacs-apps--relocated-core-rows (surface)
+  "Core rows the current APP-PRIMARY app selects for the drawer.
+Selection is by stable `:key' on the host's dock-item data.  Requested
+keys retain app-declared order; an unknown key is ignored so a host
+upgrade cannot take down the drawer.  This is generic composition:
+the app owns the placement opinion, while Jetpacs knows only keys."
+  (when-let* ((entry (jetpacs-apps-current))
+              (plist (cdr entry))
+              ((eq (plist-get plist :chrome) 'primary))
+              ((null (plist-get plist :dock-core)))
+              (keys (plist-get plist :drawer-core))
+              (items (jetpacs-apps--core-items surface)))
+    (delq
+     nil
+     (mapcar
+      (lambda (key)
+        (when-let* ((item (cl-find key items
+                                   :key (lambda (candidate)
+                                          (plist-get candidate :key))
+                                   :test #'equal)))
+          (jetpacs-chrome-row
+           (plist-get item :label)
+           :icon (plist-get item :icon)
+           :on-tap (plist-get item :on-tap)
+           :key (jetpacs-wire-id "core" key))))
+      keys))))
+
 (defun jetpacs-apps-drawer (surface)
   "THE `jetpacs-chrome-drawer-function': the composed host drawer.
 The head is the app-identity half — the Apps entry and one S1
-destination nest per registered app — and the tail is the host's own
-rows (`jetpacs-apps-core-drawer-rows').  On the hub this composes
-exactly the drawer its root used to author by hand; on every other
-build-within root it is the SAME drawer, which is the point — the
-canonical navigation list no longer depends on which screen the user
-is standing on.  STANDALONE withdraws whole: the app authors its
-chrome, drawer included (CHROME-VOCABULARY v3)."
+destination nest per registered app — followed by any core rows the
+current full-bar APP-PRIMARY app selected with `:drawer-core'.  The
+tail is the host's own rows (`jetpacs-apps-core-drawer-rows').  On the
+hub this composes exactly the drawer its root used to author by hand;
+on every other build-within root it is the SAME drawer, which is the
+point — the canonical navigation list no longer depends on which
+screen the user is standing on.  STANDALONE withdraws whole: the app
+authors its chrome, drawer included (CHROME-VOCABULARY v4)."
   (unless (eq (jetpacs-apps--surface-chrome surface) 'standalone)
     (apply #'jetpacs-lazy-column
            (append
             (list (jetpacs-apps-drawer-row))
             (jetpacs-apps-destination-rows)
+            (jetpacs-apps--relocated-core-rows surface)
             (when jetpacs-apps-core-drawer-rows
               (condition-case nil
                   (let ((rows (funcall jetpacs-apps-core-drawer-rows
@@ -534,8 +621,8 @@ broken destination list costs that app's nest alone
 ;;;; Actions
 
 (defun jetpacs-apps--action-grid (_args _params)
-  ;; The dock's Apps destination lands on the combined Apps view (the
-  ;; app-store surface) — the grid folded into it (pass 2).
+  ;; The drawer's Apps row lands on the combined Apps view (the
+  ;; app-store surface) — the old grid folded into it (pass 2).
   (jetpacs-flow-continue
    (lambda ()
      (ignore-errors (jetpacs-shell-push "jetpacs.app-store"))))

@@ -297,10 +297,10 @@ home screen), so the two global destinations are named honestly: Eval
 and Files."
   (let ((sel (cond ((equal surface "app:jetpacs.files") 'files)
                    ((equal surface "app:hub") 'home))))
-    (list (list :label "Eval" :icon "code"
+    (list (list :key "eval" :label "Eval" :icon "code"
                 :on-tap (jetpacs-action "hub.home")
                 :selected (eq sel 'home))
-          (list :label "Files" :icon "folder_open"
+          (list :key "files" :label "Files" :icon "folder_open"
                 :on-tap (jetpacs-action "jetpacs.launcher.open"
                                         :args '(:surface "app:jetpacs.files"))
                 :selected (eq sel 'files)))))

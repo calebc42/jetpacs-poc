@@ -10,7 +10,7 @@
 (require 'jetpacs-apps)
 
 (defvar jetpacs-apps-test--core
-  (list (list :label "Home" :icon "home"
+  (list (list :key "home" :label "Home" :icon "home"
               :on-tap '(:action "hub.home"))))
 
 (defmacro jetpacs-apps-test--env (&rest body)
@@ -30,6 +30,21 @@
 
 (defun jetpacs-apps-test--labels (items)
   (mapcar (lambda (i) (plist-get i :label)) items))
+
+(defun jetpacs-apps-test--node-texts (node)
+  "Return every text-node payload below NODE, in document order."
+  (let (texts)
+    (cl-labels
+        ((walk (value)
+           (cond
+            ((vectorp value) (mapc #'walk value))
+            ((consp value)
+             (when (and (keywordp (car-safe value))
+                        (equal (plist-get value :t) "text"))
+               (push (plist-get value :text) texts))
+             (mapc #'walk value)))))
+      (walk node))
+    (nreverse texts)))
 
 (ert-deftest jetpacs-apps-defer-refresh-is-d2-and-surface-scoped ()
   "The public app refresh seam defers and preserves the flow surface.
@@ -78,8 +93,8 @@ already returned."
                     (jetpacs-apps-dock-items "app:hub"))
                    '("Home" "Notes")))))
 
-(ert-deftest jetpacs-apps-second-app-raises-the-launcher ()
-  "Two apps: the current app's items plus a trailing Apps destination."
+(ert-deftest jetpacs-apps-keeps-the-launcher-drawer-only ()
+  "Two apps still contribute one current dock, while Apps stays drawer-only."
   (jetpacs-apps-test--env
     (jetpacs-defapp "notes" :label "Notes" :surfaces '("notes.main")
                     :dock (list (list :label "Notes" :icon "note"
@@ -90,17 +105,16 @@ already returned."
     (setq jetpacs-apps--current "notes")
     (let ((labels (jetpacs-apps-test--labels
                    (jetpacs-apps-dock-items "app:hub"))))
-      (should (equal labels '("Home" "Notes" "Apps")))
+      (should (equal labels '("Home" "Notes")))
       (should-not (member "Agenda" labels))
-      (let* ((apps (car (last (jetpacs-apps-dock-items "app:hub"))))
-             (tap (plist-get apps :on-tap)))
-        (should (equal (plist-get tap :action) "jetpacs.launcher.open"))
-        (should (equal (plist-get (plist-get tap :args) :surface)
-                       "app:jetpacs.app-store"))))
+      (should-not (member "Apps" labels))
+      (should (string-search "drawer-apps"
+                             (format "%S"
+                                     (jetpacs-apps-drawer "app:hub")))))
     (setq jetpacs-apps--current "agenda")
     (should (equal (jetpacs-apps-test--labels
                     (jetpacs-apps-dock-items "app:hub"))
-                   '("Home" "Agenda" "Apps")))))
+                   '("Home" "Agenda")))))
 
 (ert-deftest jetpacs-apps-broken-app-costs-only-its-items ()
   "A signaling dock builder drops that app's items, never the dock."
@@ -113,7 +127,7 @@ already returned."
     (setq jetpacs-apps--current "broken")
     (should (equal (jetpacs-apps-test--labels
                     (jetpacs-apps-dock-items "app:hub"))
-                   '("Home" "Apps")))))
+                   '("Home")))))
 
 (ert-deftest jetpacs-apps-for-surface-reads-claims ()
   "The public identity read: a claimed surface answers its entry
@@ -184,6 +198,25 @@ signalling core seed costs the tail rows, never the drawer."
     (should (equal jetpacs-apps--current "notes"))
     (should (equal pushed '("notes.main")))))
 
+(ert-deftest jetpacs-apps-seed-current-selects-without-navigation ()
+  "READY-time seeding validates identity and route, then only sets state."
+  (jetpacs-apps-test--env
+    (should-error (jetpacs-apps-seed-current "missing"))
+    (jetpacs-defapp "notes" :label "Notes" :surfaces '("notes.main")
+                    :destinations
+                    '((:key "inbox" :label "Inbox" :verb "notes.inbox")
+                      (:key "review" :label "Review" :verb "notes.review")))
+    (should-error (jetpacs-apps-seed-current "notes" "missing"))
+    (should-not jetpacs-apps--current)
+    (should-not pushed)
+    (should (equal (jetpacs-apps-seed-current "notes" "review") "notes"))
+    (should (equal jetpacs-apps--current "notes"))
+    (should (equal jetpacs-apps--current-route "review"))
+    (should-not pushed)
+    (jetpacs-apps-seed-current "notes")
+    (should-not jetpacs-apps--current-route)
+    (should-not pushed)))
+
 (ert-deftest jetpacs-apps-sole-app-is-current-by-default ()
   "With exactly one app registered it IS the current app, unopened."
   (jetpacs-apps-test--env
@@ -242,6 +275,10 @@ re-checked (and isolated) per read."
     (should-error (jetpacs-defapp "bad" :surfaces '("bad.main")
                                   :destinations
                                   '((:key "a" :label "A" :verb "open"))))
+    (should-error (jetpacs-defapp "bad" :surfaces '("bad.main")
+                                  :destinations
+                                  '((:key "a" :label "A" :verb "a.open"
+                                     :bar sometimes))))
     ;; The function form registers unchecked and a BROKEN one costs
     ;; only that app's reads — including the escape hatches: a function
     ;; returning a FUNCTION, or an improper list, must not slip a
@@ -264,6 +301,31 @@ re-checked (and isolated) per read."
     (should (equal (plist-get (car (jetpacs-apps-destinations "ok"))
                               :key)
                    "one"))))
+
+(ert-deftest jetpacs-apps-primary-composition-options-validate ()
+  "Full-bar and selective-relocation declarations fail fast."
+  (jetpacs-apps-test--env
+    (should-error
+     (jetpacs-defapp "bad" :surfaces '("bad.main") :dock-core 'sometimes))
+    (should-error
+     (jetpacs-defapp "bad" :surfaces '("bad.main") :dock-core nil))
+    (should-error
+     (jetpacs-defapp "bad" :surfaces '("bad.main") :chrome 'primary
+                     :drawer-core '("home")))
+    (should-error
+     (jetpacs-defapp "bad" :surfaces '("bad.main") :chrome 'primary
+                     :dock-core nil :drawer-core "home"))
+    (should-error
+     (jetpacs-defapp "bad" :surfaces '("bad.main") :chrome 'primary
+                     :dock-core nil :drawer-core '("bad key")))
+    (should-error
+     (jetpacs-defapp "bad" :surfaces '("bad.main") :chrome 'primary
+                     :dock-core nil :drawer-core '("home" "home")))
+    (jetpacs-defapp "full" :surfaces '("full.main") :chrome 'primary
+                    :dock-core nil :drawer-core '("home"))
+    (let ((plist (cdr (assoc "full" jetpacs-apps--registry))))
+      (should-not (plist-get plist :dock-core))
+      (should (equal (plist-get plist :drawer-core) '("home"))))))
 
 (ert-deftest jetpacs-apps-destination-badges-validate-and-resolve ()
   "Destination badges are checked at registration and resolved per bar.
@@ -289,18 +351,58 @@ function, and a function returning the wrong type cost only that badge."
         (list :key "broken" :label "Broken" :verb "badged.broken"
               :badge (lambda () (error "boom")))))
       (let* ((entry (assoc "badged" jetpacs-apps--registry))
-             (items (jetpacs-apps--destination-tabs entry 5)))
+             (items (jetpacs-apps--destination-bar-items entry 5)))
         (should (equal (mapcar (lambda (item) (plist-get item :badge))
                                items)
                        '("" "1" nil nil nil)))
         ;; The function is live data, not memoised by the registry.
         (should (equal (plist-get
-                        (cadr (jetpacs-apps--destination-tabs entry 5))
+                        (cadr (jetpacs-apps--destination-bar-items entry 5))
                         :badge)
                        "2"))
         ;; A bad badge never drops its otherwise usable destination.
         (should (equal (jetpacs-apps-test--labels items)
                        '("Dot" "Live" "Zero" "Wrong" "Broken")))))))
+
+(ert-deftest jetpacs-apps-full-primary-bar-selectively-relocates-core ()
+  "A primary app may own all five slots and relocate only named core rows.
+Drawer-only app destinations remain in the app nest; Apps remains in
+the drawer; an unknown requested core key degrades to no row."
+  (jetpacs-apps-test--env
+    (setq jetpacs-apps-core-dock-items
+          (lambda (_surface)
+            (list (list :key "eval" :label "Eval" :icon "code"
+                        :on-tap '(:action "hub.home"))
+                  (list :key "files" :label "Files" :icon "folder"
+                        :on-tap '(:action "files.open")))))
+    (jetpacs-defapp
+     "para" :label "PARA" :surfaces '("para.main") :chrome 'primary
+     :dock-core nil :drawer-core '("missing" "eval")
+     :destinations
+     '((:key "agenda" :label "Agenda" :verb "para.agenda")
+       (:key "projects" :label "Projects" :verb "para.projects")
+       (:key "areas" :label "Areas" :verb "para.areas")
+       (:key "resources" :label "Resources" :verb "para.resources")
+       (:key "review" :label "Review" :verb "para.review")
+       (:key "archive" :label "Archive" :verb "para.archive" :bar nil)))
+    (jetpacs-apps-seed-current "para" "areas")
+    (let* ((items (jetpacs-apps-dock-items "app:hub"))
+           (labels (jetpacs-apps-test--labels items))
+           (drawer-node (jetpacs-apps-drawer "app:hub"))
+           (drawer (format "%S" drawer-node))
+           (drawer-texts (jetpacs-apps-test--node-texts drawer-node)))
+      (should (equal labels
+                     '("Agenda" "Projects" "Areas" "Resources" "Review")))
+      (should-not (member "Eval" labels))
+      (should-not (member "Files" labels))
+      (should-not (member "Archive" labels))
+      (should-not (member "Apps" labels))
+      (should (plist-get (nth 2 items) :selected))
+      (should (string-search "Apps" drawer))
+      (should (string-search "Archive" drawer))
+      (should (= 1 (cl-count "Eval" drawer-texts :test #'equal)))
+      (should (= 0 (cl-count "Files" drawer-texts :test #'equal)))
+      (should-not (string-search "missing" drawer)))))
 
 (ert-deftest jetpacs-apps-default-fab-validates-and-resolves ()
   "The app registry accepts static and surface-aware default FAB nodes.
@@ -544,8 +646,8 @@ the canonical encoding."
 (ert-deftest jetpacs-apps-chrome-pole-validates-and-composes ()
   "The `:chrome' pole: junk refuses at build; STANDALONE withdraws the
 core dock and the app's items stay off foreign surfaces; PRIMARY
-retains the global core and fills the remaining slots with destination tabs
-through `app.open' `:route', Apps folding into the drawer."
+retains the global core and fills the remaining slots with persistent
+destinations through `app.open' `:route'; Apps remains drawer-only."
   (jetpacs-apps-test--env
     (should-error (jetpacs-defapp "bad" :surfaces '("bad.main")
                                   :chrome 'sideways))
@@ -562,11 +664,11 @@ through `app.open' `:route', Apps folding into the drawer."
       (should (equal (jetpacs-apps-test--labels
                       (jetpacs-apps-dock-items "app:solo.main"))
                      '("Own")))
-      ;; A foreign surface: core + Apps, and the standalone app's
-      ;; items stay off it.
+      ;; A foreign surface: core only; the standalone app's items stay
+      ;; off it and Apps remains in the drawer.
       (let ((labels (jetpacs-apps-test--labels
                      (jetpacs-apps-dock-items "app:hub"))))
-        (should (equal labels '("Home" "Apps")))
+        (should (equal labels '("Home")))
         (should-not (member "Own" labels)))
       ;; The S3 wrapper: globals withdraw on the standalone surface
       ;; and survive on foreign ones.
@@ -587,7 +689,7 @@ through `app.open' `:route', Apps folding into the drawer."
                        '("M-x"))))
       (let ((jetpacs-apps-core-global-items (lambda (_s) (error "boom"))))
         (should-not (jetpacs-apps-global-items "app:hub")))
-      ;; PRIMARY: the global core + destination tabs, Apps folded away.
+      ;; PRIMARY default: global core + destination entries, Apps in drawer.
       (jetpacs-defapp "prime" :label "Prime" :surfaces '("prime.main")
                       :chrome 'primary
                       :destinations
@@ -601,12 +703,12 @@ through `app.open' `:route', Apps folding into the drawer."
             jetpacs-apps--current-route "two")
       (let* ((items (jetpacs-apps-dock-items "app:hub"))
              (labels (jetpacs-apps-test--labels items)))
-        ;; This fixture has one core item, leaving four tabs in the M3
+        ;; This fixture has one core item, leaving four entries in the M3
         ;; five-item budget; no trailing Apps.
         (should (equal labels '("Home" "One" "Two" "Three" "Four")))
         (should-not (member "Five" labels))
         (should-not (member "Apps" labels))
-        ;; The tab rides the S1 deep link and the routed one is
+        ;; The entry rides the S1 deep link and the routed one is
         ;; selected.
         (let ((two (cl-find "Two" items
                             :key (lambda (i) (plist-get i :label))
