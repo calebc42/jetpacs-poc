@@ -593,6 +593,78 @@ effects run OUTSIDE the dispatch extent (D2)."
                       'oversize))
           (should (= navigated-pos 9)))))))
 
+(ert-deftest jetpacs-files-open-path-can-stage-its-native-browser ()
+  "A caller may place Files' own browser below a directory or document.
+The caller supplies only the generic screen id; it never receives Files'
+private builder or path state."
+  (jetpacs-files-test--with-tree root
+    (let* ((sub (file-name-as-directory (expand-file-name "sub" root)))
+           (file (expand-file-name "note.org" sub))
+           calls)
+      (make-directory sub)
+      (write-region "* Note\n" nil file nil 'silent)
+      (cl-letf (((symbol-function 'jetpacs-flow-continue)
+                 (lambda (fn) (funcall fn)))
+                ((symbol-function 'jetpacs-chrome-push-screen)
+                 (lambda (surface id builder)
+                   (push (list 'browser surface id builder) calls)))
+                ((symbol-function 'jetpacs-files--edit-open)
+                 (lambda (path surface &optional mark-pos)
+                   (push (list 'document path surface mark-pos) calls))))
+        (should (eq (jetpacs-files-open-path
+                     sub "app:host" nil "native-browser")
+                    'accepted))
+        (should (equal jetpacs-files--dir (file-truename sub)))
+        (should (= (length calls) 1))
+        (pcase-let ((`(browser ,surface ,id ,builder) (car calls)))
+          (should (equal surface "app:host"))
+          (should (equal id "native-browser"))
+          (should (eq builder #'jetpacs-files--screen)))
+        (setq calls nil)
+        (should (eq (jetpacs-files-open-path
+                     file "app:host" 7 "native-return")
+                    'accepted))
+        (should (equal jetpacs-files--dir (file-truename sub)))
+        (setq calls (nreverse calls))
+        (should (= (length calls) 2))
+        (pcase-let ((`(browser ,surface ,id ,builder) (car calls)))
+          (should (equal surface "app:host"))
+          (should (equal id "native-return"))
+          (should (eq builder #'jetpacs-files--screen)))
+        (should (equal (cadr calls)
+                       (list 'document (file-truename file)
+                             "app:host" 7)))))))
+
+(ert-deftest jetpacs-files-staged-browser-can-carry-an-authored-fab ()
+  "A guest caller may adorn Files without teaching Files its app policy."
+  (jetpacs-files-test--with-tree root
+    (let ((fab (jetpacs-icon-button
+                "add" (jetpacs-action "host.create")
+                :content-description "Create"))
+          builder)
+      (cl-letf (((symbol-function 'jetpacs-flow-continue)
+                 (lambda (fn) (funcall fn)))
+                ((symbol-function 'jetpacs-chrome-push-screen)
+                 (lambda (_surface _id fn) (setq builder fn))))
+        (should (eq (jetpacs-files-open-path
+                     root "app:host" nil "native-browser" fab)
+                    'accepted)))
+      (should (functionp builder))
+      (should (equal (plist-get (funcall builder (jetpacs-view-switch "below"))
+                                :fab)
+                     fab)))))
+
+(ert-deftest jetpacs-files-staged-browser-honors-chrome-back ()
+  "The same native Files builder exposes chrome's guest back descriptor."
+  (jetpacs-files-test--with-tree root
+    (setq jetpacs-files--dir root)
+    (let* ((back (jetpacs-view-switch "below"))
+           (screen (jetpacs-files--screen back))
+           (top (plist-get screen :top_bar))
+           (leading (aref (plist-get top :children) 0)))
+      (should (equal (plist-get leading :icon) "arrow_back"))
+      (should (equal (plist-get leading :on_tap) back)))))
+
 (ert-deftest jetpacs-files-refresh-repushes-the-origin ()
   (jetpacs-files-test--with-tree root
     (jetpacs-files-test--attached (jetpacs-files-test--client)
@@ -758,6 +830,8 @@ the sandbox must not let the scan read what open would refuse."
             (should (equal (plist-get jetpacs-files--grep-request :dir)
                            (ebp-check-path root (list root)
                                            :require 'directory)))
+            (should (equal (plist-get jetpacs-files--grep-request :surface)
+                           "app:jetpacs.files"))
             (should (null screens))
             (jetpacs-files-test--pump)
             (should (equal screens
@@ -780,15 +854,29 @@ the sandbox must not let the scan read what open would refuse."
 (ert-deftest jetpacs-files-grep-screen-pending-then-ready ()
   "The results screen through the REAL async cache: first build starts
 the loader and shows progress; the completion makes a later build read
-the cards, with the snippet and an open tap on each hit."
+the cards, with the snippet and an open tap on each hit.  Files names its
+owner explicitly, so the completion remains routable when a downstream
+guest build has no ambient owner binding."
   (jetpacs-files-test--with-tree root
     (write-region "the needle line\n" nil (concat root "f.txt") nil 'silent)
     (unwind-protect
-        (let ((jetpacs-files--grep-request (list :query "needle" :dir root))
-              (jetpacs-current-owner jetpacs-files-owner))
+        (let ((jetpacs-files--grep-request
+               (list :query "needle" :dir root :surface "app:host"))
+              ;; Reproduce the downstream guest context found on hardware:
+              ;; the screen is renderable, but no ambient owner can be
+              ;; inferred by `jetpacs-async'.
+              (jetpacs-current-owner nil))
           (let ((first (jetpacs-files--grep-screen nil)))
             (should (member "progress"
                             (jetpacs-files-test--collect first :t))))
+          (let ((entry (gethash (list 'jetpacs-files-grep "app:host"
+                                      root "needle")
+                                jetpacs-async--cache)))
+            (should entry)
+            (should (equal (jetpacs-async--entry-owner entry)
+                           jetpacs-files-owner))
+            (should (equal (jetpacs-async--entry-push-target entry)
+                           "app:host")))
           (let (ready)
             (cl-loop repeat 200
                      do (accept-process-output nil 0.02)

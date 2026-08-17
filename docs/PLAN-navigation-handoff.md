@@ -18,6 +18,18 @@ docs/PLAN-jetpacs-debt-and-scaffold.md §4.
 > that exact map. Jetpacs supplies only generic composition seams; the PARA
 > choices remain entirely downstream in Glasspane.
 
+> **PA-3 device handoff (2026-08-17 09:18 MDT):** the consolidated hardware
+> batch is complete. Both adaptive forms, all five destinations, Agenda mode
+> tabs, drawer destinations, guest surfaces, real-vault Areas/Resources/
+> Review/Search, capture placement, every-destination M-x, stale-route
+> fallback, queued journal replay, and the full destination-root Back sweep
+> are green. Hardware-found integration defects were fixed at their proper
+> layers: generic guest FAB/async/home-route seams in Jetpacs, directory and
+> inherited-tag semantics in EBP, and only PARA policy in all-Elisp
+> Glasspane. The sole remaining PA-3 gate is the one-full-day daily-driver
+> soak, active from that timestamp and not eligible to close before
+> 2026-08-18 09:18 MDT.
+
 ## 1. What landed (slop-fork/main, in order)
 
 | Commit | Rung | One line |
@@ -96,8 +108,10 @@ home), and the substring dedup (`...mxyz` swallowing `...mx`).
    complete and its Elisp is deployed. PA-3d's drawer handover, top-bar Search,
    durable aliases, and ef/gallery Jetpacs re-homing are implemented, fully
    green, and deployed as the tablet's 129-file managed Elisp tree. The full
-   cross-destination gesture matrix remains the next consolidated PA-3 device
-   batch, followed by its one-day soak.
+   cross-destination device batch is now green as well, including the compact
+   bottom bar, medium rail, root Back matrix, real-vault tag-chip round trip,
+   stale fallback selection, and queued journal alias. **Next is only the
+   active one-day daily-driver soak; PA-4 remains blocked until it closes.**
 3. **GR-0..GR-7 survive** (docs/PLAN-glasspane-rework.md). GR-7b's
    `:badge` + per-app FAB registry feeds PA-3a — and must OUTRANK the
    S10 globals in the `:fab` slot (comment already at the join,

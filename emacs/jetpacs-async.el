@@ -18,24 +18,25 @@
 ;; the next build.
 ;;
 ;; Eviction rides the push cycle.  Each build stamps every KEY it asks for
-;; with the current generation; `jetpacs-shell-after-push-hook' then sweeps
-;; entries no build asked for this generation (running any cancel thunk the
-;; loader registered) and advances the generation -- the precise mirror of a
-;; component unmount, so a view that stops asking for data stops paying for
-;; it.  App teardown additionally drops every entry scoped to that owner.
+;; with its presentation target's current generation;
+;; `jetpacs-shell-after-push-hook' then sweeps only stale entries on the
+;; surface that just pushed (running any cancel thunk) and advances that
+;; target's generation -- the precise mirror of a component unmount.  A push
+;; elsewhere cannot unmount this view.  App teardown additionally drops every
+;; entry scoped to that owner.
 ;;
 ;; Rung JC-0 of docs/PLAN-jetpacs-consumers.md (spec: docs/SPEC-JC-0-floor.md),
 ;; ported near-verbatim from poc-v1 `jetpacs-async.el'.  It adds nothing to
 ;; the wire vocabulary and never touches the endpoint: the only outward edge
 ;; is the re-push seam below.
 ;;
-;; PER-OWNER PUSH (spec decision D1).  Each owner owns the surface
-;; `app:<owner>', so a completion must re-push *the owner that asked*, not a
-;; single global surface.  poc-v1 called `(jetpacs-shell-push)' with no
-;; arguments, which is unambiguous only when one surface exists.  Every entry
-;; already records its `owner', so a settle records that owner as pending and
-;; the debounced flush re-pushes each one.  This keeps the module
-;; shell-agnostic: it passes owners through and never learns a surface id.
+;; TARGETED PUSH (spec decision D1 plus sanctioned guest screens).  Ordinarily
+;; each owner presents on `app:<owner>', so a completion re-pushes the owner
+;; that asked rather than one global surface.  A sanctioned guest is the one
+;; exception: its cache and teardown still belong to the guest owner, while
+;; the rendered screen occupies its host's surface.  OWNER and PUSH-TARGET are
+;; therefore recorded separately.  The latter defaults to OWNER, preserving
+;; the ordinary path; a guest names the actual host surface explicitly.
 ;;
 ;; This file is required by `jetpacs-shell', so it must not require it back;
 ;; the shell registers the sweep on its own hook when it loads.
@@ -47,6 +48,7 @@
 ;; Resolved at runtime from `jetpacs-surfaces'/`jetpacs-shell'; forward-declared
 ;; so this file byte-compiles clean and can load before them.
 (defvar jetpacs-current-owner)                 ; jetpacs-surfaces.el
+(defvar jetpacs-shell-pushed-surface)           ; jetpacs-shell.el
 (declare-function jetpacs-shell-push "jetpacs-shell" (&optional owner))
 (declare-function jetpacs-error-label "jetpacs-surfaces" (err))
 
@@ -55,30 +57,51 @@
   "One cached async load.
 STATUS is `pending', `ready', or `error'; VALUE is the resolved value or
 the error message string; GEN is the push-generation stamp driving the
-sweep; OWNER scopes the entry to an app for teardown and names the surface
-its completion re-pushes; CANCEL is an optional thunk the loader registered
-to abort itself (kill a process, cancel a timer)."
-  status value gen owner cancel)
+sweep; OWNER scopes the entry to an app for teardown; PUSH-TARGET is the
+owner or explicit surface its completion re-pushes; CANCEL is an optional
+thunk the loader registered to abort itself (kill a process, cancel a timer)."
+  status value gen owner push-target cancel)
 
 (defvar jetpacs-async--cache (make-hash-table :test 'equal)
   "Map of KEY -> `jetpacs-async--entry'.  KEY is compared `equal'.")
 
 (defvar jetpacs-async--generation 0
-  "Advanced after each shell push.
-Each live entry is stamped with the generation of the build that last asked
-for it; entries left behind an older generation belong to views that stopped
-asking, and are swept (see `jetpacs-async--after-push').")
+  "Total successful-push generation, retained for diagnostics and tests.
+Eviction itself is per presentation target in
+`jetpacs-async--target-generations': a push of an unrelated surface must not
+cancel a loader whose screen remains mounted elsewhere.")
+
+(defvar jetpacs-async--target-generations (make-hash-table :test 'equal)
+  "Canonical presentation target -> successful-push generation.
+An entry is stamped only from its own target's counter.  This prevents a
+clipboard, agenda, or launcher push from evicting an in-flight Files scan.")
 
 (defvar jetpacs-async--push-timer nil
   "Debounce timer coalescing the completion pushes of one tick into one.")
 
-(defvar jetpacs-async--pending-owners nil
-  "Owners whose entries settled since the last flush.
-The debounced flush re-pushes each one exactly once (spec decision D1).
-Accumulated by `jetpacs-async--settle', drained by
+(defvar jetpacs-async--pending-repushes nil
+  "Pending (OWNER PUSH-TARGET) records since the last flush.
+The owner keeps teardown attribution while the target names the surface
+that actually contains the view.  The debounced flush re-pushes each target
+exactly once.  Accumulated by `jetpacs-async--settle', drained by
 `jetpacs-async--flush-push'.")
 
-;; --- Completion push (debounced, per owner) --------------------------------
+;; --- Completion push (debounced, per presentation target) ------------------
+
+(defun jetpacs-async--canonical-target (target)
+  "Canonical surface identity for owner-or-surface TARGET.
+Keep the module free of a shell dependency while mirroring D1's one mapping:
+a bare owner presents on app:<owner>; an explicit surface is already final."
+  (if (and (stringp target) (not (string-search ":" target)))
+      (concat "app:" target)
+    target))
+
+(defun jetpacs-async--target-generation (target)
+  "Current eviction generation for TARGET, or the ownerless generation."
+  (if target
+      (gethash (jetpacs-async--canonical-target target)
+               jetpacs-async--target-generations 0)
+    jetpacs-async--generation))
 
 (defun jetpacs-async--schedule-push ()
   "Schedule one shell push after a completion, coalescing a burst.
@@ -91,29 +114,37 @@ within a build would recurse."
 
 (defun jetpacs-async--flush-push ()
   "Run the pending coalesced pushes now (the debounce timer's target).
-Re-pushes each owner recorded in `jetpacs-async--pending-owners'.  An entry
-created outside any `with-jetpacs-owner' has no owner and therefore no
-surface to re-render, which is a programming error in the caller, so it is
-reported rather than silently dropped."
+Re-pushes each distinct target recorded in `jetpacs-async--pending-repushes'.
+An entry created outside any `with-jetpacs-owner' has no teardown owner,
+which is a programming error in the caller even if it named a target, so it
+is reported rather than silently becoming an immortal cache entry."
   (when (timerp jetpacs-async--push-timer)
     (cancel-timer jetpacs-async--push-timer))
   (setq jetpacs-async--push-timer nil)
-  (let ((owners (nreverse jetpacs-async--pending-owners)))
-    (setq jetpacs-async--pending-owners nil)
+  (let ((repushes (nreverse jetpacs-async--pending-repushes))
+        (pushed nil))
+    (setq jetpacs-async--pending-repushes nil)
     (when (fboundp 'jetpacs-shell-push)
-      (dolist (owner owners)
-        (if (null owner)
-            (display-warning
-             'jetpacs-async
-             "completion outside `with-jetpacs-owner': no surface to re-render"
-             :warning)
-          ;; The shell no-ops for an owner with no live root.  Isolated
-          ;; per owner (the drain-discipline of `jetpacs-shell--on-ready'):
-          ;; one owner's gate failure must not starve the rest.
+      (pcase-dolist (`(,owner ,target) repushes)
+        (cond
+         ((null owner)
+          (display-warning
+           'jetpacs-async
+           "completion outside `with-jetpacs-owner': no owned cache lifecycle"
+           :warning))
+         ((null target)
+          (display-warning
+           'jetpacs-async "completion has no surface to re-render" :warning))
+         ((member target pushed) nil)
+         (t
+          (push target pushed)
+          ;; The shell no-ops for a target with no live root.  Isolated per
+          ;; target (the drain-discipline of `jetpacs-shell--on-ready'): one
+          ;; target's gate failure must not starve the rest.
           (condition-case err
-              (jetpacs-shell-push owner)
+              (jetpacs-shell-push target)
             (error (message "jetpacs-async: repush of %s failed: %s"
-                            owner (jetpacs-error-label err)))))))))
+                            target (jetpacs-error-label err))))))))))
 
 ;; --- The loader ------------------------------------------------------------
 
@@ -134,8 +165,9 @@ resolve/reject calls wins."
              (eq (jetpacs-async--entry-status entry) 'pending))
     (setf (jetpacs-async--entry-status entry) status
           (jetpacs-async--entry-value entry) value)
-    (cl-pushnew (jetpacs-async--entry-owner entry)
-                jetpacs-async--pending-owners :test #'equal)
+    (cl-pushnew (list (jetpacs-async--entry-owner entry)
+                      (jetpacs-async--entry-push-target entry))
+                jetpacs-async--pending-repushes :test #'equal)
     (jetpacs-async--schedule-push)))
 
 (defun jetpacs-async--start (key entry loader)
@@ -161,7 +193,7 @@ entry's cancel."
     ('error (cons 'error (jetpacs-async--entry-value entry)))
     (_      '(pending))))
 
-(cl-defun jetpacs-async (key loader &key owner)
+(cl-defun jetpacs-async (key loader &key owner push-target)
   "Return the async state for KEY as (STATUS . PAYLOAD).
 STATUS is `pending', `ready', or `error'.
 
@@ -186,12 +218,15 @@ a view that stops asking for data stops paying for it.  A completion that
 arrives after its entry was swept is a no-op -- no cache write, no push --
 as is a second resolve/reject after the first.
 
-OWNER scopes the entry to an app for teardown and names the surface its
-completion re-pushes, defaulting to the current `with-jetpacs-owner'.  It is
-captured once, at first sight of KEY, and never revised: a KEY first
-requested under app A and later shared by app B stays owned by A.  Calling
-this outside any owner leaves the entry unowned -- it still caches, but no
-re-render can be scheduled for it.
+OWNER scopes the entry to an app for teardown, defaulting to the current
+`with-jetpacs-owner'.  PUSH-TARGET names the owner or explicit surface to
+re-render and defaults to OWNER.  Keep the defaults for an owner's native
+surface; a sanctioned guest screen supplies its host surface while retaining
+its own OWNER.  Both values are captured once, at first sight of KEY, and
+never revised: a KEY first requested under app A and later shared by app B
+stays owned by A and keeps A's original target.  Calling this outside any
+owner leaves the entry unowned -- it still caches, but its completion is
+reported instead of scheduling an immortal re-render.
 
 Usage:
 
@@ -203,15 +238,21 @@ Usage:
     (`(ready   . ,d) (stock-card d)))"
   (let ((entry (gethash key jetpacs-async--cache)))
     (if entry
-        ;; Seen before: mark it live for this generation, read the cache.
-        (progn
-          (setf (jetpacs-async--entry-gen entry) jetpacs-async--generation)
+      ;; Seen before: mark it live for this generation, read the cache.
+      (progn
+          (setf (jetpacs-async--entry-gen entry)
+                (jetpacs-async--target-generation
+                 (jetpacs-async--entry-push-target entry)))
           (jetpacs-async--read entry))
       ;; Fresh: register a pending entry, start the loader once, report pending.
-      (setq entry (jetpacs-async--entry-make
-                   :status 'pending
-                   :gen jetpacs-async--generation
-                   :owner (or owner (bound-and-true-p jetpacs-current-owner))))
+      (let ((captured-owner
+             (or owner (bound-and-true-p jetpacs-current-owner))))
+        (setq entry (jetpacs-async--entry-make
+                     :status 'pending
+                     :gen (jetpacs-async--target-generation
+                           (or push-target captured-owner))
+                     :owner captured-owner
+                     :push-target (or push-target captured-owner))))
       (puthash key entry jetpacs-async--cache)
       (jetpacs-async--start key entry loader)
       '(pending))))
@@ -228,19 +269,39 @@ Usage:
         (error (message "jetpacs-async: cancel failed: %s"
                         (error-message-string err)))))))
 
-(defun jetpacs-async--after-push ()
-  "Sweep entries no build asked for this generation, then advance it.
-An entry stamped with the current generation was read by the build that
-just pushed and survives; one stamped earlier belongs to a view that
-stopped asking, so its cancel runs and the entry is dropped.  Registered on
-`jetpacs-shell-after-push-hook' by `jetpacs-shell'."
-  (let ((gen jetpacs-async--generation))
+(defun jetpacs-async--after-push (&optional target)
+  "Sweep stale entries for the surface just pushed, then advance its clock.
+TARGET is a test seam; production reads the dynamically bound
+`jetpacs-shell-pushed-surface'.  An entry stamped with this target's current
+generation was read by the build that just pushed and survives; an older one
+belongs to a view on THIS target that stopped asking, so its cancel runs and
+the entry is dropped.  Entries on every other target are untouched.
+
+Ownerless entries retain the legacy global sweep so a malformed caller does
+not leak forever.  Registered on `jetpacs-shell-after-push-hook' by
+`jetpacs-shell'."
+  (let* ((target (or target
+                     (bound-and-true-p jetpacs-shell-pushed-surface)))
+         (canonical (jetpacs-async--canonical-target target))
+         (gen (and canonical
+                   (gethash canonical jetpacs-async--target-generations 0)))
+         (ownerless-gen jetpacs-async--generation))
     (maphash (lambda (key entry)
-               (when (< (jetpacs-async--entry-gen entry) gen)
-                 (jetpacs-async--run-cancel entry)
-                 (remhash key jetpacs-async--cache)))
-             jetpacs-async--cache))
-  (cl-incf jetpacs-async--generation))
+               (let ((entry-target
+                      (jetpacs-async--canonical-target
+                       (jetpacs-async--entry-push-target entry))))
+                 (when (or (and (null entry-target)
+                                (< (jetpacs-async--entry-gen entry)
+                                   ownerless-gen))
+                           (and canonical
+                                (equal entry-target canonical)
+                                (< (jetpacs-async--entry-gen entry) gen)))
+                   (jetpacs-async--run-cancel entry)
+                   (remhash key jetpacs-async--cache))))
+             jetpacs-async--cache)
+    (when canonical
+      (puthash canonical (1+ gen) jetpacs-async--target-generations))
+    (cl-incf jetpacs-async--generation)))
 
 (defun jetpacs-async-clear-owner (owner)
   "Drop every async entry scoped to OWNER (an app id), running its cancels.
@@ -250,8 +311,9 @@ Called on app teardown, so a torn-down app leaks no loads."
                (jetpacs-async--run-cancel entry)
                (remhash key jetpacs-async--cache)))
            jetpacs-async--cache)
-  (setq jetpacs-async--pending-owners
-        (delete owner jetpacs-async--pending-owners)))
+  (setq jetpacs-async--pending-repushes
+        (cl-delete owner jetpacs-async--pending-repushes
+                   :key #'car :test #'equal)))
 
 (defun jetpacs-async-reset ()
   "Drop all async state, running every cancel thunk.  For teardown and tests."
@@ -259,7 +321,8 @@ Called on app teardown, so a torn-down app leaks no loads."
            jetpacs-async--cache)
   (clrhash jetpacs-async--cache)
   (setq jetpacs-async--generation 0)
-  (setq jetpacs-async--pending-owners nil)
+  (clrhash jetpacs-async--target-generations)
+  (setq jetpacs-async--pending-repushes nil)
   (when (timerp jetpacs-async--push-timer)
     (cancel-timer jetpacs-async--push-timer))
   (setq jetpacs-async--push-timer nil))

@@ -863,6 +863,15 @@ requires the id to still be ON the surface's live stack, so a back
 truncation or pop revokes without bookkeeping here; stale rows are
 inert and swept when their owner tears down.")
 
+(defun jetpacs-chrome-guest-screen-id (owner id)
+  "Return the sanctioned-guest wire id for OWNER's screen ID.
+This is the public counterpart of `jetpacs-chrome-push-screen''s S4
+prefixing rule, for callers that need to recognize the ordinary
+`view.switched' report when their guest becomes visible."
+  (jetpacs-check-identifier owner "guest owner")
+  (jetpacs-check-identifier id "guest screen id")
+  (concat "guest-" owner "-" id))
+
 (defun jetpacs-chrome--screen-owner (surface id)
   "Owner of screen ID on SURFACE, distinguishing sanctioned guests.
 Guest ownership is the S4 record minted at push time; native screens
@@ -973,7 +982,9 @@ refused frame is retried by the B8 repush.)"
                            (not (jetpacs-owned-surface-p
                                  surface jetpacs-current-owner))
                            jetpacs-current-owner))
-         (id (if guest-owner (concat "guest-" guest-owner "-" id) id))
+         (id (if guest-owner
+                 (jetpacs-chrome-guest-screen-id guest-owner id)
+               id))
          (undo (jetpacs-chrome--stack-insert surface id builder)))
     (when guest-owner
       (let ((rows (gethash surface jetpacs-chrome--guests)))

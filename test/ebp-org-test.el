@@ -632,6 +632,30 @@ filter happened to have current."
                                            (file-name-nondirectory f)))))))
         (delete-directory decoy t)))))
 
+(ert-deftest ebp-org-agenda-files-expands-local-directories-after-filter ()
+  "Directory scopes become member Org files only after remotes are dropped."
+  (let* ((vault (file-name-as-directory
+                 (make-temp-file "ebp-org-agenda-directory" t)))
+         (org-file (expand-file-name "agenda.org" vault))
+         (other-file (expand-file-name "notes.txt" vault))
+         (remote "/ssh:example.invalid:/agenda")
+         (org-directory vault)
+         (org-agenda-files (list remote vault))
+         (real-directory-p (symbol-function 'file-directory-p))
+         remote-statted)
+    (unwind-protect
+        (progn
+          (with-temp-file org-file (insert "* TODO Local\n"))
+          (with-temp-file other-file (insert "not org\n"))
+          (cl-letf (((symbol-function 'file-directory-p)
+                     (lambda (path)
+                       (when (file-remote-p path)
+                         (setq remote-statted t))
+                       (funcall real-directory-p path))))
+            (should (equal (ebp-org-agenda-files) (list org-file))))
+          (should-not remote-statted))
+      (delete-directory vault t))))
+
 ;;;; The token/status contract (JA-4 audit Batch 4: P1-8, P1-9, P1-10)
 
 (ert-deftest ebp-org-token-mint-is-atomic ()
@@ -839,6 +863,15 @@ omitted by the plan's gate text."
     (should (equal (ebp-org-test--titles
                     (ebp-org-parse-query "todo:TODO,NEXT tags:work"))
                    '("Call Alice" "Urgent thing")))))
+
+(ert-deftest ebp-org-grammar-tags-include-inherited-file-tags ()
+  "A displayed inherited tag remains searchable through the same grammar."
+  (ebp-org-test--with-fixture
+      f "#+filetags: :jetpacs:\n* TODO Tagged by the file\n"
+    (let ((org-agenda-files (list f)))
+      (should (equal (ebp-org-test--titles
+                      (ebp-org-parse-query "tags:jetpacs"))
+                     '("Tagged by the file"))))))
 
 (ert-deftest ebp-org-grammar-freetext ()
   "Exit gate G1 (free text): quoted phrase + bare word, body haystack."

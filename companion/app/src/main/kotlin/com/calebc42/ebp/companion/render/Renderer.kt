@@ -1196,8 +1196,21 @@ fun RenderScaffold(node: JsonObject, ctx: RenderCtx) {
     val snackbar = node.stringOr("snackbar").takeIf { it.isNotEmpty() }
     val action = node.objOrNull("snackbar_action")
     val drawer = node.objOrNull("drawer")
-    val drawerState = androidx.compose.material3.rememberDrawerState(
-        androidx.compose.material3.DrawerValue.Closed)
+    // The state belongs to this drawer-bearing SURFACE, not merely to this
+    // call-site in the resolved-view renderer.  A pushed screen occupies the
+    // same composition position as the root it replaced.  Remembering here
+    // unconditionally therefore carried an OPEN root drawer invisibly through
+    // drawer-less detail screens; it resurfaced when Back returned to the
+    // root.  Two drawer-bearing guest roots reuse that position too (Files ->
+    // Eval), so presence alone is insufficient: key the remember group by
+    // surface.  Leaving/changing the group disposes the old sheet state and a
+    // later root starts closed as a fresh presentation.
+    val drawerState = if (drawer != null) {
+        androidx.compose.runtime.key(ctx.surface) {
+            androidx.compose.material3.rememberDrawerState(
+                androidx.compose.material3.DrawerValue.Closed)
+        }
+    } else null
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(snackbar) {
         if (snackbar != null) {
@@ -1355,12 +1368,13 @@ fun RenderScaffold(node: JsonObject, ctx: RenderCtx) {
                     val nav: @Composable () -> Unit = {
                         // A PERMANENT drawer stands open; its hamburger
                         // would toggle nothing, so it is suppressed.
-                        if (drawer != null &&
+                        val state = drawerState
+                        if (state != null &&
                             node.stringOr("drawer_variant") != "permanent")
                             IconButton(onClick = {
                                 scope.launch {
-                                    if (drawerState.isClosed) drawerState.open()
-                                    else drawerState.close()
+                                    if (state.isClosed) state.open()
+                                    else state.close()
                                 }
                             }) {
                                 Icon(IconMap.get("menu"),
@@ -1452,13 +1466,14 @@ fun RenderScaffold(node: JsonObject, ctx: RenderCtx) {
                     Row(
                         modifier = Modifier.fillMaxWidth().statusBarsPadding(),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                        if (drawer != null &&
+                        val state = drawerState
+                        if (state != null &&
                             node.stringOr("drawer_variant") != "permanent") {
                             androidx.compose.material3.IconButton(
                                 onClick = {
                                     scope.launch {
-                                        if (drawerState.isClosed) drawerState.open()
-                                        else drawerState.close()
+                                        if (state.isClosed) state.open()
+                                        else state.close()
                                     }
                                 }) {
                                 androidx.compose.material3.Icon(
@@ -1722,6 +1737,8 @@ fun RenderScaffold(node: JsonObject, ctx: RenderCtx) {
         }
     } else scaffold
     if (drawer != null) {
+        // Correlated with `drawer` above: state is created only for this arm.
+        val state = checkNotNull(drawerState)
         // §17.6 `drawer_variant`: the host around the SAME drawer node.
         // Dismissible pushes the body aside and leaves it live; permanent
         // stands open (its hamburger is suppressed at the bar — it would
@@ -1734,10 +1751,10 @@ fun RenderScaffold(node: JsonObject, ctx: RenderCtx) {
         when (node.stringOr("drawer_variant")) {
             "dismissible" ->
                 androidx.compose.material3.DismissibleNavigationDrawer(
-                    drawerState = drawerState,
+                    drawerState = state,
                     drawerContent = {
                         androidx.compose.material3.DismissibleDrawerSheet(
-                            drawerState = drawerState) {
+                            drawerState = state) {
                             RenderNode(drawer, ctx.child(drawer, 5))
                         }
                     }) { sheetWrap { railed() } }
@@ -1750,10 +1767,10 @@ fun RenderScaffold(node: JsonObject, ctx: RenderCtx) {
                     }) { sheetWrap { railed() } }
             else ->
                 androidx.compose.material3.ModalNavigationDrawer(
-                    drawerState = drawerState,
+                    drawerState = state,
                     drawerContent = {
                         androidx.compose.material3.ModalDrawerSheet(
-                            drawerState = drawerState,
+                            drawerState = state,
                             modifier = Modifier.fillMaxWidth(0.75f)) {
                             RenderNode(drawer, ctx.child(drawer, 5))
                         }

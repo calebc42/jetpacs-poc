@@ -46,11 +46,12 @@ APP-PRIMARY app; chrome itself ignores that metadata.")
 
 (defvar jetpacs-apps--registry nil
   "Ordered alist of APP-ID -> plist
-\(:label :icon :surfaces :dock :destinations :fab :chrome :dock-core
+\(:label :icon :surfaces :dock :destinations :home-route :fab :chrome :dock-core
  :drawer-core :order).
 :dock is a list of dock item plists or a function (SURFACE) -> items;
-:destinations is the S1 route registry; :fab is the app-default FAB;
-`:dock-core' and `:drawer-core' parameterize the APP-PRIMARY pole; and
+:destinations is the S1 route registry; :home-route optionally names the
+destination represented by the app's root surface; :fab is the app-default
+FAB; `:dock-core' and `:drawer-core' parameterize the APP-PRIMARY pole; and
 :chrome is the integration pole — see `jetpacs-defapp'.")
 
 (defvar jetpacs-apps--current nil
@@ -135,6 +136,22 @@ build-time-validation house rule."
       dests
     (jetpacs-apps--check-destination-list dests)))
 
+(defun jetpacs-apps--check-home-route (route destinations)
+  "Signal unless ROUTE is a valid home key for DESTINATIONS; return ROUTE.
+Nil means the app has no destination corresponding to its root surface.  A
+literal destination table is checked eagerly.  A function table keeps the
+same deferred-trust contract as `jetpacs-apps-destinations'; its home key is
+checked against each resolved result before it is used."
+  (when route
+    (jetpacs-check-identifier route ":home-route")
+    (when (and (not (functionp destinations))
+               (not (cl-find route destinations
+                             :key (lambda (dest) (plist-get dest :key))
+                             :test #'equal)))
+      (error "jetpacs-defapp: :home-route %S is not a destination key"
+             route)))
+  route)
+
 (defun jetpacs-apps--check-drawer-core (keys)
   "Signal unless KEYS is a proper list of distinct core identifiers.
 Return KEYS.  The identifiers name stable `:key' metadata on items
@@ -150,7 +167,8 @@ returned by `jetpacs-apps-core-dock-items'."
       (push key seen)))
   keys)
 
-(cl-defun jetpacs-defapp (id &key label icon surfaces dock destinations fab
+(cl-defun jetpacs-defapp (id &key label icon surfaces dock destinations
+                             home-route fab
                              chrome (dock-core t) drawer-core (order 100))
   "Register (or replace) app ID.
 LABEL and ICON draw its Apps-grid card; SURFACES is the list of surface
@@ -169,6 +187,13 @@ persistent bar.  Each destination is opened via the global `app.open'
 with `:route KEY', which re-dispatches the destination's VERB on the
 app's own home surface — so the verb stays owner-scoped and no
 `:any-surface' declaration is ever needed for a host-side row.
+
+HOME-ROUTE optionally names the destination represented by the app's home
+surface.  Jetpacs uses it only when a stale, missing, refusing, or signaling
+deep link falls back to that surface, so persistent chrome describes the
+screen actually shown.  The app owns this policy; nil preserves an unselected
+root.  Literal destination tables validate membership now, while function
+tables validate it when resolved.
 
 FAB is a typed node, or a function (SURFACE) returning one, used as
 the app's default creation action on its own screens.  A screen's
@@ -202,6 +227,7 @@ foreign ones — the app authors its chrome whole.  Returns ID."
              (not (and (eq chrome 'primary) (null dock-core))))
     (error "jetpacs-defapp: :drawer-core requires :chrome 'primary and :dock-core nil"))
   (when destinations (jetpacs-apps--check-destinations destinations))
+  (jetpacs-apps--check-home-route home-route destinations)
   (when (and fab (not (functionp fab))
              (not (jetpacs-root-node-p fab)))
     (error "jetpacs-defapp: :fab must be a typed node or function, got %S"
@@ -209,7 +235,7 @@ foreign ones — the app authors its chrome whole.  Returns ID."
   (setf (alist-get id jetpacs-apps--registry nil nil #'equal)
         (list :label (or label id) :icon (or icon "apps")
               :surfaces surfaces :dock dock
-              :destinations destinations :fab fab
+              :destinations destinations :home-route home-route :fab fab
               :chrome chrome :dock-core dock-core
               :drawer-core drawer-core :order order))
   (setq jetpacs-apps--registry
@@ -232,6 +258,17 @@ caller."
           (jetpacs-apps--check-destination-list
            (if (functionp dests) (funcall dests) dests))
         (error nil)))))
+
+(defun jetpacs-apps--resolved-home-route (entry destinations)
+  "Return ENTRY's home route when it exists in resolved DESTINATIONS.
+Dynamic destination providers are isolated by `jetpacs-apps-destinations'; a
+provider that drops or malforms its declared home leaves the root unselected."
+  (let ((route (plist-get (cdr entry) :home-route)))
+    (and route
+         (cl-find route destinations
+                  :key (lambda (dest) (plist-get dest :key))
+                  :test #'equal)
+         route)))
 
 (defun jetpacs-apps-unregister (id)
   "Remove app ID; the current app falls back to none."
@@ -268,6 +305,24 @@ Return ID."
   (setq jetpacs-apps--current id
         jetpacs-apps--current-route route)
   id)
+
+(defun jetpacs-apps-open-seeded ()
+  "Open the explicitly seeded app and route; non-nil when one was scheduled.
+Only `jetpacs-apps--current' counts: the sole-app fallback returned by
+`jetpacs-apps-current' is discovery convenience, not a request to replace the
+Jetpacs ready landing.  The normal `app.open' path performs the navigation, so
+route dispatch keeps its D1 handoff, refusal fallback, and D2 deferral.  A
+dynamic destination which vanished after seeding still counts as handled:
+`app.open' schedules the app's stable home and returns `stale'."
+  (when (and (stringp jetpacs-apps--current)
+             (assoc jetpacs-apps--current jetpacs-apps--registry))
+    (let ((status
+           (jetpacs-apps--action-open
+            (append (list :app jetpacs-apps--current)
+                    (and jetpacs-apps--current-route
+                         (list :route jetpacs-apps--current-route)))
+            nil)))
+      (memq status '(accepted stale)))))
 
 (defun jetpacs-apps-note-route (id route)
   "Record app ID's current destination ROUTE without navigating.
@@ -673,11 +728,24 @@ dead deep link must never strand an obsolete host screen."
      ((null entry) 'rejected)
      ((and route (not (stringp route))) 'rejected)
      (t
-      (let* ((dest (and route
-                        (cl-find route (jetpacs-apps-destinations id)
+      (let* ((destinations (jetpacs-apps-destinations id))
+             (dest (and route
+                        (cl-find route destinations
                                  :key (lambda (d) (plist-get d :key))
                                  :test #'equal)))
-             (home (jetpacs-apps--home-surface entry)))
+             (home (jetpacs-apps--home-surface entry))
+             (home-route
+              (jetpacs-apps--resolved-home-route entry destinations))
+             (fallback
+              (lambda ()
+                ;; A deferred open can be overtaken by a later app switch.
+                ;; In that case its push still belongs to this intent, but it
+                ;; must not rewrite the newer app's selection state.
+                (when (equal jetpacs-apps--current id)
+                  (setq jetpacs-apps--current-route home-route))
+                (ignore-errors
+                  (jetpacs-shell-push
+                   (or home "jetpacs.app-store"))))))
         (if (and route (null dest))
             (progn
               ;; Preserve the stale receipt — the tapped row really did
@@ -686,12 +754,9 @@ dead deep link must never strand an obsolete host screen."
               ;; must be deferred for the same D2 reason as every other
               ;; push in this handler.
               (setq jetpacs-apps--current id
-                    jetpacs-apps--current-route nil)
+                    jetpacs-apps--current-route home-route)
               (jetpacs-flow-continue
-               (lambda ()
-                 (ignore-errors
-                   (jetpacs-shell-push
-                    (or home "jetpacs.app-store")))))
+               fallback)
               'stale)
           (setq jetpacs-apps--current id
                 jetpacs-apps--current-route (and dest route))
@@ -736,10 +801,8 @@ dead deep link must never strand an obsolete host screen."
                                     handler))
                                (error 'rejected))
                              'accepted)
-                   (ignore-errors
-                     (jetpacs-shell-push (or home "jetpacs.app-store"))))
-               (ignore-errors
-                 (jetpacs-shell-push (or home "jetpacs.app-store"))))))
+                   (funcall fallback))
+               (funcall fallback))))
           'accepted))))))
 
 ;; No root of its own (pass 2): the grid folded into the combined Apps

@@ -82,5 +82,32 @@
         (should jetpacs-entry-test--user-file-loaded))
     (delete-directory jetpacs-entry-test--temporary-home t)))
 
+(ert-deftest jetpacs-entry-ready-landing-prefers-explicit-app-and-falls-back ()
+  "The composition callback honors a seed without learning an app's name."
+  (let ((opens 0) (hubs 0))
+    (cl-letf (((symbol-function 'jetpacs-apps-open-seeded)
+               (lambda () (cl-incf opens) t))
+              ((symbol-function 'jetpacs-hub)
+               (lambda () (cl-incf hubs))))
+      (jetpacs-ready-landing nil)
+      (should (= opens 1))
+      (should (zerop hubs)))
+    (setq opens 0 hubs 0)
+    (cl-letf (((symbol-function 'jetpacs-apps-open-seeded)
+               (lambda () (cl-incf opens) nil))
+              ((symbol-function 'jetpacs-hub)
+               (lambda () (cl-incf hubs))))
+      (jetpacs-ready-landing nil)
+      (should (= opens 1))
+      (should (= hubs 1)))
+    ;; A broken downstream landing is isolated and takes the same fallback.
+    (setq hubs 0)
+    (cl-letf (((symbol-function 'jetpacs-apps-open-seeded)
+               (lambda () (error "broken seed")))
+              ((symbol-function 'jetpacs-hub)
+               (lambda () (cl-incf hubs))))
+      (jetpacs-ready-landing nil)
+      (should (= hubs 1)))))
+
 (provide 'jetpacs-entry-test)
 ;;; jetpacs-entry-test.el ends here

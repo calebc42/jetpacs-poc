@@ -516,14 +516,22 @@ landing configuration never went through a handler."
 (declare-function jetpacs-launcher-button "jetpacs-launcher" ())
 (defvar jetpacs-chrome-drawer-function)
 
-(defun jetpacs-files--screen (_back)
+(defun jetpacs-files--screen (back &optional fab)
   "The chrome root screen builder.
 The launcher button YIELDS to the S8 drawer: with the seam installed
 this root wears the composed host drawer, and a top-bar Apps icon
 would duplicate the drawer's Apps row.  In an apps-less session the
 seam is nil and the button remains this screen's only path to the
-switcher — read at BUILD time, so load order cannot strand it."
+switcher — read at BUILD time, so load order cannot strand it.
+
+BACK is normally nil on Files' native root.  A caller that presents the
+same native browser as a sanctioned guest receives chrome's local back
+descriptor here; the browser remains implemented and owned by Jetpacs.
+FAB, when non-nil, is an explicitly authored guest adornment supplied by
+that caller.  It is presentation policy only; Files never infers it from
+the host surface or assumes the guest owner's application."
   (jetpacs-chrome-screen "Files" (jetpacs-files--body)
+                         :back back
                          :actions
                          (append
                           (list (jetpacs-icon-button
@@ -534,6 +542,7 @@ switcher — read at BUILD time, so load order cannot strand it."
                           (when (and (featurep 'jetpacs-launcher)
                                      (null jetpacs-chrome-drawer-function))
                             (list (jetpacs-launcher-button))))
+                         :fab fab
                          :on-refresh (jetpacs-action "jetpacs.files.refresh")))
 
 ;;;; Content search (F2)
@@ -583,7 +592,7 @@ pump keep breathing under a large tree."
   :type 'integer :group 'jetpacs)
 
 (defvar jetpacs-files--grep-request nil
-  "The search the results screen shows: (:query Q :dir D), or nil.
+  "The search the results screen shows: (:query Q :dir D :surface S), or nil.
 Written only by `jetpacs.files.grep' after the guard has passed.")
 
 (defun jetpacs-files--grep-file (file query hits-left)
@@ -768,10 +777,20 @@ asking (back tapped, new query pushed) lets the sweep cancel the scan."
          (jetpacs-empty-state :icon "info" :title "No search"
                               :caption "Submit a search from the browser")
        (let ((dir (plist-get req :dir))
-             (query (plist-get req :query)))
-         (pcase (jetpacs-async (list 'jetpacs-files-grep dir query)
+             (query (plist-get req :query))
+             (surface (plist-get req :surface)))
+         ;; Ownership and presentation are deliberately separate.  The
+         ;; cache/scan belongs to Files and is cancelled by Files teardown;
+         ;; the ready rebuild must target the surface that contains this
+         ;; screen, which may be a downstream app's sanctioned guest host.
+         ;; SURFACE is part of the key because PUSH-TARGET is first-sight
+         ;; state: the same literal search can be open natively and as a
+         ;; guest without either completion refreshing the other screen.
+         (pcase (jetpacs-async (list 'jetpacs-files-grep surface dir query)
                                (lambda (resolve _reject)
-                                 (jetpacs-files--grep-start dir query resolve)))
+                                 (jetpacs-files--grep-start dir query resolve))
+                               :owner jetpacs-files-owner
+                               :push-target surface)
            (`(error . ,e)
             (jetpacs-empty-state :icon "info" :title "Search failed"
                                  :caption e))
@@ -1416,16 +1435,34 @@ Runs inside a device flow."
        (error (message "jetpacs-files: push failed: %s"
                        (jetpacs-error-label err)))))))
 
-(defun jetpacs-files-open-path (path surface &optional mark-pos)
+(defun jetpacs-files-open-path (path surface &optional mark-pos browser-id
+                                     browser-fab)
   "Validate and open PATH on SURFACE exactly as a Files row does.
 Directories become the current Files location.  Regular files enter the
 shared document host.  PATH is always revalidated against the effective
 Files roots, even when the caller obtained it from a trusted bundle.
 MARK-POS, when non-nil for a regular file, is a whole-buffer position an
 editor adapter or the read-only fallback may use as its initial scroll
-target."
+target.
+
+When BROWSER-ID is non-nil, stage Jetpacs' native browser as that chrome
+screen before presenting PATH.  This is the generic cross-app handoff seam:
+the caller supplies only an id and may observe the ordinary view transition;
+Files still owns the browser, path policy, document host, and every file
+operation.  Optional BROWSER-FAB is a typed node that explicitly adorns only
+that staged browser; Files neither manufactures nor interprets it.  A
+directory leaves that browser on top.  A regular file places the browser
+immediately below its reader/editor, so local Back has a safe Files view even
+while the caller is offline."
   (condition-case err
-      (let ((true (jetpacs-files--check path)))
+      (let* ((true (jetpacs-files--check path))
+             (browser-builder
+              (if browser-fab
+                  (lambda (back)
+                    (jetpacs-files--screen back browser-fab))
+                #'jetpacs-files--screen)))
+        (when (and browser-fab (not (jetpacs-root-node-p browser-fab)))
+          (error "jetpacs-files-open-path: BROWSER-FAB must be a typed node"))
         (if (file-directory-p true)
             ;; A directory path routes to cd semantics: the browse screen is
             ;; the directory UI, and keeping dired buffers out of the drill
@@ -1433,12 +1470,26 @@ target."
             ;; keys in two views of a surface.
             (progn
               (setq jetpacs-files--dir (file-name-as-directory true))
-              (jetpacs-files--repush surface))
+              (if browser-id
+                  (jetpacs-flow-continue
+                   (lambda ()
+                     (jetpacs-chrome-push-screen
+                      surface browser-id browser-builder)))
+                (jetpacs-files--repush surface)))
           ;; The whole effect lives in the flow continuation: eligibility
           ;; stats and reads the file, the read fallback can PROMPT (changed
           ;; on disk), and JC-4a bridges prompts to the device only there.
           (jetpacs-flow-continue
-           (lambda () (jetpacs-files--edit-open true surface mark-pos))))
+           (lambda ()
+             (when browser-id
+               ;; If Back must pause on the staged browser, show the file's
+               ;; actual parent rather than whichever directory Files last
+               ;; visited on an unrelated surface handoff.
+               (setq jetpacs-files--dir
+                     (file-name-as-directory (file-name-directory true)))
+               (jetpacs-chrome-push-screen
+                surface browser-id browser-builder))
+             (jetpacs-files--edit-open true surface mark-pos))))
         'accepted)
     (ebp-path-refused
      (jetpacs-shell-notify (format "File refused: %s" (cadr err)) surface)
@@ -1763,7 +1814,8 @@ target."
                 (setq jetpacs-files--grep-request
                       (list :query (substring-no-properties
                                     (string-trim query))
-                            :dir dir))
+                            :dir dir
+                            :surface surface))
                 (jetpacs-flow-continue
                  (lambda ()
                    ;; push-screen is TRANSACTIONAL and re-signals on a

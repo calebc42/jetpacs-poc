@@ -431,7 +431,7 @@ drain always has."
           (funcall (timer--function timer)))
         (should (equal (mapcar #'car recs) '("app:good")))))))
 
-(ert-deftest jetpacs-chrome-async-flush-is-isolated-per-owner ()
+(ert-deftest jetpacs-chrome-async-flush-is-isolated-per-target ()
   "The async settle drain has the same obligation as the repush drain."
   (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
     (jetpacs-chrome-test--clean-repush
@@ -442,7 +442,8 @@ drain always has."
         (with-jetpacs-owner "good"
           (jetpacs-shell-define-root "good" (lambda () (jetpacs-text "g"))))
         (setq recs nil)
-        (setq jetpacs-async--pending-owners '("good" "bad"))
+        (setq jetpacs-async--pending-repushes
+              '(("good" "good") ("bad" "bad")))
         (jetpacs-async--flush-push)
         (should (equal (mapcar #'car recs) '("app:good")))))))
 

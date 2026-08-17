@@ -142,7 +142,7 @@ by string prefix — /org-evil does not sit under /org."
   :type '(repeat directory))
 
 (defun ebp-org-agenda-files ()
-  "`org-agenda-files' entries anchored, with remote entries dropped.
+  "Local `org-agenda-files', anchored and expanded to member files.
 Each entry is expanded against `org-directory' FIRST — matching
 `org-agenda-files's own `(expand-file-name f org-directory)' semantics;
 reading the raw variable must not change where a relative entry points
@@ -157,17 +157,34 @@ entry (emacs-30.1 lisp/org/org.el), so this reads the VARIABLE rather
 than calling it: by the time the function returns, a remote entry has
 already been dialled.  JA-4 audit P1-7 — one /ssh: entry made every
 resolve, every mint and every cache-key computation attempt a TRAMP
-connection inside the socket filter, with a 60-second timeout."
-  (ebp-local-paths
-   (mapcar (lambda (entry)
-             ;; Guard the shape: `ebp-local-paths' tolerates (and
-             ;; drops) garbage entries, and "" must not silently become
-             ;; org-directory itself.
-             (if (and (stringp entry) (not (string-empty-p entry)))
-                 (expand-file-name entry org-directory)
-               entry))
-           (if (listp org-agenda-files) org-agenda-files
-             (ignore-errors (org-agenda-files))))))
+connection inside the socket filter, with a 60-second timeout.
+
+Directory expansion therefore happens HERE, only after the raw-name
+remote filter.  This mirrors Org's non-recursive `directory-files'
+rule and makes the shared cache stamp name the files whose contents it
+actually serves; keeping the directory literal both handed a dired
+buffer to `org-map-entries' and missed edits that did not change the
+directory mtime."
+  (let ((local
+         (ebp-local-paths
+          (mapcar (lambda (entry)
+                    ;; Guard the shape: `ebp-local-paths' tolerates (and
+                    ;; drops) garbage entries, and "" must not silently
+                    ;; become org-directory itself.
+                    (if (and (stringp entry) (not (string-empty-p entry)))
+                        (expand-file-name entry org-directory)
+                      entry))
+                  (if (listp org-agenda-files) org-agenda-files
+                    (ignore-errors (org-agenda-files)))))))
+    (delete-dups
+     (cl-mapcan
+      (lambda (entry)
+        (condition-case nil
+            (if (file-directory-p entry)
+                (directory-files entry t org-agenda-file-regexp)
+              (list entry))
+          (file-error nil)))
+      local))))
 
 (defun ebp-org--roots ()
   "The effective allowlist, raw — `ebp-check-path' truenames it.
@@ -1188,7 +1205,10 @@ the user's query for a bug in the calling code."
     ('todo (org-get-todo-state))
     ('done (let ((st (org-get-todo-state)))
              (and st (member st org-done-keywords) t)))
-    ('tags (org-get-tags nil t))
+    ;; Search results and every Org-facing card expose inherited tags;
+    ;; matching only the heading-local set made a visible tag chip fail
+    ;; to find the very result it came from (notably `#+filetags').
+    ('tags (org-get-tags))
     ('priority (ebp-org--entry-priority))
     ('title (nth 4 (org-heading-components)))
     ('level (org-current-level))
@@ -1228,10 +1248,9 @@ an unmounted vault comes back — never `rejected', which deletes the
 durable record) with the distinct data symbol `no-agenda-files' (vs
 the floor's `no-roots'): a nil scope handed to `org-map-entries' means
 the CURRENT BUFFER — whatever the socket filter happened to have
-current (sandbox drift).  Directory entries are NOT expanded to member
-files — the stamp already treats raw entries as files, and the query
-matches the module's own semantics, not the `org-agenda-files'
-function's."
+current (sandbox drift).  Local directory entries have already been
+expanded by `ebp-org-agenda-files' after its remote-name filter, so
+this scope and the shared cache stamp see the same member files."
   (or (cl-remove-if-not #'file-exists-p (ebp-org-agenda-files))
       (signal 'ebp-org-unavailable (list 'no-agenda-files))))
 

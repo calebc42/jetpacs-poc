@@ -512,12 +512,14 @@ success path."
     (setf (ebp-client-profiles client)
           `(:app (:node_types ,jetpacs-floor-test--core-types
                   :builtins [] :features [])))
-    (let ((sent nil) (hooked 0))
+    (let ((sent nil) (hooked 0) (hook-surfaces nil))
       (jetpacs-floor-test--recording-push sent
         (with-jetpacs-owner "grocy"
           (jetpacs-shell-define-root "grocy"
                                      (lambda () (jetpacs-text "hello"))))
-        (let ((hook (lambda () (cl-incf hooked))))
+        (let ((hook (lambda ()
+                      (cl-incf hooked)
+                      (push jetpacs-shell-pushed-surface hook-surfaces))))
           (add-hook 'jetpacs-shell-after-push-hook hook)
           (unwind-protect
               (progn
@@ -531,7 +533,9 @@ success path."
                 ;; Zero-arg with no root registered elsewhere: nil, no send.
                 (should-not (jetpacs-shell-push "app:other"))
                 (should (= (length sent) 2))
-                (should (= hooked 2)))
+                (should (= hooked 2))
+                (should (equal hook-surfaces
+                               '("app:grocy" "app:grocy"))))
             (remove-hook 'jetpacs-shell-after-push-hook hook)))))))
 
 (ert-deftest jetpacs-floor-before-replay-pushes-required ()
@@ -837,6 +841,19 @@ attaches the client it dials."
       (with-jetpacs-owner "b" (jetpacs-async 'kb (lambda (r _) (funcall r 2))))
       (jetpacs-async--flush-push)
       (should (equal (sort pushes #'string<) '("a" "b")))
+      ;; A guest keeps cache ownership under its own app, but refreshes the
+      ;; host surface it actually occupies.
+      (setq pushes nil)
+      (jetpacs-async 'guest
+                     (lambda (r _) (funcall r 3))
+                     :owner "guest" :push-target "app:host")
+      (jetpacs-async--flush-push)
+      (should (equal pushes '("app:host")))
+      (should (equal (jetpacs-async--entry-owner
+                      (gethash 'guest jetpacs-async--cache))
+                     "guest"))
+      (jetpacs-async-clear-owner "guest")
+      (should-not (gethash 'guest jetpacs-async--cache))
       ;; Reject and synchronous throw both become (error . MSG).
       (with-jetpacs-owner "a"
         (jetpacs-async 'kr (lambda (_r rej) (funcall rej "boom")))
@@ -849,8 +866,10 @@ attaches the client it dials."
           (jetpacs-async 'sweepme
                          (lambda (_r _j)
                            (lambda () (cl-incf cancelled)))))
-        (jetpacs-async--after-push)          ; still current gen: survives
-        (jetpacs-async--after-push)          ; now stale: swept
+        (jetpacs-async--after-push "a")      ; own build: survives
+        (jetpacs-async--after-push "other")  ; foreign push: still survives
+        (should (gethash 'sweepme jetpacs-async--cache))
+        (jetpacs-async--after-push "a")      ; own view stopped asking: swept
         (should-not (gethash 'sweepme jetpacs-async--cache))
         (should (= cancelled 1))
         ;; clear-owner drops only its owner's entries.

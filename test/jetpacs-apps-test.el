@@ -217,6 +217,32 @@ signalling core seed costs the tail rows, never the drawer."
     (should-not jetpacs-apps--current-route)
     (should-not pushed)))
 
+(ert-deftest jetpacs-apps-open-seeded-is-explicit-and-route-honest ()
+  "READY landing honors an explicit seed but never the sole-app fallback.
+The selected route is forwarded through the normal app.open implementation;
+its status decides whether the caller should suppress the native hub."
+  (jetpacs-apps-test--env
+    (jetpacs-defapp "notes" :label "Notes" :surfaces '("notes.main")
+                    :destinations
+                    '((:key "review" :label "Review"
+                       :verb "notes.review")))
+    (let (seen)
+      (cl-letf (((symbol-function 'jetpacs-apps--action-open)
+                 (lambda (args params)
+                   (setq seen (list args params))
+                   'accepted)))
+        ;; One registered app is discoverable as current, but was not seeded.
+        (should (equal (car (jetpacs-apps-current)) "notes"))
+        (should-not (jetpacs-apps-open-seeded))
+        (should-not seen)
+        (jetpacs-apps-seed-current "notes" "review")
+        (should (jetpacs-apps-open-seeded))
+        (should (equal seen '((:app "notes" :route "review") nil)))
+        ;; A synchronous refusal leaves the caller free to use its safe root.
+        (cl-letf (((symbol-function 'jetpacs-apps--action-open)
+                   (lambda (_args _params) 'rejected)))
+          (should-not (jetpacs-apps-open-seeded)))))))
+
 (ert-deftest jetpacs-apps-note-route-is-validated-and-change-sensitive ()
   "App-owned navigation can record or clear a route without a push."
   (jetpacs-apps-test--env
@@ -320,6 +346,47 @@ re-checked (and isolated) per read."
     (should (equal (plist-get (car (jetpacs-apps-destinations "ok"))
                               :key)
                    "one"))))
+
+(ert-deftest jetpacs-apps-home-route-validates-and-makes-fallback-honest ()
+  "Home-route is generic metadata; every root fallback selects it honestly."
+  (jetpacs-apps-test--env
+    (should-error
+     (jetpacs-defapp
+      "bad" :surfaces '("bad.main") :home-route "missing"
+      :destinations '((:key "main" :label "Main" :verb "bad.main"))))
+    (should-error
+     (jetpacs-defapp
+      "bad" :surfaces '("bad.main") :home-route "not a key"
+      :destinations '((:key "main" :label "Main" :verb "bad.main"))))
+    (jetpacs-defapp
+     "homeful" :surfaces '("homeful.main") :home-route "main"
+     :destinations '((:key "main" :label "Main" :verb "homeful.main")
+                     (:key "detail" :label "Detail"
+                      :verb "homeful.detail")))
+    ;; The rendered destination vanished after the host row was built.
+    (should (eq (jetpacs-apps--action-open
+                 '(:app "homeful" :route "ghost") nil)
+                'stale))
+    (should (equal jetpacs-apps--current-route "main"))
+    (should (equal pushed '("homeful.main")))
+    ;; A still-registered destination with no live handler takes the same
+    ;; root fallback and must not leave Detail selected over Main's screen.
+    (setq pushed nil)
+    (should (eq (jetpacs-apps--action-open
+                 '(:app "homeful" :route "detail") nil)
+                'accepted))
+    (should (equal jetpacs-apps--current-route "main"))
+    (should (equal pushed '("homeful.main")))
+    ;; Function tables retain deferred trust.  If the advertised home later
+    ;; disappears, fallback remains safe and deliberately unselected.
+    (jetpacs-defapp "dynamic" :surfaces '("dynamic.main")
+                    :home-route "main" :destinations (lambda () nil))
+    (setq pushed nil)
+    (should (eq (jetpacs-apps--action-open
+                 '(:app "dynamic" :route "ghost") nil)
+                'stale))
+    (should-not jetpacs-apps--current-route)
+    (should (equal pushed '("dynamic.main")))))
 
 (ert-deftest jetpacs-apps-primary-composition-options-validate ()
   "Full-bar and selective-relocation declarations fail fast."

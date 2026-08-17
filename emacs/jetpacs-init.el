@@ -449,7 +449,22 @@ Companion app, then M-x jetpacs-start")
             "reminders.owner" "offline.wake" "editor.sync")
    :receipt-file (expand-file-name "receipts.sqlite"
                                    jetpacs-var-directory)
-   :ready-function (lambda (_c) (jetpacs-hub))))
+   :ready-function #'jetpacs-ready-landing))
+
+(defun jetpacs-ready-landing (_client)
+  "Land on an explicitly seeded app/route, or the native Jetpacs hub.
+The app registry owns the generic selection mechanism; downstream policy is
+only the seed.  Therefore a profile can select its app landing without this
+composition root knowing that app, while an unseeded daily-driver install
+keeps the historical Eval landing.  A broken app landing degrades to that
+same safe native root instead of making READY callback failure fatal."
+  (unless (condition-case err
+              (jetpacs-apps-open-seeded)
+            (error
+             (message "jetpacs: seeded ready landing failed: %s"
+                      (jetpacs-error-label err))
+             nil))
+    (jetpacs-hub)))
 
 (defun jetpacs-hub ()
   "Bring the hub back to the screen (from clip, or anywhere)."

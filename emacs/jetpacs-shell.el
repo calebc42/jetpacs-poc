@@ -48,7 +48,13 @@
   "Normal hook run synchronously after a successful send.
 Runs after `ebp-client-surface-update' returned its claimed revision —
 not from the async result callback.  Carries the `jetpacs-async'
-generation sweep.")
+generation sweep.  `jetpacs-shell-pushed-surface' is dynamically bound to
+the resolved surface while the hook runs; hook functions remain nullary.")
+
+(defvar jetpacs-shell-pushed-surface nil
+  "Resolved surface dynamically bound during an after-push hook run.
+This is presentation context, not lasting state.  It lets nullary subscribers
+scope their work without changing the long-standing hook signature.")
 
 (defvar jetpacs-shell-refresh-hook nil
   "Normal hook run before a cache-bypassing push; drop memo caches here.")
@@ -973,7 +979,8 @@ spec (SPEC 13.4)" current-view)))
                   (unless snack-in-scaffold
                     (ignore-errors (jetpacs-toast snack)))
                   (setq snack nil))
-                (jetpacs-run-isolated 'jetpacs-shell-after-push-hook))
+                (let ((jetpacs-shell-pushed-surface surface))
+                  (jetpacs-run-isolated 'jetpacs-shell-after-push-hook)))
               revision)
           ;; A failed push showed nothing: the feedback must survive.
           (when snack
