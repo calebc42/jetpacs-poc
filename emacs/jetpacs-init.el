@@ -148,6 +148,12 @@ remain in the private Emacs/Termux home on Android.")
 (require 'jetpacs-hypertext)
 ;; …and the apps.
 (require 'jetpacs-theme)
+;; Optional appearance provider and the renderer-primitives demo are Jetpacs
+;; satellites, independent of whichever downstream app is currently loaded.
+(require 'jetpacs-ef-themes)
+(jetpacs-ef-themes-register)
+(require 'jetpacs-gallery)
+(jetpacs-gallery-register)
 (require 'jetpacs-clip)
 (require 'jetpacs-device)
 (require 'jetpacs-files)

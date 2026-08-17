@@ -20,7 +20,7 @@ Repo: `/home/calebc42/pkb/projects/jetpacs/jetpacs/llm-poc-3` @ `3bc080c` (slop-
 > **RESOLVED + PLANNED (2026-08-14): the hold lifted, the seams all landed, and the ownership ruling arrived — jetpacs-org-mode owns BOTH capture and agenda reminders (Caleb). Glasspane-on-primitives rework: planned → docs/PLAN-glasspane-rework.md** (ladder GR-0..GR-10, adversarially verified: 57 checks, 17 defects found and fixed in the doc). Executes the ratified capture+reminders ownership cutover to jetpacs-org-mode and this doc's §4 ordering-note directive (hub/drawer/dock rewritten against S1/S2/S3 at GR-8). Arms this ledger's tripwires as GR §9 T-2 (reverse-order replies → fund R4) and T-5 (persist amplification → graduate D-5); closes the S1–S5/S4-guest device-coverage debt at GR-1/GR-8; funds FOUNDATION-GAPS #2 (FAB registry) and #10 (dates util) at GR-7b. D-12 (Companion share intake) remains the first Companion-side follow-on after GR-4.
 
 5. **Then the major Glasspane changes**, with two tripwires armed: reverse-order `event.action` replies during heavy wire traffic → fund R4 (D-6); hub/push cadence growth → SurfaceStore.persist amplification graduates to correctness-risk (D-5).
-6. **Parked, trigger- or decision-gated (§2 tier 4):** widget/tile, rich reader/G4b, share intake, R7, SPEC prose backfill, spec-hole audit resume, JA-9/P4/JA-11 leftovers. Each returns by decision, not drift.
+6. **Parked, trigger- or decision-gated (§2 tier 4):** widget/tile, share intake, R7, SPEC prose backfill, spec-hole audit resume, JA-9/P4/JA-11 leftovers. Rich-reader G4b is no longer an open ruling: the readable plain-Org fallback was accepted on 2026-08-17, with rich hosts retained where available. Each remaining item returns by decision, not drift.
 
 ---
 
@@ -47,7 +47,7 @@ Repo: `/home/calebc42/pkb/projects/jetpacs/jetpacs/llm-poc-3` @ `3bc080c` (slop-
 | D-17 | PLAN-m3-catalog-verification ledger stale (sprint closed 265/279) | doc-drift | S | dead-runbook trap |
 | D-18 | PLAN-jetpacs-apps rung stamps stale (JA-7/8 since resolved) | doc-drift | S | invites re-litigating |
 | D-19 | Widget + QS tile: nodes + Companion renderer unbuilt (gap #1 STOP, OQ1) | deferred-feature | L | decision-gated |
-| D-20 | Rich org reader bodies degraded; table node dead code (gap #6, OQ2, G4b) | deferred-feature | L | decision-gated |
+| D-20 | **RESOLVED:** readable plain-Org body fallback accepted; rich hosts retained; dead table node follows PA-5 move | accepted-degrade | S | no G4b; PA-5 cleanup |
 | D-21 | Completion-ladder R7 (tabstops, inlay hints, active-parameter) | deferred-feature | L | trigger: a real Glasspane workflow |
 | D-22 | SPEC.md prose missing for 12–13 contract-only node types | doc-drift | L | amendment batch owed |
 | D-23 | AUDIT-spec-holes tail: ~178 P2 + ~98 P3 unverified; resume script absent from tree | missing-coverage | L | backlog |
@@ -150,10 +150,10 @@ Repo: `/home/calebc42/pkb/projects/jetpacs/jetpacs/llm-poc-3` @ `3bc080c` (slop-
 **Evidence:** PLAN-glasspane-app.md:869-886 (STOP at :883), :1011-1018 (OQ1, recommendation "ship without", no recorded answer). Spec side done (tile amendment #87, ebp/SPEC-CHANGES.md:54; `surface_spec_variants.tile` contract.json:2730-2743); Emacs seam done (`jetpacs-widget-surface` widgets.el:2850; widget:/tile: classification shell.el:170-178; gate :720-729). Missing halves verified absent: no widget_item/widget_divider/tile in the 52-type list (jetpacs-vocabulary.el:34-85); zero AppWidgetProvider/Glance/TileService in companion/; **bonus: CompanionEngine.kt:796-803's capability gate maps only notification and widget — `tile:` falls to else→null, so Companion-side tile gating is also unbuilt.** Phase 9 (PLAN-poc3-rebuild.md:345-353) reserves the Glance/TileService projections.
 **Fix shape:** a future track needs only node vocabulary + a Companion renderer. **Effort L; decision-gated — get OQ1 formally answered (recommendation on record: ship 1.0 without).**
 
-### D-20 — app-reader rich bodies degraded; table node has no render host (gap #6, OQ2, G4b unfunded)
+### D-20 — RESOLVED 2026-08-17: readable fallback accepted; table-node cleanup follows PA-5
 
-**Evidence:** PLAN-glasspane-app.md:914-921, :1019-1025, :1091 (punch #26 "NOT closed here" residue). Live in code: glasspane-org-reader.el:144 ships bodies as plain `(jetpacs-text body :syntax "org")`; `glasspane-table-node` (glasspane-table.el:420) has zero production callers — dead code (sole ref: test :3602). Tier-0 buffer skin unaffected. OQ2 (accept vs fund G4b) is recommended-accept but **unratified** — the "ALL RESOLVED" block at PLAN-glasspane-completion.md:597 is that doc's own decision points, not this one.
-**Fix shape:** ratify OQ2 one way; if accept, either delete or explicitly park the table node. **Effort L only if G4b is funded; the decision itself is S.**
+**Evidence:** PLAN-glasspane-app.md:914-921, :1019-1025, :1091 (punch #26 residue). Live in code: the app reader can ship bodies as plain `(jetpacs-text body :syntax "org")`; `glasspane-table-node` has no production caller. Tier-0 buffer skin and supported richer reader hosts are unaffected.
+**Ruling (Caleb, 2026-08-17):** accept the recommendation. “Rich bodies degrade” means that, on a surface without a richer Org renderer, the body remains readable as plain Org-syntax text. It does **not** mean removing rich rendering from hosts that support it. Do not fund G4b now. This closes OQ2 and unblocks the generic table/Babel move in GR-10/PA-5; that move must delete the dead constructor or explicitly retain it only if the new Jetpacs adapter gains a production consumer.
 
 ### D-21 — completion-ladder R7 (tabstops, inlay hints, eldoc active-parameter)
 

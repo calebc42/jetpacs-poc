@@ -93,8 +93,11 @@ home), and the substring dedup (`...mxyz` swallowing `...mx`).
    forward IA program. S11 was PA-3b's hard precondition and is now deployed:
    the tablet's installed APK is hash-identical to the local S11 BackHandler
    build. The PA-3b spot arm is green; PA-3c's destination/slot/token audit is
-   complete and its Elisp is deployed. The full cross-destination gesture
-   matrix remains part of the consolidated PA-3 device batch.
+   complete and its Elisp is deployed. PA-3d's drawer handover, top-bar Search,
+   durable aliases, and ef/gallery Jetpacs re-homing are implemented, fully
+   green, and deployed as the tablet's 129-file managed Elisp tree. The full
+   cross-destination gesture matrix remains the next consolidated PA-3 device
+   batch, followed by its one-day soak.
 3. **GR-0..GR-7 survive** (docs/PLAN-glasspane-rework.md). GR-7b's
    `:badge` + per-app FAB registry feeds PA-3a — and must OUTRANK the
    S10 globals in the `:fab` slot (comment already at the join,

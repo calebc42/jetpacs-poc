@@ -139,7 +139,7 @@ the platform invariants are not optional at either pole:
 **What neither pole can promise today** (Companion-tier, recorded so
 the poles are honest): one Android activity and task for every app;
 `theme.set` is session-global, so an app restyling itself restyles
-the shell (glasspane-ef's picker does this NOW — build-within
+the shell (the Jetpacs ef-themes picker does this NOW — build-within
 behavior whether intended or not); one screen, last-push-wins; and
 per-app Android identity (launcher shortcuts, share intake) does not
 exist.  A standalone-feeling app still shares the one window.

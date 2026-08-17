@@ -1,38 +1,19 @@
-;;; glasspane-gallery.el --- Interactive widget-primitives gallery -*- lexical-binding: t; -*-
+;;; jetpacs-gallery.el --- Interactive widget-primitives gallery -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "30.1"))
 
 ;;; Commentary:
 
-;; The satellites rung, gallery (docs/PLAN-glasspane-app.md, G8): a
-;; live demo of the platform's rendering primitives — charts, the
-;; canvas interpreter, slider, sizing/border/spacing — wired so the
-;; interactive loop stays visible: the slider drives a canvas gauge,
-;; chips switch the chart kind, tapping a chart point reports its
-;; value.  Composed entirely from core `jetpacs-*' constructors: the
-;; worked example that a whole visual surface is Elisp, no Kotlin.
+;; A foundation demo of the platform's rendering primitives: charts, canvas,
+;; slider, sizing, border, spacing, and alignment.  The interactive loop stays
+;; visible: the slider drives a canvas gauge, chips switch chart kind, and a
+;; point tap reports its value.  It is composed entirely from `jetpacs-*'
+;; constructors, demonstrating that a complete visual surface is Elisp.
 ;;
-;; Retired against v1 (the plan's retirement list + G8 section):
-;;
-;; - The overlay machinery (`glasspane-gallery--open', the
-;;   `jetpacs-shell-define-view' registration with :when/:overlay/
-;;   :order, the view-switched close hook, the `:switch-to' pushes):
-;;   S1 — the gallery is one pushed chrome screen, and the stack
-;;   truncates on `view.switched' (jetpacs-chrome.el:555-567) with no
-;;   open flag to reconcile.
-;; - The drawer item at order 65: satellite screens live in Settings
-;;   links, not the drawer (S1; docs/CHROME-VOCABULARY.md).
-;; - v1 core's `jetpacs-gauge'/`jetpacs-arc-points'/`jetpacs-border'
-;;   (T2): the gauge rebuilds app-locally on the §17.5 canvas ops
-;;   below; `:border' is a §16.5 universal-attr plist now.
-;; - The `fboundp' guards on `jetpacs-shell-notify' and
-;;   `jetpacs-connected-p' (T5): hard deps in v3.
-;;
-;; The chart kind and gauge level are S2 app defvars whose single
-;; writers are the handlers below, re-seeded via `:value' each render;
-;; every handler answers a SPEC 14.4 status (S4).  Nothing here
-;; touches org — the gallery needs no tokens (S5 has no site).
+;; The Settings row is the only cross-surface opener.  Its push establishes a
+;; sanctioned guest; the gallery's inner controls remain owner-scoped for the
+;; lifetime of that screen.  It has no Org dependency and no app-private data.
 
 ;;; Code:
 
@@ -46,19 +27,19 @@
 
 ;;;; State (S2 — the handlers below are the only writers)
 
-(defvar glasspane-gallery--kind "line"
+(defvar jetpacs-gallery--kind "line"
   "The chart kind the gallery currently renders.
 Persists across pushes and re-registration — the chips re-seed
 `:selected' from it each render.")
 
-(defvar glasspane-gallery--level 0.5
+(defvar jetpacs-gallery--level 0.5
   "The gauge value (0.0-1.0) the slider last committed.
 The slider re-seeds `:value' from this mirror each render, so the
-authored spec never fights the device draft (the G8 rule).")
+authored spec never fights the device draft.")
 
 ;;;; The gauge (v1 core jetpacs-widgets.el:913-935, transliterated)
 
-(defun glasspane-gallery--arc-points (cx cy r a0 a1 n)
+(defun jetpacs-gallery--arc-points (cx cy r a0 a1 n)
   "N+1 (X Y) pairs along the arc A0→A1 degrees, centre (CX CY), radius R.
 Screen y grows downward, so a top semicircle spans 180°→0°.  Pure
 geometry — the gauge's testable half; the builder below lifts the
@@ -68,14 +49,14 @@ pairs into ChartPoint-shaped canvas points."
            for rad = (degrees-to-radians a)
            collect (list (+ cx (* r (cos rad))) (- cy (* r (sin rad))))))
 
-(defun glasspane-gallery--arc-path (cx cy r a0 a1 color stroke)
+(defun jetpacs-gallery--arc-path (cx cy r a0 a1 color stroke)
   "A canvas path op tracing the A0→A1 arc (44 segments, like v1)."
   (jetpacs-canvas-path
    (mapcar (lambda (p) (jetpacs-canvas-point (nth 0 p) (nth 1 p)))
-           (glasspane-gallery--arc-points cx cy r a0 a1 44))
+           (jetpacs-gallery--arc-points cx cy r a0 a1 44))
    :color color :stroke-width stroke))
 
-(cl-defun glasspane-gallery--gauge (level &key (width 240) (height 132)
+(cl-defun jetpacs-gallery--gauge (level &key (width 240) (height 132)
                                           (track-color "#8888aa")
                                           (fill-color "#00A676")
                                           (needle-color "#E64980"))
@@ -93,8 +74,8 @@ approximate advance (0.6 em per glyph at the drawn size)."
          (size 28))
     (jetpacs-canvas
      width height
-     (list (glasspane-gallery--arc-path cx cy r 180 0 track-color 12)
-           (glasspane-gallery--arc-path cx cy r 180 end fill-color 12)
+     (list (jetpacs-gallery--arc-path cx cy r 180 0 track-color 12)
+           (jetpacs-gallery--arc-path cx cy r 180 end fill-color 12)
            (jetpacs-canvas-line cx cy nx ny :color needle-color :width 3)
            (jetpacs-canvas-circle cx cy 7 :fill needle-color)
            (jetpacs-canvas-text (- cx (* 0.3 size (length label)))
@@ -103,48 +84,48 @@ approximate advance (0.6 em per glyph at the drawn size)."
 
 ;;;; The screen
 
-(defconst glasspane-gallery--chart-kinds '("line" "bar" "area" "sparkline")
+(defconst jetpacs-gallery--chart-kinds '("line" "bar" "area" "sparkline")
   "The kinds the chip rail offers — `jetpacs--chart-kinds' verbatim,
 restated so a handler validating against it never depends on a
 private core constant.")
 
-(defun glasspane-gallery--kind-chips ()
-  "A chip rail selecting `glasspane-gallery--kind'."
+(defun jetpacs-gallery--kind-chips ()
+  "A chip rail selecting `jetpacs-gallery--kind'."
   (apply #'jetpacs-flow-row
          (append
           (mapcar (lambda (k)
                     (jetpacs-chip k
                                   :selected (jetpacs-bool
-                                             (equal k glasspane-gallery--kind))
+                                             (equal k jetpacs-gallery--kind))
                                   :on-tap (jetpacs-action
                                            "demo.gallery.kind"
                                            :args (list :kind k))))
-                  glasspane-gallery--chart-kinds)
+                  jetpacs-gallery--chart-kinds)
           (list :spacing 8))))
 
-(defun glasspane-gallery--points (ys)
+(defun jetpacs-gallery--points (ys)
   "YS (a list of numbers) as ChartPoint nodes over ordinal x.
 v1 authored bare y-lists; v3 series carry ChartPoint objects (T3)."
   (cl-loop for y in ys for x from 0
            collect (jetpacs-chart-point x y)))
 
-(defun glasspane-gallery--body ()
+(defun jetpacs-gallery--body ()
   "The scrollable gallery content (a lazy column, so it scrolls)."
   (jetpacs-lazy-column
    (jetpacs-section-header "Chart — tap a point, switch the kind")
-   (glasspane-gallery--kind-chips)
+   (jetpacs-gallery--kind-chips)
    (jetpacs-chart
-    (list (jetpacs-chart-series (glasspane-gallery--points '(3 7 4 9 6 8 5))
+    (list (jetpacs-chart-series (jetpacs-gallery--points '(3 7 4 9 6 8 5))
                                 :name "alpha" :color "#4C6FFF")
-          (jetpacs-chart-series (glasspane-gallery--points '(5 4 6 5 7 5 8))
+          (jetpacs-chart-series (jetpacs-gallery--points '(5 4 6 5 7 5 8))
                                 :name "beta"))
-    :kind glasspane-gallery--kind :height 150 :summary "two sample series"
+    :kind jetpacs-gallery--kind :height 150 :summary "two sample series"
     :on-point-tap (jetpacs-action "demo.gallery.point"))
    (jetpacs-divider)
    (jetpacs-section-header "Slider → live canvas gauge")
    (jetpacs-slider "gallery.level" (jetpacs-action "demo.gallery.level")
-                   :value glasspane-gallery--level :min 0.0 :max 1.0)
-   (glasspane-gallery--gauge glasspane-gallery--level)
+                   :value jetpacs-gallery--level :min 0.0 :max 1.0)
+   (jetpacs-gallery--gauge jetpacs-gallery--level)
    (jetpacs-divider)
    (jetpacs-section-header "Sizing · border · spacing · align")
    (jetpacs-row
@@ -161,45 +142,46 @@ v1 authored bare y-lists; v3 series carry ChartPoint objects (T3)."
     :spacing 12 :align "center")
    (jetpacs-spacer :height 12)))
 
-(defun glasspane-gallery-screen (back)
+(defun jetpacs-gallery-screen (back)
   "The pushed Widget Gallery screen."
-  (jetpacs-chrome-screen "Widget Gallery" (glasspane-gallery--body)
+  (jetpacs-chrome-screen "Widget Gallery" (jetpacs-gallery--body)
                          :back back))
 
 ;;;; Handlers (S4 — every one answers accepted/stale/rejected)
 
-(defun glasspane-gallery--push-screen (params)
+(defun jetpacs-gallery--push-screen (params)
   "Defer-push the gallery onto PARAMS' surface (D2); `accepted'.
 A deferred `jetpacs-chrome-push-screen' must catch its own re-signal
 or a refused gate dies in a timer.  Fired FROM the gallery, the push
 replaces in place (stack-insert truncates on a duplicate id)."
   (let ((surface (or (plist-get params :surface)
-                     (jetpacs-shell-surface-for "glasspane"))))
+                     (jetpacs-shell-surface-for
+                      jetpacs-settings-surface))))
     (jetpacs-flow-continue
      (lambda ()
        (condition-case err
-           (jetpacs-chrome-push-screen surface "glasspane-gallery"
-                                       #'glasspane-gallery-screen)
-         (error (message "glasspane: gallery push failed: %s"
+           (jetpacs-chrome-push-screen surface "jetpacs-gallery"
+                                       #'jetpacs-gallery-screen)
+         (error (message "jetpacs-gallery: push failed: %s"
                          (jetpacs-error-label err))))))
     'accepted))
 
-(defun glasspane-gallery--on-open (_args params)
+(defun jetpacs-gallery--on-open (_args params)
   "Push the gallery onto the tapped surface."
-  (glasspane-gallery--push-screen params))
+  (jetpacs-gallery--push-screen params))
 
-(defun glasspane-gallery--on-kind (args params)
+(defun jetpacs-gallery--on-kind (args params)
   "A kind chip tap: store the chart kind and re-render.
 The chips author the enum, so an unknown kind is malformed args —
 v1's silent \"line\" fallback would repaint a state nobody chose."
   (let ((kind (plist-get args :kind)))
-    (if (not (member kind glasspane-gallery--chart-kinds))
+    (if (not (member kind jetpacs-gallery--chart-kinds))
         'rejected
-      (setq glasspane-gallery--kind kind)
+      (setq jetpacs-gallery--kind kind)
       (jetpacs-app-defer-refresh params)
       'accepted)))
 
-(defun glasspane-gallery--on-level (args params)
+(defun jetpacs-gallery--on-level (args params)
   "The slider's commit: mirror `:value', then re-push.
 The re-render re-seeds the slider from the mirror — the spec never
 fights the device draft.  Out-of-range numbers clamp rather than
@@ -207,11 +189,11 @@ reject: the authored :min/:max make them float noise, not malice."
   (let ((v (plist-get args :value)))
     (if (not (numberp v))
         'rejected
-      (setq glasspane-gallery--level (max 0.0 (min 1.0 (float v))))
+      (setq jetpacs-gallery--level (max 0.0 (min 1.0 (float v))))
       (jetpacs-app-defer-refresh params)
       'accepted)))
 
-(defun glasspane-gallery--on-point (args params)
+(defun jetpacs-gallery--on-point (args params)
   "A chart point tap: report the authored point in a snackbar.
 The Companion injects the complete authored point as `:value' and its
 zero-based ordinal as `:index' (SPEC 17.5).  The snackbar IS the
@@ -228,73 +210,62 @@ effect — nothing re-renders, so there is no push."
 
 ;;;; Registration
 
-(defun glasspane-gallery--settings-link ()
+(defun jetpacs-gallery--settings-link ()
   "The Settings-root satellite row leading to the widget gallery."
   (jetpacs-chrome-row "Widget Gallery"
                       :subtitle "Live demo of the rendering primitives"
                       :icon "insights"
                       :on-tap (jetpacs-action "demo.gallery")
-                      :key "glasspane-gallery-link"))
+                      :key "jetpacs-gallery-link"))
 
-(defconst glasspane-gallery--verbs
+(defconst jetpacs-gallery--verbs
   '("demo.gallery"
     "demo.gallery.kind"
     "demo.gallery.level"
     "demo.gallery.point")
   "The verbs this file owns, for the register/unregister sweep.")
 
-(defun glasspane-gallery-register ()
+(defun jetpacs-gallery-register ()
   "Register the gallery verbs and its Settings satellite link.
-Called from `glasspane-register', not at this file's load (the G0
-gate contract).  Idempotent: handlers replace in place, the link is
-re-added exactly once."
-  ;; :any-surface — D1 GLOBAL verbs, deliberately: the only way in is
-  ;; the satellite row on the Settings root, a surface Settings owns,
-  ;; and the screen then pushes onto whatever surface was tapped — so
-  ;; every tap this file handles arrives on a foreign surface, and the
-  ;; owned-surface gate would reject it before the handler ran (the
-  ;; clock precedent).
-  (with-jetpacs-owner "glasspane"
-    (jetpacs-defaction "demo.gallery" #'glasspane-gallery--on-open
+Called by the Jetpacs composition root.  Idempotent: handlers replace in
+place and the link is re-added exactly once."
+  (with-jetpacs-owner "jetpacs.demo"
+    ;; The Settings-root tap precedes guest delegation, so only the opener
+    ;; receives a permanent cross-surface grant.
+    (jetpacs-defaction "demo.gallery" #'jetpacs-gallery--on-open
                        :any-surface t
                        :doc "Open the widget-primitives gallery")
-    (jetpacs-defaction "demo.gallery.kind" #'glasspane-gallery--on-kind
-                       :any-surface t
+    (jetpacs-defaction "demo.gallery.kind" #'jetpacs-gallery--on-kind
                        :doc "Switch the gallery chart kind"
                        :args '((:name kind :type "text" :required t)))
-    (jetpacs-defaction "demo.gallery.level" #'glasspane-gallery--on-level
-                       :any-surface t
+    (jetpacs-defaction "demo.gallery.level" #'jetpacs-gallery--on-level
                        :doc "Set the gallery gauge level"
                        :args '((:name value :type "number" :required t)))
-    (jetpacs-defaction "demo.gallery.point" #'glasspane-gallery--on-point
-                       :any-surface t
+    (jetpacs-defaction "demo.gallery.point" #'jetpacs-gallery--on-point
                        :doc "Report a tapped chart point")
-    (jetpacs-settings-remove-link #'glasspane-gallery--settings-link)
-    ;; v1's drawer item sat at 65 among drawer orders that died with
-    ;; the fabric; against v3's registered links the demo satellite
-    ;; lands after the app's own settings card (glasspane-ui's 80).
-    (jetpacs-settings-add-link 84 #'glasspane-gallery--settings-link)))
+    (jetpacs-settings-remove-link #'jetpacs-gallery--settings-link)
+    ;; Demos live after the everyday Settings satellites.
+    (jetpacs-settings-add-link 84 #'jetpacs-gallery--settings-link)))
 
-(defun glasspane-gallery-unregister ()
+(defun jetpacs-gallery-unregister ()
   "Drop the gallery verbs and the Settings link.
 The kind/level mirrors deliberately survive — the same S2 persistence
 rule as search's filters; the next register serves them as-is."
-  (dolist (name glasspane-gallery--verbs)
+  (dolist (name jetpacs-gallery--verbs)
     (jetpacs-undefaction name))
-  (jetpacs-settings-remove-link #'glasspane-gallery--settings-link))
+  (jetpacs-settings-remove-link #'jetpacs-gallery--settings-link))
 
 ;;;###autoload
-(defun glasspane-demo-gallery ()
-  "Open the interactive widget-primitives gallery on the connected phone.
-The newest of the demo commands (see also `glasspane-demo-setup')."
+(defun jetpacs-gallery-open ()
+  "Open the interactive widget-primitives gallery on the companion."
   (interactive)
-  (if (jetpacs-connected-p)
-      (progn
-        (jetpacs-chrome-push-screen (jetpacs-shell-surface-for "glasspane")
-                                    "glasspane-gallery"
-                                    #'glasspane-gallery-screen)
-        (message "Widget gallery opened on the phone"))
-    (message "Jetpacs: not connected — connect a phone, then reopen")))
+  (with-jetpacs-owner "jetpacs.demo"
+    (jetpacs-chrome-push-screen jetpacs-settings-surface
+                                "jetpacs-gallery"
+                                #'jetpacs-gallery-screen))
+  (message (if (jetpacs-connected-p)
+               "Widget gallery opened on the companion"
+             "Widget gallery staged — it renders when a device connects")))
 
-(provide 'glasspane-gallery)
-;;; glasspane-gallery.el ends here
+(provide 'jetpacs-gallery)
+;;; jetpacs-gallery.el ends here

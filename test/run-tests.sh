@@ -82,6 +82,7 @@ rm -f emacs/ebp.elc
 # living one level down.
 for f in emacs/*.el emacs/apps/*/*.el; do
   emacs -Q --batch -L emacs -L emacs/apps/m3-catalog -L emacs/apps/glasspane \
+    -L emacs/apps/ef-themes \
     --eval '(setq byte-compile-error-on-warn t)' \
     -f batch-byte-compile "$f"
   rm -f "${f%.el}.elc"
@@ -367,14 +368,14 @@ emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
 
 # Glasspane app ladder gates (docs/PLAN-glasspane-app.md): every rung's
 # NAMED local-gate assertions accumulate in one suite, the M3 pattern.
-emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+emacs -Q --batch -L emacs -L emacs/apps/glasspane -L emacs/apps/ef-themes \
   -l test/glasspane-test.el \
   -f ert-run-tests-batch-and-exit
 
 # PARA ladder gates (docs/PLAN-glasspane-para.md): PA-2a creates the suite
 # with Areas' category layering, cache/rotten-file discipline, staged route,
 # and public-seam boundaries.  Later PARA rungs accumulate here.
-emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+emacs -Q --batch -L emacs -L emacs/apps/glasspane -L emacs/apps/ef-themes \
   -l test/glasspane-para-test.el \
   -f ert-run-tests-batch-and-exit
 

@@ -7,8 +7,8 @@
 ;; from test/glasspane-test.el WITH the module, because it exercises the
 ;; scaffold alone — every provider is a lambda and every action name a
 ;; plain string (the "ef." spellings below are data, kept from the
-;; first instantiation).  The ef assertions proper — glasspane-ef
-;; instantiating this scaffold — stay in the glasspane suite.
+;; first instantiation).  The ef assertions proper — jetpacs-ef-themes
+;; instantiating this scaffold — remain in the historical regression suite.
 
 (require 'ert)
 (require 'cl-lib)
