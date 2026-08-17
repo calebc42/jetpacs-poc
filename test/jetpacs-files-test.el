@@ -554,6 +554,45 @@ effects run OUTSIDE the dispatch extent (D2)."
             (should (= navigated 0))
             (should (equal pushed '("app:jetpacs.files")))))))))
 
+(ert-deftest jetpacs-files-open-path-carries-an-optional-scroll-position ()
+  "The public Files seam carries MARK-POS through editor and fallback rungs."
+  (jetpacs-files-test--with-tree root
+    (let* ((file (concat root "position.org"))
+           (true nil)
+           (opened nil))
+      (write-region "* One\n* Two\n" nil file nil 'silent)
+      ;; Public caller -> deferred edit-open, without exposing the edit
+      ;; record or any adapter-specific state.
+      (cl-letf (((symbol-function 'jetpacs-flow-continue)
+                 (lambda (fn) (funcall fn)))
+                ((symbol-function 'jetpacs-files--edit-open)
+                 (lambda (path surface &optional mark-pos)
+                   (setq opened (list path surface mark-pos)))))
+        (should (eq (jetpacs-files-open-path
+                     file "app:jetpacs.files" 7)
+                    'accepted)))
+      (setq true (file-truename file))
+      (should (equal opened (list true "app:jetpacs.files" 7)))
+      ;; The editable rung retains the generic position in the public
+      ;; dynamic context consumed by reader adapters.
+      (let ((jetpacs-files--edit nil))
+        (cl-letf (((symbol-function 'jetpacs-chrome-push-screen)
+                   (lambda (&rest _) t)))
+          (should-not (jetpacs-files--edit-open
+                       true "app:jetpacs.files" 7))
+          (should (= (plist-get jetpacs-files--edit :mark-pos) 7))))
+      ;; A read-only fallback forwards the same position to the native
+      ;; buffer navigator instead of dropping it.
+      (let ((jetpacs-files-max-bytes 1)
+            navigated-pos)
+        (cl-letf (((symbol-function 'jetpacs-navigate-buffer)
+                   (lambda (_buffer _surface &optional _label mark-pos)
+                     (setq navigated-pos mark-pos))))
+          (should (eq (jetpacs-files--edit-open
+                       true "app:jetpacs.files" 9)
+                      'oversize))
+          (should (= navigated-pos 9)))))))
+
 (ert-deftest jetpacs-files-refresh-repushes-the-origin ()
   (jetpacs-files-test--with-tree root
     (jetpacs-files-test--attached (jetpacs-files-test--client)

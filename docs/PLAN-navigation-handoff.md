@@ -92,7 +92,8 @@ home), and the substring dedup (`...mxyz` swallowing `...mx`).
 2. **The PARA ladder** (docs/PLAN-glasspane-para.md, ratified) is the
    forward IA program. S11 was PA-3b's hard precondition and is now deployed:
    the tablet's installed APK is hash-identical to the local S11 BackHandler
-   build. The PA-3b spot arm is green; its full cross-destination gesture
+   build. The PA-3b spot arm is green; PA-3c's destination/slot/token audit is
+   complete and its Elisp is deployed. The full cross-destination gesture
    matrix remains part of the consolidated PA-3 device batch.
 3. **GR-0..GR-7 survive** (docs/PLAN-glasspane-rework.md). GR-7b's
    `:badge` + per-app FAB registry feeds PA-3a — and must OUTRANK the

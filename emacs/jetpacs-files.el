@@ -139,9 +139,12 @@ one files surface under D1, so one variable is the whole state.")
 
 (defvar jetpacs-files--edit nil
   "The file the editor screen shows:
-\(:path TRUENAME :seed S :mtime T :coding C) plus, on the SYNCHRONIZED
+\(:path TRUENAME :seed S :mtime T :coding C :mark-pos P) plus, on the
+SYNCHRONIZED
 rung, (:document D :editor-id E :buffer B).  C is the coding system
 the file was READ with — the save writes it back in the same one.
+P is an optional whole-buffer position requested by the caller; reader
+adapters may turn it into their initial scroll target.
 Written by `jetpacs-files--edit-open' after eligibility passed, and by
 a successful save (fresh seed and stamp, everything else carried
 forward).  The screen BUILDER reads only this — never the disk — so a
@@ -153,8 +156,9 @@ and a later snapshot MUST NOT replace live text).")
 (defvar jetpacs-files-editor-context nil
   "Dynamic context visible while the file edit screen is being built.
 The value is the current edit request plist, including at least `:path',
-`:seed', and `:mtime'; synchronized editors also carry `:document',
-`:editor-id', and `:buffer'.  Mode-app extension functions may inspect
+`:seed', `:mtime', and optional `:mark-pos'; synchronized editors also
+carry `:document', `:editor-id', and `:buffer'.  Mode-app extension
+functions may inspect
 this value to offer synchronized-only toolbar commands without reaching
 into `jetpacs-files--edit'.  It is nil outside the builder.")
 
@@ -891,11 +895,12 @@ other path never finds a session."
                   (eid (plist-get req :editor-id)))
         (ebp-sync-buffer client doc eid)))))
 
-(defun jetpacs-files--read-fallback (true surface reason)
+(defun jetpacs-files--read-fallback (true surface reason &optional mark-pos)
   "Show TRUE through the buffer host; explain REASON when it surprises.
 `binary' and `unencodable' stay quiet — a read view is simply what
 those files get — but a text file refused for size or for unsaved
-desktop edits would otherwise look broken."
+desktop edits would otherwise look broken.  MARK-POS is forwarded to
+the generic buffer navigator as its initial scroll target."
   (pcase reason
     ('oversize
      (jetpacs-shell-notify "Too large to edit here — read-only" surface))
@@ -907,7 +912,7 @@ desktop edits would otherwise look broken."
       ;; stays nil.
       (let* ((enable-local-variables (and enable-local-variables :safe))
              (buf (find-file-noselect true)))
-        (jetpacs-navigate-buffer buf surface))
+        (jetpacs-navigate-buffer buf surface nil mark-pos))
     (error
      (jetpacs-shell-notify "Could not open that file" surface)
      (message "jetpacs-files: open failed: %s"
@@ -998,6 +1003,7 @@ a bound buffer and the annotation riders arm on the reseed."
                 (list :path true :seed seed
                       :mtime (plist-get jetpacs-files--edit :mtime)
                       :coding (plist-get jetpacs-files--edit :coding)
+                      :mark-pos (plist-get jetpacs-files--edit :mark-pos)
                       :document doc :editor-id eid :buffer buf))
           t))
     (error
@@ -1005,7 +1011,7 @@ a bound buffer and the annotation riders arm on the reseed."
               (jetpacs-error-label err))
      nil)))
 
-(defun jetpacs-files--edit-open (true surface)
+(defun jetpacs-files--edit-open (true surface &optional mark-pos)
   "Open TRUE in an editor, or fall back to the read view.
 Three rungs, best first: the SYNCHRONIZED SPEC 19 editor over a real
 buffer, the PLAIN seed-and-save editor, and the read-only buffer host.
@@ -1022,6 +1028,9 @@ exactly the bytes `jetpacs-scalar-text' replaces — and a NUL marks a
 binary whose \"text\" is not worth a seed.  The file's own coding is
 captured off the read and stored with the seed, so the save can write
 the file back in it.
+
+MARK-POS is an optional whole-buffer position retained in the edit context
+for a reader adapter, or forwarded to the plain buffer fallback.
 
 The SIZE gate takes whichever rung reaches higher, because the two
 ceilings measure different things (see the section Commentary), and a
@@ -1052,7 +1061,7 @@ text — the synchronized rung seeds from the buffer, so it keeps them."
                   (setq jetpacs-files--edit
                         (list :path true :seed content
                               :mtime (jetpacs-files--mtime-stamp true)
-                              :coding coding))
+                              :coding coding :mark-pos mark-pos))
                   (if (and syncable (jetpacs-files--sync-attach true))
                       nil
                     (setq jetpacs-files--edit nil)
@@ -1060,7 +1069,7 @@ text — the synchronized rung seeds from the buffer, so it keeps them."
                  (t (setq jetpacs-files--edit
                           (list :path true :seed content
                                 :mtime (jetpacs-files--mtime-stamp true)
-                                :coding coding))
+                                :coding coding :mark-pos mark-pos))
                     (when syncable (jetpacs-files--sync-attach true))
                     nil)))))))
     (cond
@@ -1069,7 +1078,7 @@ text — the synchronized rung seeds from the buffer, so it keeps them."
      ((eq reason 'not-a-file)
       (jetpacs-files--op-notify-refused "Open" 'not-a-file surface))
      (reason
-      (jetpacs-files--read-fallback true surface reason))
+      (jetpacs-files--read-fallback true surface reason mark-pos))
      (t
       (condition-case err
           (jetpacs-chrome-push-screen surface "edit"
@@ -1407,11 +1416,14 @@ Runs inside a device flow."
        (error (message "jetpacs-files: push failed: %s"
                        (jetpacs-error-label err)))))))
 
-(defun jetpacs-files-open-path (path surface)
+(defun jetpacs-files-open-path (path surface &optional mark-pos)
   "Validate and open PATH on SURFACE exactly as a Files row does.
 Directories become the current Files location.  Regular files enter the
 shared document host.  PATH is always revalidated against the effective
-Files roots, even when the caller obtained it from a trusted bundle."
+Files roots, even when the caller obtained it from a trusted bundle.
+MARK-POS, when non-nil for a regular file, is a whole-buffer position an
+editor adapter or the read-only fallback may use as its initial scroll
+target."
   (condition-case err
       (let ((true (jetpacs-files--check path)))
         (if (file-directory-p true)
@@ -1426,7 +1438,7 @@ Files roots, even when the caller obtained it from a trusted bundle."
           ;; stats and reads the file, the read fallback can PROMPT (changed
           ;; on disk), and JC-4a bridges prompts to the device only there.
           (jetpacs-flow-continue
-           (lambda () (jetpacs-files--edit-open true surface))))
+           (lambda () (jetpacs-files--edit-open true surface mark-pos))))
         'accepted)
     (ebp-path-refused
      (jetpacs-shell-notify (format "File refused: %s" (cadr err)) surface)
