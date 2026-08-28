@@ -22,11 +22,34 @@ interface ComposeNodeRenderContext {
     val path: String
     val inDialog: Boolean
 
+    /** Negotiated JCS byte ceiling for one logical input value. */
+    val maxFieldBytes: Int
+
     fun action(
         descriptor: JsonObject?,
         value: JsonElement? = null,
         onOutcome: (RendererActionOutcome) -> Unit = {},
+    ): ActionHandoff = dispatchAction(
+        descriptor = descriptor,
+        value = value,
+        onOutcome = onOutcome,
+    )
+
+    /**
+     * Hand one accepted occurrence to the ordinary host action pipeline.
+     *
+     * [fields] is reserved for occurrence-local capture such as a password;
+     * the host still owns dialog rebinding, capture validation, admission,
+     * durability, offline policy, and terminal result delivery.
+     */
+    fun dispatchAction(
+        descriptor: JsonObject?,
+        value: JsonElement? = null,
+        fields: JsonObject? = null,
+        sourceId: String? = null,
+        onOutcome: (RendererActionOutcome) -> Unit = {},
     ): ActionHandoff
+
     fun state(id: String, value: JsonElement?)
     fun storeValue(id: String): JsonElement?
     fun epochOf(id: String): Long

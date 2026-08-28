@@ -67,6 +67,9 @@ EBP Core Node Set, keyed by a positively admitted renderer-extension ID.
 Scoped selection never changes node validation or target profiles, and roots
 discard inherited scope. The registry intentionally excludes optional EBP
 nodes such as `editor` until a later, explicit architecture expansion.
+The first production registration replaces canonical `text_input` presentation
+inside app-authored `jetpacs.scope`; dialogs do not admit that scope, and every
+field outside it continues through Glasspane Material.
 
 The Material renderer's version is pinned by
 `companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
@@ -240,16 +243,19 @@ their supported parameters and Material tokens.
 
 `:renderer:jetpacs` has an independent private theme derived from the same
 neutral EBP roles and never reads or provides `MaterialTheme`. Its public
-`JetpacsAction`, `JetpacsChoice`, and `JetpacsPanel` composables accept
-`style: Style = Style`; Styles own visuals and animated interaction states,
-while ordinary modifiers own layout, click/toggle behavior, enabled state,
-focus, and semantics. The Action and Choice each expose one full-row target,
-and Panel labels are headings without merging their child tree.
+`JetpacsAction`, `JetpacsChoice`, `JetpacsPanel`, and state-based
+`JetpacsTextField` composables accept `style: Style = Style`; Styles own
+visuals and animated interaction states, while ordinary modifiers own layout,
+input, enabled state, focus, and semantics. The Action and Choice each expose
+one full-row target, Panel labels are headings without merging their child
+tree, and each field retains one editable interaction owner while its labels,
+affixes, and glyphs remain presentation-only.
 
 Its `jetpacs.scope` renderer emits canonical children directly through the
 shared dispatcher under the owning `jetpacs.components` scope. It creates no
-layout, semantics, state, or interaction owner; Glasspane Material dispatch
-continues everywhere outside that authored subtree.
+layout, semantics, state, or interaction owner. The composition root resolves
+canonical `text_input` to `JetpacsTextInputRenderer` only in that subtree;
+Glasspane Material dispatch continues everywhere outside it.
 
 The existing Material gallery components deliberately exercise separate
 contracts:
@@ -266,11 +272,13 @@ display epochs, editor mirrors, completion offers, raw annotations, and exact
 Unicode-scalar/UTF-16 conversions. `:renderer:compose` owns the state-based
 `TextInputController` and `EditorController`; downstream renderers supply only
 their field decoration, palette, typography, annotations, completion popup,
-and toolbar presentation. The Glasspane Material renderer consumes these
-controllers through a small host that adds only retained presentation slots,
-variant selection, and pie-menu facilities. A future Jetpacs field or editor
-therefore shares reconciliation and protocol behavior without importing
-Material.
+and toolbar presentation. Both Glasspane's Material field and Jetpacs'
+Foundation field consume the same `TextInputController` and toolkit-neutral
+presentation binding. The Jetpacs mapping adds only its compact work surface,
+private palette, code-native decoration glyphs, selection colors, and
+syntax-role palette. A future Jetpacs editor will use the existing editor
+controller after the explicit optional-node registry expansion, without
+importing Material.
 
 Action handoff and admission are distinct. A renderer synchronously learns
 whether the app host accepted an occurrence into the ordinary confirmation,

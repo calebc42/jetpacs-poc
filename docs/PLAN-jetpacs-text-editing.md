@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 2 complete; Phase 3 is next
+Status: Phase 3 complete; Phase 4 is next
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -247,6 +247,52 @@ occurrence and erased on every contract-required terminal lifecycle event.
 The visual direction is compact and structural: a restrained work surface,
 crisp focus boundary, explicit label and supporting/error line, and Jetpacs
 typography and spacing rather than a recreation of a Material field.
+
+### Phase 3 outcome
+
+`:renderer:compose` now owns one toolkit-neutral text-input presentation and
+binding seam. It parses the canonical `text_input` node, selects authored or
+accepted draft state, retains selection and composition through the shared
+controller, applies scalar-safe line, filter, mask, and maximum-length rules,
+and dispatches every change or submit through the ordinary action host. The
+same seam now drives Glasspane's Material field and the Jetpacs field, so
+capture, admission, durable queuing, offline policy, dialog rebinding, and
+typed terminal outcomes are not presentation responsibilities.
+
+`:renderer:jetpacs` supplies the public state-based `JetpacsTextField`, a
+Foundation `BasicTextField`/`BasicSecureTextField` implementation, independent
+Jetpacs tokens and syntax colors, and outlined and filled Compose Styles.
+Labels, support and error text, affixes, and code-native icons are
+presentation-only descendants of one editable semantics owner. Normal fields
+publish accepted draft state before `on_change`; submit injects the current
+value and clears only after safe admission. Secure fields have unsaveable
+state, never seed or publish a password, capture the secret only in the owning
+submit occurrence, block duplicate submission, and erase on refusal,
+completion, or disposal.
+
+The application composition root installs a scoped override for canonical
+`text_input` only. It activates beneath `jetpacs.scope` on app surfaces;
+unscoped fields and dialogs continue through Glasspane Material, preserving
+the Phase 2 boundary and avoiding an unproved secure-dialog lifetime. A
+shared, uncapped syntax-role projection keeps parsing toolkit-neutral while
+each renderer owns its palette.
+
+The Jetpacs Components catalog now has a live **Text Field** page covering
+normal state/action ordering, filled decorations, phone filtering and masking,
+multiline Elisp syntax, error and disabled states, and secure capture. Catalog
+handlers retain only non-secret counters and the secure value's scalar length.
+Six new Jetpacs screenshot references cover compact and expanded widths, dark
+theme, 1.5x text, deterministic focus with an empty secure field, and RTL; all
+existing Jetpacs and Glasspane Material references remain unchanged.
+
+The EBP validator, warning-as-error Elisp compilation, the full Elisp suite,
+all affected Kotlin unit suites, the broad APK and screenshot gate, and the
+connected controller, scoped-dispatch, and nine-case Jetpacs semantics suites
+pass. The verified APK and 115-file Elisp tree were installed on the Pixel
+Tablet through `tools/onboard-tablet.sh`; the reconnected live accessibility
+tree exposes the Jetpacs Components **Text Field** page and its editable
+controls. Manual TalkBack, Switch Access, hardware-keyboard, and rotation
+exploration remain human acceptance checks rather than automated evidence.
 
 ## Phase 4: implement the local `JetpacsEditor`
 

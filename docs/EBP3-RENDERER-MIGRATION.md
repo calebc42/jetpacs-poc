@@ -34,10 +34,13 @@ These names and schemas live in
 contract, generated vocabulary, or goldens. EBP transports the identifiers as
 opaque negotiated data.
 
-The same rule governs the additive `jetpacs.components` extension. Its first
-app-only nodes are `jetpacs.action`, `jetpacs.choice`, and `jetpacs.panel`,
-projected from `renderer-extensions/jetpacs-components.json`. Existing EBP core
-or Glasspane Material traffic does not acquire or imply that extension.
+The same rule governs the additive `jetpacs.components` extension. Its
+app-only nodes are `jetpacs.action`, `jetpacs.choice`, `jetpacs.panel`, and the
+invisible `jetpacs.scope`, projected from
+`renderer-extensions/jetpacs-components.json`. The scope may select a
+composition-root override for an already-admitted canonical node; it does not
+advertise, alias, or redefine that node. Existing EBP core or Glasspane
+Material traffic does not acquire or imply the extension.
 
 ## Android ownership
 
@@ -53,11 +56,14 @@ The receiver is split into composable seams:
   semantics tests live here.
 - `:renderer:jetpacs` implements `jetpacs.components` using Compose Foundation,
   private Jetpacs tokens, and experimental Styles. It has no Material import or
-  dependency.
+  dependency. Its first scoped core override presents canonical `text_input`
+  through the public state-based `JetpacsTextField`; shared Compose code still
+  owns editing, reconciliation, byte limits, and action outcomes.
 
 The app is the sole composition root. It selects both modules for app surfaces,
 keeps `jetpacs.components` out of dialog and notification profiles, and installs
-the matching Compose node dispatcher. Those selections are not inherited by
+the matching Compose node dispatcher plus the app-scoped `text_input`
+override. Those selections are not inherited by
 protocol, storage, model, or Foundation modules. Advertised profiles are
 derived from the installed contributions. The composition root injects their
 schemas and ownership into the generic wire validator; receiver configuration

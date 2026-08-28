@@ -48,7 +48,15 @@ class CompanionRendererTest {
             setOf(GLASSPANE_MATERIAL3_EXTENSION),
             CompanionRenderer.composeConfiguration.dialogExtensions,
         )
-        assertTrue(CompanionRenderer.composeConfiguration.coreOverrides.designScopes.isEmpty())
+        assertEquals(
+            setOf(JETPACS_COMPONENTS_EXTENSION),
+            CompanionRenderer.composeConfiguration.coreOverrides.designScopes,
+        )
+        assertEquals(
+            setOf("text_input"),
+            CompanionRenderer.composeConfiguration.coreOverrides
+                .nodeTypesFor(JETPACS_COMPONENTS_EXTENSION),
+        )
         assertTrue(owned.none { it in CompanionRenderer.DIALOG_NODE_TYPES })
     }
 }

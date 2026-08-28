@@ -42,9 +42,11 @@ in EBP, `:renderer:model`, or `:renderer:compose`.
 ./gradlew :renderer:material3:validateDebugScreenshotTest
 ```
 
-The Jetpacs first-slice gallery covers compact and expanded widths, dark mode,
-1.5× font scale, focus/hover, disabled controls, selected state, and nested
-content in five references under
+The Jetpacs gallery covers compact and expanded widths, dark mode, 1.5× font
+scale, focus/hover, disabled controls, selected state, and nested content. Its
+text-field gallery adds outlined, filled, error, disabled, syntax, empty secure,
+focused, and RTL states. The six text-field references join the five original
+component references under
 `renderer/jetpacs/src/screenshotTestDebug/reference/`.
 
 The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp by
@@ -88,10 +90,12 @@ With one authorized device connected:
 The shared editing class enters normalized text through a real
 `BasicTextField` and edits an astral Unicode selection through a real editor;
 it proves state-before-action ordering and exactly one scalar splice. The
-Jetpacs class checks Action, Choice, and Panel roles, enabled/checked state,
-one-control/one-target behavior, descendant preservation, and exact ordinary
-action dispatch after `state.changed`. The first Material class checks its
-receiver-owned catalog and single-choice components. A third case mounts a
+Jetpacs class checks Action, Choice, Panel, and Text Field semantics,
+enabled/checked/error/maximum-length state, one-control/one-target behavior,
+descendant preservation, autofocus, normalized text entry, exact ordinary
+action dispatch after `state.changed`, safe-admission clearing, and volatile
+password capture/erasure. The first Material class checks its receiver-owned
+catalog and single-choice components. A third case mounts a
 Material `OutlinedTextField` beside the custom Styles host;
 that is the device regression for keeping Material3's binary ABI compatible
 with the Compose 1.12 Styles API. The EBP class asserts heading, pane title,
@@ -109,8 +113,11 @@ tablet. Verify pane announcements, heading navigation, collection position,
 expanded state, and the existing labeled swipe actions; execute one custom
 action and confirm Emacs handles its ordinary action once. Restore every
 accessibility setting afterward, then confirm reconnect and ordinary touch
-interaction. Keyboard/focus, font-scale, and touch-target checks remain part
-of the same device envelope. `espresso-core` is pinned directly to the stable
+interaction. For Text Field, also exercise IME submit, paste normalization,
+selection, rotation/restore, hardware keyboard, pointer focus, error
+announcement, and one secure submit whose secret never appears in the catalog
+readout. Keyboard/focus, font-scale, and touch-target checks remain part of the
+same device envelope. `espresso-core` is pinned directly to the stable
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older
 transitive Espresso cannot initialize on Android 17/API 37.
 

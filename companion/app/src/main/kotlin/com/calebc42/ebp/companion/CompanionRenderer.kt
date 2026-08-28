@@ -10,6 +10,7 @@ import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
 import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.ebp.wire.NodeVocabulary
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRegistry
+import com.calebc42.jetpacs.renderer.compose.ComposeCoreOverrideRegistry
 import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.CoreComposeContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_AT_LEAST_ONE_NON_EMPTY
@@ -18,6 +19,7 @@ import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsRenderer
+import com.calebc42.jetpacs.renderer.jetpacs.JetpacsTextInputRenderer
 import com.calebc42.jetpacs.renderer.model.RendererProfile
 import com.calebc42.jetpacs.renderer.model.RendererRegistry
 import kotlinx.serialization.json.JsonObject
@@ -97,5 +99,6 @@ object CompanionRenderer {
         appExtensions = appProfile.extensions,
         dialogExtensions = dialogProfile.extensions,
         extensions = ComposeExtensionRegistry(listOf(JetpacsComponentsRenderer)),
+        coreOverrides = ComposeCoreOverrideRegistry(listOf(JetpacsTextInputRenderer)),
     )
 }

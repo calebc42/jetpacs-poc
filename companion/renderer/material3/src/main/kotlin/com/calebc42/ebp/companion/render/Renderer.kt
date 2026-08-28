@@ -81,6 +81,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -93,14 +94,12 @@ import com.calebc42.ebp.companion.MaterialRendererHost
 import com.calebc42.jetpacs.renderer.model.CompletionCandidate
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.ebp.wire.CompletionNarrowing
-import com.calebc42.ebp.wire.ENUMS
 import com.calebc42.ebp.wire.InputDisplay
-import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
-import com.calebc42.ebp.wire.textInputScalarToUtf16
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
+import com.calebc42.jetpacs.renderer.compose.keyboardAction
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.RendererActionContext
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
@@ -240,6 +239,7 @@ data class RenderCtx(
     fun dispatchAction(
         descriptor: JsonObject?,
         value: JsonElement? = null,
+        fields: JsonObject? = null,
         sourceId: String? = null,
         onOutcome: (RendererActionOutcome) -> Unit = {},
     ): ActionHandoff {
@@ -257,7 +257,7 @@ data class RenderCtx(
         if (d != null && "builtin" in descriptor) {
             when (descriptor.stringOr("builtin")) {
                 "dialog.submit" -> {
-                    val fields = buildJsonObject {
+                    val submittedFields = buildJsonObject {
                         descriptor.arrOrNull("capture_fields")?.let { capture ->
                             for (i in capture.indices) {
                                 val fieldId = capture[i].strOrNull()!!
@@ -266,11 +266,14 @@ data class RenderCtx(
                                     d.capture(fieldId) ?: JsonNull)
                             }
                         }
+                        fields?.forEach { (fieldId, fieldValue) ->
+                            put(fieldId, fieldValue)
+                        }
                     }
                     return d.bridge.submitDialog(
                         d.dialogId,
                         if ("value" in descriptor) descriptor["value"] else null,
-                        fields,
+                        submittedFields,
                         onOutcome,
                     )
                 }
@@ -287,18 +290,21 @@ data class RenderCtx(
             // field layer exactly like dialog.submit (T3/LD-3).  The generic
             // surface path silently dropped these — the JA-5 device gate's
             // token+confirm Archive and date-pick relay were dead taps.
-            val fields = buildJsonObject {
+            val capturedFields = buildJsonObject {
                 descriptor.arrOrNull("capture_fields")?.let { capture ->
                     for (i in capture.indices) {
                         val fieldId = capture[i].strOrNull()!!
                         put(fieldId, d.capture(fieldId) ?: JsonNull)
                     }
                 }
+                fields?.forEach { (fieldId, fieldValue) ->
+                    put(fieldId, fieldValue)
+                }
             }
             return d.bridge.dispatch(
                 RendererActionRequest(
                     RendererActionContext.Dialog(d.dialogId), descriptor,
-                    value = value, fields = fields, sourceId = sourceId,
+                    value = value, fields = capturedFields, sourceId = sourceId,
                 ),
                 onOutcome,
             )
@@ -306,7 +312,7 @@ data class RenderCtx(
         return bridge.dispatch(
             RendererActionRequest(
                 RendererActionContext.Surface(surface), descriptor,
-                value = value, sourceId = sourceId,
+                value = value, fields = fields, sourceId = sourceId,
             ),
             onOutcome,
         )
@@ -322,22 +328,6 @@ data class RenderCtx(
             ))
         }
     }
-
-    /** §14.6 an app-surface password on_submit — the secret rides `fields`,
-     * never `args` and never a retained draft. (In a dialog the secret is
-     * captured dialog-locally via dialog.submit + capture_fields instead.) */
-    fun actionWithFields(
-        descriptor: JsonObject?,
-        fields: JsonObject,
-        onOutcome: (RendererActionOutcome) -> Unit = {},
-    ): ActionHandoff = descriptor?.let {
-        bridge.dispatch(
-            RendererActionRequest(
-                RendererActionContext.Surface(surface), it, fields = fields,
-            ),
-            onOutcome,
-        )
-    } ?: ActionHandoff.Ignored
 
     val inDialog: Boolean get() = dialog != null
 
@@ -407,12 +397,21 @@ private open class MaterialNodeRenderContext(
     override val surface: String get() = context.surface
     override val path: String get() = context.path
     override val inDialog: Boolean get() = context.inDialog
+    override val maxFieldBytes: Int get() = context.bridge.maxFieldBytes
 
-    override fun action(
+    override fun dispatchAction(
         descriptor: JsonObject?,
         value: JsonElement?,
+        fields: JsonObject?,
+        sourceId: String?,
         onOutcome: (RendererActionOutcome) -> Unit,
-    ) = context.dispatchAction(descriptor, value, onOutcome = onOutcome)
+    ) = context.dispatchAction(
+        descriptor = descriptor,
+        value = value,
+        fields = fields,
+        sourceId = sourceId,
+        onOutcome = onOutcome,
+    )
 
     override fun state(id: String, value: JsonElement?) = context.state(id, value)
     override fun storeValue(id: String): JsonElement? = context.storeValue(id)
@@ -685,60 +684,17 @@ fun ColumnScope.RenderColumnChildren(children: JsonArray?, ctx: RenderCtx) {
 
 @Composable
 private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val password = node.boolOr("password")
-    val singleLine = node.boolOr("single_line")
-    val authored = node.stringOr("value")
-    val stored = (ctx.storeValue(id) as? JsonPrimitive)
-        ?.takeIf { it.isString }
-        ?.content
-    val initialText = if (password) "" else stored ?: authored
-    val retainedDraftWins = !password && stored != null && stored != authored
-    val selectionArray = node.arrOrNull("selection")
-        ?.mapNotNull { it.numOrNull()?.toInt() }
-    val initialSelection = if (retainedDraftWins || selectionArray == null) {
-        TextRange(initialText.length)
-    } else {
-        TextRange(
-            textInputScalarToUtf16(initialText, selectionArray.getOrNull(0) ?: 0),
-            textInputScalarToUtf16(
-                initialText,
-                selectionArray.getOrNull(1) ?: selectionArray.getOrNull(0) ?: 0,
-            ),
-        )
-    }
-    val actionDispatcher = com.calebc42.jetpacs.renderer.compose.EditingActionDispatcher {
-            descriptor, value, fields, sourceId, onOutcome ->
-        when {
-            fields != null && !ctx.inDialog ->
-                ctx.actionWithFields(descriptor, fields, onOutcome)
-            else -> ctx.dispatchAction(descriptor, value, sourceId, onOutcome)
-        }
-    }
-    val controller = com.calebc42.jetpacs.renderer.compose.rememberTextInputController(
-        presentationEpoch = ctx.epochOf(id),
-        initialText = initialText,
-        initialSelection = initialSelection,
-        config = com.calebc42.jetpacs.renderer.compose.TextInputControllerConfig(
-            id = id,
-            password = password,
-            singleLine = singleLine,
-            filter = node.stringOrNull("filter"),
-            maxLengthScalars = node["max_length"]?.numOrNull()?.toLong(),
-            clearOnSubmit = node.boolOr("clear_on_submit"),
-            onChange = node.objOrNull("on_change"),
-            onSubmit = node.objOrNull("on_submit"),
-            publishPasswordLocally = ctx.inDialog,
-        ),
-        maxFieldBytes = ctx.bridge.maxFieldBytes,
-        publishState = { ctx.state(id, JsonPrimitive(it)) },
-        actionDispatcher = actionDispatcher,
+    val binding = com.calebc42.jetpacs.renderer.compose.rememberTextInputBinding(
+        node,
+        MaterialNodeRenderContext(ctx),
     )
+    val presentation = binding.presentation
+    val controller = binding.controller
 
     // Output-only presentation never changes the logical controller value.
-    val language = node.stringOr("syntax")
+    val language = presentation.syntax.orEmpty()
     val syntaxColors = LocalSyntaxColors.current
-    val maskSpec = node.stringOr("mask")
+    val maskSpec = presentation.mask.orEmpty()
     val outputTransformation = remember(language, syntaxColors, maskSpec) {
         when {
             maskSpec.isNotEmpty() ->
@@ -747,21 +703,20 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             else -> null
         }
     }
-    val isError = node.boolOr("is_error")
-    val supporting = node.stringOr("supporting_text")
-    val leadingName = node.stringOr("leading_icon")
-    val trailingName = node.stringOr("trailing_icon")
-    val prefixText = node.stringOr("prefix")
-    val suffixText = node.stringOr("suffix")
+    val isError = presentation.isError
+    val supporting = presentation.supportingText.orEmpty()
+    val leadingName = presentation.leadingIcon.orEmpty()
+    val trailingName = presentation.trailingIcon.orEmpty()
+    val prefixText = presentation.prefix.orEmpty()
+    val suffixText = presentation.suffix.orEmpty()
     // §17.4 shared slots. M3 measures the helper line to the FIELD's own
     // width and tints it from (enabled, isError, focused), which is exactly
     // why a sibling `text` node underneath is not a substitute.
     val labelSlot:
         (@Composable androidx.compose.material3.TextFieldLabelScope.() -> Unit)? =
-        node.stringOr("label")
-        .takeIf { it.isNotEmpty() }?.let { { Text(it) } }
-    val placeholderSlot: (@Composable () -> Unit)? = node.stringOr("hint")
-        .takeIf { it.isNotEmpty() }?.let { { Text(it) } }
+        presentation.label?.let { { Text(it) } }
+    val placeholderSlot: (@Composable () -> Unit)? = presentation.hint
+        ?.let { { Text(it) } }
     val supportingSlot: (@Composable () -> Unit)? =
         supporting.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
     val leadingSlot: (@Composable () -> Unit)? =
@@ -772,36 +727,13 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         prefixText.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
     val suffixSlot: (@Composable () -> Unit)? =
         suffixText.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
-    val keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-        keyboardType = keyboardTypeOf(node.stringOr("keyboard"), password),
-        imeAction = if (node.objOrNull("on_submit") != null)
-            androidx.compose.ui.text.input.ImeAction.Done
-            else androidx.compose.ui.text.input.ImeAction.Default)
     val keyboardController = LocalSoftwareKeyboardController.current
-    val hideOnSubmit = node.boolOr("hide_keyboard_on_submit")
     val onKeyboardAction:
         androidx.compose.foundation.text.input.KeyboardActionHandler =
-        androidx.compose.foundation.text.input.KeyboardActionHandler {
-            if (controller.submit() == ActionHandoff.HandedOff && hideOnSubmit) {
-                keyboardController?.hide()
-            }
-        }
-    val enabled = node.boolOr("enabled", true) &&
-        !(password && controller.passwordSubmissionPending)
-    val minLines = if (singleLine) 1 else node.intByValue("min_lines", 1)
-    val maxLines = if (singleLine) 1 else
-        node.intByValue("max_lines", Int.MAX_VALUE)
-    val lineLimits = if (singleLine) {
-        androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine
-    } else {
-        androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(
-            minHeightInLines = minLines,
-            maxHeightInLines = maxLines,
-        )
-    }
-    val filled = textInputVariant(node) == "filled"
-    val authoredPadding = node["content_padding"]?.numOrNull()?.toFloat()
-    val padding = authoredPadding?.let { PaddingValues(it.dp) } ?: if (filled) {
+        binding.keyboardAction { keyboardController?.hide() }
+    val enabled = binding.enabled
+    val filled = presentation.variant == "filled"
+    val padding = presentation.contentPadding?.let { PaddingValues(it) } ?: if (filled) {
         if (labelSlot == null) TextFieldDefaults.contentPaddingWithoutLabel()
         else TextFieldDefaults.contentPaddingWithLabel()
     } else {
@@ -809,11 +741,12 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         else OutlinedTextFieldDefaults.contentPaddingWithLabel()
     }
 
-    if (password) {
+    val fieldModifier = m.focusRequester(binding.focusRequester)
+    if (presentation.password) {
         if (filled) {
                 androidx.compose.material3.SecureTextField(
                     state = controller.state,
-                    modifier = m,
+                    modifier = fieldModifier,
                     enabled = enabled,
                     label = labelSlot,
                     placeholder = placeholderSlot,
@@ -826,14 +759,14 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     inputTransformation = controller.inputTransformation,
                     textObfuscationMode =
                         androidx.compose.foundation.text.input.TextObfuscationMode.Hidden,
-                    keyboardOptions = keyboardOptions,
+                    keyboardOptions = presentation.keyboardOptions,
                     onKeyboardAction = onKeyboardAction,
                     contentPadding = padding,
                 )
         } else {
                 androidx.compose.material3.OutlinedSecureTextField(
                     state = controller.state,
-                    modifier = m,
+                    modifier = fieldModifier,
                     enabled = enabled,
                     label = labelSlot,
                     placeholder = placeholderSlot,
@@ -846,7 +779,7 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     inputTransformation = controller.inputTransformation,
                     textObfuscationMode =
                         androidx.compose.foundation.text.input.TextObfuscationMode.Hidden,
-                    keyboardOptions = keyboardOptions,
+                    keyboardOptions = presentation.keyboardOptions,
                     onKeyboardAction = onKeyboardAction,
                     contentPadding = padding,
                 )
@@ -854,7 +787,7 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     } else if (filled) {
         TextField(
             state = controller.state,
-            modifier = m,
+            modifier = fieldModifier,
             enabled = enabled,
             label = labelSlot,
             placeholder = placeholderSlot,
@@ -866,15 +799,15 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             isError = isError,
             inputTransformation = controller.inputTransformation,
             outputTransformation = outputTransformation,
-            keyboardOptions = keyboardOptions,
+            keyboardOptions = presentation.keyboardOptions,
             onKeyboardAction = onKeyboardAction,
-            lineLimits = lineLimits,
+            lineLimits = presentation.lineLimits,
             contentPadding = padding,
         )
     } else {
         OutlinedTextField(
             state = controller.state,
-            modifier = m,
+            modifier = fieldModifier,
             enabled = enabled,
             label = labelSlot,
             placeholder = placeholderSlot,
@@ -886,35 +819,11 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             isError = isError,
             inputTransformation = controller.inputTransformation,
             outputTransformation = outputTransformation,
-            keyboardOptions = keyboardOptions,
+            keyboardOptions = presentation.keyboardOptions,
             onKeyboardAction = onKeyboardAction,
-            lineLimits = lineLimits,
+            lineLimits = presentation.lineLimits,
             contentPadding = padding,
         )
-    }
-}
-
-/** Resolve the generated enum default/fallback before choosing presentation. */
-private fun textInputVariant(node: JsonObject): String {
-    val authored = node.stringOrNull("variant")
-        ?: return TEXT_INPUT_CONTRACT.variantDefault
-    return when (authored) {
-        in ENUMS.getValue("text_input.variant") -> authored
-        else -> TEXT_INPUT_CONTRACT.variantUnknown
-    }
-}
-
-/** SPEC 17.4 `keyboard`: text|number|decimal|email|phone|uri; password wins. */
-private fun keyboardTypeOf(name: String, password: Boolean): androidx.compose.ui.text.input.KeyboardType {
-    val kt = androidx.compose.ui.text.input.KeyboardType
-    if (password) return kt.Password
-    return when (name) {
-        "number" -> kt.Number
-        "decimal" -> kt.Decimal
-        "email" -> kt.Email
-        "phone" -> kt.Phone
-        "uri" -> kt.Uri
-        else -> kt.Text
     }
 }
 
@@ -941,16 +850,13 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         ?: node.stringOr("value")
     val actionDispatcher = com.calebc42.jetpacs.renderer.compose.EditingActionDispatcher {
             descriptor, actionValue, fields, sourceId, onOutcome ->
-        when {
-            fields != null && !ctx.inDialog ->
-                ctx.actionWithFields(descriptor, fields, onOutcome)
-            else -> ctx.dispatchAction(
-                descriptor,
-                actionValue,
-                sourceId,
-                onOutcome,
-            )
-        }
+        ctx.dispatchAction(
+            descriptor = descriptor,
+            value = actionValue,
+            fields = fields,
+            sourceId = sourceId,
+            onOutcome = onOutcome,
+        )
     }
     val wantsCompletion = node.boolOr("complete", false)
     val controller = com.calebc42.jetpacs.renderer.compose.rememberEditorController(

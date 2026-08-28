@@ -3,6 +3,8 @@ package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.LocalTextSelectionColors
+import androidx.compose.foundation.text.selection.TextSelectionColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -36,6 +38,7 @@ data class JetpacsColors(
     val pressedSurface: Color,
     val outline: Color,
     val focus: Color,
+    val error: Color,
 )
 
 /** Typography used by the first Jetpacs-owned controls. */
@@ -45,6 +48,9 @@ data class JetpacsTypography(
     val choice: TextStyle,
     val panelLabel: TextStyle,
     val code: TextStyle,
+    val field: TextStyle,
+    val fieldLabel: TextStyle,
+    val fieldSupporting: TextStyle,
 )
 
 /** Shape tokens deliberately independent of Material's shape taxonomy. */
@@ -64,6 +70,24 @@ data class JetpacsSpacing(
     val panel: Dp,
 )
 
+/** Private token colors for shared syntax roles. */
+@Immutable
+data class JetpacsSyntaxColors(
+    val comment: Color,
+    val string: Color,
+    val keyword: Color,
+    val function: Color,
+    val constant: Color,
+    val number: Color,
+    val link: Color,
+    val preprocessor: Color,
+    val tag: Color,
+    val todo: Color,
+    val done: Color,
+    val heading: List<Color>,
+    val parenthesis: List<Color>,
+)
+
 /** Complete private theme value consumed by Jetpacs component Styles. */
 @Immutable
 data class JetpacsThemeValue(
@@ -71,6 +95,7 @@ data class JetpacsThemeValue(
     val typography: JetpacsTypography,
     val shapes: JetpacsShapes,
     val spacing: JetpacsSpacing,
+    val syntax: JetpacsSyntaxColors,
 )
 
 private val lightDefaults = JetpacsColors(
@@ -85,6 +110,7 @@ private val lightDefaults = JetpacsColors(
     pressedSurface = Color(0xFFE4E9F0),
     outline = Color(0xFF8A909B),
     focus = Color(0xFF365D8D),
+    error = Color(0xFFB3261E),
 )
 
 private val darkDefaults = JetpacsColors(
@@ -99,6 +125,7 @@ private val darkDefaults = JetpacsColors(
     pressedSurface = Color(0xFF292F38),
     outline = Color(0xFF8B919D),
     focus = Color(0xFF9FC6FF),
+    error = Color(0xFFFFB4AB),
 )
 
 private fun parseHexColor(value: String): Color? {
@@ -159,6 +186,7 @@ fun deriveJetpacsColors(colors: JsonObject?, dark: Boolean): JetpacsColors {
         pressedSurface = lerp(surface, content, if (dark) 0.12f else 0.08f),
         outline = outline,
         focus = accent,
+        error = colors.role("error") ?: base.error,
     )
 }
 
@@ -191,6 +219,25 @@ private fun defaultTheme(colors: JetpacsColors) = JetpacsThemeValue(
             fontSize = 12.sp,
             lineHeight = 17.sp,
         ),
+        field = TextStyle(
+            color = colors.content,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 15.sp,
+            lineHeight = 20.sp,
+        ),
+        fieldLabel = TextStyle(
+            color = colors.mutedContent,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 16.sp,
+        ),
+        fieldSupporting = TextStyle(
+            color = colors.mutedContent,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+        ),
     ),
     shapes = JetpacsShapes(
         control = RoundedCornerShape(4.dp),
@@ -202,6 +249,29 @@ private fun defaultTheme(colors: JetpacsColors) = JetpacsThemeValue(
         controlHorizontal = 12.dp,
         controlVertical = 8.dp,
         panel = 12.dp,
+    ),
+    syntax = JetpacsSyntaxColors(
+        comment = colors.mutedContent,
+        string = lerp(colors.content, Color(0xFF2E8B57), 0.65f),
+        keyword = colors.accent,
+        function = lerp(colors.content, colors.accent, 0.70f),
+        constant = lerp(colors.content, Color(0xFF8A4B82), 0.62f),
+        number = lerp(colors.content, colors.error, 0.45f),
+        link = colors.accent,
+        preprocessor = lerp(colors.mutedContent, colors.accent, 0.45f),
+        tag = lerp(colors.content, Color(0xFF1F6F5C), 0.58f),
+        todo = colors.error,
+        done = lerp(colors.content, Color(0xFF2E8B57), 0.65f),
+        heading = listOf(
+            colors.accent,
+            lerp(colors.accent, colors.content, 0.25f),
+            lerp(colors.accent, colors.error, 0.28f),
+        ),
+        parenthesis = listOf(
+            colors.accent,
+            lerp(colors.accent, colors.error, 0.30f),
+            lerp(colors.accent, colors.content, 0.42f),
+        ),
     ),
 )
 
@@ -219,6 +289,8 @@ object JetpacsTheme {
         @Composable @ReadOnlyComposable get() = LocalJetpacsTheme.current.shapes
     val spacing: JetpacsSpacing
         @Composable @ReadOnlyComposable get() = LocalJetpacsTheme.current.spacing
+    val syntax: JetpacsSyntaxColors
+        @Composable @ReadOnlyComposable get() = LocalJetpacsTheme.current.syntax
     val styles: JetpacsComponentStyles = JetpacsComponentStyles
 }
 
@@ -233,6 +305,10 @@ fun ProvideJetpacsTheme(payload: JsonObject?, content: @Composable () -> Unit) {
     val colors = deriveJetpacsColors(payload?.get("colors") as? JsonObject, dark)
     CompositionLocalProvider(
         LocalJetpacsTheme provides defaultTheme(colors),
+        LocalTextSelectionColors provides TextSelectionColors(
+            handleColor = colors.accent,
+            backgroundColor = colors.accent.copy(alpha = 0.28f),
+        ),
         content = content,
     )
 }
