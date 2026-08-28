@@ -42,7 +42,7 @@ the catalog's demo verb reporting the direction, as everywhere else."
    (jetpacs-column
     (jetpacs-text "Cupcake")
     (jetpacs-text "Swipe me left or right!"
-                  :style "caption" :color "on_surface_variant")
+                  :style "caption" :color "on_surface")
     :spacing 4)
    :swipe-start (jetpacs-swipe "Reset"
                                :icon "refresh"

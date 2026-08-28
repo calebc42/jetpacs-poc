@@ -156,8 +156,8 @@ handler of a surfaceless event); refusing to guess")
               (message "jetpacs-navigate: no drill host for this surface")
               nil)))))))
 
-(defun jetpacs-navigate-thunk (thunk &optional surface label)
-  "Run THUNK, capture the buffer it went to, and drill into it.
+(defun jetpacs-navigate-thunk (thunk &optional surface label presenter)
+  "Run THUNK, capture the buffer it went to, and present it.
 The rewrite of the poc's view-buffer-of helper.  SURFACE resolves
 EAGERLY (the dispatch extent is gone when a timer fires).  Inside an
 action handler the work defers through `jetpacs-flow-continue' — the
@@ -167,6 +167,14 @@ handler answers its own `accepted'; elsewhere it runs synchronously.
 A thunk that goes nowhere snackbars \"Nothing to show\"; a thunk error
 logs and snackbars its error SYMBOL only (SPEC 23.3 — the poc
 snackbarred the full message; that is not ported).
+
+PRESENTER, when non-nil, is a function of (BUFFER POSITION SURFACE).
+It receives the captured destination before the generic drill host.  A
+non-nil result means it reused an existing host view, so no drill screen
+is created; nil preserves the generic behavior.  The function must be
+presentation-only and should return non-nil after an owned refusal too,
+so a stricter host boundary cannot be bypassed by the generic fallback.
+Signals are isolated and fall back to the ordinary drill.
 
 THUNK must be UI-ONLY work: display a buffer, run a read-only command.
 The handler answers `accepted' BEFORE the thunk runs, and B9 makes
@@ -196,8 +204,21 @@ belongs in the handler (synchronous, or `jetpacs-retry-later')."
                (temp-origin-p
                 (jetpacs-shell-notify "Nothing to show" target)
                 nil)
-               (t (jetpacs-navigate-buffer
-                   (car dest) target label (cdr dest))))))))
+               (t
+                (let ((presented
+                       (and (functionp presenter)
+                            (condition-case err
+                                (funcall presenter
+                                         (car dest) (cdr dest) target)
+                              (error
+                               (message
+                                "jetpacs-navigate: presenter failed: %s"
+                                (jetpacs-error-label err))
+                               nil)))))
+                  (if presented
+                      target
+                    (jetpacs-navigate-buffer
+                     (car dest) target label (cdr dest))))))))))
     (cond
      ((null target)
       (jetpacs-shell-notify "No target surface")

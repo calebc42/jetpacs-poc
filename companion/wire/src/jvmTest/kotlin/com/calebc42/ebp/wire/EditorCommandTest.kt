@@ -29,6 +29,7 @@ class EditorCommandTest {
                     put("node_types", JsonArray(listOf("text", "editor").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_editor_bytes" to 65_536),

@@ -90,10 +90,19 @@ an unclaimed surface keeps the platform vocabulary."
 (ert-deftest jetpacs-launcher-view-rows-carry-the-switch ()
   (jetpacs-launcher-test--with-demos
     (let ((view (jetpacs-launcher--view)))
-      (should (member "jetpacs.launcher.open"
-                      (jetpacs-launcher-test--collect view :action)))
-      (should (member (list :surface "app:demoa")
-                      (jetpacs-launcher-test--collect view :args))))))
+      (should (member "surface.open"
+                      (jetpacs-launcher-test--collect view :builtin)))
+      (should (member "app:demoa"
+                      (jetpacs-launcher-test--collect view :surface))))))
+
+(ert-deftest jetpacs-launcher-surface-open-retains-the-legacy-fallback ()
+  "An older live Companion never receives an unadvertised builtin."
+  (cl-letf (((symbol-function 'jetpacs-builtin-advertised-p)
+             (lambda (&rest _) nil)))
+    (let ((tap (jetpacs-shell-open-surface-action "app:demoa")))
+      (should (equal (plist-get tap :action) "jetpacs.launcher.open"))
+      (should (equal (plist-get (plist-get tap :args) :surface)
+                     "app:demoa")))))
 
 (ert-deftest jetpacs-launcher-open-guards-membership ()
   "A tapped row must still NAME a registered root; an unknown surface
@@ -190,12 +199,12 @@ still by the registry membership check."
 embedder's own surface."
   (jetpacs-launcher-test--with-demos
     (let ((rows (jetpacs-launcher-rows "app:demob")))
-      (should (member (list :surface "app:demoa")
-                      (jetpacs-launcher-test--collect rows :args)))
-      (should-not (member (list :surface "app:demob")
-                          (jetpacs-launcher-test--collect rows :args)))
-      (should (member "jetpacs.launcher.open"
-                      (jetpacs-launcher-test--collect rows :action))))))
+      (should (member "app:demoa"
+                      (jetpacs-launcher-test--collect rows :surface)))
+      (should-not (member "app:demob"
+                          (jetpacs-launcher-test--collect rows :surface)))
+      (should (member "surface.open"
+                      (jetpacs-launcher-test--collect rows :builtin))))))
 
 (provide 'jetpacs-launcher-test)
 ;;; jetpacs-launcher-test.el ends here

@@ -85,8 +85,7 @@ honest id than a wrongly prettified one)."
     (jetpacs-chrome-row label
                         :icon icon
                         :subtitle (and owner surface)
-                        :on-tap (jetpacs-action "jetpacs.launcher.open"
-                                                :args (list :surface surface))
+                        :on-tap (jetpacs-shell-open-surface-action surface)
                         :key (jetpacs-wire-id "lr" surface))))
 
 (defun jetpacs-launcher--view ()
@@ -120,8 +119,8 @@ One row per switchable app surface — the drawer contract's app-level
 destinations (docs/CHROME-VOCABULARY.md) — or a single empty-state.
 EXCLUDE names one more surface to omit, canonically the embedder's own
 \(its row would be a destination to where the user already is).  The
-rows dispatch `jetpacs.launcher.open', a GLOBAL VERB, so they work
-from any surface's drawer."
+rows use receiver-local `surface.open' when advertised, with the legacy
+GLOBAL verb retained for older Companions."
   (let ((entries (cl-remove-if (lambda (entry)
                                  (and exclude (equal (car entry) exclude)))
                                (jetpacs-launcher--entries))))

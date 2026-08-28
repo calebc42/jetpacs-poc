@@ -12,6 +12,7 @@ import com.calebc42.ebp.companion.render.DiagSet
 import com.calebc42.ebp.companion.render.EldocLine
 import com.calebc42.ebp.companion.render.FontifySet
 import com.calebc42.ebp.companion.render.ImageCache
+import com.calebc42.ebp.companion.render.RetainedPresentationIncarnationTracker
 import com.calebc42.ebp.companion.render.objOrNull
 import com.calebc42.ebp.companion.render.parseDiagnostics
 import com.calebc42.ebp.companion.render.parseEldoc
@@ -26,7 +27,9 @@ import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.ScalarPos
 import com.calebc42.ebp.wire.SessionState
+import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.ebp.wire.Utf16Pos
+import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
 import com.calebc42.ebp.wire.utf16PosIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -36,88 +39,17 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.SocketException
 import kotlin.concurrent.thread
-
-/**
- * T2/LD-5: the display's copy of one synchronized editor — the shadow text
- * with the caret in Compose's UTF-16 domain, stamped with the session `seq`
- * and a bridge-local `epoch` (each publication bumps it, so adoption keys on
- * epoch and never replays). Published on every inbound `edit.apply` and on
- * every refused local edit (the snap-back): the shadow is the one text
- * authority, and the field follows it.
- */
-data class EditorMirror(
-    val text: String,
-    val cursorU: Int,
-    val selStartU: Int,
-    val selEndU: Int,
-    val seq: Long,
-    val epoch: Long,
-)
-
-/**
- * SPEC 19.5: everything Emacs has said ABOUT one synchronized editor, as
- * opposed to its text. Latest-wins per kind: a new `fontify.show` replaces the
- * previous runs outright (that is the §19.5 contract, not a merge), and the
- * three kinds are independent — a diagnostics push must not blank the
- * fontification. `epoch` bumps on every replacement so a composable can key its
- * transformation on it and rebuild exactly once per push.
- */
-data class EditorAnnotationState(
-    val fontify: FontifySet? = null,
-    val diags: DiagSet? = null,
-    val eldoc: EldocLine? = null,
-    val epoch: Long = 0,
-)
-
-/** SPEC 19.3: one candidate. `insert` is already defaulted to `label`. */
-data class CompletionCandidate(
-    val label: String,
-    val annotation: String?,
-    val insert: String,
-    /** Amendment #169: the feature-gated category, or null. An unrecognized
-     * value survives to here - degrading it to no icon is the RENDERER's
-     * job, so a future vocabulary name flows through untouched. */
-    val kind: String? = null,
-)
-
-/**
- * SPEC 19.3 (JC-4b): one answered `edit.complete`, with the editor state it
- * was ISSUED against. Selecting a candidate hands that state back so the
- * engine can refuse a tap whose caret has since moved — validating against
- * the engine's current state instead would compare it with itself.
- */
-data class CompletionOffer(
-    val prefix: String,
-    val candidates: List<CompletionCandidate>,
-    val session: String,
-    val seq: Long,
-    val cursor: Int,
-    val epoch: Long,
-)
-
-/**
- * SPEC 19.3 (amendment #172, R5): one published candidate documentation.
- * INDEX is the WIRE index into the offer's candidate list and EPOCH the
- * offer it was fetched for — the renderer shows the text only while that
- * offer is still the published one AND the row is still in its visible
- * narrowed set (an offer survives a qualifying extension without a new
- * epoch, so the epoch alone cannot carry row visibility).
- */
-data class CandidateDoc(
-    val index: Int,
-    val text: String,
-    val epoch: Long,
-)
 
 /** R5: the ONE offer-currency rule — is the published offer's epoch
  * (null when none is published) exactly EPOCH?  Used at gesture
@@ -132,11 +64,136 @@ internal fun offerEpochCurrent(liveEpoch: Long?, epoch: Long): Boolean =
 internal fun isAuthenticatedConnectionState(state: SessionState): Boolean =
     state == SessionState.SYNCING || state == SessionState.READY
 
+private const val MAX_INPUT_STATE_BYTES = 262_144L
+
+/** A cached surface can be interactive before a replacement engine exists.
+ * Every non-closed engine remains the ordering authority, including its
+ * pre-auth states; only process-local absence or terminal closure falls back
+ * to a direct durable draft commit. */
+internal fun shouldCommitVariantOffline(state: SessionState?): Boolean =
+    state == null || state == SessionState.CLOSED
+
+/** Serializes the one critical transition for cached receiver-local state:
+ * either a local commit finishes before a successor engine is activated (so
+ * its welcome sees the draft), or the fully-wired successor is visible and
+ * owns the dispatch/syncingDirty ordering.  A candidate is deliberately not
+ * exposed by [current]/[withCurrent] while its listeners are being installed.
+ * Advancing the accepted generation retires both the live engine and any
+ * half-built candidate, so a delayed older serve thread cannot regain the
+ * route after a newer socket has superseded it. Ordinary reads stay lock-free. */
+internal class VariantEngineRoute<T : Any> {
+    @Volatile private var current: T? = null
+    private var acceptedGeneration = 0L
+    private var candidateGeneration = 0L
+    private var candidate: T? = null
+
+    fun current(): T? = current
+
+    fun advanceTo(generation: Long, retire: (T) -> Unit = {}): Boolean =
+        synchronized(this) {
+            if (generation <= acceptedGeneration) return@synchronized false
+            current?.let(retire)
+            candidate?.let(retire)
+            current = null
+            candidate = null
+            candidateGeneration = 0L
+            acceptedGeneration = generation
+            true
+        }
+
+    /** Construct under the route monitor so a concurrent generation advance
+     * either precedes construction (and rejects it) or follows construction
+     * and can retire the candidate before any receiver can dispatch to it. */
+    fun prepare(generation: Long, create: () -> T): T? = synchronized(this) {
+        if (generation != acceptedGeneration) return@synchronized null
+        create().also {
+            candidate = it
+            candidateGeneration = generation
+        }
+    }
+
+    /** Publish only the exact candidate for the still-current generation.
+     * ON_ACTIVATE runs under the same gate, before UI dispatch can observe it. */
+    fun activate(generation: Long, expected: T,
+                 onActivate: (T) -> Unit = {}): Boolean = synchronized(this) {
+        if (generation != acceptedGeneration ||
+            candidateGeneration != generation || candidate !== expected) {
+            return@synchronized false
+        }
+        onActivate(expected)
+        candidate = null
+        candidateGeneration = 0L
+        current = expected
+        true
+    }
+
+    fun <R> withCurrent(block: (T?) -> R): R = synchronized(this) {
+        block(current)
+    }
+}
+
+internal sealed interface OfflineVariantSwitchResult {
+    data class Applied(val id: String, val value: String) : OfflineVariantSwitchResult
+    data object NoChange : OfflineVariantSwitchResult
+    data object StorageFailed : OfflineVariantSwitchResult
+}
+
+/** Receiver-local `variant.switch` path for a restored cached surface. It
+ * deliberately performs no wire publication: the committed draft belongs in
+ * the next authenticated welcome `input_state`. */
+internal fun commitOfflineVariantSwitch(
+    store: SurfaceStore,
+    surface: String,
+    descriptor: JsonObject,
+    maxInputStateBytes: Long,
+): OfflineVariantSwitchResult {
+    val id = descriptor["id"]?.let { (it as? JsonPrimitive)?.content }
+        ?: return OfflineVariantSwitchResult.NoChange
+    val requested = descriptor["value"]?.let { (it as? JsonPrimitive)?.content }
+    val next = store.resolveVariantSwitch(surface, id, requested)
+        ?: return OfflineVariantSwitchResult.NoChange
+    if (!store.tryPutDraft(surface, id, JsonPrimitive(next), maxInputStateBytes))
+        return OfflineVariantSwitchResult.StorageFailed
+    return OfflineVariantSwitchResult.Applied(id, next)
+}
+
+/**
+ * The process-owned connection state shown by the Companion chrome.
+ *
+ * Session identity matters here: a superseded connection can finish tearing
+ * down after its replacement has authenticated.  Only the current session may
+ * turn the indicator off, otherwise that late teardown makes a live Emacs look
+ * disconnected.  The synchronized pair also keeps the session slot and the
+ * published StateFlow one atomic decision.
+ */
+internal class AuthenticatedConnectionTracker<T : Any> {
+    private var current: T? = null
+    private val _connected = MutableStateFlow(false)
+    val connected: StateFlow<Boolean> get() = _connected
+
+    @Synchronized
+    fun authenticated(session: T) {
+        current = session
+        _connected.value = true
+    }
+
+    @Synchronized
+    fun disconnected(session: T): Boolean {
+        if (current !== session) return false
+        current = null
+        _connected.value = false
+        return true
+    }
+}
+
 class DeviceBridge(
     private val appContext: android.content.Context,
     /** SPEC 14.4: the shown surface's ID travels with its spec, so an
      * event names the surface the action actually occurred in. */
     private val onSurfaceChanged: (String, JsonObject?) -> Unit,
+    /** The durable app-surface cache has finished its initial projection.
+     * Nav3 must not invalidate restored Surface keys before this barrier. */
+    private val onAppSurfaceCacheLoaded: () -> Unit = {},
     /** SPEC 15.1: storage failure and queue exhaustion MUST reach the
      * user as a visible diagnostic. */
     private val onQueueProblem: (String) -> Unit = {},
@@ -151,10 +208,13 @@ class DeviceBridge(
     private val onTheme: (JsonObject?) -> Unit = {},
     /** SPEC 18.3: (menu_id, spec) to present; (menu_id, null) to dismiss. */
     private val onPieMenuChanged: (String, JsonObject?) -> Unit = { _, _ -> },
+    /** SPEC 14.2 `surface.open`: select a present app surface in the
+     * receiver-owned application shell. */
+    private val onOpenSurface: (String) -> Unit = {},
     /** SPEC 14.2 `companion.settings.open`: present the Companion's own
      * settings (R4: the completion-narrowing row is its first tenant). */
     private val onOpenSettings: () -> Unit = {},
-) {
+) : MaterialRendererBridge {
 
     // SPEC 13.1/15.1/18.6: the durable stores are process-wide singletons
     // (CompanionStores), shared with cold-started manifest receivers.
@@ -173,11 +233,14 @@ class DeviceBridge(
     // directly (EbpApplication), independent of any connection.
     private val firing = CompanionStores.firing(appContext)
     @Volatile private var current: Socket? = null
+    private val acceptedConnectionGeneration = AtomicLong(0)
     // Unlike CompanionStores.liveSession (which preserves the existing
-    // accept-time routing behavior), this slot advances only after proof
-    // verification. It makes reconnect prompting immune to an unauthenticated
-    // probe displacing the live-session routing slot.
-    private val authenticatedSession = AtomicReference<CompanionEngine?>(null)
+    // accept-time routing behavior), this tracker advances only after proof
+    // verification. It makes both reconnect prompting and the UI indicator
+    // immune to an unauthenticated probe displacing the live-session route.
+    private val authenticatedConnection =
+        AuthenticatedConnectionTracker<CompanionEngine>()
+    val connected: StateFlow<Boolean> get() = authenticatedConnection.connected
 
     private val config = CompanionConfig(
         serverName = "ebp-companion",
@@ -193,6 +256,7 @@ class DeviceBridge(
         // the render/NodeSupport registry (the pin test holds the renderer's
         // dispatch to the same sets), never hand-kept here.
         surfaceProfiles = com.calebc42.ebp.companion.render.NodeSupport.surfaceProfiles(),
+        nodeVocabulary = com.calebc42.ebp.companion.render.NodeSupport.NODE_VOCABULARY,
         // C6: every value below stays INTEGER-spelled. The engine's constructor
         // reads the limits with reqLong, so a `.0` spelling would not merely
         // widen a bound — it would throw at engine construction.
@@ -204,7 +268,7 @@ class DeviceBridge(
             put("max_surfaces", 64)
             put("max_surface_ids", 4096)
             put("max_field_bytes", 65_536)
-            put("max_input_state_bytes", 262_144)
+            put("max_input_state_bytes", MAX_INPUT_STATE_BYTES)
             put("max_capture_fields", 64)
             put("max_dialogs", 4)
             put("max_pie_menus", 1)
@@ -228,6 +292,10 @@ class DeviceBridge(
             // aggregate counts across one SurfaceSpec or dialog (LD-22).
             put("max_rich_spans", 4096)
             put("max_table_cells", 4096)
+            // Retained alternatives are bounded independently of the global
+            // node count so a sender can size authoring work to this host.
+            put("max_variants_per_host",
+                com.calebc42.ebp.wire.WireLimits.MAX_VARIANTS_PER_HOST)
             // SPEC 4.5 (amendment #84): REQUIRED when editor.sync is granted.
             // Declared at the floor: it is what keeps every editor path
             // (shadow rebuild, diff, highlight, relayout) comfortably linear.
@@ -265,42 +333,95 @@ class DeviceBridge(
     fun start() = thread(name = "ebp-bridge", isDaemon = true) {
         // Deliver the cached theme before any session so a reconnecting device
         // renders in the mirrored palette immediately (§18.4 persistence).
-        loadTheme()?.let { onTheme(it) }
+        runCatching { loadTheme()?.let { onTheme(it) } }
+        // SPEC 13.5: accepted app surfaces remain present while Emacs is
+        // disconnected and across process death. Seed the receiver-owned
+        // navigation catalog from the durable store before accepting a new
+        // session; a surface.update is not required merely to rediscover it.
         try {
-            val server = ServerSocket()
-            server.reuseAddress = true
-            // SPEC 5.2: bind only a loopback interface. A restart can race
-            // the previous process's socket release (EADDRINUSE); retry
-            // rather than crash the app.
-            var bound = false
-            for (attempt in 0 until 20) {
-                try {
+            // Retained presentation choices are ordinary durable drafts, but
+            // they have their own narrow UI channel: seed it before projecting
+            // cached surfaces so the first composition selects the saved
+            // branch rather than flashing the authored default.
+            _variantSelections.value = store.variantSelections()
+            store.presentSurfaces()
+                .asSequence()
+                .filter { it.startsWith("app:") }
+                .forEach {
+                    publishPresentationIncarnations(it)
+                    onSurfaceChanged(it, resolveView(it))
+                }
+        } catch (e: Exception) {
+            android.util.Log.e("EbpBridge", "Could not restore cached surfaces", e)
+        } finally {
+            onAppSurfaceCacheLoaded()
+        }
+
+        // The listener is process-lifetime state.  The old implementation
+        // wrapped this whole block in one catch: one SocketException from
+        // accept() permanently ended `ebp-bridge`, while its unclosed server
+        // FD kept port 8765 looking healthy.  New Emacs connections then sat
+        // in the kernel backlog forever (awaiting-nonce on the client) with no
+        // `ebp-conn` thread to service them.  Own each listener with `use` and
+        // recreate it after a transient bind/accept failure instead.
+        while (!Thread.currentThread().isInterrupted) {
+            try {
+                ServerSocket().use { server ->
+                    server.reuseAddress = true
+                    // SPEC 5.2: bind only a loopback interface.
                     server.bind(InetSocketAddress("127.0.0.1", 8765))
-                    bound = true; break
-                } catch (e: java.net.BindException) { Thread.sleep(500) }
-            }
-            if (!bound) return@thread
-            while (true) {
-                val socket = server.accept()
-                // SPEC 5.2: one session at a time; the newcomer supersedes.
-                current?.runCatching { close() }
-                current = socket
-                // Neither may the CONNECTION thread. `serve` sets up a whole
-                // engine before it ever reads, and every line of that setup
-                // runs on a socket a newcomer may already have closed; an
-                // escape here is a FATAL EXCEPTION on a daemon thread, i.e.
-                // the whole Companion dies while merely being reconnected to.
-                thread(name = "ebp-conn", isDaemon = true) {
-                    runCatching { serve(socket) }
-                    socket.runCatching { close() }
+                    while (true) {
+                        val socket = server.accept()
+                        val generation = acceptedConnectionGeneration.incrementAndGet()
+                        // SPEC 5.2: one session at a time; the newcomer
+                        // supersedes the prior transport immediately. Advance
+                        // the receiver-local route first: this closes any
+                        // installed engine or half-built candidate under the
+                        // same monitor used by offline variant commits.
+                        variantEngineRoute.advanceTo(generation) { prior ->
+                            prior.close("superseded by newer connection")
+                        }
+                        current?.runCatching { close() }
+                        current = socket
+                        // Neither may the CONNECTION thread. `serve` sets up
+                        // a whole engine before it ever reads, and every line
+                        // of that setup runs on a socket a newcomer may already
+                        // have closed.
+                        thread(name = "ebp-conn", isDaemon = true) {
+                            runCatching { serve(socket, generation) }
+                                .onFailure { failure ->
+                                    if (failure !is SocketException) {
+                                        android.util.Log.e(
+                                            "EbpBridge",
+                                            "Connection setup failed",
+                                            failure,
+                                        )
+                                    }
+                                }
+                            socket.runCatching { close() }
+                        }
+                    }
+                }
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                return@thread
+            } catch (e: Exception) {
+                // Closing the owned ServerSocket above prevents an orphaned
+                // bound port. A short retry keeps process startup and a
+                // transient accept failure from making reconnect impossible.
+                android.util.Log.w("EbpBridge", "Listener restarting", e)
+                try {
+                    Thread.sleep(500)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    return@thread
                 }
             }
-        } catch (_: Exception) {
-            // The listener thread must never take down the host app.
         }
     }
 
-    @Volatile private var engine: CompanionEngine? = null
+    private val variantEngineRoute = VariantEngineRoute<CompanionEngine>()
+    private val engine: CompanionEngine? get() = variantEngineRoute.current()
 
     // Renderer hooks arrive on the Compose main thread; socket writes are
     // prohibited there (NetworkOnMainThreadException). One dispatch thread
@@ -360,27 +481,73 @@ class DeviceBridge(
     private fun dispatch(surface: String, descriptor: JsonObject, value: JsonElement?,
                          injected: JsonObject?, fields: JsonObject?) {
         dispatchExecutor.execute {
-            // SPEC 18.1/14.4: a `dialog:` context dispatches in DIALOG
-            // context — dialog_id, no surface/revision.  The generic path
-            // resolved a revision for the pseudo-surface, got null, and
-            // silently dropped every remote descriptor inside a dialog
-            // (found by the JA-5 device gate).  Routed HERE so a parked
-            // confirmation resumes through the same fork.
-            if (surface.startsWith("dialog:"))
-                engine?.dispatchDialogAction(
-                    surface.removePrefix("dialog:"), descriptor, value,
-                    fields) { _, error ->
-                    error?.let { onQueueProblem(it.stringOr("message", "queue error")) }
+            val traceVariant = descriptor.stringOr("builtin") == "variant.switch"
+            if (traceVariant) android.os.Trace.beginSection("EBP variant.switch")
+            try {
+                if (traceVariant && !surface.startsWith("dialog:")) {
+                    variantEngineRoute.withCurrent { activeEngine ->
+                        // Reading CLOSED under the engine monitor also makes
+                        // the old reader's terminal work happen-before the
+                        // direct SurfaceStore mutation.
+                        val activeState = activeEngine?.let {
+                            synchronized(it) { it.state }
+                        }
+                        if (shouldCommitVariantOffline(activeState)) {
+                            when (val result = commitOfflineVariantSwitch(
+                                store, surface, descriptor,
+                                MAX_INPUT_STATE_BYTES)) {
+                                is OfflineVariantSwitchResult.Applied ->
+                                    _variantSelections.update { selections ->
+                                        selections +
+                                            ((surface to result.id) to result.value)
+                                    }
+                                OfflineVariantSwitchResult.NoChange -> Unit
+                                OfflineVariantSwitchResult.StorageFailed ->
+                                    onQueueProblem(VARIANT_SAVE_FAILURE_MESSAGE)
+                            }
+                        } else {
+                            // CONNECTED/CHALLENGED/SYNCING/READY all use the
+                            // engine so a pre-READY occurrence is recorded in
+                            // syncingDirty and READY ordering stays intact.
+                            activeEngine?.dispatchAction(
+                                surface, descriptor, value, injected, fields
+                            ) { _, error ->
+                                error?.let { onQueueProblem(
+                                    it.stringOr("message", "queue error")) }
+                            }
+                        }
+                    }
+                    return@execute
                 }
-            else engine?.dispatchAction(surface, descriptor, value, injected, fields) { _, error ->
-                // SPEC 15.1: surface queue-full/storage failures visibly.
-                error?.let { onQueueProblem(it.stringOr("message", "queue error")) }
+                val activeEngine = engine
+                // SPEC 18.1/14.4: a `dialog:` context dispatches in DIALOG
+                // context — dialog_id, no surface/revision.  The generic path
+                // resolved a revision for the pseudo-surface, got null, and
+                // silently dropped every remote descriptor inside a dialog
+                // (found by the JA-5 device gate).  Routed HERE so a parked
+                // confirmation resumes through the same fork.
+                if (surface.startsWith("dialog:"))
+                    activeEngine?.dispatchDialogAction(
+                        surface.removePrefix("dialog:"), descriptor, value,
+                        fields) { _, error ->
+                        error?.let {
+                            onQueueProblem(it.stringOr("message", "queue error"))
+                        }
+                    }
+                else activeEngine?.dispatchAction(
+                    surface, descriptor, value, injected, fields) { _, error ->
+                    // SPEC 15.1: queue-full/storage failures are visible.
+                    error?.let { onQueueProblem(
+                        it.stringOr("message", "queue error")) }
+                }
+            } finally {
+                if (traceVariant) android.os.Trace.endSection()
             }
         }
     }
 
     /** SPEC 14.1: renderer hook -> remote action through the live engine. */
-    fun action(surface: String, descriptor: JsonObject?, value: JsonElement? = null) {
+    override fun action(surface: String, descriptor: JsonObject?, value: JsonElement?) {
         descriptor ?: return
         if (parkIfConfirmed(surface, descriptor, value, null, null)) return
         dispatch(surface, descriptor, value, null, null)
@@ -389,8 +556,8 @@ class DeviceBridge(
     /** SPEC 18.1: renderer hook -> remote action from INSIDE a dialog.
      * FIELDS is the capture snapshot read from the dialog's LOCAL field
      * layer at tap time (dialog statefuls never enter the store). */
-    fun dialogAction(dialogId: String, descriptor: JsonObject?, value: JsonElement?,
-                     fields: JsonObject?) {
+    override fun dialogAction(dialogId: String, descriptor: JsonObject?,
+                              value: JsonElement?, fields: JsonObject?) {
         descriptor ?: return
         val surface = "dialog:" + dialogId
         if (parkIfConfirmed(surface, descriptor, value, null, fields)) return
@@ -399,8 +566,8 @@ class DeviceBridge(
 
     /** SPEC 14.3: a multi-member hook (on_reorder from/to/order, on_add_row/
      * col index, swipe direction) injects a member object beside args. */
-    fun actionInjecting(surface: String, descriptor: JsonObject?, injected: JsonObject,
-                        value: JsonElement? = null) {
+    override fun actionInjecting(surface: String, descriptor: JsonObject?,
+                                 injected: JsonObject, value: JsonElement?) {
         descriptor ?: return
         if (parkIfConfirmed(surface, descriptor, value, injected, null)) return
         dispatch(surface, descriptor, value, injected, null)
@@ -408,15 +575,15 @@ class DeviceBridge(
 
     /** SPEC 14.6: a renderer-supplied occurrence-time field value — a
      * text_input password's on_submit, whose secret has no retained draft. */
-    fun actionWithFields(surface: String, descriptor: JsonObject?, fields: JsonObject) {
+    override fun actionWithFields(surface: String, descriptor: JsonObject?,
+                                  fields: JsonObject) {
         descriptor ?: return
         if (parkIfConfirmed(surface, descriptor, null, null, fields)) return
         dispatch(surface, descriptor, null, null, fields)
     }
 
     /** SPEC 14.6: renderer edit -> draft + state.changed publication. */
-    fun state(surface: String, id: String, value: JsonElement?,
-              caret: Int? = null) {
+    override fun state(surface: String, id: String, value: JsonElement?, caret: Int?) {
         dispatchExecutor.execute { engine?.publishState(surface, id, value, caret) }
     }
 
@@ -431,15 +598,52 @@ class DeviceBridge(
     // while a value the user is still editing does not.
     private val _inputDisplays =
         MutableStateFlow<Map<Pair<String, String>, InputDisplay>>(emptyMap())
-    val inputDisplays: StateFlow<Map<Pair<String, String>, InputDisplay>>
+    override val inputDisplays: StateFlow<Map<Pair<String, String>, InputDisplay>>
         get() = _inputDisplays
+
+    // A variant switch changes which already-authored branch is placed. Keep
+    // it out of the root inputDisplays subscription: invalidating the whole
+    // surface would defeat the retained-presentation fast path.
+    private val _variantSelections =
+        MutableStateFlow<Map<Pair<String, String>, String>>(emptyMap())
+    override val variantSelections: StateFlow<Map<Pair<String, String>, String>>
+        get() = _variantSelections
+
+    // Acceptance-time presentation incarnations. SurfaceSpec projection is a
+    // conflated StateFlow, so remove -> byte-identical re-add may skip the
+    // null on the UI thread. These latest-value tokens still change and force
+    // both the surface root and re-added retained owners to start fresh.
+    private val retainedPresentationTracker =
+        RetainedPresentationIncarnationTracker()
+    private val _surfacePresentationIncarnations =
+        MutableStateFlow<Map<String, Any>>(emptyMap())
+    val surfacePresentationIncarnations: StateFlow<Map<String, Any>>
+        get() = _surfacePresentationIncarnations
+    private val _retainedPresentationIncarnations =
+        MutableStateFlow<Map<Pair<String, String>, Long>>(emptyMap())
+    override val retainedPresentationIncarnations:
+        StateFlow<Map<Pair<String, String>, Long>>
+        get() = _retainedPresentationIncarnations
+
+    /** Project from the complete stored spec, not resolveView(current): a
+     * local view switch must not retire presentation identities that remain
+     * authored in another view of the same accepted surface. */
+    private fun publishPresentationIncarnations(surface: String) {
+        val projection = retainedPresentationTracker.accept(
+            surface,
+            store.revisionOf(surface),
+            store.spec(surface),
+        )
+        _surfacePresentationIncarnations.value = projection.surfaceRoots
+        _retainedPresentationIncarnations.value = projection.saveableOwners
+    }
 
     // T2/LD-5: the editor mirrors, keyed (document, editor_id). RenderEditor
     // collects this and adopts on epoch change; see EditorMirror above.
     private val mirrorEpoch = AtomicLong(0)
     private val _editorMirrors =
         MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
-    val editorMirrors: StateFlow<Map<Pair<String, String>, EditorMirror>>
+    override val editorMirrors: StateFlow<Map<Pair<String, String>, EditorMirror>>
         get() = _editorMirrors
 
     /** Publish S as the display's text authority. Caret converts scalar ->
@@ -465,7 +669,7 @@ class DeviceBridge(
     private val annotationEpoch = AtomicLong(0)
     private val _editorAnnotations =
         MutableStateFlow<Map<Pair<String, String>, EditorAnnotationState>>(emptyMap())
-    val editorAnnotations: StateFlow<Map<Pair<String, String>, EditorAnnotationState>>
+    override val editorAnnotations: StateFlow<Map<Pair<String, String>, EditorAnnotationState>>
         get() = _editorAnnotations
 
     /**
@@ -519,14 +723,14 @@ class DeviceBridge(
     private val offerEpoch = AtomicLong(0)
     private val _completionOffers =
         MutableStateFlow<Map<Pair<String, String>, CompletionOffer>>(emptyMap())
-    val completionOffers: StateFlow<Map<Pair<String, String>, CompletionOffer>>
+    override val completionOffers: StateFlow<Map<Pair<String, String>, CompletionOffer>>
         get() = _completionOffers
 
     /** SPEC 19.3: ask Emacs to complete at the caret. The (session, seq,
      * cursor) the request was issued against ride along so a later selection
      * is validated against THAT state, not against whatever the engine holds
      * when the user finally taps. */
-    fun editorComplete(document: String, editorId: String) {
+    override fun editorComplete(document: String, editorId: String) {
         dispatchExecutor.execute {
             engine?.requestCompletion(document, editorId) {
                 prefix, cands, session, seq, cursor ->
@@ -566,8 +770,8 @@ class DeviceBridge(
     /** SPEC 19.3: accept a candidate — a local edit replacing the prefix.
      * The engine refuses a selection whose session/seq/cursor have moved,
      * so a stale tap is a no-op rather than a wrong edit (SPEC 19.2). */
-    fun editorSelectCompletion(document: String, editorId: String,
-                               label: String, insert: String) {
+    override fun editorSelectCompletion(document: String, editorId: String,
+                                        label: String, insert: String) {
         clearCompletions(document, editorId)
         dispatchExecutor.execute {
             val e = engine ?: return@execute
@@ -594,7 +798,7 @@ class DeviceBridge(
      * presentation, user-settable, persisted; strict is the reference
      * default. No wire member anywhere: Emacs cannot tell the policies
      * apart, which is what made this a setting instead of a schism. */
-    var completionNarrowing: CompletionNarrowing =
+    override var completionNarrowing: CompletionNarrowing =
         if (appContext.getSharedPreferences("ebp", android.content.Context.MODE_PRIVATE)
                 .getString("completion_narrowing", "strict") == "contains")
             CompletionNarrowing.CONTAINS else CompletionNarrowing.STRICT
@@ -620,7 +824,7 @@ class DeviceBridge(
     // edit.resync).
     private val _offerViews =
         MutableStateFlow<Map<Pair<String, String>, CompletionOfferView>>(emptyMap())
-    val offerViews: StateFlow<Map<Pair<String, String>, CompletionOfferView>>
+    override val offerViews: StateFlow<Map<Pair<String, String>, CompletionOfferView>>
         get() = _offerViews
 
     /** Publish VIEW for KEY; a dead tracker retires the candidates with
@@ -660,7 +864,7 @@ class DeviceBridge(
         ConcurrentHashMap<Pair<String, String>, CandidateDocSlot>()
     private val _candidateDocs =
         MutableStateFlow<Map<Pair<String, String>, CandidateDoc>>(emptyMap())
-    val candidateDocs: StateFlow<Map<Pair<String, String>, CandidateDoc>>
+    override val candidateDocs: StateFlow<Map<Pair<String, String>, CandidateDoc>>
         get() = _candidateDocs
 
     /** A row was long-pressed. EPOCH is the epoch of the offer the row
@@ -670,8 +874,8 @@ class DeviceBridge(
      * this task — pairing the NEW offer's frozen (session, seq) with the
      * OLD index would pass every staleness gate on both endpoints and
      * document a candidate the user never highlighted (R5 review F11). */
-    fun editorCandidateDoc(document: String, editorId: String,
-                           index: Int, epoch: Long) {
+    override fun editorCandidateDoc(document: String, editorId: String,
+                                    index: Int, epoch: Long) {
         dispatchExecutor.execute {
             val key = document to editorId
             val offer = _completionOffers.value[key] ?: return@execute
@@ -752,8 +956,8 @@ class DeviceBridge(
      * no OPEN session in READY, or past max_editor_bytes ("as if the editor
      * were read-only", SPEC 19.4) — publishes the unchanged shadow so the
      * field snaps back instead of silently diverging. */
-    fun editorEdit(document: String, editorId: String, start: ScalarPos, del: Int,
-                   text: String, base: String) {
+    override fun editorEdit(document: String, editorId: String, start: ScalarPos,
+                            del: Int, text: String, base: String) {
         dispatchExecutor.execute {
             val e = engine ?: return@execute
             if (!e.localEditorEdit(document, editorId, start, del, text, base))
@@ -777,8 +981,8 @@ class DeviceBridge(
      * it every caret-keyed feature (eldoc, diagnostics targeting, completion
      * context) sees offset 0 for the life of the session. Positions are
      * Compose UTF-16; the engine converts against the shadow (LD-4). */
-    fun editorCaret(document: String, editorId: String,
-                    cursor: Int, selStart: Int, selEnd: Int) {
+    override fun editorCaret(document: String, editorId: String,
+                             cursor: Int, selStart: Int, selEnd: Int) {
         val key = document to editorId
         val next = Triple(cursor, selStart, selEnd)
         if (lastCaret.put(key, next) == next) return
@@ -791,8 +995,9 @@ class DeviceBridge(
     /** SPEC 17.7: a toolbar `command` -> non-durable edit.command
      * event.action. Positions are Compose UTF-16; the engine converts to
      * scalars against the shadow (LD-4). */
-    fun editorCommand(surface: String, document: String, editorId: String,
-                      command: String, cursor: Int, selStart: Int, selEnd: Int) {
+    override fun editorCommand(surface: String, document: String, editorId: String,
+                               command: String, cursor: Int, selStart: Int,
+                               selEnd: Int) {
         dispatchExecutor.execute {
             engine?.editorCommand(surface, document, editorId, command,
                 Utf16Pos(cursor), Utf16Pos(selStart), Utf16Pos(selEnd))
@@ -800,27 +1005,28 @@ class DeviceBridge(
     }
 
     /** SPEC 18.1: dialog.submit builtin -> complete the outstanding request. */
-    fun dialogSubmit(dialogId: String, value: JsonElement?, fields: JsonObject) {
+    override fun dialogSubmit(dialogId: String, value: JsonElement?, fields: JsonObject) {
         dispatchExecutor.execute { engine?.completeDialogSubmit(dialogId, value, fields) }
     }
 
     /** SPEC 14.1/18.1 (T3/LD-3): the authored values the engine computed for
      * this dialog's stateful nodes, so an untouched field captures its
      * logical value. Read once when the dialog is presented. */
-    fun dialogDefaults(dialogId: String): JsonObject? = engine?.dialogDefaults(dialogId)
+    override fun dialogDefaults(dialogId: String): JsonObject? =
+        engine?.dialogDefaults(dialogId)
 
     /** SPEC 18.1: dialog.dismiss builtin / platform dismissal. */
-    fun dialogDismiss(dialogId: String) {
+    override fun dialogDismiss(dialogId: String) {
         dispatchExecutor.execute { engine?.completeDialogDismiss(dialogId) }
     }
 
     /** SPEC 18.3: a radial selection with its zero-based indices. */
-    fun pieMenuSelect(menuId: String, categoryIndex: Int, itemIndex: Int?) {
+    override fun pieMenuSelect(menuId: String, categoryIndex: Int, itemIndex: Int?) {
         dispatchExecutor.execute { engine?.selectPieMenu(menuId, categoryIndex, itemIndex) }
     }
 
     /** SPEC 18.3: dismiss the pie menu on an outside tap. */
-    fun pieMenuDismiss(menuId: String) {
+    override fun pieMenuDismiss(menuId: String) {
         dispatchExecutor.execute {
             engine?.let { e ->
                 // C6: the envelope comes from the wire's own SPEC 7.1 builder,
@@ -857,20 +1063,21 @@ class DeviceBridge(
         return views.objOrNull(name)
     }
 
-    private fun serve(socket: Socket) {
+    private fun serve(socket: Socket, generation: Long) {
         val out = socket.getOutputStream()
-        val engine = CompanionEngine(config, store, queue, reminders, triggers, firing) { bytes ->
-            // The sink runs on whatever thread emits — the reader, the pump,
-            // or the UI dispatch executor. A peer that went away mid-write
-            // MUST NOT crash that thread (and with it the app): close the
-            // socket so the reader loop unwinds through engine.close().
-            try {
-                out.write(bytes); out.flush()
-            } catch (_: java.io.IOException) {
-                socket.runCatching { close() }
+        val engine = variantEngineRoute.prepare(generation) {
+            CompanionEngine(config, store, queue, reminders, triggers, firing) { bytes ->
+                // The sink runs on whatever thread emits — the reader, the pump,
+                // or the UI dispatch executor. A peer that went away mid-write
+                // MUST NOT crash that thread (and with it the app): close the
+                // socket so the reader loop unwinds through engine.close().
+                try {
+                    out.write(bytes); out.flush()
+                } catch (_: java.io.IOException) {
+                    socket.runCatching { close() }
+                }
             }
-        }
-        this.engine = engine
+        } ?: return
         // SPEC 20.1.1: seed the new session with the last-known geometry so
         // the welcome can mirror it before the Activity recomposes.
         lastWindow?.let { (w, h) -> engine.windowChanged(w, h) }
@@ -887,9 +1094,6 @@ class DeviceBridge(
                     dispatchExecutor.execute { respond(outcome) }
                 }
         }
-        // SPEC 5.2 newest-wins: cold receivers (reminder tap/alarm) reach the
-        // current live session through this slot; a drop with no session is lost.
-        CompanionStores.setLiveSession(engine)
         engine.surfaceListener = { surface ->
             // SPEC 17.2/9.1: bind the image cache to THIS session's
             // authenticated pairing identity before any image can render.
@@ -902,6 +1106,12 @@ class DeviceBridge(
             // T3/LD-2: publish display generations before the spec, so the
             // recomposition this push triggers already sees the new epoch.
             _inputDisplays.value = store.inputDisplays()
+            _variantSelections.value = store.variantSelections()
+            if (surface.startsWith("app:")) {
+                // Lead the spec with its presentation identity just like the
+                // stateful display generations above.
+                publishPresentationIncarnations(surface)
+            }
             when {
                 // SPEC 18.5: a notification:* surface is a system notification;
                 // its removal (tombstone -> null spec) cancels it.
@@ -914,6 +1124,15 @@ class DeviceBridge(
                     onSurfaceChanged(surface, resolveView(surface))
             }
         }
+        engine.variantListener = { surface, id, value ->
+            // CompanionEngine invokes this only after the draft passed the
+            // input-state size gate and committed durably. This publication
+            // therefore can never expose a selection reconnect would lose.
+            _variantSelections.update { selections ->
+                selections + ((surface to id) to value)
+            }
+        }
+        engine.localStateProblemListener = onQueueProblem
         // SPEC 14.2: host-platform builtins. Settings is a stub until the app
         // shell lands (deferred scope) — visible, honest, no silent drop.
         engine.hostBuiltinListener = { builtin, descriptor ->
@@ -940,6 +1159,7 @@ class DeviceBridge(
                         android.content.Intent.createChooser(send, null)
                             .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
                 }
+                "surface.open" -> onOpenSurface(descriptor.stringOr("surface"))
                 "companion.settings.open" -> onOpenSettings()
             }
         }
@@ -985,6 +1205,18 @@ class DeviceBridge(
             onTheme(payload)
         }
         engine.pieMenuListener = { id, spec -> onPieMenuChanged(id, spec) }
+        // Make the engine receiver-visible only after every callback is wired.
+        // Activation shares the offline-commit gate, and generation equality
+        // rejects a delayed serve() whose socket has already been superseded.
+        // Install the cold-receiver live-session route inside that same gate,
+        // before UI dispatch can observe this engine and before any welcome
+        // bytes can be read from the peer.
+        if (!variantEngineRoute.activate(generation, engine) {
+                CompanionStores.setLiveSession(it)
+            }) {
+            engine.close("superseded before activation")
+            return
+        }
         var authenticated = false
         try {
             // INSIDE the try: SPEC 5.2's newest-wins supersession closes this
@@ -999,10 +1231,10 @@ class DeviceBridge(
             while (engine.state != SessionState.CLOSED) {
                 val n = input.read(buffer)
                 if (n < 0) break
-                engine.feed(buffer.copyOf(n))
+                engine.feed(buffer, 0, n)
                 if (!authenticated && isAuthenticatedConnectionState(engine.state)) {
                     authenticated = true
-                    authenticatedSession.set(engine)
+                    authenticatedConnection.authenticated(engine)
                     Notifications.cancelReconnect(appContext)
                 }
             }
@@ -1041,7 +1273,7 @@ class DeviceBridge(
                 lastCaret.clear()
             }
             val wasCurrentAuthenticatedSession = authenticated &&
-                authenticatedSession.compareAndSet(engine, null)
+                authenticatedConnection.disconnected(engine)
             if (shouldPostReconnectNotification(
                     authenticated,
                     wasCurrentAuthenticatedSession,

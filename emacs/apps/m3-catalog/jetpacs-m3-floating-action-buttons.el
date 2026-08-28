@@ -34,7 +34,7 @@
 ;;                                           LargeIconSize, which overrides
 ;;                                           its own token)
 ;;
-;; on `primary_container' at 6dp of shadow -- FabPrimaryContainerTokens'
+;; on neutral `primary' at 6dp of shadow -- FabPrimaryContainerTokens'
 ;; ContainerColor and its Level3 ContainerElevation.  The `box' takes the
 ;; tap because `surface' has no on_tap member; Surface propagates its min
 ;; constraints to its content, so the box fills the whole container and
@@ -71,21 +71,21 @@
 
 (defun jetpacs-m3-floating-action-buttons--fab (size corner icon-size)
   "A composed FAB: a SIZE-dp CORNER-cornered container over an ICON-SIZE icon.
-The container is a `surface' at `primary_container' with 6dp of
-`:shadow-elevation' (FabPrimaryContainerTokens' ContainerColor and its
-Level3 ContainerElevation), and its child is the one thing every upstream
-FAB sample holds: Icon(Icons.Filled.Add, \"Localized description\").  The
+The container is a `surface' at the neutral `primary' role with 6dp of
+`:shadow-elevation'; the Material renderer owns the more specific
+FabPrimaryContainer tone.  Its child is the one thing every upstream FAB
+sample holds: Icon(Icons.Filled.Add, \"Localized description\").  The
 tap lives on the `box' because `surface' has no on_tap member; Surface
 propagates its min constraints, so the box fills the container and the
 ripple clips to the corner."
   (jetpacs-with-attrs
    (jetpacs-surface
     (jetpacs-box (jetpacs-icon "add" :size icon-size
-                               :color "on_primary_container"
+                               :color "on_primary"
                                :content-description "Localized description")
                  :alignment "center"
                  :on-tap (jetpacs-m3-demo "Localized description"))
-    :color "primary_container" :shadow-elevation 6)
+    :color "primary" :shadow-elevation 6)
    :width size :height size :corner corner))
 
 (defun jetpacs-m3-floating-action-buttons--default ()

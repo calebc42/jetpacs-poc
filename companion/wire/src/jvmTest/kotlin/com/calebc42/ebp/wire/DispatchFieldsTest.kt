@@ -31,6 +31,7 @@ class DispatchFieldsTest {
                     put("node_types", JsonArray(listOf("text", "text_input").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits(), nonceSource = { katSn })) { bytes ->

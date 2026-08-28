@@ -46,6 +46,25 @@ PLIST keys: :label, :after-set, :render (a nullary node builder that
 replaces the schema-derived control).  Presence here is what authorizes
 `settings.set'/`settings.reset' for a symbol.")
 
+(defvar jetpacs-settings-hub-entries nil
+  "Alist of (KEY . PLIST) for hub-level settings categories.
+PLIST keys: :order, :icon, :title, :subtitle, :on-tap.")
+
+(defun jetpacs-settings-register-hub-entry (key &rest plist)
+  "Register a settings hub category.
+KEY is a string identifier.  PLIST contains :order (integer),
+:icon (string), :title (string), :subtitle (string), and
+:on-tap (a jetpacs-action)."
+  (setf (alist-get key jetpacs-settings-hub-entries nil nil #'equal) plist)
+  (setq jetpacs-settings-hub-entries
+        (cl-sort jetpacs-settings-hub-entries #'<
+                 :key (lambda (x) (or (plist-get (cdr x) :order) 50)))))
+
+(defun jetpacs-settings-remove-hub-entry (key)
+  "Remove a hub entry."
+  (setq jetpacs-settings-hub-entries
+        (cl-remove key jetpacs-settings-hub-entries :key #'car :test #'equal)))
+
 ;;;; Registry
 
 (defun jetpacs-settings-register-section (title entries)
@@ -308,11 +327,46 @@ older caller accidentally registered the same builder more than once."
                            (mapcar #'jetpacs-settings--item entries)))
    (mapcar (lambda (e) (funcall (cadr e))) jetpacs-settings-links)))
 
+(defun jetpacs-settings--emacs-view (back)
+  "The Emacs settings screen: all registered sections + satellites."
+  (jetpacs-chrome-screen
+   "Emacs Settings"
+   (apply #'jetpacs-lazy-column
+          (append
+           (list (jetpacs-chrome-row
+                  "Customize"
+                  :subtitle "Browse and edit any Emacs option"
+                  :icon "tune"
+                  :on-tap (if (jetpacs-builtin-advertised-p "surface.open" :app)
+                              (jetpacs-surface-open "app:jetpacs.customize")
+                            (jetpacs-action "customize.show" :when-offline "drop"))
+                  :key "emacs-settings-customize")
+                 (jetpacs-chrome-row
+                  "Packages"
+                  :subtitle "Install and manage Emacs packages"
+                  :icon "archive"
+                  :on-tap (jetpacs-action "packages.show" :when-offline "drop")
+                  :key "emacs-settings-packages"))
+           (jetpacs-settings-sections)))
+   :back back))
+
+(defun jetpacs-settings--hub-cards ()
+  "Render the dynamically registered hub entries as cards."
+  (mapcar (lambda (entry)
+            (let ((plist (cdr entry)))
+              (jetpacs-chrome-row (plist-get plist :title)
+                                  :subtitle (plist-get plist :subtitle)
+                                  :icon (plist-get plist :icon)
+                                  :on-tap (plist-get plist :on-tap)
+                                  :key (concat "hub-entry-" (car entry)))))
+          jetpacs-settings-hub-entries))
+
 (defun jetpacs-settings--view ()
-  "The settings root screen: the platform's own top bar and dock."
+  "The settings hub: category cards for each settings domain."
   (jetpacs-chrome-screen
    "Settings"
-   (apply #'jetpacs-lazy-column (jetpacs-settings-sections))))
+   (apply #'jetpacs-lazy-column (jetpacs-settings--hub-cards))
+   :on-refresh (jetpacs-action "settings.refresh")))
 
 (defun jetpacs-settings-refresh ()
   "Re-push the settings surface (deferred; safe from dispatch)."
@@ -388,6 +442,7 @@ that action's handler."
 ;;;; Actions and state handlers
 
 (defun jetpacs-settings--action-set (args _params)
+  "Apply the allowlisted setting and wire value named by ARGS."
   (let* ((name (plist-get args :name))
          (sym (and (stringp name) (intern-soft name)))
          (entry (and sym (jetpacs-settings--entry sym))))
@@ -399,6 +454,7 @@ that action's handler."
       'accepted)))
 
 (defun jetpacs-settings--action-reset (args _params)
+  "Reset the allowlisted setting named by ARGS to its standard value."
   (let* ((name (plist-get args :name))
          (sym (and (stringp name) (intern-soft name)))
          (entry (and sym (jetpacs-settings--entry sym))))
@@ -420,54 +476,56 @@ through their submit action instead."
           (jetpacs-settings-apply sym (eq val t) after-set)
           (jetpacs-settings-refresh)))))
 
+(defun jetpacs-settings--action-emacs (_args _params)
+  "Push the Emacs settings screen onto the settings surface."
+  (jetpacs-chrome-push-screen jetpacs-settings-surface
+                              "jetpacs-settings-emacs"
+                              #'jetpacs-settings--emacs-view)
+  'accepted)
+
+(defun jetpacs-settings--action-refresh (_args _params)
+  "Schedule a refresh of the current settings screen."
+  (jetpacs-settings-refresh)
+  'accepted)
+
 (with-jetpacs-owner "jetpacs.settings"
   (jetpacs-chrome-define-root jetpacs-settings-surface "home"
-                              (lambda (_back) (jetpacs-settings--view))))
-(jetpacs-defaction "settings.set" #'jetpacs-settings--action-set)
-(jetpacs-defaction "settings.reset" #'jetpacs-settings--action-reset)
+                              (lambda (_back) (jetpacs-settings--view))
+                              :required t)
+
+  (jetpacs-settings-register-hub-entry
+   "jetpacs" :order 10 :icon "build"
+   :title "Jetpacs Settings" :subtitle "App configuration and repair"
+   :on-tap (jetpacs-surface-open "companion:settings"))
+  (jetpacs-settings-register-hub-entry
+   "emacs" :order 20 :icon "settings"
+   :title "Emacs Settings" :subtitle "Editor, files, org, and more"
+   :on-tap (jetpacs-action "settings.emacs"))
+  (jetpacs-settings-register-hub-entry
+   "theme" :order 30 :icon "palette"
+   :title "Theme" :subtitle "Mode, Modus, and ef-themes"
+   :on-tap (jetpacs-action "modus.show")))
+
+(jetpacs-defaction "settings.set" #'jetpacs-settings--action-set
+                   :args '((:name name :type "text" :required t)
+                           (:name value :required t))
+                   :doc "Set one allowlisted Jetpacs setting")
+(jetpacs-defaction "settings.reset" #'jetpacs-settings--action-reset
+                   :args '((:name name :type "text" :required t))
+                   :doc "Reset one allowlisted Jetpacs setting")
+(jetpacs-defaction "settings.emacs" #'jetpacs-settings--action-emacs
+                   :doc "Open the registered Emacs settings")
+(jetpacs-defaction "settings.refresh" #'jetpacs-settings--action-refresh
+                   :doc "Refresh the current settings screen")
 
 (defun jetpacs-settings-drawer-entry ()
-  "The drawer's Settings entry (owner decision 2026-08-06 pass 2):
-one collapsible hoisting Settings to the drawer with its satellites —
-Customize, Theme, Packages — nested under it.  Collapsed by default."
-  (jetpacs-collapsible
-   "drawer-settings"
-   ;; A plain row: the whole header line is the expand target (a Card
-   ;; here swallows taps everywhere but the chevron).
-   (jetpacs-row
-    (jetpacs-icon "settings")
-    (jetpacs-with-attrs
-     (jetpacs-column (jetpacs-text "Settings")
-                     (jetpacs-text "App and Emacs options" :style "caption")
-                     :spacing 2)
-     :weight 1))
-   (jetpacs-chrome-row "All settings"
-                       :subtitle "Curated options and satellites"
-                       :icon "settings"
-                       :on-tap (jetpacs-action
-                                "jetpacs.launcher.open"
-                                :args `(:surface
-                                        ,(concat "app:"
-                                                 jetpacs-settings-surface)))
-                       :key "drawer-settings-all")
-   (jetpacs-chrome-row "Customize"
-                       :subtitle "Browse and edit any Emacs option"
-                       :icon "tune"
-                       :on-tap (jetpacs-action "customize.show"
-                                               :when-offline "drop")
-                       :key "drawer-settings-customize")
-   (jetpacs-chrome-row "Theme"
-                       :subtitle "Toggle modus light/dark"
-                       :icon "palette"
-                       :on-tap (jetpacs-action "jetpacs.theme.modus-toggle")
-                       :key "drawer-settings-theme")
-   (jetpacs-chrome-row "Packages"
-                       :subtitle "Install and manage Emacs packages"
-                       :icon "archive"
-                       :on-tap (jetpacs-action "packages.show"
-                                               :when-offline "drop")
-                       :key "drawer-settings-packages")
-   :collapsed t))
+  "The drawer's Settings entry — a single tap opens the settings hub."
+  (jetpacs-chrome-row "Settings"
+                      :subtitle "Jetpacs, Emacs, theme, and app options"
+                      :icon "settings"
+                      :on-tap (jetpacs-shell-open-surface-action
+                               (concat "app:" jetpacs-settings-surface))
+                      :key "drawer-settings"))
 
 (defvar jetpacs-launcher-row-icons)
 (with-eval-after-load 'jetpacs-launcher

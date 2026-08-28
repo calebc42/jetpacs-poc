@@ -27,6 +27,15 @@ Repo: `/home/calebc42/pkb/projects/jetpacs/jetpacs/llm-poc-3` @ **d856f1b** (PA-
 > Glasspane alone declares the PARA choices.  Jetpacs has no Glasspane
 > knowledge.
 
+> **AUTHORITATIVE AREA-MODEL AMENDMENT — Caleb, 2026-08-20.**
+> Areas are the direct members of a native, non-exclusive Org tag group named
+> `Area` (`#+TAGS: [ Area : House Auto Bills ]`), not Org categories.  Heading
+> tags, inherited tags, and `#+FILETAGS` provide genuine multiple membership;
+> all headings classify Resources, while open TODO headings additionally
+> classify Projects, and Archives mirror their source Resources.  The
+> category/filename fallback is retired.  Every historical category-based
+> Areas statement below is read through this amendment.
+
 Full ERT gate everywhere below = `test/run-tests.sh` — **the runner is an EXPLICIT list; a suite not named there never runs (the K1a merge lesson). This whole ladder adds ONE suite, `test/glasspane-para-test.el`, wired into the list in the same commit as the first app-specific rung, PA-2a; every later rung only adds arms to it. PA-1's generic foundation arms live in the already-wired app/home suites.**
 
 ---
@@ -36,7 +45,7 @@ Full ERT gate everywhere below = `test/run-tests.sh` — **the runner is an EXPL
 1. **The bar is exactly five persistent destinations: Agenda, Projects, Areas, Resources, Review.** No shell Home, Eval, Files, or Apps row. The generic core-suppression and selective-relocation mechanism (§5.1) is sanctioned.
 2. **Agenda is home — no hub.** The hub dashboard dies whole. Agenda = Day/Week/Month content tabs + custom-agenda pages + one new "Saved" page (the views fold, §5.5). System back at the Agenda root exits the app (Android-normal for a navigation root).
 3. **Projects = anything with a TODO stage.** v1 = the todo walk grouped **by file** with the existing TODO-keyword filter chips as the second axis; heading-level project-entity grouping is the recorded follow-up, not v1.
-4. **Areas = org categories.** New backend (nothing exists at HEAD — `org-get-category` is never called and the query grammar has no category term).
+4. **Areas = members of the non-exclusive Org tag group `Area`.** Native tag inheritance and `#+FILETAGS` provide multiple heading/file membership; Org categories remain independent display/grouping labels.
 5. **Resources = the Glasspane-named entry into Jetpacs' native Files explorer, rooted at the vault.** It replaces the separate Files navigation entry while Glasspane is primary, but it does not reimplement a file browser. `resources.open` passes `org-directory` to the public `jetpacs-files-open-path` on the canonical Files surface; Jetpacs continues to own listing, search, creation, file operations, editing, and reader-adapter selection for both Org and non-Org files. Glasspane owns only the PARA label, placement, starting scope, and selected route.
 6. **Review v1 = SRS flashcards + stale vulpea files**, plus the cheap Habits LINK row to the existing `jetpacs.org` habits surface. "On this day last year" and habits/metrics aggregation are **noted future work only** (§9).
 7. **Drawer:** Archive (drawer-only destination), Eval (the only selectively relocated core destination, §5.1), the Apps/app-switcher row, and the host Tools/Settings nests. Files is not duplicated here because Resources subsumes it. **Journal is deleted. Search moves to the top app bar.** Capture stays the FAB dialog (never a place).
@@ -48,7 +57,7 @@ Full ERT gate everywhere below = `test/run-tests.sh` — **the runner is an EXPL
 
 **PROPOSED, NOT RATIFIED — open rulings for Caleb (executing a rung that touches one requires the ruling first):**
 
-- **PA-OR-1** Areas upgrade path: v1 honors org's three category layers app-side (keyword / inherited `:CATEGORY:` property via `org-get-category` / basename fallback) with **no** query-grammar `category` term. Growing the grammar later is a five-touch-point foundation change (matcher, point-get, wire allowlist, vetter, note-terms kept OFF so vulpea routing degrades correctly). Rule only if saved views/search want area filters.
+- **PA-OR-1 RESOLVED 2026-08-20:** category inference was retired.  Areas use the native non-exclusive `Area` tag group, so multiple membership and inheritance require no query-grammar category term.
 - **PA-OR-2** Registry merge: `glasspane-org-custom-agendas` (page-shaped) ⇄ `glasspane-saved-views` (rendering-shaped) stay two registries, both presented on the Agenda "Saved" page. A merge is a data-model migration — recorded, deferred.
 - **PA-OR-3** Review destination badge (due count via `glasspane-srs--due-count`): **deferred** — the Agenda badge owns the bar's one number first. Revisit after the PA-3 soak.
 

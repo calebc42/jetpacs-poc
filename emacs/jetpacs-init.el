@@ -142,9 +142,6 @@ remain in the private Emacs/Termux home on Android.")
 (require 'jetpacs-sql)
 (require 'jetpacs-apps)
 (require 'jetpacs-app-store)
-;; Load bundles the Manage Apps screen installed in past sessions —
-;; each isolated, so one broken bundle never costs the boot.
-(jetpacs-app-store-boot)
 (require 'jetpacs-hypertext)
 ;; …and the apps.
 (require 'jetpacs-theme)
@@ -171,11 +168,11 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; the Apps view also gains an Org Mode home.  This is the template a
 ;; future `jetpacs-elisp-mode' app can reuse.
 (require 'jetpacs-org-mode)
-;; The Material 3 Compose Catalog (owner `m3catalog'): 41 components
-;; and 279 examples of the node vocabulary, on its own surface.  It is
-;; also the tree's first `jetpacs-defapp' registration, so its "Catalog"
-;; destination composes into every dock.  Reach it there, from the Apps
-;; button, or M-x jetpacs-m3-catalog.
+;; Jetpacs Components (owner `m3catalog'): the upstream Material 3 inventory,
+;; 41 components and 279 examples of the node vocabulary, authored in Elisp
+;; on its own surface.  It is also the tree's first `jetpacs-defapp'
+;; registration, so its "Components" destination composes into every dock.
+;; Reach it there, from the Apps button, or M-x jetpacs-m3-catalog.
 (require 'jetpacs-m3-catalog)
 ;; The live editor loop (parity P1), and the `ebp-' half of the stack:
 ;; wire and Emacs only, no node vocabulary.  Buffer sync with its
@@ -194,8 +191,7 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 (require 'jetpacs-org-settings)
 (jetpacs-settings-register-section
  "Appearance"
- '((jetpacs-theme-mode :label "Companion theme")
-   ;; The §3 fold-in: the app's authored enum node retired — the
+ '(;; The §3 fold-in: the app's authored enum node retired — the
    ;; choice-of-consts custom-type renders an equivalent enum.
    (jetpacs-line-numbers :label "Line numbers")
    ;; S10: where M-x rides — the whole point of the choice-of-consts
@@ -219,6 +215,8 @@ then silently refuses.  A value set by the user's init remains authoritative.")
  "Files"
  '((jetpacs-files-sync-editor :label "Live editing")
    (jetpacs-files-shared-storage :label "Shared storage access")
+   (jetpacs-files-android-private-locations
+    :label "Android private locations")
    (jetpacs-files-max-rows :label "Directory rows shown")))
 
 ;;;; The hub — the screen you land on and come home to
@@ -248,8 +246,7 @@ rows: the push-loop report, and Inspect a screen."
      :weight 1))
    (jetpacs-chrome-row
     "Clipboard" :subtitle "the kill ring" :icon "content_paste"
-    :on-tap (jetpacs-action "jetpacs.launcher.open"
-                            :args '(:surface "app:jetpacs.clip"))
+    :on-tap (jetpacs-shell-open-surface-action "app:jetpacs.clip")
     :key "drawer-tools-clip")
    (jetpacs-chrome-row
     "Messages" :subtitle "the Emacs log" :icon "description"
@@ -304,11 +301,11 @@ and Files."
   (let ((sel (cond ((equal surface "app:jetpacs.files") 'files)
                    ((equal surface "app:hub") 'home))))
     (list (list :key "eval" :label "Eval" :icon "code"
-                :on-tap (jetpacs-action "hub.home")
+                :on-tap (jetpacs-shell-open-surface-action "app:hub")
                 :selected (eq sel 'home))
           (list :key "files" :label "Files" :icon "folder_open"
-                :on-tap (jetpacs-action "jetpacs.launcher.open"
-                                        :args '(:surface "app:jetpacs.files"))
+                :on-tap (jetpacs-shell-open-surface-action
+                         "app:jetpacs.files")
                 :selected (eq sel 'files)))))
 
 ;;;; Home IS the Eval REPL (owner decision 2026-08-06: no hub screen —
@@ -420,23 +417,22 @@ and Files."
 (defvar jetpacs-pairing-token "AAECAwQFBgcICQoLDA0ODw"
   "Display-form pairing token used to authenticate to the Companion.")
 
-(defun jetpacs-start (&optional attempt)
-  "Dial the Companion on this device and land on the hub.
-Retries for ~45 s at 3 s intervals: at boot — and after the Companion
-is opened by hand — the listener can bind well after Emacs starts, and
-a 4 s window (the first cut) lost that race whenever the app came up
-second.  After the last attempt it says exactly what to do, instead of
-an error nobody is watching for."
+(defun jetpacs-start ()
+  "Keep the device EBP endpoint active and land on the hub when READY.
+Emacs is the SPEC 5.2 dialer.  The logical client therefore survives a
+stopped or restarted Companion and performs fresh handshakes with jittered
+bounded backoff until the listener returns.  Calling this command while a
+redial is pending requests an immediate attempt; calling it while READY brings
+the hub forward without creating a competing client."
   (interactive)
-  (condition-case nil
-      (jetpacs--start-1)
-    (error
-     (if (>= (or attempt 0) 15)
-         (message "jetpacs: Companion not reachable — open the EBP \
-Companion app, then M-x jetpacs-start")
-       (run-at-time 3 nil #'jetpacs-start (1+ (or attempt 0)))
-       (when (zerop (or attempt 0))
-         (message "jetpacs: Companion not up yet; retrying for 45 s…"))))))
+  (let ((client (jetpacs-client)))
+    (cond
+     ((and client (ebp-client-active-p client))
+      (if (jetpacs-connected-p)
+          (jetpacs-hub)
+        (ebp-client-reconnect-now client))
+      client)
+     (t (jetpacs--start-1)))))
 
 (defun jetpacs--start-1 ()
   (jetpacs-connect
@@ -478,8 +474,9 @@ same safe native root instead of making READY callback failure fatal."
     (ebp-client-close c 'user-quit)
     (jetpacs-detach)))
 
-;; Auto-connect at startup; demoted so a Companion that is not running
-;; yet never breaks init — M-x jetpacs-start once it is.
+;; Keep one logical dialer alive from startup.  A Companion that is not yet
+;; running leaves it in bounded backoff; opening or restarting the app no
+;; longer requires restarting Emacs.
 (add-hook 'after-init-hook
           (lambda () (with-demoted-errors "jetpacs-start: %S"
                        (jetpacs-start))))
@@ -489,6 +486,12 @@ same safe native root instead of making READY callback failure fatal."
 (let ((user-file (expand-file-name "user.el" jetpacs-install-root)))
   (when (file-readable-p user-file)
     (load user-file nil 'nomessage)))
+
+;; Optional apps are the last composition tier: activate only choices
+;; explicitly enabled through Apps, after every foundation host AND personal
+;; variable override they may consume.  Each app remains isolated, so one
+;; broken optional app never costs the boot.
+(jetpacs-app-store-boot)
 
 (provide 'jetpacs-init)
 ;;; jetpacs-init.el ends here

@@ -12,8 +12,9 @@
 LLM-drafted (2026-07-28) and has no generator; nothing enforces it
 against the code.  *It is now a full sprint behind*: the 2026-08-03/04
 M3-catalog sprint grew the vocabulary from the 39 node types drafted
-here to *52* (dropdown, segmented_button, search_bar, carousel,
-fab_menu, button_group, lazy_grid, app_bar_row/column, …) and added
+here to *53*. Five design-specific nodes are now namespaced under the
+=glasspane.material3= renderer extension; the rest include dropdown,
+segmented_button, search_bar, carousel, button_group, and lazy_grid. It added
 member families this draft has never heard of (connected-toggle
 shape_role, menu groups, the two-rows top bar, the scaffold rail/sheet
 slots, tabs indicator/content, MaterialShapes surface names).  A
@@ -29,7 +30,8 @@ for the pre-sprint core only.
 The Jetpacs widget system provides a comprehensive set of UI components designed to bridge three layers of the stack:
 - *Elisp DSL*: The =jetpacs-*= functions developers call to construct user interfaces.
 - *Wire format*: The JSON node types serialized and sent over the protocol.
-- *Compose renderer*: The Material 3 (M3) composables the companion app renders natively.
+- *Compose renderer*: A Foundation core plus a selected design implementation;
+  this Companion selects the optional Material 3 renderer.
 
 There are 39 widget types across 5 families:
 - *Core* (10): Fundamental building blocks and layout primitives.
@@ -39,6 +41,46 @@ There are 39 widget types across 5 families:
 - *Visualization* (3): Graphical representations like charts and calendars.
 
 For each widget, this reference provides the Elisp function signature, Wire format string, backing M3 component(s), relevant specification section, detailed properties table, usage example, and the renderer source location.
+
+* Universal semantics API
+
+Every typed Node may be wrapped with
+=jetpacs-with-semantics=. The public helpers are:
+
+- =(jetpacs-semantic-collection row-count column-count)=
+- =(jetpacs-semantic-collection-item row-index row-span column-index column-span)=
+- =(jetpacs-semantic-action label on-action)=
+- =(jetpacs-with-semantics node &key name description state-description error pane-title heading-level live-region collection collection-item traversal-group traversal-index actions)=
+
+The wrapper returns the real Node plist with one nested =:semantics= object; it
+does not create another UI AST or mutate its input. Strings are non-empty,
+heading levels are 1..6, live regions are =polite= or =assertive=, collection
+indices/counts obey §16.5.1, traversal index is finite, and =actions= contains
+at most the contract-generated fixed limit of distinct-label semantic actions.
+Use =:json-false= for an authored false =:traversal-group=. Each semantic
+action carries an ordinary ActionDescriptor and therefore passes through the
+same profile, confirmation, offline/durability, capture, and byte gates as a
+visible action. Current helpers reject unknown semantics members; receivers
+ignore them for forward compatibility.
+
+#+begin_src elisp
+(jetpacs-with-semantics
+ (jetpacs-column rows)
+ :name "Inbox"
+ :pane-title "Inbox"
+ :heading-level 1
+ :live-region 'polite
+ :collection (jetpacs-semantic-collection (length rows) 1)
+ :traversal-group t
+ :actions (list
+           (jetpacs-semantic-action
+            "Refresh" (jetpacs-action "inbox.refresh"))))
+#+end_src
+
+Roles and checked, selected, expanded, editable, and progress state are not
+author-overridable in V1. They are generated from existing Node types and
+members, so the visible control remains authoritative. Semantics must not be
+the sole route to a load-bearing action.
 
 * Summary Table
 
@@ -64,7 +106,7 @@ For each widget, this reference provides the Elisp function signature, Wire form
 | ="date_stamp"= | Content | =jetpacs-date-stamp= | Column, ElevatedCard, Text | §17.2 |
 | ="icon_button"= | Input | =jetpacs-icon-button= | IconButton, Icon, BadgedBox | §17.4 |
 | ="chip"= | Input | =jetpacs-chip= | FilterChip | §17.4 |
-| ="assist_chip"= | Input | =jetpacs-assist-chip= | AssistChip | §17.4 |
+| ="material3.assist_chip"= | Input | =jetpacs-material3-assist-chip= | AssistChip | §17.4 |
 | ="menu"= | Input | =jetpacs-menu= | IconButton, Icon, DropdownMenu, DropdownMenuItem | §17.4 |
 | ="checkbox"= | Input | =jetpacs-checkbox= | Checkbox, Row, Text | §17.4 |
 | ="switch"= | Input | =jetpacs-switch= | Switch, Row, Text | §17.4 |
@@ -288,7 +330,7 @@ For each widget, this reference provides the Elisp function signature, Wire form
 #+end_src
 
 ** editor
-- Elisp: =(jetpacs-editor id &key document value on-save on-enter read-only syntax line-numbers complete chromeless publish-state autofocus toolbar enabled)=
+- Elisp: =(jetpacs-editor id &key document value on-save on-enter single-line min-lines max-lines read-only syntax line-numbers complete chromeless publish-state autofocus toolbar enabled)=
 - Wire: ="editor"=
 - M3: =OutlinedTextField=, =EditorToolbar=
 - Renderer: =Renderer.kt:437-596=
@@ -302,6 +344,9 @@ For each widget, this reference provides the Elisp function signature, Wire form
 | ~value~ | string | No | Initial text content |
 | ~on_save~ | action descriptor | No | Save handler |
 | ~on_enter~ | action descriptor | No | Enter key handler |
+| ~single_line~ | boolean | No | Restrict the editor to one line |
+| ~min_lines~ | positive integer | No | Minimum visible lines |
+| ~max_lines~ | positive integer | No | Maximum visible lines |
 | ~read_only~ | boolean | No | Disable editing |
 | ~syntax~ | identifier | No | Syntax highlighting language |
 | ~line_numbers~ | boolean | No | Show line numbers |
@@ -726,7 +771,7 @@ For each widget, this reference provides the Elisp function signature, Wire form
 
 *Usage Example*
 #+begin_src elisp
-(jetpacs-surface (jetpacs-text "Elevated") :color "surface_variant" :elevation 3 :shape "rounded")
+(jetpacs-surface (jetpacs-text "Elevated") :color "surface" :elevation 3 :shape "rounded")
 #+end_src
 
 ** lazy_column
@@ -915,8 +960,8 @@ For each widget, this reference provides the Elisp function signature, Wire form
 *Usage Example*
 #+begin_src elisp
 (jetpacs-canvas 200 100
- (list (jetpacs-canvas-rect 10 10 80 40 :color "primary" :fill "primary_container")
-       (jetpacs-canvas-text 20 35 "Hello" :color "on_primary_container" :size 16)))
+ (list (jetpacs-canvas-rect 10 10 80 40 :color "primary" :fill "primary")
+       (jetpacs-canvas-text 20 35 "Hello" :color "on_primary" :size 16)))
 #+end_src
 
 ** month_grid
@@ -1002,26 +1047,14 @@ Usable anywhere a color is accepted (plus =#rgb=, =#rgba=, =#rrggbb=, =#rrggbbaa
 |------|----------|----------|
 | =primary= | ~colorScheme.primary~ | Primary |
 | =on_primary= | ~colorScheme.onPrimary~ | Primary |
-| =primary_container= | ~colorScheme.primaryContainer~ | Primary |
-| =on_primary_container=| ~colorScheme.onPrimaryContainer~ | Primary |
 | =secondary= | ~colorScheme.secondary~ | Secondary |
 | =on_secondary= | ~colorScheme.onSecondary~ | Secondary |
-| =secondary_container= | ~colorScheme.secondaryContainer~ | Secondary |
-| =on_secondary_container=| ~colorScheme.onSecondaryContainer~ | Secondary |
-| =tertiary= | ~colorScheme.tertiary~ | Tertiary |
-| =on_tertiary= | ~colorScheme.onTertiary~ | Tertiary |
-| =tertiary_container= | ~colorScheme.tertiaryContainer~ | Tertiary |
-| =on_tertiary_container=| ~colorScheme.onTertiaryContainer~ | Tertiary |
 | =error= | ~colorScheme.error~ | Error |
 | =on_error= | ~colorScheme.onError~ | Error |
-| =error_container= | ~colorScheme.errorContainer~ | Error |
-| =on_error_container= | ~colorScheme.onErrorContainer~ | Error |
 | =background= | ~colorScheme.background~ | Neutral |
 | =on_background= | ~colorScheme.onBackground~ | Neutral |
 | =surface= | ~colorScheme.surface~ | Neutral |
 | =on_surface= | ~colorScheme.onSurface~ | Neutral |
-| =surface_variant= | ~colorScheme.surfaceVariant~ | Neutral |
-| =on_surface_variant= | ~colorScheme.onSurfaceVariant~ | Neutral |
 | =outline= | ~colorScheme.outline~ | Neutral |
 | =success= | ~ExtendedColors.success~ | Extension |
 | =warning= | ~ExtendedColors.warning~ | Extension |

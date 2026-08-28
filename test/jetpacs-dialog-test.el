@@ -82,6 +82,26 @@ checks repeatedly, so it gets a helper."
   (declare (indent 0) (debug t))
   `(condition-case nil (progn ,@body nil) (quit t)))
 
+(ert-deftest jetpacs-dialog-frame-pairs-cancel-with-primary-action ()
+  "A terminal OK button shares one horizontal footer row with Cancel."
+  (let* ((frame (jetpacs-dialog--frame
+                 "M-x "
+                 (jetpacs-editor "pick" :document "doc:pick"
+                                 :complete t :single-line t)
+                 (jetpacs-with-attrs (jetpacs-spacer) :height 8)
+                 (jetpacs-button "OK" (jetpacs-dialog-submit))))
+         (children (append (plist-get frame :children) nil))
+         (footer (car (last children)))
+         (buttons (append (plist-get footer :children) nil)))
+    (should (equal (plist-get footer :t) "row"))
+    (should (equal (mapcar (lambda (button) (plist-get button :label)) buttons)
+                   '("Cancel" "OK")))
+    (should (equal (plist-get footer :arrange) "end"))
+    (should (= (cl-count "spacer" children
+                         :key (lambda (node) (plist-get node :t))
+                         :test #'equal)
+               2))))
+
 (defun jetpacs-dialog-test--walk (node fn)
   (funcall fn node)
   (mapc (lambda (c) (jetpacs-dialog-test--walk c fn))
@@ -528,6 +548,7 @@ old borrow answered them empty; this test fails against it."
             (should ed)
             (should (string-prefix-p "doc:jpick-" (plist-get ed :document)))
             (should (eq (plist-get ed :complete) t))
+            (should (eq (plist-get ed :single_line) t))
             ;; The claim is withdrawn at conclusion; the client-wide
             ;; hook was never touched.
             (should-not (gethash (plist-get ed :document)

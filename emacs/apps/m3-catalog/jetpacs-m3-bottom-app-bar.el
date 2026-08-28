@@ -128,7 +128,7 @@ The `app_bar_row' node IS AppBarRow, so Back, Forward, Add, Check,
 Edit and Favorite render inline while they fit and the rest fold into
 the more_vert menu at MEASURE time — a width decision the device
 makes per layout pass, which Emacs never sees and never needs to."
-  (jetpacs-app-bar-row
+  (jetpacs-material3-app-bar-row
    (list (jetpacs-app-bar-item "Back" "arrow_back"
                                (jetpacs-m3-demo "Back"))
          (jetpacs-app-bar-item "Forward" "arrow_forward"
@@ -195,10 +195,10 @@ spacing, centered, rather than one distributed across the width."
 The fixed arrangement again, over the primaryContainer color the
 sample sets as the bar\\='s containerColor."
   (jetpacs-surface (jetpacs-m3-bottom-app-bar--fixed)
-                   :color "primary_container"))
+                   :color "primary"))
 
 (jetpacs-m3-defcomponent "bottom-app-bar"
-  :builders (list #'jetpacs-scaffold #'jetpacs-app-bar-row
+  :builders (list #'jetpacs-scaffold #'jetpacs-material3-app-bar-row
               #'jetpacs-app-bar-item)
   :name "Bottom App Bar"
   :description

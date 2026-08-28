@@ -31,6 +31,7 @@ private fun JsonElement?.isOneOf(allowed: Set<String>): Boolean {
 }
 
 private val IDENTIFIER = Regex("[A-Za-z0-9][A-Za-z0-9._:/-]*")
+private val APP_SURFACE_ID = Regex("(app|companion):[A-Za-z0-9][A-Za-z0-9._:/-]*")
 
 // SPEC 17.5: month_grid calendar formats (zero-padded, so string order is
 // chronological order for the min/max bound check).
@@ -77,7 +78,17 @@ private val INJECTED_MEMBERS: Map<String, Set<String>> = mapOf(
 private val CONFIRM_MEMBERS =
     setOf("text", "title", "icon", "confirm_label", "dismiss_label")
 
+/** Contract-defined application-data members. Objects below these names are
+ * values, not node positions, even when application data happens to contain
+ * a member named `t`. This matches the sender/reference-validator walker. */
+private val OPAQUE_NODE_WALK_MEMBERS = setOf("args", "meta", "value")
+
 object SpecValidator {
+    private data class SemanticCollectionBounds(
+        val rows: Long,
+        val columns: Long,
+    )
+
 
     /**
      * One traversal's mutable state. `captureRefs` defers `capture_fields`
@@ -98,10 +109,24 @@ object SpecValidator {
         // builtins is an INVALID CONTEXT — unlike a node type it does not
         // degrade, it rejects the containing document. null = allow all.
         val advertisedBuiltins: Set<String>? = null,
+        // SPEC 22.4: member-gating features for this target. null preserves
+        // the allow-all convention used by unit fixtures without a profile.
+        val advertisedFeatures: Set<String>? = null,
+        // Renderer-owned optional schemas are supplied by the endpoint's
+        // composition root. The EBP contract and wire module register none.
+        val nodeVocabulary: NodeVocabulary,
     ) {
         val ids = mutableSetOf<String>()
         val statefuls = mutableMapOf<String, JsonObject>()
         val captureRefs = mutableListOf<Pair<String, List<String>>>()
+        // variant.switch descriptors may precede their host in the tree
+        // (a scaffold top bar normally precedes its body), so resolve them
+        // only after the complete atomic document has been walked.
+        val variantRefs = mutableListOf<Triple<String, String, String?>>()
+        // SPEC 16.5.1: collection_item binds to the nearest authored
+        // collection ancestor. The stack follows the ordinary Node walk,
+        // including named slots and every retained variant branch.
+        val semanticCollections = mutableListOf<SemanticCollectionBounds>()
         var nodeCount = 0
         // SPEC 4.5: max_rich_spans / max_table_cells are AGGREGATE counts
         // across one SurfaceSpec or dialog document, like max_chart_points.
@@ -124,10 +149,13 @@ object SpecValidator {
         maxTableCells: Long = Long.MAX_VALUE,
         advertisedTypes: Set<String>? = null,
         advertisedBuiltins: Set<String>? = null,
+        advertisedFeatures: Set<String>? = null,
+        nodeVocabulary: NodeVocabulary = EBP_NODE_VOCABULARY,
     ): Map<String, JsonObject> {
         if (spec !is JsonObject) throw ContentInvalid(path, "spec must be an object")
         val ctx = Ctx(maxCaptureFields, maxChartPoints, maxCanvasOps,
-            maxRichSpans, maxTableCells, advertisedTypes, advertisedBuiltins)
+            maxRichSpans, maxTableCells, advertisedTypes, advertisedBuiltins,
+            advertisedFeatures, nodeVocabulary)
         if ("views" in spec) {
             val views = spec.objOrNull("views")
                 ?: throw ContentInvalid("$path.views", "views must be an object")
@@ -155,6 +183,15 @@ object SpecValidator {
                 if (!ctx.statefuls.containsKey(name))
                     throw ContentInvalid("$refPath.capture_fields[$i]",
                         "must name a stateful node in the document")
+        for ((refPath, id, requested) in ctx.variantRefs) {
+            val host = ctx.statefuls[id]
+            if (host?.stringOrNull("t") != "variant_host")
+                throw ContentInvalid("$refPath.id",
+                    "must name a variant_host in the document")
+            if (requested != null && requested !in variantValues(host))
+                throw ContentInvalid("$refPath.value",
+                    "must name a variant of the referenced host")
+        }
         return ctx.statefuls
     }
 
@@ -188,10 +225,13 @@ object SpecValidator {
                           maxRichSpans: Long = Long.MAX_VALUE,
                           maxTableCells: Long = Long.MAX_VALUE,
                           advertisedTypes: Set<String>? = null,
-                          advertisedBuiltins: Set<String>? = null) {
+                          advertisedBuiltins: Set<String>? = null,
+                          advertisedFeatures: Set<String>? = null,
+                          nodeVocabulary: NodeVocabulary = EBP_NODE_VOCABULARY) {
         val statefuls = validateSurfaceSpec(staleSpec, "stale_spec",
             maxCaptureFields, maxChartPoints, maxCanvasOps,
-            maxRichSpans, maxTableCells, advertisedTypes, advertisedBuiltins)
+            maxRichSpans, maxTableCells, advertisedTypes, advertisedBuiltins,
+            advertisedFeatures, nodeVocabulary)
         if (statefuls.isNotEmpty())
             throw ContentInvalid("stale_spec", "stateful nodes are prohibited in stale_spec")
         if (("views" in (staleSpec as JsonObject)) != primaryIsMultiView)
@@ -211,10 +251,12 @@ object SpecValidator {
                                  maxCaptureFields: Long = 64,
                                  advertisedTypes: Set<String>? = null,
                                  advertisedBuiltins: Set<String>? = null,
+                                 advertisedFeatures: Set<String>? = null,
                                  maxChartPoints: Long = Long.MAX_VALUE,
                                  maxCanvasOps: Long = Long.MAX_VALUE,
                                  maxRichSpans: Long = Long.MAX_VALUE,
-                                 maxTableCells: Long = Long.MAX_VALUE) {
+                                 maxTableCells: Long = Long.MAX_VALUE,
+                                 nodeVocabulary: NodeVocabulary = EBP_NODE_VOCABULARY) {
         if (spec !is JsonObject) throw ContentInvalid(path, "must be an object")
         if ("views" in spec) throw ContentInvalid(path, "multi-view prohibited")
         for (k in spec.keys) if (k != "body" && k != "meta")
@@ -226,7 +268,9 @@ object SpecValidator {
         validateSurfaceSpec(body, "$path.body", maxCaptureFields,
             maxChartPoints = maxChartPoints, maxCanvasOps = maxCanvasOps,
             maxRichSpans = maxRichSpans, maxTableCells = maxTableCells,
-            advertisedTypes = advertisedTypes, advertisedBuiltins = advertisedBuiltins)
+            advertisedTypes = advertisedTypes, advertisedBuiltins = advertisedBuiltins,
+            advertisedFeatures = advertisedFeatures,
+            nodeVocabulary = nodeVocabulary)
         if ("meta" in spec) {
             val meta = spec.objOrNull("meta")
                 ?: throw ContentInvalid("$path.meta", "must be an object")
@@ -329,6 +373,9 @@ object SpecValidator {
             throw ContentInvalid("$path.on_tap", "must be a remote action for input/dismiss")
         if (hasInput && "capture_fields" in onTap)
             throw ContentInvalid("$path.on_tap", "an inline reply must not capture_fields")
+        if ("open_surface" in onTap)
+            throw ContentInvalid("$path.on_tap.open_surface",
+                "action.open_surface is not valid in a notification context")
         // SPEC 14.1/14.2: validate the descriptor itself with the SAME rules
         // the surface path uses — exactly-one action/builtin, a dotted action
         // name, a known offline policy, ttl_s only for queue/wake and in
@@ -373,7 +420,9 @@ object SpecValidator {
 
     private fun containsEditor(value: JsonElement?): Boolean = when (value) {
         is JsonObject -> value["t"]?.asStringOrNull() == "editor" ||
-            value.values.any { containsEditor(it) }
+            value.any { (key, child) ->
+                key !in OPAQUE_NODE_WALK_MEMBERS && containsEditor(child)
+            }
         is JsonArray -> value.any { containsEditor(it) }
         else -> false
     }
@@ -386,28 +435,42 @@ object SpecValidator {
      * the action descriptors on container items (menu/tab/table entries).
      * The strict node-position rules live in [walkNode].
      */
-    private fun walkValue(value: JsonElement, path: String, ctx: Ctx) {
+    private fun walkValue(
+        value: JsonElement,
+        path: String,
+        ctx: Ctx,
+        siblingKeys: MutableMap<String, String>,
+    ) {
         when (value) {
             is JsonArray ->
                 for (i in value.indices)
-                    walkValue(value[i], "$path[$i]", ctx)
+                    walkValue(value[i], "$path[$i]", ctx, siblingKeys)
             is JsonObject ->
-                if (value.stringOrNull("t") != null) {
-                    walkNode(value, path, ctx)
+                if ("t" in value) {
+                    // Intermediate schema objects do not create presentation
+                    // parents. The first Nodes reached through them are all
+                    // siblings of the nearest enclosing Node (SPEC 16.1).
+                    walkNode(value, path, ctx, siblingKeys)
                 } else {
                     for ((key, child) in value) {
-                        if (key in ACTION_HOOK_KEYS && child is JsonObject)
+                        if (key in OPAQUE_NODE_WALK_MEMBERS) Unit
+                        else if (key in ACTION_HOOK_KEYS && child is JsonObject)
                             validateAction(child, "$path.$key", key, ctx)
                         else if ((key == "swipe_start" || key == "swipe_end") && child is JsonObject)
                             validateSwipeSide(child, "$path.$key", key, ctx)
-                        else walkValue(child, "$path.$key", ctx)
+                        else walkValue(child, "$path.$key", ctx, siblingKeys)
                     }
                 }
             else -> Unit // scalars carry no schema
         }
     }
 
-    private fun walkNode(node: JsonObject, path: String, ctx: Ctx) {
+    private fun walkNode(
+        node: JsonObject,
+        path: String,
+        ctx: Ctx,
+        siblingKeys: MutableMap<String, String>? = null,
+    ) {
         // SPEC 4.5: at most 10,000 nodes in one surface snapshot; count
         // before descending so an over-limit tree rejects, not renders.
         if (++ctx.nodeCount > WireLimits.MAX_NODES_PER_SNAPSHOT)
@@ -420,47 +483,320 @@ object SpecValidator {
             throw ContentInvalid(path, "node-depth")
         }
         try {
-        validateNode(node, path, ctx)
-        // SPEC 16.2: unknown node types degrade — their subtrees are scanned
-        // for nested known nodes but not held to per-type structural rules.
-        val t = node.stringOr("t")
-        // SPEC 17.1/16.2: a known type absent from the target profile degrades
-        // exactly like an unknown type — its subtree is scanned but its per-type
-        // hooks/schema are not applied and it dispatches nothing.
-        val known = NODE_SCHEMA.containsKey(t) &&
-            (ctx.advertisedTypes == null || t in ctx.advertisedTypes)
-        for ((key, child) in node) {
-            when {
-                known && key in ACTION_HOOK_KEYS -> {
-                    // SPEC 17.1: an `on_*` member is an ActionDescriptor.
-                    if (child !is JsonObject)
-                        throw ContentInvalid("$path.$key", "action descriptor must be an object")
-                    validateAction(child, "$path.$key", key, ctx)
-                }
-                known && (key == "swipe_start" || key == "swipe_end") -> {
-                    if (child !is JsonObject)
-                        throw ContentInvalid("$path.$key", "swipe side must be an object")
-                    validateSwipeSide(child, "$path.$key", key, ctx)
-                }
-                known && key == "children" -> {
-                    // SPEC 17.1: `children` is an array of Nodes. SPEC 4.5:
-                    // at most 10,000 children of one node.
-                    val arr = child as? JsonArray
-                        ?: throw ContentInvalid("$path.children", "children must be an array of nodes")
-                    if (arr.size > WireLimits.MAX_CHILDREN_PER_NODE)
-                        throw ContentInvalid("$path.children", "exceeds max_children_per_node")
-                    for (i in arr.indices) {
-                        val el = arr[i] as? JsonObject
-                            ?: throw ContentInvalid("$path.children[$i]", "child must be a node object")
-                        if (el.stringOrNull("t") == null)
-                            throw ContentInvalid("$path.children[$i]", "child node missing discriminator t")
-                        walkNode(el, "$path.children[$i]", ctx)
+            val semanticCollection = validateSemantics(node, path, ctx)
+            validateNode(node, path, ctx)
+            node.stringOrNull("key")?.let { key ->
+                val first = siblingKeys?.putIfAbsent(key, path)
+                if (first != null)
+                    throw ContentInvalid("$path.key",
+                        "duplicate sibling key (first at $first)")
+            }
+            // SPEC 16.2: unknown node types degrade — their subtrees are scanned
+            // for nested known nodes but not held to per-type structural rules.
+            val t = node.stringOr("t")
+            // SPEC 17.1/16.2: a known type absent from the target profile
+            // degrades exactly like an unknown type — its subtree is scanned,
+            // but its per-type hooks/schema are not applied and it dispatches
+            // nothing.
+            val known = ctx.nodeVocabulary.schema.containsKey(t) &&
+                (ctx.advertisedTypes == null || t in ctx.advertisedTypes)
+            val childSiblingKeys = mutableMapOf<String, String>()
+            if (semanticCollection != null)
+                ctx.semanticCollections.add(semanticCollection)
+            try {
+                for ((key, child) in node) {
+                    when {
+                        key in OPAQUE_NODE_WALK_MEMBERS -> Unit
+                        // Explicitly checked above; future semantics members
+                        // remain receiver-opaque.
+                        key == "semantics" -> Unit
+                        known && key in ACTION_HOOK_KEYS -> {
+                            // SPEC 17.1: an `on_*` member is an
+                            // ActionDescriptor.
+                            if (child !is JsonObject)
+                                throw ContentInvalid(
+                                    "$path.$key",
+                                    "action descriptor must be an object",
+                                )
+                            validateAction(child, "$path.$key", key, ctx)
+                        }
+                        known && (key == "swipe_start" || key == "swipe_end") -> {
+                            if (child !is JsonObject)
+                                throw ContentInvalid(
+                                    "$path.$key",
+                                    "swipe side must be an object",
+                                )
+                            validateSwipeSide(child, "$path.$key", key, ctx)
+                        }
+                        known && key == "children" -> {
+                            // SPEC 17.1: `children` is an array of Nodes.
+                            // SPEC 4.5: at most 10,000 children of one node.
+                            val children = child as? JsonArray
+                                ?: throw ContentInvalid(
+                                    "$path.children",
+                                    "children must be an array of nodes",
+                                )
+                            if (children.size > WireLimits.MAX_CHILDREN_PER_NODE)
+                                throw ContentInvalid(
+                                    "$path.children",
+                                    "exceeds max_children_per_node",
+                                )
+                            for (index in children.indices) {
+                                val element = children[index] as? JsonObject
+                                    ?: throw ContentInvalid(
+                                        "$path.children[$index]",
+                                        "child must be a node object",
+                                    )
+                                if (element.stringOrNull("t") == null)
+                                    throw ContentInvalid(
+                                        "$path.children[$index]",
+                                        "child node missing discriminator t",
+                                    )
+                                walkNode(
+                                    element,
+                                    "$path.children[$index]",
+                                    ctx,
+                                    childSiblingKeys,
+                                )
+                            }
+                        }
+                        // Variant.content roots live below distinct, opaque
+                        // variant values. They are separate presentation
+                        // branches, not siblings of one another; descendant
+                        // keys may deliberately repeat across alternatives.
+                        known && t == "variant_host" && key == "variants" -> {
+                            val variants = child as JsonArray
+                            for (index in variants.indices) {
+                                val content = (variants[index] as JsonObject)
+                                    .getValue("content") as JsonObject
+                                walkNode(
+                                    content,
+                                    "$path.variants[$index].content",
+                                    ctx,
+                                )
+                            }
+                        }
+                        else -> walkValue(
+                            child,
+                            "$path.$key",
+                            ctx,
+                            childSiblingKeys,
+                        )
                     }
                 }
-                else -> walkValue(child, "$path.$key", ctx)
+            } finally {
+                if (semanticCollection != null) {
+                    ctx.semanticCollections.removeAt(
+                        ctx.semanticCollections.lastIndex,
+                    )
+                }
+            }
+        } finally {
+            ctx.nodeDepth--
+        }
+    }
+
+    /**
+     * Validate the universal Semantics envelope before type/profile degrade.
+     * Unknown members are deliberately ignored for compatible growth, while
+     * every recognized member and nested descriptor remains fully gated.
+     */
+    private fun validateSemantics(
+        node: JsonObject,
+        path: String,
+        ctx: Ctx,
+    ): SemanticCollectionBounds? {
+        if ("semantics" !in node) return null
+        val semantics = node.objOrNull("semantics")
+            ?: throw ContentInvalid("$path.semantics", "must be an object")
+        val semanticPath = "$path.semantics"
+
+        for ((member, fieldType) in SEMANTICS_SCHEMA.fieldTypes) {
+            if (member !in semantics) continue
+            when (fieldType) {
+                "non-empty-plain-string" -> {
+                    val value = semantics.stringOrNull(member)
+                    if (value == null || value.isEmpty())
+                        throw ContentInvalid(
+                            "$semanticPath.$member",
+                            "must be a non-empty plain string",
+                        )
+                }
+                "integer-1-6" -> {
+                    val value = integralLongOrNull(semantics[member])
+                    if (value == null || value !in 1L..6L)
+                        throw ContentInvalid(
+                            "$semanticPath.$member",
+                            "must be an integer 1..6",
+                        )
+                }
+                "live-region-enum" -> {
+                    if (semantics.stringOrNull(member) !in SEMANTIC_LIVE_REGIONS)
+                        throw ContentInvalid(
+                            "$semanticPath.$member",
+                            "must be polite or assertive",
+                        )
+                }
+                "boolean" -> {
+                    if (semantics.boolOrNull(member) == null)
+                        throw ContentInvalid(
+                            "$semanticPath.$member",
+                            "must be a boolean",
+                        )
+                }
+                "finite-number" -> {
+                    val value = semantics[member]?.asDoubleOrNull()
+                    if (value == null || !value.isFinite())
+                        throw ContentInvalid(
+                            "$semanticPath.$member",
+                            "must be a finite number",
+                        )
+                }
+                "semantic-collection-object",
+                "semantic-collection-item-object",
+                "semantic-action-array" -> Unit // Dedicated checks below.
+                else -> error(
+                    "unsupported generated Semantics field type $fieldType",
+                )
             }
         }
-        } finally { ctx.nodeDepth-- }
+
+        val collection = if ("collection" in semantics) {
+            validateSemanticCollection(
+                semantics["collection"],
+                "$semanticPath.collection",
+            )
+        } else {
+            null
+        }
+        if ("collection_item" in semantics) {
+            val item = semantics["collection_item"] as? JsonObject
+                ?: throw ContentInvalid(
+                    "$semanticPath.collection_item",
+                    "must be an object",
+                )
+            val itemPath = "$semanticPath.collection_item"
+            val itemValues = validateSemanticIntegerObject(
+                item,
+                "collection_item",
+                itemPath,
+            )
+            val rowIndex = itemValues.getValue("row_index")
+            val rowSpan = itemValues.getValue("row_span")
+            val columnIndex = itemValues.getValue("column_index")
+            val columnSpan = itemValues.getValue("column_span")
+            val ancestor = ctx.semanticCollections.lastOrNull()
+                ?: throw ContentInvalid(
+                    itemPath,
+                    "requires an authored collection ancestor",
+                )
+            if (rowIndex + rowSpan > ancestor.rows) {
+                throw ContentInvalid(itemPath, "row range exceeds ancestor collection")
+            }
+            if (columnIndex + columnSpan > ancestor.columns) {
+                throw ContentInvalid(itemPath, "column range exceeds ancestor collection")
+            }
+        }
+
+        if ("actions" in semantics) {
+            val actions = semantics.arrOrNull("actions")
+                ?: throw ContentInvalid(
+                    "$semanticPath.actions",
+                    "must be an array",
+                )
+            if (actions.size > MAX_SEMANTIC_ACTIONS_PER_NODE) {
+                throw ContentInvalid(
+                    "$semanticPath.actions",
+                    "exceeds max_semantic_actions_per_node",
+                )
+            }
+            val labels = mutableSetOf<String>()
+            val actionSchema = SEMANTIC_OBJECT_SCHEMA.getValue("action")
+            for (index in actions.indices) {
+                val actionPath = "$semanticPath.actions[$index]"
+                val action = actions[index] as? JsonObject
+                    ?: throw ContentInvalid(actionPath, "must be an object")
+                requireSemanticMembers(action, actionSchema, actionPath)
+                val label = action.stringOrNull("label")
+                if (label == null || label.isEmpty()) {
+                    throw ContentInvalid(
+                        "$actionPath.label",
+                        "must be a non-empty plain string",
+                    )
+                }
+                if (!labels.add(label)) {
+                    throw ContentInvalid("$actionPath.label", "duplicate semantic action label")
+                }
+                val descriptor = action.objOrNull("on_action")
+                    ?: throw ContentInvalid(
+                        "$actionPath.on_action",
+                        "must be an ActionDescriptor",
+                    )
+                validateAction(
+                    descriptor,
+                    "$actionPath.on_action",
+                    "semantics.on_action",
+                    ctx,
+                )
+            }
+        }
+        return collection
+    }
+
+    private fun validateSemanticCollection(
+        value: JsonElement?,
+        path: String,
+    ): SemanticCollectionBounds {
+        val collection = value as? JsonObject
+            ?: throw ContentInvalid(path, "must be an object")
+        val values = validateSemanticIntegerObject(
+            collection,
+            "collection",
+            path,
+        )
+        return SemanticCollectionBounds(
+            rows = values.getValue("row_count"),
+            columns = values.getValue("column_count"),
+        )
+    }
+
+    private fun validateSemanticIntegerObject(
+        obj: JsonObject,
+        schemaName: String,
+        path: String,
+    ): Map<String, Long> {
+        val schema = SEMANTIC_OBJECT_SCHEMA.getValue(schemaName)
+        requireSemanticMembers(obj, schema, path)
+        return schema.fieldTypes.mapValues { (member, fieldType) ->
+            val minimum = when (fieldType) {
+                "non-negative-integer" -> 0L
+                "positive-integer" -> 1L
+                else -> error(
+                    "unsupported generated $schemaName field type $fieldType",
+                )
+            }
+            val value = integralLongOrNull(obj[member])
+            if (value == null || value < minimum) {
+                val description = if (minimum == 0L) {
+                    "a non-negative integer"
+                } else {
+                    "a positive integer"
+                }
+                throw ContentInvalid("$path.$member", "must be $description")
+            }
+            value
+        }
+    }
+
+    private fun requireSemanticMembers(
+        obj: JsonObject,
+        schema: SemanticObjectRow,
+        path: String,
+    ) {
+        for (required in schema.required) {
+            if (required !in obj)
+                throw ContentInvalid("$path.$required", "is required")
+        }
     }
 
     /** LD-10: enforce the contract FIELD_TYPES for the scalar categories.
@@ -504,11 +840,21 @@ object SpecValidator {
     private fun validateNode(node: JsonObject, path: String, ctx: Ctx) {
         val t = node.stringOrNull("t")
             ?: throw ContentInvalid(path, "node discriminator t must be a string")
-        // SPEC 16.1: every authored node ID is unique across the document.
-        node.stringOrNull("id")?.let { id ->
-            if (!IDENTIFIER.matches(id) ||
-                id.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
-                throw ContentInvalid("$path.id", "invalid identifier")
+        // SPEC 16.1/16.3: universal identity attributes keep their declared
+        // identifier type even on an unsupported node. A present wrong-typed
+        // value is malformed, never equivalent to omission.
+        fun identityMember(name: String): String? {
+            if (name !in node) return null
+            val value = node.stringOrNull(name)
+                ?: throw ContentInvalid("$path.$name", "must be an identifier")
+            if (!IDENTIFIER.matches(value) ||
+                value.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                throw ContentInvalid("$path.$name", "invalid identifier")
+            return value
+        }
+        identityMember("key")
+        // Every authored node ID is unique across the complete document.
+        identityMember("id")?.let { id ->
             if (!ctx.ids.add(id))
                 throw ContentInvalid("$path.id", "duplicate node ID")
         }
@@ -516,7 +862,8 @@ object SpecValidator {
         // degrade like an unknown type (skip required members, per-type schema,
         // and stateful registration; the renderer renders its children only).
         if (ctx.advertisedTypes != null && t !in ctx.advertisedTypes) return
-        val row = NODE_SCHEMA[t] ?: return // SPEC 16.2: unknown types degrade
+        val row = ctx.nodeVocabulary.schema[t]
+            ?: return // SPEC 16.2: unknown types degrade
         for (req in row.required)
             if (req !in node)
                 throw ContentInvalid(path, "$t missing required $req")
@@ -536,17 +883,13 @@ object SpecValidator {
         // validators below).
         //
         // C3 scope caveat, recorded rather than papered over: because this
-        // check is schema-scoped, it does NOT back-stop the two `boolOr`
-        // reads on members absent from the node's own schema row —
-        // `password` read off a non-text_input stateful (validateResetIds)
-        // and `single_line` read off an `editor` (validateLineCounts). At
-        // exactly those two sites the dropped string coercion is a LOOSENING,
-        // not a tightening: `password: "true"` on a slider used to block a
-        // reset and no longer does. Both inputs are spec-invalid extra
-        // members that §16.3 tells a receiver to ignore anyway, so the
-        // practical blast radius is nil — but the "already type-checked
-        // first" justification does not cover them, and a future reader
-        // should not assume it does.
+        // check is schema-scoped, it does NOT back-stop `password` read off a
+        // non-text_input stateful in validateResetIds. The dropped string
+        // coercion there is a LOOSENING, not a tightening: `password: "true"`
+        // on a slider used to block a reset and no longer does. That input is
+        // a spec-invalid extra member §16.3 tells a receiver to ignore, so the
+        // practical blast radius is nil — but a future reader should not
+        // assume every defaulting read was already type-checked here.
         for (member in row.required + row.optional)
             if (member in node) checkScalarFieldType(t, member, node, path)
         when (t) {
@@ -555,9 +898,7 @@ object SpecValidator {
                 if (value != null && value.asStringOrNull() == null)
                     throw ContentInvalid("$path.value", "text_input value must be a string")
                 val text = value?.asStringOrNull()
-                // SPEC 17.4: single_line prohibits U+000A in authored values.
-                if (node.boolOr("single_line") && text != null && '\n' in text)
-                    throw ContentInvalid("$path.value", "single_line value contains U+000A")
+                validateSingleLineValue(node, path)
                 // SPEC 17.4: a snapshot must not seed a password.
                 if (node.boolOr("password") &&
                     (text != null && text.isNotEmpty() || "on_change" in node))
@@ -631,13 +972,6 @@ object SpecValidator {
                 if ("state" in node && "checked" in node)
                     throw ContentInvalid(path, "checkbox state and checked are mutually exclusive")
             }
-            "split_button" -> {
-                // SPEC 17.4: the leading half is a label, an icon, or both —
-                // never neither (label left the required set for the icon-only
-                // LeadingButton form, not for an empty one).
-                if (node.stringOr("label").isEmpty() && node.stringOr("icon").isEmpty())
-                    throw ContentInvalid(path, "split_button needs a label, an icon, or both")
-            }
             // §17.4: dropdown and segmented_button share enum_list's option
             // and value rules; dropdown's `editable` relaxes value-in-options
             // exactly as allow_add does (the typed text IS the value).
@@ -706,6 +1040,7 @@ object SpecValidator {
                         throw ContentInvalid("$path.year", "must be a non-negative integer")
                 }
             }
+            "variant_host" -> validateVariantHost(node, path, ctx)
             "menu" -> {
                 // SPEC 17.4: a menu carries exactly one of items|groups. A
                 // MenuItem needs a label wherever it sits; a group is
@@ -768,6 +1103,7 @@ object SpecValidator {
             "canvas" -> validateCanvas(node, path, ctx)
             "month_grid" -> validateMonthGrid(node, path)
             "editor" -> {
+                validateSingleLineValue(node, path)
                 validateLineCounts(node, path)
                 val hasDocument = "document" in node
                 // SPEC 17.4: complete:true requires document.
@@ -777,7 +1113,12 @@ object SpecValidator {
                     validateToolbar(node["toolbar"], "$path.toolbar", hasDocument)
             }
         }
-        if (t in STATEFUL_NODE_TYPES) {
+        ctx.nodeVocabulary.atLeastOneNonEmpty[t]?.let { members ->
+            if (members.none { member -> node.stringOr(member).isNotEmpty() })
+                throw ContentInvalid(path,
+                    "$t needs at least one non-empty member from ${members.sorted()}")
+        }
+        if (ctx.nodeVocabulary.isStateful(t, node)) {
             // SPEC 13.6: "a local `editor` draft requires publish_state: true
             // and no `document` in both snapshots. A synchronized editor never
             // participates in draft reconciliation." Registering a
@@ -788,22 +1129,95 @@ object SpecValidator {
             // `checked`: the toggle holds device state keyed on its id, while
             // a plain button holds none and MUST NOT be forced to carry an id
             // — every button already on the wire has none.
-            val isStateful = when (t) {
-                "editor" -> node.boolOr("publish_state") && "document" !in node
-                "button", "icon_button" -> "checked" in node
-                else -> true
-            }
-            if (isStateful) {
-                val id = node.stringOrNull("id")
-                    ?: throw ContentInvalid(path, "$t requires an id")
-                ctx.statefuls[id] = node
-            }
+            val id = node.stringOrNull("id")
+                ?: throw ContentInvalid(path, "$t requires an id")
+            ctx.statefuls[id] = node
         }
     }
 
+    /** SPEC 17.3: a retained variant host is a small, closed, ordered set of
+     * complete authored alternatives. Every content node is still reached by
+     * the generic walk, and therefore spends the ordinary whole-snapshot
+     * node/depth/action/aggregate budgets even while inactive. */
+    private fun validateVariantHost(node: JsonObject, path: String, ctx: Ctx) {
+        val variants = node.arrOrNull("variants")
+            ?: throw ContentInvalid("$path.variants", "must be an array")
+        if (variants.size !in 2..WireLimits.MAX_VARIANTS_PER_HOST)
+            throw ContentInvalid("$path.variants",
+                "must contain 2..${WireLimits.MAX_VARIANTS_PER_HOST} variants")
+        val seen = mutableSetOf<String>()
+        for (i in variants.indices) {
+            val variant = variants[i] as? JsonObject
+                ?: throw ContentInvalid("$path.variants[$i]", "must be an object")
+            for (member in variant.keys)
+                if (member != "value" && member != "content")
+                    throw ContentInvalid("$path.variants[$i].$member",
+                        "unknown variant member")
+            val value = variant.stringOrNull("value")
+            if (value == null || !IDENTIFIER.matches(value) ||
+                value.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                throw ContentInvalid("$path.variants[$i].value",
+                    "must be an identifier")
+            if (!seen.add(value))
+                throw ContentInvalid("$path.variants[$i].value",
+                    "duplicate variant value")
+            val content = variant.objOrNull("content")
+                ?: throw ContentInvalid("$path.variants[$i].content", "must be a node")
+            if (content.stringOrNull("t") == null)
+                throw ContentInvalid("$path.variants[$i].content",
+                    "node discriminator t required")
+            validateRetainedContent(content, "$path.variants[$i].content", ctx)
+        }
+        val authored = node.stringOrNull("value")
+        if (authored == null || authored !in seen)
+            throw ContentInvalid("$path.value", "must name an authored variant")
+    }
+
+    /**
+     * Retention must not multiply mutable state or editor sessions: those
+     * lifecycles are defined for the visible tree, while all alternatives are
+     * deliberately kept composed. Nested hosts are prohibited as well, which
+     * keeps one local switch to one bounded selection boundary.
+     */
+    private fun validateRetainedContent(value: JsonElement, path: String, ctx: Ctx) {
+        when (value) {
+            is JsonArray -> value.forEachIndexed { index, child ->
+                validateRetainedContent(child, "$path[$index]", ctx)
+            }
+            is JsonObject -> {
+                value.stringOrNull("t")?.let { t ->
+                    when {
+                        t == "variant_host" -> throw ContentInvalid(path,
+                            "nested variant_host is prohibited")
+                        t == "editor" -> throw ContentInvalid(path,
+                            "editor is prohibited in retained variant content")
+                        ctx.nodeVocabulary.isStateful(t, value) -> throw ContentInvalid(path,
+                            "stateful nodes are prohibited in retained variant content")
+                    }
+                }
+                for ((member, child) in value)
+                    if (member !in OPAQUE_NODE_WALK_MEMBERS)
+                        validateRetainedContent(child, "$path.$member", ctx)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun variantValues(host: JsonObject): Set<String> =
+        host.arrOrNull("variants")?.mapNotNull {
+            (it as? JsonObject)?.stringOrNull("value")
+        }?.toSet() ?: emptySet()
+
     // ------------------------------------------- per-type deep rules (17.x)
 
-    /** SPEC 17.4: min_lines/max_lines are positive integers, min ≤ max, and
+    /** SPEC 17.4: single_line prohibits U+000A in authored values. */
+    private fun validateSingleLineValue(node: JsonObject, path: String) {
+        val text = node["value"]?.asStringOrNull()
+        if (node.boolOr("single_line") && text != null && '\n' in text)
+            throw ContentInvalid("$path.value", "single_line value contains U+000A")
+    }
+
+    /** SPEC 17.4: line counts are positive, min ≤ max after defaults, and
      * single_line:true requires both to equal 1. */
     private fun validateLineCounts(node: JsonObject, path: String) {
         validatePositiveInt(node, "min_lines", path)
@@ -817,13 +1231,20 @@ object SpecValidator {
         // wire actually carries (the T1 parser bounds integers at 2^53-1).
         // C3 records this as a deliberate outcome change on absurd input:
         // values above 2^31 were previously judged by wraparound.
-        val min = integralLongOrNull(node["min_lines"])
-        val max = integralLongOrNull(node["max_lines"])
-        if (min != null && max != null && min > max)
-            throw ContentInvalid(path, "min_lines must not exceed max_lines")
-        if (node.boolOr("single_line") &&
-            ((min ?: 1L) != 1L || (max ?: 1L) != 1L))
+        val authoredMin = integralLongOrNull(node["min_lines"])
+        val authoredMax = integralLongOrNull(node["max_lines"])
+        val singleLine = node.boolOr("single_line")
+        val editor = node.reqString("t") == "editor"
+        val min = authoredMin ?: if (editor && !singleLine) 3L else 1L
+        val max = authoredMax ?: when {
+            singleLine -> 1L
+            editor -> Long.MAX_VALUE
+            else -> min
+        }
+        if (singleLine && (min != 1L || max != 1L))
             throw ContentInvalid(path, "single_line requires line counts of 1")
+        if (min > max)
+            throw ContentInvalid(path, "min_lines must not exceed max_lines")
     }
 
     private fun validatePositiveInt(node: JsonObject, member: String, path: String) {
@@ -1198,6 +1619,16 @@ object SpecValidator {
             // dismiss_label?} — the face of the parked confirmation.
             if ("confirm" in obj)
                 validateConfirm(obj["confirm"], "$path.confirm")
+            if ("open_surface" in obj) {
+                val target = obj.stringOrNull("open_surface")
+                if (target == null || !APP_SURFACE_ID.matches(target) ||
+                    target.toByteArray(Charsets.UTF_8).size > 128)
+                    throw ContentInvalid("$path.open_surface", "must be an app Surface ID")
+                if (ctx.advertisedFeatures != null &&
+                    "action.open_surface" !in ctx.advertisedFeatures)
+                    throw ContentInvalid("$path.open_surface",
+                        "action.open_surface not valid in this context")
+            }
             // SPEC 14.3: a remote descriptor on a value-producing hook MUST
             // NOT author the member the Companion injects.
             INJECTED_MEMBERS[hook]?.let { injected ->
@@ -1220,6 +1651,29 @@ object SpecValidator {
             // emit one absent from surface_profiles.<target>.builtins.
             if (ctx.advertisedBuiltins != null && name !in ctx.advertisedBuiltins)
                 throw ContentInvalid("$path.builtin", "builtin $name not valid in this context")
+            when (name) {
+                "surface.open" -> {
+                    val target = obj.stringOrNull("surface")
+                    if (target == null || !APP_SURFACE_ID.matches(target) ||
+                        target.toByteArray(Charsets.UTF_8).size > 128)
+                        throw ContentInvalid("$path.surface", "must be an app Surface ID")
+                }
+                "variant.switch" -> {
+                    val id = obj.stringOrNull("id")
+                    if (id == null || !IDENTIFIER.matches(id) ||
+                        id.toByteArray(Charsets.UTF_8).size > WireLimits.MAX_IDENTIFIER_OCTETS)
+                        throw ContentInvalid("$path.id", "must be a node identifier")
+                    val requested = if ("value" in obj) {
+                        val value = obj.stringOrNull("value")
+                        if (value == null || !IDENTIFIER.matches(value) ||
+                            value.toByteArray(Charsets.UTF_8).size >
+                                WireLimits.MAX_IDENTIFIER_OCTETS)
+                            throw ContentInvalid("$path.value", "must be an identifier")
+                        value
+                    } else null
+                    ctx.variantRefs.add(Triple(path, id, requested))
+                }
+            }
         }
         // SPEC 14.1: capture_fields is an array of distinct widget IDs no
         // longer than max_capture_fields; each is resolved against the

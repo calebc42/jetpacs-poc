@@ -18,8 +18,8 @@
 ;; (docs/PLAN-jetpacs-debt-and-scaffold.md), REVERSING the
 ;; earlier app-local ruling that had parked the picker beside its first
 ;; consumer pending a second one.  The reversal costs nothing because the closure was
-;; foundation-only from the day it landed — cl-lib, jetpacs-widgets,
-;; jetpacs-theme, and zero downstream symbols — so under the 2026-08-06
+;; foundation-only from the day it landed — cl-lib, subr-x,
+;; jetpacs-widgets, and zero downstream symbols — so under the 2026-08-06
 ;; naming rule (a prefix is a claim about the require closure) the old
 ;; prefix overclaimed, and the rename IS the whole promotion.
 ;;
@@ -27,9 +27,9 @@
 ;;  - `jetpacs-swatch' has no v3 node helper: the chip is a shaped
 ;;    `jetpacs-surface' sized through `jetpacs-with-attrs' (width and
 ;;    height are universal attributes, not surface members).
-;;  - The mirror note reads `jetpacs-theme-mode' `mirror', not v1's
-;;    `emacs' (T2); jetpacs-theme is a hard require, so v1's boundp
-;;    probe on the mode variable is gone.
+;;  - The mirror note receives the concrete provider's theme mode explicitly
+;;    and treats `mirror' as active, rather than reaching into
+;;    `jetpacs-theme' and recreating its dependency cycle.
 ;;  - Action `:args' are member plists (T3); positional text styles are
 ;;    `:style' strings (T5).
 ;;
@@ -41,8 +41,8 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x) ; `string-remove-prefix'
 (require 'jetpacs-widgets)
-(require 'jetpacs-theme)
 
 (defconst jetpacs-theme-picker-strip-keys
   '(bg-main fg-main accent-0 accent-1 accent-2 accent-3 err info)
@@ -83,10 +83,11 @@ theme alone."
                          (funcall color-fn key theme) 18))
                       '(bg-main fg-main accent-0)))))
 
-(defun jetpacs-theme-picker-mirror-note (mirror-action)
+(defun jetpacs-theme-picker-mirror-note (mirror-action theme-mode)
   "Companion-mirror status: a live badge, or a one-tap switch to mirror mode.
-MIRROR-ACTION is the action that flips `jetpacs-theme-mode' to `mirror'."
-  (if (eq jetpacs-theme-mode 'mirror)
+MIRROR-ACTION performs the switch; THEME-MODE is the provider's explicit
+current mode."
+  (if (eq theme-mode 'mirror)
       (jetpacs-row (jetpacs-icon "smartphone" :size 16)
                    (jetpacs-text "Mirroring to the companion"
                                  :style "caption"))
@@ -96,11 +97,13 @@ MIRROR-ACTION is the action that flips `jetpacs-theme-mode' to `mirror'."
 (cl-defun jetpacs-theme-picker-current-card (current &key display-fn
                                                        dark-p-fn color-fn
                                                        mirror-action
+                                                       theme-mode
                                                        none-label)
   "The header card: the active theme's name, polarity, palette, mirror status.
 CURRENT is the active theme symbol or nil (NONE-LABEL shows then);
 DISPLAY-FN renders its title, DARK-P-FN its polarity, COLOR-FN feeds the
-palette strip, and MIRROR-ACTION the mirror note."
+palette strip, MIRROR-ACTION the mirror verb, and THEME-MODE its current
+state."
   (jetpacs-card
    (apply #'jetpacs-column
           (delq nil
@@ -116,7 +119,8 @@ palette strip, and MIRROR-ACTION the mirror note."
                         (apply #'jetpacs-row
                                (jetpacs-theme-picker-strip color-fn)))
                       (when current
-                        (jetpacs-theme-picker-mirror-note mirror-action)))))))
+                        (jetpacs-theme-picker-mirror-note mirror-action
+                                                          theme-mode)))))))
 
 (cl-defun jetpacs-theme-picker-theme-card (theme current &key display-fn
                                                    color-fn load-action)

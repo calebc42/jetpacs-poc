@@ -36,6 +36,7 @@
 ;; flat directory), so an example's builder can show its own defun.
 (require 'find-func)
 (require 'jetpacs-widgets)
+(require 'glasspane-material3)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-shell)
 (require 'jetpacs-chrome)
@@ -54,26 +55,28 @@
 Not under `jetpacs-reserved-owner-prefix': the catalog is a Tier-1
 application, not base chrome.")
 
-(defconst jetpacs-m3-title "Compose Material 3"
-  "The Home top-bar title (upstream R.string.compose_material_3).")
+(defconst jetpacs-m3-label "Components"
+  "The short app, dock, and drawer label for Jetpacs Components.")
+
+(defconst jetpacs-m3-title "Jetpacs Components"
+  "The Home top-bar title for the Jetpacs component reference.")
 
 (defconst jetpacs-m3-identity
-  "Material 3 Compose Catalog — the Jetpacs component vocabulary"
-  "The catalog's full identity, ratified 2026-08-06.
-\"m3\" and \"Jetpacs\" are synonymous: Material 3 IS the design language,
-and this app is the vocabulary itself rather than a demo beside it
-\(docs/ARCHITECTURE-POC3.md, the M3 doctrine).  It rides the root
-screen's BODY; the dock and drawer label stays the short \"Catalog\".")
+  "Jetpacs Components — the Material 3 vocabulary, authored in Elisp"
+  "The component reference's full identity.
+This app is the reference client of the optional `glasspane.material3'
+renderer extension, not the definition of Jetpacs' Compose foundation
+\(docs/ARCHITECTURE-POC3.md).  It rides the root screen's BODY; the dock
+and drawer use `jetpacs-m3-label'.")
 
-(defconst jetpacs-m3-material-version "1.5.0-alpha16"
+(defconst jetpacs-m3-material-version "1.5.0-alpha25"
   "The Material 3 version this catalog is authored against.
 NOT the source of truth — `companion/gradle/libs.versions.toml''s
 `material3' entry is, and this constant restates it so the phone can
 say which Material it is showing.  The two are asserted equal by
 test/jetpacs-m3-catalog-test.el, so bumping the toml without bumping
-this goes RED: the Material version moves UNANIMOUSLY, in the toml,
-here, and in the doctrine paragraph that names them
-\(docs/ARCHITECTURE-POC3.md).")
+this goes RED.  The version belongs to this renderer implementation and
+catalog, not to Jetpacs' renderer-neutral foundation.")
 
 (defconst jetpacs-m3-component-icon "widgets"
   "The icon every component card shows.
@@ -294,12 +297,23 @@ name one."
   (jetpacs-check-identifier id "component id")
   (jetpacs-require-string name "component name")
   (jetpacs-require-string description "component description")
-  ;; A builder that does not exist would show an empty block on a screen
-  ;; nobody looks at twice; signalling here fails the module's own gate
-  ;; instead, which is where a typo is cheap.
+  ;; Structural metadata is cheap and deterministic, so reject drift at the
+  ;; authoring seam.  Docstring availability is deliberately checked by the
+  ;; source-backed gate instead: `documentation' may fail in a stripped
+  ;; runtime, and losing optional help must not prevent the app registering.
+  (unless (and (proper-list-p builders) builders)
+    (error "Jetpacs M3: component %s needs a non-empty :builders list" id))
+  (unless (= (length builders)
+             (length (cl-remove-duplicates builders :test #'eq)))
+    (error "Jetpacs M3: component %s repeats a builder" id))
   (dolist (builder builders)
     (unless (and (symbolp builder) (fboundp builder))
-      (error "jetpacs-m3: component %s names an unbound builder %S" id builder)))
+      (error "Jetpacs M3: component %s names an unbound builder %S" id builder))
+    (unless (and (string-prefix-p "jetpacs-" (symbol-name builder))
+                 (not (string-prefix-p "jetpacs-m3-"
+                                       (symbol-name builder))))
+      (error "Jetpacs M3: component %s names non-vocabulary builder %S"
+             id builder)))
   (let ((component (list :id id :name name :description description
                          :guidelines guidelines :docs docs :source source
                          :additional-info additional-info
@@ -316,6 +330,32 @@ name one."
 (defun jetpacs-m3-component (id)
   "The registered component ID, or nil."
   (gethash id jetpacs-m3--by-id))
+
+(defun jetpacs-m3-builder-index ()
+  "Return the loaded catalog's builder-to-component reverse index.
+The result is an alist of (BUILDER . COMPONENT-IDS), sorted by BUILDER's
+symbol name.  Component ids retain upstream catalog order.  It is derived
+from each component's authored `:builders' metadata, the same authority the
+component screen renders; callers therefore cannot observe a second catalog
+model drifting from what is shown on the device."
+  (let ((table (make-hash-table :test #'eq)))
+    (dolist (component jetpacs-m3-components)
+      (dolist (builder (plist-get component :builders))
+        (puthash builder
+                 (append (gethash builder table)
+                         (list (plist-get component :id)))
+                 table)))
+    (sort (mapcar (lambda (builder)
+                    (cons builder (gethash builder table)))
+                  (hash-table-keys table))
+          (lambda (left right)
+            (string< (symbol-name (car left))
+                     (symbol-name (car right)))))))
+
+(defun jetpacs-m3-example-count ()
+  "Return the number of examples in the loaded component registry."
+  (cl-loop for component in jetpacs-m3-components
+           sum (length (plist-get component :examples))))
 
 (defun jetpacs-m3-expressive-p (component)
   "Non-nil when COMPONENT has any expressive example (upstream
@@ -600,7 +640,7 @@ still what that menu is for."
 
 (defun jetpacs-m3--expr-badge ()
   "The \"Expr\" marker upstream draws as a corner banner."
-  (jetpacs-badge "Expr" :color "secondary_container"))
+  (jetpacs-badge "Expr" :color "secondary"))
 
 ;;;; Home
 
@@ -656,7 +696,11 @@ sixty-character title there is exactly the flex trap
 `jetpacs-m3-material-version', which the suite pins to the toml."
   (jetpacs-column
    (jetpacs-text jetpacs-m3-identity :style "title")
-   (jetpacs-text (format "Material 3 %s" jetpacs-m3-material-version)
+   (jetpacs-text (format "Material 3 %s · %d components · %d examples · %d Elisp builders"
+                         jetpacs-m3-material-version
+                         (length jetpacs-m3-components)
+                         (jetpacs-m3-example-count)
+                         (length (jetpacs-m3-builder-index)))
                  :style "caption")
    :spacing 2))
 
@@ -893,7 +937,10 @@ answer, and the one it could not answer until now."
   (when-let* ((builders (plist-get component :builders)))
     (append
      (list (jetpacs-with-attrs (jetpacs-spacer) :height 16)
-           (jetpacs-text "Elisp" :style "title"))
+           (jetpacs-text "Jetpacs builders" :style "title")
+           (jetpacs-text
+            "Signatures and descriptions come from the loaded Elisp functions."
+            :style "caption"))
      (cl-loop
       for builder in builders
       for index from 0
@@ -1470,15 +1517,14 @@ A function rather than a literal list so `:selected' can track SURFACE:
 the destination renders in every dock the app layer composes, and it
 must read selected exactly on the catalog's own surface.
 
-`jetpacs.launcher.open' rather than a catalog verb: the tap arrives
-from whatever surface the user is looking at, so it needs a GLOBAL verb
-\(the catalog's own `m3catalog.home' is owner-scoped, and would reset
-the screens of whatever surface sent it)."
+`surface.open' rather than a catalog verb: the tap arrives from whatever
+surface the user is looking at, so host navigation must stay receiver-local
+\(the catalog's own `m3catalog.home' is owner-scoped, and would reset the
+screens of whatever surface sent it)."
   (let ((home (jetpacs-shell-surface-for jetpacs-m3-owner)))
-    (list (list :label "Catalog"
+    (list (list :label jetpacs-m3-label
                 :icon jetpacs-m3-component-icon
-                :on-tap (jetpacs-action "jetpacs.launcher.open"
-                                        :args (list :surface home))
+                :on-tap (jetpacs-shell-open-surface-action home)
                 :selected (equal surface home)))))
 
 ;;;###autoload
@@ -1567,9 +1613,10 @@ package built ON jetpacs; this is the first one there is."
   ;; there, and its dock destination names one the launcher's
   ;; membership guard will recognize.
   (jetpacs-defapp jetpacs-m3-owner
-                  :label "Catalog"
+                  :label jetpacs-m3-label
                   :icon jetpacs-m3-component-icon
                   :surfaces (list jetpacs-m3-owner)
+                  :requires-extensions '("glasspane.material3")
                   :dock #'jetpacs-m3--dock-items))
 
 (defun jetpacs-m3-unregister ()

@@ -44,8 +44,8 @@
   "Upstream CarouselExampleSourceUrl.")
 
 (defconst jetpacs-m3-carousel--tones
-  '("primary_container" "secondary_container" "tertiary_container"
-    "surface_variant" "primary_container")
+  '("primary" "secondary" "secondary"
+    "surface" "primary")
   "One tonal container per item — the stand-in for the five drawables.")
 
 (defun jetpacs-m3-carousel--items ()

@@ -20,14 +20,18 @@ import android.widget.Toast
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
+import java.util.concurrent.atomic.AtomicLong
 
 class EbpApplication : Application() {
 
     // Process-owned presentation state: the bridge writes, any Activity
     // observes. An Activity is a pure renderer of these flows — no bridge
     // callback may close over one (RF-0.5a's gate condition).
-    private val _currentSpec = MutableStateFlow<Pair<String, JsonObject>?>(null)
-    val currentSpec: StateFlow<Pair<String, JsonObject>?> get() = _currentSpec
+    private val appSurfaces = AppSurfaceRegistry()
+    internal val appSurfaceCatalog: StateFlow<AppSurfaceRegistry.Catalog>
+        get() = appSurfaces.catalog
+    fun appSurface(surfaceId: String): StateFlow<JsonObject?> =
+        appSurfaces.surface(surfaceId)
     // D-3(d): `epoch` advances on EVERY show, so a same-id dialog is a
     // DISTINCT value twice over — the renderer keys its per-dialog field
     // state on it (a same-id successor must never inherit its
@@ -49,6 +53,29 @@ class EbpApplication : Application() {
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> get() = _settingsOpen
     fun dismissSettings() { _settingsOpen.value = false }
+
+    // SPEC 14.2 `surface.open`: an occurrence is receiver-local host-shell
+    // navigation, not a surface refresh. The epoch prevents StateFlow's
+    // equality conflation from swallowing two taps on the same destination.
+    data class SurfaceOpenRequest(
+        val surfaceId: String,
+        val epoch: Long,
+    )
+    private val surfaceOpenEpoch = AtomicLong()
+    private val _surfaceOpenRequest = MutableStateFlow<SurfaceOpenRequest?>(null)
+    val surfaceOpenRequest: StateFlow<SurfaceOpenRequest?> get() = _surfaceOpenRequest
+    fun dismissSurfaceOpen(epoch: Long) {
+        if (_surfaceOpenRequest.value?.epoch == epoch) {
+            _surfaceOpenRequest.value = null
+        }
+    }
+
+    private fun requestSurfaceOpen(surfaceId: String) {
+        _surfaceOpenRequest.value = SurfaceOpenRequest(
+            surfaceId = surfaceId,
+            epoch = surfaceOpenEpoch.incrementAndGet(),
+        )
+    }
 
     lateinit var bridge: DeviceBridge
         private set
@@ -81,8 +108,9 @@ class EbpApplication : Application() {
         bridge = DeviceBridge(
             this,
             onSurfaceChanged = { surface, spec ->
-                _currentSpec.value = if (spec != null) surface to spec else null
+                appSurfaces.publish(surface, spec)
             },
+            onAppSurfaceCacheLoaded = appSurfaces::markLoaded,
             // SPEC 15.1: storage failure and queue exhaustion MUST reach the
             // user as a visible diagnostic.
             onQueueProblem = { message ->
@@ -107,6 +135,7 @@ class EbpApplication : Application() {
             onPieMenuChanged = { id, spec ->
                 _currentPieMenu.value = if (spec != null) id to spec else null
             },
+            onOpenSurface = ::requestSurfaceOpen,
             onOpenSettings = { _settingsOpen.value = true })
         bridge.start()
     }

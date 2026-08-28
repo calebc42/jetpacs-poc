@@ -334,7 +334,11 @@ the documented cost of not enumerating every defcustom up front.")
 
 (with-jetpacs-owner "jetpacs.customize"
   (jetpacs-chrome-define-root jetpacs-customize-surface "home"
-                              (lambda (_back) (jetpacs-customize--view))))
+                              (lambda (_back) (jetpacs-customize--view))
+                              ;; The new Companion uses receiver-local
+                              ;; `surface.open' for the global Customize row;
+                              ;; keep its target present after cold cache load.
+                              :required t))
 (jetpacs-defaction "customize.show" #'jetpacs-customize--action-show)
 (jetpacs-defaction "customize.browse" #'jetpacs-customize--action-browse)
 (jetpacs-defaction "customize.up" #'jetpacs-customize--action-up)

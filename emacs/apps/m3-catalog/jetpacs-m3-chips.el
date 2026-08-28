@@ -20,7 +20,7 @@
 ;; InputChip 24dp circular slot, distinct from the 18dp leadingIcon)
 ;; and `content_spacing' (FilterChipDefaults.horizontalArrangement, the
 ;; gap INSIDE the chip's own content row) -- so all thirteen samples
-;; recreate.  One gap costs no example outright: `assist_chip' has no
+;; recreate.  One gap costs no example outright: `material3.assist_chip' has no
 ;; `trailing_icon', which is why ChipGroupSingleLineSample drops the
 ;; per-chip ArrowDropDown.
 ;;
@@ -54,7 +54,7 @@
 
 (defun jetpacs-m3-chips--assist ()
   "Upstream AssistChipSample: \"Assist Chip\" with a leading Settings icon."
-  (jetpacs-assist-chip "Assist Chip"
+  (jetpacs-material3-assist-chip "Assist Chip"
                        :on-tap (jetpacs-m3-demo "Assist Chip")
                        :icon "settings"))
 
@@ -62,7 +62,7 @@
   "Upstream ElevatedAssistChipSample: the same chip, elevated.
 Identical to AssistChipSample but for the composable, so the variant IS
 the sample."
-  (jetpacs-assist-chip "Assist Chip"
+  (jetpacs-material3-assist-chip "Assist Chip"
                        :on-tap (jetpacs-m3-demo "Assist Chip")
                        :icon "settings"
                        :variant "elevated"))
@@ -136,13 +136,13 @@ circle are the sample."
 
 (defun jetpacs-m3-chips--suggestion ()
   "Upstream SuggestionChipSample: a bare SuggestionChip, no graphic."
-  (jetpacs-assist-chip "Suggestion Chip"
+  (jetpacs-material3-assist-chip "Suggestion Chip"
                        :on-tap (jetpacs-m3-demo "Suggestion Chip")
                        :variant "suggestion"))
 
 (defun jetpacs-m3-chips--elevated-suggestion ()
   "Upstream ElevatedSuggestionChipSample: SuggestionChipSample, elevated."
-  (jetpacs-assist-chip "Suggestion Chip"
+  (jetpacs-material3-assist-chip "Suggestion Chip"
                        :on-tap (jetpacs-m3-demo "Suggestion Chip")
                        :variant "elevated_suggestion"))
 
@@ -166,7 +166,7 @@ dropped rather than moved in front of its label."
                           jetpacs-m3-chips--group-labels)
                   :icon "tune"))
            (mapcar (lambda (label)
-                     (jetpacs-assist-chip label
+                     (jetpacs-material3-assist-chip label
                                           :on-tap (jetpacs-m3-demo label)))
                    jetpacs-m3-chips--group-labels)
            ;; Modifier.padding(horizontal = 4.dp) on each chip.
@@ -189,7 +189,7 @@ VerticalDivider is dropped: the divider node is HorizontalDivider."
                                :selected t
                                :icon "tune"))
            (mapcar (lambda (label)
-                     (jetpacs-assist-chip label
+                     (jetpacs-material3-assist-chip label
                                           :on-tap (jetpacs-m3-demo label)))
                    jetpacs-m3-chips--reflow-labels)
            ;; Modifier.padding(horizontal = 4.dp), Arrangement.Start,
@@ -200,7 +200,7 @@ VerticalDivider is dropped: the divider node is HorizontalDivider."
    :fill_fraction 1.0))
 
 (jetpacs-m3-defcomponent "chips"
-  :builders (list #'jetpacs-chip #'jetpacs-assist-chip)
+  :builders (list #'jetpacs-chip #'jetpacs-material3-assist-chip)
   :name "Chips"
   :description
   "Chips allow users to enter information, make selections, filter content, or trigger actions."

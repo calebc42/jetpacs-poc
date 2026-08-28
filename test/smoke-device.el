@@ -28,7 +28,7 @@
                           :text "Hello from Emacs 30.1")
                          (:t "divider")
                          (:t "text"
-                          :text "EBP 2.0.0-draft — conformant wire, rung W4")
+                          :text "EBP 3.1.0-draft — conformant wire, rung W4")
                          (:t "spacer" :height 16)
                          (:t "text" :style "caption"
                           :text "pushed over android-loopback-tcp via adb forward")])

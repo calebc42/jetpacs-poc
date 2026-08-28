@@ -1,23 +1,101 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// GENERATED from ebp/contract.json (format 6,
-// spec 2.0.0-draft) by tools/gen-vocabulary.py — DO NOT EDIT.
+// GENERATED from ebp/contract.json (format 8,
+// spec 3.1.0-draft) by tools/gen-vocabulary.py — DO NOT EDIT.
 // VocabularyDriftTest re-reads the contract and fails on any disagreement.
 package com.calebc42.ebp.wire
 
 data class NodeRow(val required: Set<String>, val optional: Set<String>)
 data class ActionRow(val required: Set<String>, val optional: Set<String>)
+/** Required, optional, and typed members for one contract-projected object. */
+data class SemanticObjectRow(
+    val required: Set<String>,
+    val optional: Set<String>,
+    val fieldTypes: Map<String, String>,
+)
 
-const val CONTRACT_FORMAT = 6
-const val SPEC_VERSION = "2.0.0-draft"
+/** Contract-projected node defaults; no receiver may invent a role override. */
+data class DefaultSemanticRow(
+    val role: String? = null,
+    val roleConditionMember: String? = null,
+    val headingLevel: Int? = null,
+    val enabledMember: String? = null,
+    val readOnlyMember: String? = null,
+    val readOnlyInverted: Boolean = false,
+    val checkedMember: String? = null,
+    val checkedDefault: Boolean? = null,
+    val toggleStateMember: String? = null,
+    val selectedMember: String? = null,
+    val selectedDefault: Boolean? = null,
+    val selectionMember: String? = null,
+    val selectionDefaultIndex: Int? = null,
+    val expandedMember: String? = null,
+    val expandedInverted: Boolean = false,
+    val progressValueMember: String? = null,
+    val progressMinMember: String? = null,
+    val progressMaxMember: String? = null,
+    val progressMin: Double? = null,
+    val progressMax: Double? = null,
+    val indeterminateWhenValueAbsent: Boolean = false,
+    val progressValueDefaultsToMin: Boolean = false,
+    val customActionsFrom: List<String> = emptyList(),
+)
+
+const val CONTRACT_FORMAT = 8
+const val PROTOCOL_VERSION = 3
+const val SPEC_VERSION = "3.1.0-draft"
 
 val CORE_NODE_SET: Set<String> = setOf("text", "row", "column", "box", "spacer", "divider", "button", "text_input")
 
-val UNIVERSAL_NODE_ATTRIBUTES: Set<String> = setOf("key", "id", "scroll_here", "padding", "pad", "width", "height", "min_width", "max_width", "min_height", "max_height", "fill_fraction", "aspect_ratio", "weight", "bg", "corner", "border", "alpha", "clip", "align_self")
+val UNIVERSAL_NODE_ATTRIBUTES: Set<String> = setOf("key", "id", "scroll_here", "padding", "pad", "width", "height", "min_width", "max_width", "min_height", "max_height", "fill_fraction", "aspect_ratio", "weight", "bg", "corner", "border", "alpha", "clip", "align_self", "semantics")
+
+const val MAX_SEMANTIC_ACTIONS_PER_NODE = 8
+
+val SEMANTICS_SCHEMA = SemanticObjectRow(
+    required = setOf(),
+    optional = setOf("name", "description", "state_description", "error", "pane_title", "heading_level", "live_region", "collection", "collection_item", "traversal_group", "traversal_index", "actions"),
+    fieldTypes = mapOf("name" to "non-empty-plain-string", "description" to "non-empty-plain-string", "state_description" to "non-empty-plain-string", "error" to "non-empty-plain-string", "pane_title" to "non-empty-plain-string", "heading_level" to "integer-1-6", "live_region" to "live-region-enum", "collection" to "semantic-collection-object", "collection_item" to "semantic-collection-item-object", "traversal_group" to "boolean", "traversal_index" to "finite-number", "actions" to "semantic-action-array"),
+)
+
+val SEMANTIC_OBJECT_SCHEMA: Map<String, SemanticObjectRow> = mapOf(
+    "collection" to SemanticObjectRow(setOf("row_count", "column_count"), setOf(), mapOf("row_count" to "non-negative-integer", "column_count" to "positive-integer")),
+    "collection_item" to SemanticObjectRow(setOf("row_index", "row_span", "column_index", "column_span"), setOf(), mapOf("row_index" to "non-negative-integer", "row_span" to "positive-integer", "column_index" to "non-negative-integer", "column_span" to "positive-integer")),
+    "action" to SemanticObjectRow(setOf("label", "on_action"), setOf(), mapOf("label" to "non-empty-plain-string", "on_action" to "action-descriptor")),
+)
+
+val SEMANTIC_LIVE_REGIONS: Set<String> = setOf("polite", "assertive")
+val SEMANTIC_ROLES: Set<String> = setOf("button", "image", "text_input", "checkbox", "switch", "selection_group", "tab_group", "dropdown", "slider", "progress")
+val ACCESSIBLE_NAME_PRECEDENCE: List<String> = listOf(
+    "semantics.name", "content_description", "label", "icon", "t", "node"
+)
+
+val DEFAULT_NODE_SEMANTICS: Map<String, DefaultSemanticRow> = mapOf(
+    "section_header" to DefaultSemanticRow(headingLevel = 2),
+    "progress" to DefaultSemanticRow(role = "progress", progressValueMember = "value", indeterminateWhenValueAbsent = true, progressMin = 0.0, progressMax = 1.0),
+    "image" to DefaultSemanticRow(role = "image"),
+    "button" to DefaultSemanticRow(role = "button", enabledMember = "enabled", checkedMember = "checked"),
+    "icon_button" to DefaultSemanticRow(role = "button", enabledMember = "enabled", checkedMember = "checked"),
+    "chip" to DefaultSemanticRow(role = "button", roleConditionMember = "on_tap", enabledMember = "enabled", selectedMember = "selected", selectedDefault = false),
+    "empty_state" to DefaultSemanticRow(role = "button", roleConditionMember = "on_tap"),
+    "date_button" to DefaultSemanticRow(role = "button", enabledMember = "enabled"),
+    "time_button" to DefaultSemanticRow(role = "button", enabledMember = "enabled"),
+    "text_input" to DefaultSemanticRow(role = "text_input", enabledMember = "enabled"),
+    "editor" to DefaultSemanticRow(role = "text_input", enabledMember = "enabled", readOnlyMember = "read_only"),
+    "search_bar" to DefaultSemanticRow(role = "text_input", enabledMember = "enabled"),
+    "dropdown" to DefaultSemanticRow(role = "dropdown", enabledMember = "enabled", readOnlyMember = "editable", readOnlyInverted = true),
+    "checkbox" to DefaultSemanticRow(role = "checkbox", enabledMember = "enabled", checkedMember = "checked", toggleStateMember = "state", checkedDefault = false),
+    "switch" to DefaultSemanticRow(role = "switch", enabledMember = "enabled", checkedMember = "checked", checkedDefault = false),
+    "enum_list" to DefaultSemanticRow(role = "selection_group", enabledMember = "enabled", selectionMember = "value"),
+    "tabs" to DefaultSemanticRow(role = "tab_group", selectionMember = "initial", selectionDefaultIndex = 0),
+    "segmented_button" to DefaultSemanticRow(role = "tab_group", enabledMember = "enabled", selectionMember = "value"),
+    "slider" to DefaultSemanticRow(role = "slider", enabledMember = "enabled", progressValueMember = "value", progressMinMember = "min", progressMaxMember = "max", progressValueDefaultsToMin = true, progressMin = 0.0, progressMax = 1.0),
+    "card" to DefaultSemanticRow(role = "button", roleConditionMember = "on_tap", customActionsFrom = listOf("swipe_start", "swipe_end")),
+    "collapsible" to DefaultSemanticRow(expandedMember = "collapsed", expandedInverted = true, customActionsFrom = listOf("swipe_start", "swipe_end")),
+)
 
 /** SPEC 14.6: node types whose id/value participate in input state. */
 val STATEFUL_NODE_TYPES: Set<String> = setOf(
     "text_input", "checkbox", "switch", "enum_list", "slider", "editor",
-    "search_bar", "dropdown", "segmented_button",
+    "search_bar", "dropdown", "segmented_button", "variant_host",
     // Conditionally stateful: a plain button carries no state and needs no
     // id. SpecValidator's isStateful predicate registers these ONLY when
     // `checked` is present — see the `editor` precedent.
@@ -44,6 +122,7 @@ val NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "box" to NodeRow(setOf("children"), setOf("alignment", "on_tap", "on_long_tap")),
     "surface" to NodeRow(setOf("children"), setOf("color", "shape", "elevation", "shadow_elevation")),
     "lazy_column" to NodeRow(setOf("children"), setOf("spacing", "content_padding")),
+    "variant_host" to NodeRow(setOf("id", "value", "variants"), setOf()),
     "spacer" to NodeRow(setOf(), setOf()),
     "divider" to NodeRow(setOf(), setOf("color", "thickness")),
     "card" to NodeRow(setOf("children"), setOf("on_tap", "on_long_tap", "swipe_start", "swipe_end", "variant")),
@@ -54,10 +133,9 @@ val NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "button" to NodeRow(setOf("label", "on_tap"), setOf("icon", "variant", "enabled", "size", "shape", "animate_shape", "checked", "on_change", "expanded", "checked_shape", "shape_role", "checked_icon", "color")),
     "icon_button" to NodeRow(setOf("icon", "on_tap"), setOf("content_description", "badge", "enabled", "variant", "checked", "on_change", "checked_icon", "size", "shape", "width_mode", "color")),
     "chip" to NodeRow(setOf("label"), setOf("on_tap", "selected", "icon", "enabled", "variant", "trailing_icon", "avatar", "content_spacing")),
-    "assist_chip" to NodeRow(setOf("label"), setOf("on_tap", "icon", "enabled", "variant")),
     "menu" to NodeRow(setOf(), setOf("items", "groups", "footer", "icon", "enabled", "initial_scroll")),
     "text_input" to NodeRow(setOf("id"), setOf("value", "hint", "label", "on_change", "on_submit", "single_line", "min_lines", "max_lines", "monospace", "syntax", "password", "keyboard", "autofocus", "clear_on_submit", "enabled", "variant", "is_error", "supporting_text", "prefix", "suffix", "leading_icon", "trailing_icon", "max_length", "selection", "hide_keyboard_on_submit", "content_padding", "mask", "filter")),
-    "editor" to NodeRow(setOf("id"), setOf("document", "value", "on_save", "on_enter", "read_only", "syntax", "line_numbers", "complete", "chromeless", "publish_state", "autofocus", "toolbar", "enabled")),
+    "editor" to NodeRow(setOf("id"), setOf("document", "value", "on_save", "on_enter", "single_line", "min_lines", "max_lines", "read_only", "syntax", "line_numbers", "complete", "chromeless", "publish_state", "autofocus", "toolbar", "enabled")),
     "checkbox" to NodeRow(setOf("id"), setOf("checked", "state", "stroke", "label", "on_change", "enabled")),
     "switch" to NodeRow(setOf("id"), setOf("checked", "label", "on_change", "enabled", "thumb_icon")),
     "enum_list" to NodeRow(setOf("id", "options"), setOf("value", "multi_select", "allow_add", "on_change", "enabled", "variant", "children")),
@@ -69,23 +147,21 @@ val NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "month_grid" to NodeRow(setOf("month"), setOf("marks", "selected", "min_month", "max_month", "min_date", "max_date", "disabled_weekdays", "range_start", "range_end", "on_day_tap", "on_month_change", "children")),
     "scaffold" to NodeRow(setOf(), setOf("top_bar", "body", "bottom_bar", "fab", "floating_toolbar", "drawer", "snackbar", "snackbar_action", "on_refresh", "top_bar_style", "top_bar_subtitle", "scroll_behavior", "floating_toolbar_orientation", "floating_toolbar_expanded", "floating_toolbar_placement", "floating_toolbar_fab", "floating_toolbar_scroll", "floating_toolbar_exit_direction", "refresh_indicator", "is_refreshing", "snackbar_duration", "snackbar_dismiss", "snackbar_max_lines", "sheet", "sheet_peek_height", "sheet_state", "on_sheet_change", "fab_hide_on_scroll", "drawer_variant", "bottom_bar_behavior", "fab_position", "top_bar_expanded", "top_bar_collapsed_height", "top_bar_expanded_height", "top_bar_centered", "snackbar_content", "rail")),
     "tooltip" to NodeRow(setOf("children", "text"), setOf("position", "caret", "caret_width", "caret_height", "rich", "title", "action_label", "on_action", "shown")),
-    "split_button" to NodeRow(setOf("on_tap"), setOf("label", "icon", "variant", "size", "trailing_icon", "trailing_label", "trailing_description", "checked", "on_change", "on_trailing_tap", "items", "enabled")),
     "pane_scaffold" to NodeRow(setOf("list", "detail"), setOf("extra", "variant")),
     "navigation_rail" to NodeRow(setOf("items"), setOf("variant", "expanded", "arrangement", "header", "hide_on_collapse", "on_expand_change")),
     "search_bar" to NodeRow(setOf("id"), setOf("value", "hint", "variant", "on_search", "on_change", "leading_icon", "trailing_icon", "children", "enabled")),
     "dropdown" to NodeRow(setOf("id", "options"), setOf("value", "label", "hint", "editable", "on_change", "enabled", "report_caret")),
     "segmented_button" to NodeRow(setOf("id", "options"), setOf("value", "multi_select", "on_change", "enabled")),
-    "app_bar_row" to NodeRow(setOf("items"), setOf("overflow_icon", "max_items")),
-    "app_bar_column" to NodeRow(setOf("items"), setOf("overflow_icon", "max_items")),
     "carousel" to NodeRow(setOf("children"), setOf("strategy", "item_width", "item_spacing", "content_padding", "item_corner")),
-    "fab_menu" to NodeRow(setOf("items"), setOf("icon", "close_icon")),
     "button_group" to NodeRow(setOf("items"), setOf("overflow_icon")),
     "lazy_grid" to NodeRow(setOf("children"), setOf("columns", "min_item_width", "reverse", "spacing", "content_padding")),
 )
 
 val ACTION_SCHEMA: Map<String, ActionRow> = mapOf(
-    "remote" to ActionRow(setOf("action"), setOf("args", "when_offline", "dedupe", "ttl_s", "confirm", "capture_fields")),
+    "remote" to ActionRow(setOf("action"), setOf("args", "when_offline", "dedupe", "ttl_s", "confirm", "capture_fields", "open_surface")),
     "view.switch" to ActionRow(setOf("builtin", "view"), setOf()),
+    "variant.switch" to ActionRow(setOf("builtin", "id"), setOf("value")),
+    "surface.open" to ActionRow(setOf("builtin", "surface"), setOf()),
     "clipboard.copy" to ActionRow(setOf("builtin", "text"), setOf()),
     "share.send" to ActionRow(setOf("builtin", "text"), setOf("title")),
     "companion.settings.open" to ActionRow(setOf("builtin"), setOf()),
@@ -127,6 +203,7 @@ val FIELD_TYPES: Map<String, String> = mapOf(
     "color_end" to "color",
     "columns" to "positive-integer",
     "complete" to "boolean",
+    "content" to "node",
     "content_description" to "string",
     "content_padding" to "dp",
     "content_spacing" to "dp",
@@ -230,6 +307,7 @@ val FIELD_TYPES: Map<String, String> = mapOf(
     "selectable" to "boolean",
     "selected" to "varies-per-node",
     "selection" to "two-number-array",
+    "semantics" to "semantics-object",
     "series" to "chart-series-array",
     "shadow_elevation" to "dp",
     "shape_role" to "enum",
@@ -282,6 +360,7 @@ val FIELD_TYPES: Map<String, String> = mapOf(
     "value_end" to "number",
     "value_label" to "boolean",
     "values" to "number-array",
+    "variants" to "variant-array",
     "width" to "number",
     "width_mode" to "string",
     "y_range" to "two-number-array",

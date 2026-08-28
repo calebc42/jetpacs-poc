@@ -23,17 +23,19 @@
                         (:t "row" :spacing 8
                          :children [(:t "badge" :label "OK" :color "success")
                                     (:t "badge" :label "Warn" :color "warning")])
-                        (:t "surface" :color "primary_container" :padding 12
+                        (:t "surface" :color "primary" :padding 12
                          :corner 12
-                         :children [(:t "text" :color "on_primary_container"
+                         :children [(:t "text" :color "on_primary"
                                      :text "on a primary container")])]))
-          ;; A dark palette mirroring an Emacs theme, incl. success/warning.
+          ;; A complete neutral dark palette mirroring an Emacs theme.
           (ebp-client-theme-set
            c :dark t
            :colors '(:primary "#66d9ef" :on_primary "#08303a"
-                     :primary_container "#0d4a57" :on_primary_container "#c9f2fb"
-                     :secondary "#a6e22e" :surface "#141821"
-                     :on_surface "#e6e9ef" :surface_variant "#232838"
+                     :secondary "#a6e22e" :on_secondary "#142800"
+                     :error "#ff6b6b" :on_error "#350000"
+                     :background "#10141c" :on_background "#e6e9ef"
+                     :surface "#141821" :on_surface "#e6e9ef"
+                     :outline "#8b93a7"
                      :success "#8fd694" :warning "#e6c76b"))))))
   (cl-loop repeat 60 do (accept-process-output nil 0.1))
   (message "theme smoke: state=%s" (ebp-client-state client))

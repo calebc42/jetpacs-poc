@@ -10,6 +10,53 @@
 (require 'jetpacs-app-store)
 (require 'jetpacs-apps)
 
+(defvar jetpacs-app-store-test--lifecycle nil)
+
+(ert-deftest jetpacs-app-store-is-present-for-cold-drawer-open ()
+  "The receiver-local Apps destination is published during reconnect."
+  (should
+   (plist-get
+    (alist-get "app:jetpacs.app-store" jetpacs-shell--roots
+               nil nil #'equal)
+    :required)))
+
+(defconst jetpacs-app-store-test--packaged
+  '((:name "packaged-test.el"
+     :label "Packaged Test"
+     :icon "apps"
+     :summary "A test app bundled with Jetpacs"
+     :feature jetpacs-app-store
+     :app-id "packaged-test"
+     :register jetpacs-app-store-test--register
+     :unregister jetpacs-app-store-test--unregister)))
+
+(defun jetpacs-app-store-test--register ()
+  (push 'register jetpacs-app-store-test--lifecycle)
+  (setf (alist-get "packaged-test" jetpacs-apps--registry
+                   nil nil #'equal)
+        '(:label "Packaged Test" :icon "apps"
+          :surfaces ("packaged-test") :order 100)))
+
+(defun jetpacs-app-store-test--unregister ()
+  (push 'unregister jetpacs-app-store-test--lifecycle)
+  (jetpacs-apps-unregister "packaged-test"))
+
+(defun jetpacs-app-store-test--find-action (node action)
+  "The first descriptor named ACTION below NODE, or nil."
+  (let (found)
+    (cl-labels ((walk (value)
+                  (cond
+                   ((vectorp value) (mapc #'walk (append value nil)))
+                   ((and (listp value) (keywordp (car value)))
+                    (when (and (null found)
+                               (equal (plist-get value :action) action))
+                      (setq found value))
+                    (cl-loop for (_key child) on value by #'cddr
+                             do (walk child)))
+                   ((listp value) (mapc #'walk value)))))
+      (walk node))
+    found))
+
 (defmacro jetpacs-app-store-test--env (&rest body)
   "Temp staging/adopt/persist trees, immediate continuations."
   (declare (indent 0))
@@ -18,8 +65,14 @@
           (user-emacs-directory (file-name-as-directory home))
           (jetpacs-app-store-staging-dirs (list stage))
           (jetpacs-app-store-file (expand-file-name "apps.el" home))
+          ;; Side-load tests stay isolated; packaged-app behavior has its own
+          ;; explicit catalog fixtures below.
+          (jetpacs-app-store-packaged-apps nil)
           (jetpacs-app-store-installed nil)
           (jetpacs-app-store--edit nil)
+          (jetpacs-apps--registry nil)
+          (jetpacs-apps--current nil)
+          (jetpacs-app-store-test--lifecycle nil)
           (toasts nil) (notices nil) (pushed 0))
      (cl-letf (((symbol-function 'jetpacs-flow-continue)
                 (lambda (fn) (funcall fn)))
@@ -42,6 +95,94 @@
     (with-temp-file path
       (insert (string-join lines "\n")))
     path))
+
+;;;; APK-packaged optional apps
+
+(ert-deftest jetpacs-app-store-packaged-source-wins-a-staged-copy ()
+  "The APK copy is the single authoritative Glasspane-like row."
+  (jetpacs-app-store-test--env
+    (let ((jetpacs-app-store-packaged-apps
+           jetpacs-app-store-test--packaged))
+      (jetpacs-app-store-test--stage
+       stage "packaged-test.el"
+       ";;; packaged-test.el --- obsolete staged copy")
+      (let ((entries (jetpacs-app-store--scan)))
+        (should (= 1 (length entries)))
+        (should (eq (plist-get (car entries) :source) 'packaged))
+        (should-not (plist-get (car entries) :path))))))
+
+(ert-deftest jetpacs-app-store-packaged-app-enables-and-disables-durably ()
+  "Apps owns packaged activation state while leaving its source in place."
+  (jetpacs-app-store-test--env
+    (let ((jetpacs-app-store-packaged-apps
+           jetpacs-app-store-test--packaged))
+      (should (eq (jetpacs-app-store--action-install
+                   '(:bundle "packaged-test.el") nil)
+                  'accepted))
+      (should (equal jetpacs-app-store-installed '("packaged-test.el")))
+      (should (assoc "packaged-test" jetpacs-apps--registry))
+      (should (equal jetpacs-app-store-test--lifecycle '(register)))
+      (let* ((entry (jetpacs-app-store--entry "packaged-test.el"))
+             (disable (jetpacs-app-store-test--find-action
+                       (jetpacs-app-store--row entry) "apps.disable"))
+             (source (expand-file-name
+                      "packaged-test.el" (jetpacs-app-store--adopt-dir))))
+        (should disable)
+        ;; A same-named old adopted copy is not APK source and is not touched
+        ;; by Disable either; only side-load Uninstall owns file deletion.
+        (make-directory (file-name-directory source) t)
+        (with-temp-file source (insert ";; legacy copy"))
+        (should (eq (jetpacs-app-store--action-disable
+                     '(:bundle "packaged-test.el") nil)
+                    'accepted))
+        (should-not jetpacs-app-store-installed)
+        (should-not (assoc "packaged-test" jetpacs-apps--registry))
+        (should (file-exists-p source))
+        (should (equal jetpacs-app-store-test--lifecycle
+                       '(unregister register)))
+        (should (jetpacs-app-store-test--find-action
+                 (jetpacs-app-store--row
+                  (jetpacs-app-store--entry "packaged-test.el"))
+                 "apps.install"))
+        (should (eq (jetpacs-app-store--action-uninstall
+                     '(:bundle "packaged-test.el") nil)
+                    'rejected)))
+      ;; The disabled choice round-trips as an empty persisted list.
+      (setq jetpacs-app-store-installed '("wrong.el"))
+      (load jetpacs-app-store-file nil 'nomessage)
+      (should-not jetpacs-app-store-installed))))
+
+(ert-deftest jetpacs-app-store-packaged-boot-is-opt-in ()
+  "A fresh boot is inert; a persisted enable activates the packaged app."
+  (jetpacs-app-store-test--env
+    (let ((jetpacs-app-store-packaged-apps
+           jetpacs-app-store-test--packaged))
+      (jetpacs-app-store-boot)
+      (should-not jetpacs-app-store-test--lifecycle)
+      (should-not (assoc "packaged-test" jetpacs-apps--registry))
+      (setq jetpacs-app-store-installed '("packaged-test.el"))
+      (jetpacs-app-store--persist)
+      (setq jetpacs-app-store-installed nil
+            jetpacs-apps--registry nil)
+      (jetpacs-app-store-boot)
+      (should (equal jetpacs-app-store-installed '("packaged-test.el")))
+      (should (assoc "packaged-test" jetpacs-apps--registry))
+      (should (equal jetpacs-app-store-test--lifecycle '(register))))))
+
+(ert-deftest jetpacs-app-store-live-untracked-packaged-app-can-disable ()
+  "A direct require is shown as active and gains the missing Disable path."
+  (jetpacs-app-store-test--env
+    (let ((jetpacs-app-store-packaged-apps
+           jetpacs-app-store-test--packaged))
+      (jetpacs-app-store-test--register)
+      (let ((entry (jetpacs-app-store--entry "packaged-test.el")))
+        (should (plist-get entry :installed))
+        (should (jetpacs-app-store-test--find-action
+                 (jetpacs-app-store--row entry) "apps.disable")))
+      (should (eq (jetpacs-app-store--action-disable
+                   '(:bundle "packaged-test.el") nil)
+                  'accepted))
+      (should-not (assoc "packaged-test" jetpacs-apps--registry)))))
 
 (ert-deftest jetpacs-app-store-scan-strips-mediastore-rename ()
   "A shared \"name.el.txt\" scans as \"name.el\" - the rename trap."

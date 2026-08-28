@@ -46,16 +46,16 @@
 
 (defun jetpacs-m3-fab-menu--fab ()
   "The sample's FAB menu: six mail actions above the Add/Close toggle."
-  (jetpacs-fab-menu
-   (list (jetpacs-fab-menu-item "Reply" "message" (jetpacs-m3-demo "Reply"))
-         (jetpacs-fab-menu-item "Reply all" "people"
+  (jetpacs-material3-fab-menu
+   (list (jetpacs-material3-fab-menu-item "Reply" "message" (jetpacs-m3-demo "Reply"))
+         (jetpacs-material3-fab-menu-item "Reply all" "people"
                                 (jetpacs-m3-demo "Reply all"))
-         (jetpacs-fab-menu-item "Forward" "contacts"
+         (jetpacs-material3-fab-menu-item "Forward" "contacts"
                                 (jetpacs-m3-demo "Forward"))
-         (jetpacs-fab-menu-item "Snooze" "snooze" (jetpacs-m3-demo "Snooze"))
-         (jetpacs-fab-menu-item "Archive" "archive"
+         (jetpacs-material3-fab-menu-item "Snooze" "snooze" (jetpacs-m3-demo "Snooze"))
+         (jetpacs-material3-fab-menu-item "Archive" "archive"
                                 (jetpacs-m3-demo "Archive"))
-         (jetpacs-fab-menu-item "Label" "label" (jetpacs-m3-demo "Label")))))
+         (jetpacs-material3-fab-menu-item "Label" "label" (jetpacs-m3-demo "Label")))))
 
 (defun jetpacs-m3-fab-menu--content ()
   "The list the menu floats over: upstream's \"List item - N\" rows."
@@ -69,7 +69,7 @@
           (list :spacing 8 :content-padding 8))))
 
 (jetpacs-m3-defcomponent "fab-menu"
-  :builders (list #'jetpacs-fab-menu #'jetpacs-fab-menu-item)
+  :builders (list #'jetpacs-material3-fab-menu #'jetpacs-material3-fab-menu-item)
   :name "FAB Menu"
   :description
   "The FAB Menu displays additional key actions on click of a FAB."

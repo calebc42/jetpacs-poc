@@ -16,6 +16,7 @@ import com.calebc42.ebp.wire.CompanionConfig
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.EbpAuth
 import com.calebc42.ebp.wire.FrameDecoder
+import com.calebc42.ebp.wire.WireLimits
 import com.calebc42.ebp.wire.encodeFrame
 import com.calebc42.ebp.wire.request
 import kotlinx.serialization.json.JsonArray
@@ -69,6 +70,7 @@ class TableRowsSpikeTest {
         put("max_canvas_ops", 4096)
         put("max_rich_spans", 4096)
         put("max_table_cells", CELL_CAP)
+        put("max_variants_per_host", WireLimits.MAX_VARIANTS_PER_HOST)
         put("max_editor_bytes", 262_144)
     }
 
@@ -81,7 +83,9 @@ class TableRowsSpikeTest {
             // The app's REAL advertisement — the whole point of running this
             // in :app. table is advertised here or the spike does not ride.
             surfaceProfiles = NodeSupport.surfaceProfiles(),
-            limits = appLimits(), nonceSource = { katSn })) { bytes ->
+            limits = appLimits(),
+            nodeVocabulary = NodeSupport.NODE_VOCABULARY,
+            nonceSource = { katSn })) { bytes ->
             decoder.feed(bytes) { out.add(it) }
         }
         engine.feed(encodeFrame(request("h1", "session.hello",

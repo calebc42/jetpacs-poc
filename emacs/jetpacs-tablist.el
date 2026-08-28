@@ -122,7 +122,7 @@ chrome, and a Core-only Companion is better served by the rows alone."
                                     (if (equal name key)
                                         (concat name (if desc " ↓" " ↑"))
                                       name)
-                                    ;; format 6: booleans are t / :json-false
+                                    ;; JSON booleans are t / :json-false.
                                     :selected (jetpacs-bool (equal name key))
                                     :on-tap (jetpacs-action
                                              "tablist.sort"

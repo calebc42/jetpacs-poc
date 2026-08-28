@@ -49,8 +49,15 @@
         (should (featurep 'jetpacs))
         (should (featurep 'jetpacs-init))
         ;; Downstream apps load from user configuration or their own package;
-        ;; requiring Jetpacs must never discover one by name and activate it.
+        ;; requiring Jetpacs may discover inert APK metadata for the Apps
+        ;; screen, but must never load or activate the app itself.
+        (should (featurep 'jetpacs-packaged-apps))
+        (let ((entry (jetpacs-app-store--packaged-entry "glasspane.el")))
+          (should entry)
+          (should (eq (plist-get entry :feature) 'glasspane))
+          (should (equal (plist-get entry :app-id) "glasspane")))
         (should-not (featurep 'glasspane))
+        (should-not (assoc "glasspane" jetpacs-apps--registry))
         (should (equal jetpacs-install-root
                        (expand-file-name "jetpacs/" user-emacs-directory)))
         (should (equal jetpacs-vault-directory jetpacs-entry-test--vault))

@@ -1,16 +1,17 @@
-;;; jetpacs-m3-catalog.el --- The Material 3 Compose Catalog -*- lexical-binding: t; -*-
+;;; jetpacs-m3-catalog.el --- Jetpacs Components, authored in Elisp -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "30.1"))
 
 ;;; Commentary:
 
-;; The Material 3 Compose Catalog -- the Jetpacs component vocabulary.
-;; A Tier-1 application recreating upstream's Compose Material 3
+;; Jetpacs Components -- the Material 3 vocabulary, authored in Elisp.
+;; This Tier-1 application recreates upstream's Compose Material 3
 ;; Expressive Catalog (resources/android/Compose-Material-3-Expressive-
 ;; Catalog) entirely in Elisp: 41 components, 279 examples, three
-;; screens deep.  Material 3 is not a theme this app demonstrates; it
-;; is the design language Jetpacs IS (docs/ARCHITECTURE-POC3.md).
+;; screens deep.  It is a downstream application of an optional renderer
+;; design extension; the Jetpacs foundation remains independent of that
+;; design system (docs/ARCHITECTURE-POC3.md).
 ;;
 ;; This file is the ENTRY POINT and nothing else -- the model, the
 ;; screens and the verbs live in `jetpacs-m3-core', and each component
@@ -86,7 +87,7 @@
 
 ;;;###autoload
 (defun jetpacs-m3-catalog ()
-  "Open the Material 3 catalog on the device.
+  "Open Jetpacs Components on the device.
 Resets to Home first, then re-opens the pinned screen when there is one
 -- upstream `maybeNavigate', which pushes the Component screen before
 the Example so back lands where the user expects."

@@ -260,11 +260,11 @@ green FAB, not a hardcoded blue one); otherwise the keyword face, where
 theme authors put their signature hue.  The link face is deliberately
 NOT primary: links are blue in nearly every theme regardless of its
 identity.  `secondary' is the same hue muted (never modus `accent-1',
-a competing hue); `tertiary' is the contrasting accent (`accent-2' /
-constant face); `error' is modus's semantic `err', so the deuteranopia
-variants stay accessible.  `success'/`warning' feed the Companion's
-ExtendedColors (no Material slot): success is modus `info' — modus's
-own styling of the `success' face — else the `success' face."
+a competing hue); `error' is modus's semantic `err', so the deuteranopia
+variants stay accessible.  `success'/`warning' are neutral semantic roles:
+success is modus `info' — modus's own styling of the `success' face — else
+the `success' face.  A selected renderer derives any additional palette
+tokens privately."
   (let* ((modus (jetpacs-theme--modus-p))
          (bg (or (and modus (jetpacs-theme--modus 'bg-main))
                  (jetpacs-theme--face-color :background 'default)))
@@ -281,55 +281,24 @@ own styling of the `success' face — else the `success' face."
              (secondary (or (jetpacs-theme--blend
                              primary (jetpacs-theme--blend fg bg 0.5) 0.5)
                             primary))
-             (tertiary (or (and modus (jetpacs-theme--modus 'accent-2))
-                           (jetpacs-theme--face-color
-                            :foreground 'font-lock-constant-face)
-                           secondary))
              (err (or (and modus (jetpacs-theme--modus 'err))
                       (jetpacs-theme--face-color :foreground 'error)
                       "#b3261e"))
              (success (or (and modus (jetpacs-theme--modus 'info))
                           (jetpacs-theme--face-color :foreground 'success)))
              (warning (or (and modus (jetpacs-theme--modus 'warning))
-                          (jetpacs-theme--face-color :foreground 'warning)))
-             ;; Container tone: sink each resolved accent most of the way
-             ;; into the background — blending the actual accent tracks
-             ;; any derivative or override, where modus's `bg-*-subtle'
-             ;; tints are keyed to fixed hues.
-             (container (lambda (accent)
-                          (jetpacs-theme--blend accent bg 0.22)))
-             (on-container (lambda (accent)
-                             (if modus fg
-                               (jetpacs-theme--blend accent fg 0.35)))))
+                          (jetpacs-theme--face-color :foreground 'warning))))
         (jetpacs-theme--compact-plist
          `((:primary . ,primary)
            (:on_primary . ,bg)
-           (:primary_container . ,(funcall container primary))
-           (:on_primary_container . ,(funcall on-container primary))
            (:secondary . ,secondary)
            (:on_secondary . ,bg)
-           (:secondary_container . ,(funcall container secondary))
-           (:on_secondary_container . ,(funcall on-container secondary))
-           (:tertiary . ,tertiary)
-           (:on_tertiary . ,bg)
-           (:tertiary_container . ,(funcall container tertiary))
-           (:on_tertiary_container . ,(funcall on-container tertiary))
            (:error . ,err)
            (:on_error . ,bg)
-           (:error_container . ,(funcall container err))
-           (:on_error_container . ,(funcall on-container err))
            (:background . ,bg)
            (:on_background . ,fg)
            (:surface . ,bg)
            (:on_surface . ,fg)
-           (:surface_variant . ,(or (and modus (jetpacs-theme--modus 'bg-dim))
-                                    (jetpacs-theme--face-color
-                                     :background 'mode-line-inactive)
-                                    (jetpacs-theme--blend fg bg 0.08)))
-           (:on_surface_variant . ,(or (and modus (jetpacs-theme--modus 'fg-dim))
-                                       (jetpacs-theme--face-color
-                                        :foreground 'mode-line-inactive)
-                                       fg))
            (:outline . ,(or (and modus (jetpacs-theme--modus 'border))
                             (jetpacs-theme--face-color :foreground 'shadow)
                             (jetpacs-theme--blend fg bg 0.5)))
@@ -580,32 +549,7 @@ actually delivered until this sent inline."
 (add-hook 'enable-theme-functions #'jetpacs-theme--on-theme-change)
 (add-hook 'disable-theme-functions #'jetpacs-theme--on-theme-change)
 
-;;;; modus.toggle — the one device-facing verb of this rung
 
-(with-jetpacs-owner "jetpacs.theme"
-  (jetpacs-defaction "jetpacs.theme.modus-toggle"
-    (lambda (_args _params)
-      ;; The length-2 pre-check keeps 4.4's completing-read fallback out
-      ;; of the dispatch extent (D2): with any other toggle set,
-      ;; `modus-themes-toggle' PROMPTS, and the no-prompts regime would
-      ;; convert that into a loud warning instead of a clean refusal.
-      ;; No push of any kind here: theme owns no surface, and the
-      ;; observable effect — theme.set — rides the enable-theme hook's
-      ;; debounce, firing outside this extent.
-      (if (not (and (jetpacs-modus--ensure)
-                    (fboundp 'modus-themes-toggle)
-                    (boundp 'modus-themes-to-toggle)
-                    (= 2 (length modus-themes-to-toggle))))
-          'rejected
-        (condition-case err
-            (progn (modus-themes-toggle) 'accepted)
-          (error (message "jetpacs-theme: modus.toggle failed: %s"
-                          (jetpacs-error-label err))
-                 'rejected))))
-    ;; A GLOBAL VERB: theme owns no surface, and ANY surface may render
-    ;; its button — without this the dispatch's D1 scope would reject
-    ;; every real tap (a surface event always carries `surface').
-    :any-surface t))
 
 (provide 'jetpacs-theme)
 ;;; jetpacs-theme.el ends here

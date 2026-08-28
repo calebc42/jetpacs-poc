@@ -38,42 +38,94 @@
 (require 'cl-lib)
 (require 'ebp)
 (require 'jetpacs-vocabulary)
+(require 'jetpacs-renderer-registry)
 
 ;;;; Catalogs (mirrors of ebp/contract.json, for gating and coverage tests)
 
 (defconst jetpacs-node-types
   '("text" "rich_text" "icon" "image" "date_stamp" "section_header"
     "empty_state" "progress" "badge" "row" "column" "flow_row" "box"
-    "surface" "lazy_column" "spacer" "divider" "card" "collapsible"
+    "surface" "lazy_column" "variant_host" "spacer" "divider" "card" "collapsible"
     "reorderable_list" "tabs" "table" "button" "icon_button" "chip"
-    "assist_chip" "menu" "text_input" "editor" "checkbox" "switch"
+    "menu" "text_input" "editor" "checkbox" "switch"
     "enum_list" "date_button" "time_button" "slider" "chart" "canvas"
-    "month_grid" "scaffold" "tooltip" "split_button" "pane_scaffold"
+    "month_grid" "scaffold" "tooltip" "pane_scaffold"
     "navigation_rail" "search_bar" "dropdown" "segmented_button"
-    "app_bar_row" "app_bar_column" "carousel" "fab_menu" "button_group"
+    "carousel" "button_group"
     "lazy_grid")
-  "The 52 EBP node types (contract.json `node_types').")
+  "The 48 implementation-neutral EBP node types (`contract.json').")
+
+(defun jetpacs-register-renderer-extension (extension schema targets)
+  "Install renderer EXTENSION with SCHEMA and target-node TARGETS.
+EXTENSION is a namespaced identifier.  SCHEMA contains rows of the same shape
+as `jetpacs-node-schema'.  TARGETS is an alist from `app', `dialog', or
+`notification' to node-type lists.  Registration replaces an older definition
+of the same extension and refuses ownership or schema collisions."
+  (jetpacs-check-identifier extension "renderer extension")
+  (unless (string-search "." extension)
+    (error "jetpacs: renderer extension %S must be namespaced" extension))
+  (let ((node-types (mapcar #'car schema))
+        (old-node-types (cdr (assoc extension jetpacs-renderer-extensions))))
+    (unless (= (length node-types)
+               (length (cl-remove-duplicates node-types :test #'equal)))
+      (error "jetpacs: renderer extension %S repeats a node schema" extension))
+    (dolist (node-type node-types)
+      (when (or (assoc node-type jetpacs-node-schema)
+                (cl-loop for (owner . owned) in jetpacs-renderer-extensions
+                         thereis (and (not (equal owner extension))
+                                      (member node-type owned))))
+        (error "jetpacs: renderer node %S already has an owner" node-type)))
+    (dolist (target targets)
+      (unless (memq (car target) '(app dialog notification))
+        (error "jetpacs: unknown renderer target %S" (car target)))
+      (dolist (node-type (cdr target))
+        (unless (member node-type node-types)
+          (error "jetpacs: target %S names unknown renderer node %S"
+                 (car target) node-type))))
+    (setq jetpacs-renderer-extensions
+          (cons (cons extension node-types)
+                (assoc-delete-all extension jetpacs-renderer-extensions)))
+    (dolist (node-type (append old-node-types node-types))
+      (setq jetpacs-renderer-extension-node-schema
+            (assoc-delete-all node-type
+                             jetpacs-renderer-extension-node-schema)))
+    (setq jetpacs-renderer-extension-node-schema
+          (append schema jetpacs-renderer-extension-node-schema))
+    (dolist (target targets)
+      (let* ((name (car target))
+             (existing (alist-get name jetpacs-renderer-extension-targets))
+             (merged (delete-dups (append (cdr target) existing))))
+        (setf (alist-get name jetpacs-renderer-extension-targets) merged))))
+  extension)
+
+(defun jetpacs-node-schema-row (type)
+  "Return the EBP or installed renderer schema row for node TYPE."
+  (or (assoc type jetpacs-node-schema)
+      (assoc type jetpacs-renderer-extension-node-schema)))
+
+(defun jetpacs-renderer-target-node-types (target)
+  "Return installed renderer node types advertised for TARGET."
+  (copy-sequence (alist-get target jetpacs-renderer-extension-targets)))
+
+(defconst jetpacs-stateful-node-types
+  '("text_input" "checkbox" "switch" "enum_list" "slider" "editor"
+    "search_bar" "dropdown" "segmented_button" "variant_host"
+    "button" "icon_button")
+  "Node types which may participate in SPEC 14.6 input state.
+`button' and `icon_button' do so only when they carry `checked'; an editor
+does so only when it is a local draft with `publish_state'.")
+
+(defconst jetpacs-max-variants-per-host 8
+  "The fixed maximum number of alternatives in one `variant_host'.")
 
 (defconst jetpacs-core-node-set
   '("text" "row" "column" "box" "spacer" "divider" "button" "text_input")
   "The mandatory Core Node Set (SPEC §16.2).")
 
-(defconst jetpacs-universal-attributes
-  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width
-    :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner
-    :border :alpha :clip :align_self)
-  "The universal node attributes legal on any node.
-These are §16.5 plus `id', which §16.1 establishes as the document-unique
-identity member permitted on any node (see the amendment adding the `id'
-row to the §16.5 table).")
-
 (defconst jetpacs-theme-roles
-  '("primary" "on_primary" "primary_container" "on_primary_container"
-    "secondary" "on_secondary" "secondary_container" "on_secondary_container"
-    "tertiary" "on_tertiary" "tertiary_container" "on_tertiary_container"
-    "error" "on_error" "error_container" "on_error_container"
-    "background" "on_background" "surface" "on_surface"
-    "surface_variant" "on_surface_variant" "outline" "success" "warning")
+  '("primary" "on_primary" "secondary" "on_secondary" "error" "on_error"
+    "background" "on_background" "surface" "on_surface" "outline"
+    "success" "warning")
   "The theme-role color tokens (contract.json `theme_roles'; §18.4).")
 
 (defconst jetpacs-syntax-roles
@@ -216,6 +268,7 @@ Runs VAL-FN on each (KEY VALUE); WHAT names the field."
     (:align_self
      (unless (member v '("start" "center" "end" "stretch"))
        (error "jetpacs: :align_self must be start/center/end/stretch (SPEC 16.5), got %S" v)))
+    (:semantics (jetpacs--check-semantics-object v))
     (_ nil)))
 
 (defun jetpacs--check-capture-fields (fields)
@@ -368,6 +421,91 @@ Stricter than `jetpacs-node-p', which also accepts `:t'-less sub-specs
 \(action descriptors, spans, table cells).  Use where a root Node is required."
   (and (consp x) (eq (car x) :t)))
 
+(defun jetpacs-stateful-node-p (node)
+  "Whether typed NODE participates in SPEC 14.6 input state.
+The button pair and editor are conditional exactly as on the receiver: a
+button needs an authored `checked', and only a local editor explicitly
+publishing state is a draft."
+  (let ((type (and (jetpacs-root-node-p node) (plist-get node :t))))
+    (and (member type jetpacs-stateful-node-types)
+         (pcase type
+           ((or "button" "icon_button") (plist-member node :checked))
+           ("editor" (and (eq (plist-get node :publish_state) t)
+                           (not (plist-member node :document))))
+           (_ t)))))
+
+(defun jetpacs-check-retained-content (content)
+  "Signal unless CONTENT is a read-only retained-variant node tree.
+Retained alternatives may carry ordinary remote actions, but no SPEC 14.6
+stateful node, editor, or nested `variant_host'.  Opaque application data is
+not interpreted as a node tree.  Return CONTENT."
+  (unless (jetpacs-root-node-p content)
+    (error "jetpacs: retained variant content must be a root node, got %S"
+           content))
+  (cl-labels
+      ((walk (value)
+         (cond
+          ((vectorp value) (mapc #'walk value))
+          ((hash-table-p value) (maphash (lambda (_key child) (walk child)) value))
+          ((and (consp value) (keywordp (car value)))
+           (when (jetpacs-root-node-p value)
+             (let ((type (plist-get value :t)))
+               (cond
+                ((equal type "variant_host")
+                 (error "jetpacs: nested variant_host is prohibited"))
+                ((equal type "editor")
+                 (error "jetpacs: editor is prohibited in retained variant content"))
+                ((jetpacs-stateful-node-p value)
+                 (error "jetpacs: stateful node %S is prohibited in retained variant content"
+                        type)))))
+           (cl-loop for (key child) on value by #'cddr
+                    unless (memq key '(:args :meta :value))
+                    do (walk child)))
+          ((consp value)
+           (walk (car value))
+           (walk (cdr value))))))
+    (walk content))
+  content)
+
+(defun jetpacs-check-variant-host (id value variants)
+  "Validate one retained host over VARIANTS; return VARIANTS.
+ID and VALUE are identifiers.  VARIANTS is a vector or list of exactly shaped
+`{value, content}' plists.  The full retained subtree has document-global
+node IDs, so duplicates among the host and all alternatives are rejected."
+  (jetpacs-check-identifier id ":id")
+  (jetpacs-check-identifier value ":value")
+  (unless (or (vectorp variants) (proper-list-p variants))
+    (error "jetpacs: variant_host variants must be an array"))
+  (let ((entries (append variants nil)))
+    (unless (<= 2 (length entries) jetpacs-max-variants-per-host)
+      (error "jetpacs: variant_host must contain 2..%d variants"
+             jetpacs-max-variants-per-host))
+    (let (values (ids (list id)))
+      (dolist (entry entries)
+        (unless (and (consp entry) (keywordp (car entry))
+                     (= (length entry) 4)
+                     (plist-member entry :value)
+                     (plist-member entry :content)
+                     (cl-loop for (key _member) on entry by #'cddr
+                              always (memq key '(:value :content))))
+          (error "jetpacs: variant entry must contain exactly value and content, got %S"
+                 entry))
+        (let ((entry-value (plist-get entry :value))
+              (content (plist-get entry :content)))
+          (jetpacs-check-identifier entry-value "variant value")
+          (push entry-value values)
+          (jetpacs-check-retained-content content)
+          (setq ids (jetpacs-collect-node-ids content ids))))
+      (unless (= (length values)
+                 (length (cl-remove-duplicates values :test #'equal)))
+        (error "jetpacs: variant values must be distinct"))
+      (unless (member value values)
+        (error "jetpacs: variant_host value %S names no authored variant" value))
+      (unless (= (length ids)
+                 (length (cl-remove-duplicates ids :test #'equal)))
+        (error "jetpacs: retained host node IDs must be globally unique")))
+    variants))
+
 (defun jetpacs--wire-name (key)
   "The contract member name the option keyword KEY addresses.
 A constructor spells a multi-word member with a hyphen (`:content-padding'
@@ -389,7 +527,7 @@ far more often, a universal attribute passed where it does not belong
 `cl-defun &key' constructors have always refused an unknown keyword; this
 gives the containers the same guarantee, against the generated
 `jetpacs-node-schema' so an amendment cannot leave it behind."
-  (let* ((row (assoc type jetpacs-node-schema))
+  (let* ((row (jetpacs-node-schema-row type))
          (allowed (append (nth 1 row) (nth 2 row)))
          (p opts))
     (unless row
@@ -447,6 +585,177 @@ member directly — every caller authoring live state wrote
     :checked (jetpacs-bool (eq i selected))"
   (if value t :json-false))
 
+(defun jetpacs--require-non-empty-string (value what)
+  "Return VALUE when it is a non-empty plain string; WHAT names the member."
+  (unless (and (stringp value) (> (length value) 0))
+    (error "jetpacs: %s must be a non-empty plain string (SPEC 16.5.1), got %S"
+           what value))
+  value)
+
+(defun jetpacs--semantic-object-exact-p (value keys)
+  "Non-nil when VALUE is a keyword plist containing exactly KEYS."
+  (and (consp value)
+       (keywordp (car value))
+       (zerop (% (length value) 2))
+       (= (length value) (* 2 (length keys)))
+       (cl-loop for (key _member) on value by #'cddr
+                always (memq key keys))
+       (cl-loop for key in keys always (plist-member value key))))
+
+(defun jetpacs--semantic-object-keys (name)
+  "Return contract-generated keyword members for nested semantic object NAME."
+  (let ((row (cadr (assoc name jetpacs-semantic-object-schema))))
+    (unless row
+      (error "jetpacs: unknown generated semantic object schema %S" name))
+    (mapcar (lambda (member) (intern (concat ":" member)))
+            (append (plist-get row :required)
+                    (plist-get row :optional)))))
+
+(defun jetpacs--check-semantic-collection (value)
+  "Validate and return a SemanticCollection VALUE."
+  (unless (jetpacs--semantic-object-exact-p
+           value (jetpacs--semantic-object-keys "collection"))
+    (error "jetpacs: semantic collection must contain exactly row_count and column_count"))
+  (jetpacs-check-integer (plist-get value :row_count)
+                         "semantic collection row_count" 0 nil)
+  (jetpacs-check-integer (plist-get value :column_count)
+                         "semantic collection column_count" 1 nil)
+  value)
+
+(defun jetpacs--check-semantic-collection-item (value)
+  "Validate and return a SemanticCollectionItem VALUE."
+  (unless (jetpacs--semantic-object-exact-p
+           value (jetpacs--semantic-object-keys "collection_item"))
+    (error "jetpacs: semantic collection item must contain exactly row_index, row_span, column_index, and column_span"))
+  (jetpacs-check-integer (plist-get value :row_index)
+                         "semantic collection item row_index" 0 nil)
+  (jetpacs-check-integer (plist-get value :row_span)
+                         "semantic collection item row_span" 1 nil)
+  (jetpacs-check-integer (plist-get value :column_index)
+                         "semantic collection item column_index" 0 nil)
+  (jetpacs-check-integer (plist-get value :column_span)
+                         "semantic collection item column_span" 1 nil)
+  value)
+
+(defun jetpacs--check-semantic-action (value)
+  "Validate and return one SemanticAction VALUE."
+  (unless (jetpacs--semantic-object-exact-p
+           value (jetpacs--semantic-object-keys "action"))
+    (error "jetpacs: semantic action must contain exactly label and on_action"))
+  (jetpacs--require-non-empty-string (plist-get value :label)
+                                     "semantic action label")
+  (jetpacs-check-descriptor (plist-get value :on_action)
+                            "semantic action on_action")
+  value)
+
+(defun jetpacs--check-semantics-object (value)
+  "Validate and return a closed authoring-layer Semantics VALUE.
+Receivers ignore future members, but this current helper rejects unknown keys
+so a misspelling cannot silently disappear."
+  (unless (and (consp value) (keywordp (car value))
+               (zerop (% (length value) 2)))
+    (error "jetpacs: semantics must be a non-empty keyword plist, got %S"
+           value))
+  (let (labels seen)
+    (cl-loop for (key member) on value by #'cddr do
+             (unless (memq key jetpacs-semantic-members)
+               (error "jetpacs: semantics has unknown member %S" key))
+             (when (memq key seen)
+               (error "jetpacs: semantics has duplicate member %S" key))
+             (push key seen)
+             (pcase (cdr (assoc (substring (symbol-name key) 1)
+                                (plist-get jetpacs-semantics-schema
+                                           :field-types)))
+               ("non-empty-plain-string"
+                (jetpacs--require-non-empty-string member key))
+               ("integer-1-6"
+                (jetpacs-check-integer member ":heading_level" 1 6))
+               ("live-region-enum"
+                (jetpacs-check-enum member jetpacs-semantic-live-regions
+                                    ":live_region"))
+               ("semantic-collection-object"
+                (jetpacs--check-semantic-collection member))
+               ("semantic-collection-item-object"
+                (jetpacs--check-semantic-collection-item member))
+               ("boolean" (jetpacs-check-bool member key))
+               ("finite-number"
+                (jetpacs--check-number member key nil nil))
+               ("semantic-action-array"
+                (unless (or (vectorp member) (proper-list-p member))
+                  (error "jetpacs: semantics actions must be an array"))
+                (when (> (length member)
+                         jetpacs-max-semantic-actions-per-node)
+                  (error "jetpacs: semantics actions exceed the fixed limit %d"
+                         jetpacs-max-semantic-actions-per-node))
+                (mapc (lambda (action)
+                        (jetpacs--check-semantic-action action)
+                        (push (plist-get action :label) labels))
+                      member))
+               (_ (error "jetpacs: generated semantics schema has no validator for %S"
+                         key))))
+    (unless (= (length labels)
+               (length (cl-remove-duplicates labels :test #'equal)))
+      (error "jetpacs: semantic action labels must be distinct")))
+  value)
+
+(defun jetpacs-semantic-collection (row-count column-count)
+  "Return a SemanticCollection with ROW-COUNT rows and COLUMN-COUNT columns."
+  (jetpacs--check-semantic-collection
+   (list :row_count row-count :column_count column-count)))
+
+(defun jetpacs-semantic-collection-item
+    (row-index row-span column-index column-span)
+  "Return a SemanticCollectionItem at ROW-INDEX/COLUMN-INDEX.
+ROW-SPAN and COLUMN-SPAN are positive extents within the nearest authored
+collection ancestor."
+  (jetpacs--check-semantic-collection-item
+   (list :row_index row-index :row_span row-span
+         :column_index column-index :column_span column-span)))
+
+(defun jetpacs-semantic-action (label on-action)
+  "Return a SemanticAction named LABEL that invokes ON-ACTION.
+ON-ACTION is an ordinary ActionDescriptor and therefore retains every normal
+profile, confirmation, durability, capture, and byte-budget gate."
+  (jetpacs--check-semantic-action
+   (list :label label :on_action on-action)))
+
+(cl-defun jetpacs-with-semantics
+    (node &key name description state-description error pane-title
+          heading-level live-region collection collection-item
+          ((:traversal-group traversal-group) nil traversal-group-supplied-p)
+          traversal-index actions)
+  "Return NODE with a validated toolkit-neutral Semantics object.
+NAME, DESCRIPTION, STATE-DESCRIPTION, ERROR, and PANE-TITLE are non-empty
+plain strings.  HEADING-LEVEL is 1..6; LIVE-REGION is polite or assertive.
+COLLECTION and COLLECTION-ITEM come from their public constructors.
+TRAVERSAL-GROUP uses `t' or `:json-false' so JSON false remains distinct from
+omission; TRAVERSAL-INDEX is finite.  ACTIONS is an array of at most the
+contract-projected fixed limit of distinct-label SemanticActions.  NODE is not
+mutated, and unknown keyword arguments are rejected by `cl-defun'."
+  (unless (jetpacs-root-node-p node)
+    (error "jetpacs-with-semantics: NODE must be a typed Node, got %S" node))
+  (let ((semantics
+         (jetpacs-make-node
+          nil
+          :name name
+          :description description
+          :state_description state-description
+          :error error
+          :pane_title pane-title
+          :heading_level heading-level
+          :live_region (and live-region (format "%s" live-region))
+          :collection collection
+          :collection_item collection-item
+          :traversal_group (and traversal-group-supplied-p traversal-group)
+          :traversal_index traversal-index
+          :actions (and actions (vconcat actions)))))
+    (unless semantics
+      (error "jetpacs-with-semantics: at least one semantics member is required"))
+    (when (and traversal-group-supplied-p (null traversal-group))
+      (error "jetpacs-with-semantics: use :json-false for JSON false"))
+    (jetpacs--check-semantics-object semantics)
+    (plist-put (copy-sequence node) :semantics semantics)))
+
 (defun jetpacs-with-attrs (node &rest attrs)
   "Return NODE (a node plist) with universal ATTRS merged in.
 ATTRS is a plist of universal attribute keywords; nil-valued members are
@@ -473,6 +782,22 @@ roles, not a gate.  Attribute validation uses the looser `jetpacs--check-color'
   (and (stringp color)
        (or (member color jetpacs-theme-roles)
            (string-match-p jetpacs--hex-color-re color))))
+
+;;;; Live-wire and canonical serialization
+;;
+;; `jsonrpc.el' is the live encoder and, on Emacs 30, calls
+;; `json-serialize' with exactly these false/null sentinels.  Keep the
+;; compact helper here so sender-side byte budgets and frame gates measure
+;; the representation that will actually be sent without paying the much
+;; larger recursive key-sorting cost of the golden serializer below.
+
+(defun jetpacs-node->wire-json (value)
+  "Serialize VALUE as compact JSON using `jsonrpc.el' wire sentinels."
+  (json-serialize value :false-object :json-false :null-object nil))
+
+(defun jetpacs-node-wire-bytes (value)
+  "Return the live compact JSON size of VALUE in octets."
+  (string-bytes (jetpacs-node->wire-json value)))
 
 ;;;; Canonical serialization
 ;;
@@ -523,14 +848,16 @@ keep their elisp int/float type.  Leaf strings and numbers are escaped by
 ;;;; Action descriptors (§14)
 
 (cl-defun jetpacs-action (name &key args when-offline dedupe ttl-s confirm
-                               capture-fields)
+                               capture-fields open-surface)
   "Build a remote ActionDescriptor for action NAME (SPEC §14.1).
 NAME MUST be a §4.4 namespaced identifier containing at least one dot.
 WHEN-OFFLINE is `drop' (the default), `queue', or `wake' (symbol or
 string); `queue'/`wake' require TTL-S to be an integer in 1..604800, and
 `drop' forbids both TTL-S and DEDUPE.  DEDUPE is an identifier, CONFIRM a
 non-empty string, ARGS a member plist, CAPTURE-FIELDS a list of distinct
-field-id strings.  Statically invalid input signals an error at build time."
+field-id strings.  OPEN-SURFACE is the feature-gated app Surface ID the
+Companion presents locally for the same occurrence.  Statically invalid input
+signals an error at build time."
   (unless (and (jetpacs-identifier-p name) (string-search "." name))
     (error "jetpacs-action: action name %S must be a §4.4 namespaced identifier containing a dot (SPEC 14.1)" name))
   (let* ((policy (and when-offline (format "%s" when-offline)))
@@ -572,6 +899,11 @@ field-id strings.  Statically invalid input signals an error at build time."
                                      :dismiss_label (plist-get confirm :dismiss-label))))
        (t (error "jetpacs-action: :confirm must be a string or a plist (SPEC 14.1), got %S" confirm))))
     (when capture-fields (jetpacs--check-capture-fields capture-fields))
+    (when open-surface
+      (unless (and (jetpacs-identifier-p open-surface)
+                   (string-match-p (rx bos "app:" alnum) open-surface))
+        (error "jetpacs-action: :open-surface %S must be an app Surface ID (SPEC 14.1)"
+               open-surface)))
     (when args
       (unless (and (consp args) (keywordp (car args)))
         (error "jetpacs-action: :args must be a member plist, got %S" args)))
@@ -582,6 +914,7 @@ field-id strings.  Statically invalid input signals an error at build time."
                    :dedupe dedupe
                    :ttl_s ttl-s
                    :confirm confirm
+                   :open_surface open-surface
                    :capture_fields (and capture-fields (vconcat capture-fields)))))
 
 (defun jetpacs-view-switch (view)
@@ -589,6 +922,22 @@ field-id strings.  Statically invalid input signals an error at build time."
 VIEW is a §4.4 identifier."
   (jetpacs-check-identifier view ":view")
   (jetpacs-make-node nil :builtin "view.switch" :view view))
+
+(cl-defun jetpacs-variant-switch (id &key value)
+  "A local `variant.switch' builtin selecting retained host ID.
+When VALUE is an identifier it selects that authored alternative; when it is
+absent the receiver advances through the host's authored order."
+  (jetpacs-check-identifier id ":id")
+  (when value (jetpacs-check-identifier value ":value"))
+  (jetpacs-make-node nil :builtin "variant.switch" :id id :value value))
+
+(defun jetpacs-surface-open (surface)
+  "A `surface.open' builtin selecting app Surface ID SURFACE (SPEC §14.2)."
+  (unless (and (jetpacs-identifier-p surface)
+               (string-match-p (rx bos (or "app:" "companion:") alnum) surface))
+    (error "jetpacs-surface-open: %S must be an app or companion Surface ID (SPEC 14.2)"
+           surface))
+  (jetpacs-make-node nil :builtin "surface.open" :surface surface))
 
 (defun jetpacs-clipboard-copy (text)
   "A `clipboard.copy' builtin action copying string TEXT (SPEC §14.2)."
@@ -934,6 +1283,21 @@ Trailing options: :spacing (dp), :content-padding (dp)."
                    :children (jetpacs--as-children (car split))
                    :spacing spacing :content_padding content-padding)))
 
+(defun jetpacs-variant (value content)
+  "One retained alternative `{value, content}' for `jetpacs-variant-host'."
+  (jetpacs-check-identifier value "variant value")
+  (jetpacs-check-retained-content content)
+  (jetpacs-make-node nil :value value :content content))
+
+(defun jetpacs-variant-host (id value variants)
+  "A stateful retained host selecting VALUE from ordered VARIANTS.
+VARIANTS is a list of `jetpacs-variant' entries.  Every alternative is a
+complete Emacs-authored read-only node tree and all of them spend the normal
+whole-SurfaceSpec budgets even while inactive."
+  (jetpacs-check-variant-host id value variants)
+  (jetpacs-make-node "variant_host" :id id :value value
+                     :variants (vconcat variants)))
+
 (cl-defun jetpacs-spacer (&key width height weight)
   "A spacer node (SPEC §17.3), sized by WIDTH/HEIGHT/WEIGHT.
 The three ARE the §16.5 universal attributes — a spacer is nothing but
@@ -1212,8 +1576,6 @@ unscaled default rather than any partial application.")
 IconButtonWidthOption.  `uniform' is the default square-ish container;
 `narrow' and `wide' change only the horizontal padding.")
 (defconst jetpacs--chip-variants '("flat" "elevated" "input"))
-(defconst jetpacs--assist-chip-variants
-  '("flat" "elevated" "suggestion" "elevated_suggestion"))
 (defconst jetpacs--keyboards '("text" "number" "decimal" "email" "phone" "uri"))
 
 (defconst jetpacs--button-shape-roles
@@ -1459,54 +1821,6 @@ option values.  An option's :icon draws before its label."
                  :multi_select multi-select
                  :on_change on-change :enabled enabled))
 
-(cl-defun jetpacs-app-bar-item (label icon on-tap &key enabled)
-  "One item of an app-bar overflow strip (SPEC §17.3).
-LABEL is required — it is the item's menu row when it overflows and its
-accessible name inline; ICON is what renders while it fits."
-  (jetpacs-require-string label ":label")
-  (jetpacs-check-identifier icon ":icon")
-  (jetpacs-check-descriptor on-tap ":on-tap")
-  (when enabled (jetpacs-check-bool enabled ":enabled"))
-  (jetpacs-make-node nil :label label :icon icon :on_tap on-tap :enabled enabled))
-
-(defun jetpacs--app-bar-strip (type items opts)
-  "The shared body of `jetpacs-app-bar-row'/`-column': TYPE over ITEMS."
-  (let ((overflow-icon (plist-get opts :overflow-icon))
-        (max-items (plist-get opts :max-items)))
-    (unless items
-      (error "jetpacs-%s: items must be non-empty (SPEC 17.3)"
-             (string-replace "_" "-" type)))
-    (when overflow-icon (jetpacs-check-identifier overflow-icon ":overflow-icon"))
-    (when max-items (jetpacs-check-integer max-items ":max-items" 1 nil))
-    (jetpacs-make-node type
-                   :items (vconcat items)
-                   :overflow_icon overflow-icon
-                   :max_items max-items)))
-
-(cl-defun jetpacs-fab-menu-item (label icon on-tap)
-  "One item of a `jetpacs-fab-menu' (SPEC §17.3).
-Both LABEL and ICON are required — an M3 FAB menu item always carries
-the pair; ON-TAP is its ActionDescriptor."
-  (jetpacs-require-string label ":label")
-  (jetpacs-check-identifier icon ":icon")
-  (jetpacs-check-descriptor on-tap ":on-tap")
-  (jetpacs-make-node nil :label label :icon icon :on_tap on-tap))
-
-(cl-defun jetpacs-fab-menu (items &key icon close-icon)
-  "M3's FloatingActionButtonMenu: a checkable FAB unfolding ITEMS above it.
-ITEMS are from `jetpacs-fab-menu-item'.  The toggle FAB morphs between
-ICON (add, by default) and CLOSE-ICON (close) driven by its own checked
-progress, and the expansion is Companion-local presentation — a menu
-that snapped shut on every re-push would be unusable.  Meant for the
-scaffold's fab slot."
-  (unless items
-    (error "jetpacs-fab-menu: items must be non-empty (SPEC 17.3)"))
-  (when icon (jetpacs-check-identifier icon ":icon"))
-  (when close-icon (jetpacs-check-identifier close-icon ":close-icon"))
-  (jetpacs-make-node "fab_menu"
-                 :items (vconcat items)
-                 :icon icon :close_icon close-icon))
-
 (cl-defun jetpacs-button-group-item (label on-tap &key icon enabled)
   "One item of a `jetpacs-button-group' (SPEC §17.3).
 LABEL is required — it is the button's text inline and its menu row when
@@ -1522,7 +1836,7 @@ it overflows; ICON is optional, unlike an app-bar item's."
   "M3's ButtonGroup over ITEMS from `jetpacs-button-group-item' (SPEC §17.3).
 The press animation couples neighbours, and what does not fit moves
 into an overflow menu at MEASURE time — the same never-ask-Emacs width
-rule as `jetpacs-app-bar-row'.  OVERFLOW-ICON renames the indicator."
+rule as a width-aware action strip.  OVERFLOW-ICON renames the indicator."
   (unless items
     (error "jetpacs-button-group: items must be non-empty (SPEC 17.3)"))
   (when overflow-icon (jetpacs-check-identifier overflow-icon ":overflow-icon"))
@@ -1601,23 +1915,6 @@ breathes with the keylines)."
                    :content_padding content-padding
                    :item_corner item-corner)))
 
-(cl-defun jetpacs-app-bar-row (items &key overflow-icon max-items)
-  "M3's AppBarRow: ITEMS inline while they fit, overflowed at MEASURE time.
-ITEMS are from `jetpacs-app-bar-item'.  Which items fold into the
-overflow menu is a width decision the device makes per layout pass —
-Emacs never learns it, which is why a static row-plus-menu split could
-never be this component.  OVERFLOW-ICON renames the more_vert
-indicator; MAX-ITEMS caps the inline count below what would fit."
-  (jetpacs--app-bar-strip "app_bar_row" items
-                          (list :overflow-icon overflow-icon
-                                :max-items max-items)))
-
-(cl-defun jetpacs-app-bar-column (items &key overflow-icon max-items)
-  "M3's AppBarColumn — `jetpacs-app-bar-row' stood on end (SPEC §17.3)."
-  (jetpacs--app-bar-strip "app_bar_column" items
-                          (list :overflow-icon overflow-icon
-                                :max-items max-items)))
-
 (defconst jetpacs--rail-variants '("standard" "wide" "modal"))
 (defconst jetpacs--rail-arrangements '("top" "center" "bottom"))
 
@@ -1677,64 +1974,6 @@ the menu button that toggles a wide rail."
                  :on_expand_change on-expand-change
                  :arrangement arrangement :header header))
 
-(defconst jetpacs--split-button-variants
-  '("filled" "tonal" "elevated" "outlined"))
-(defconst jetpacs--split-button-sizes
-  '("xsmall" "small" "medium" "large" "xlarge"))
-
-(cl-defun jetpacs-split-button (label on-tap
-                                &key icon variant size
-                                     trailing-icon trailing-label
-                                     trailing-description
-                                     checked on-change on-trailing-tap
-                                     items enabled)
-  "An M3 split button: LABEL/ON-TAP leading, a divided trailing half (§17.4).
-
-The two halves are ONE component with a shared outline and a 2dp gap, not
-a row of buttons — the outer corners are full and the inner ones are
-small, and they morph together on press, which is the whole subject of
-the upstream samples.
-
-ICON is the leading identifier; VARIANT and SIZE apply to BOTH halves.
-The trailing half is one of three things, in order of precedence:
-ITEMS (a list of `jetpacs-menu-item') makes it open a dropdown;
-CHECKED makes it a toggle whose arrow rotates 180 degrees, with ON-CHANGE
-receiving the flipped boolean; otherwise ON-TRAILING-TAP fires plainly.
-TRAILING-ICON overrides the default arrow, TRAILING-LABEL puts text there
-instead, and TRAILING-DESCRIPTION is the accessible name an icon-only
-trailing half needs.
-
-A node carrying CHECKED is stateful and REQUIRES a unique `:id' (§16.1).
-
-LABEL may be nil WHEN ICON is present — the icon-only LeadingButton form,
-whose accessible name falls back to the icon identifier — but a leading
-half with neither is refused."
-  (if label (jetpacs-require-string label ":label")
-    (unless icon
-      (error "jetpacs-split-button: the leading half needs a :label, an icon, or both (SPEC 17.4)")))
-  (jetpacs-check-descriptor on-tap ":on-tap")
-  (when icon (jetpacs-check-identifier icon ":icon"))
-  (when variant
-    (setq variant (jetpacs-check-enum variant jetpacs--split-button-variants ":variant")))
-  (when size
-    (setq size (jetpacs-check-enum size jetpacs--split-button-sizes ":size")))
-  (when trailing-icon (jetpacs-check-identifier trailing-icon ":trailing-icon"))
-  (when trailing-label (jetpacs-require-string trailing-label ":trailing-label"))
-  (when trailing-description
-    (jetpacs-require-string trailing-description ":trailing-description"))
-  (when checked (jetpacs-check-bool checked ":checked"))
-  (when on-change (jetpacs-check-descriptor on-change ":on-change"))
-  (when on-trailing-tap (jetpacs-check-descriptor on-trailing-tap ":on-trailing-tap"))
-  (when enabled (jetpacs-check-bool enabled ":enabled"))
-  (jetpacs-make-node "split_button" :label label :on_tap on-tap
-                 :icon icon :variant variant :size size
-                 :trailing_icon trailing-icon :trailing_label trailing-label
-                 :trailing_description trailing-description
-                 :checked checked :on_change on-change
-                 :on_trailing_tap on-trailing-tap
-                 :items (and items (vconcat items))
-                 :enabled enabled))
-
 (cl-defun jetpacs-chip (label &key on-tap selected icon trailing-icon
                               variant avatar content-spacing enabled)
   "A chip labeled LABEL (SPEC §17.4).
@@ -1763,17 +2002,6 @@ modifier-level attribute could reach."
                  :selected selected :icon icon :trailing_icon trailing-icon
                  :variant variant :avatar avatar
                  :content_spacing content-spacing :enabled enabled))
-
-(cl-defun jetpacs-assist-chip (label &key on-tap icon variant enabled)
-  "An assist chip labeled LABEL (SPEC §17.4).
-VARIANT flat(default)/elevated/suggestion/elevated_suggestion."
-  (jetpacs-require-string label ":label")
-  (when on-tap (jetpacs-check-descriptor on-tap ":on-tap"))
-  (when icon (jetpacs-check-identifier icon ":icon"))
-  (when variant (setq variant (jetpacs-check-enum variant jetpacs--assist-chip-variants ":variant")))
-  (when enabled (jetpacs-check-bool enabled ":enabled"))
-  (jetpacs-make-node "assist_chip" :label label :on_tap on-tap :icon icon
-                 :variant variant :enabled enabled))
 
 (defconst jetpacs--tooltip-positions
   '("above" "below" "left" "right" "start" "end")
@@ -2320,19 +2548,37 @@ level, inside a `menu', or in a `long_press' (SPEC §17.7)."
                    (and lp (plist-member lp :command)))))
            items))
 
-(cl-defun jetpacs-editor (id &key document value on-save on-enter read-only syntax
-                             line-numbers complete chromeless publish-state autofocus
-                             toolbar enabled)
+(cl-defun jetpacs-editor (id &key document value on-save on-enter
+                             single-line min-lines max-lines read-only syntax
+                             line-numbers complete chromeless publish-state
+                             autofocus toolbar enabled)
   "An editor identified by ID (SPEC §17.4 + §17.7).
 Without DOCUMENT it is a local input node; with DOCUMENT it is a synchronized
 editor (emit only when `editor.sync' is granted).  COMPLETE and a toolbar
 `command' op each require DOCUMENT.  TOOLBAR is a registered identifier string
-or a list of `jetpacs-toolbar-item's.  Booleans take t or :json-false."
+or a list of `jetpacs-toolbar-item's.  SINGLE-LINE uses a one-line field and
+prohibits newlines; MIN-LINES and MAX-LINES otherwise control its visible
+height.  Booleans take t or :json-false."
   (jetpacs-check-identifier id ":id")
   (when document (jetpacs-check-identifier document ":document"))
   (when value (jetpacs-require-string value ":value"))
   (when on-save (jetpacs-check-descriptor on-save ":on-save"))
   (when on-enter (jetpacs-check-descriptor on-enter ":on-enter"))
+  (when single-line (jetpacs-check-bool single-line ":single-line"))
+  (when min-lines (jetpacs-check-integer min-lines ":min-lines" 1 nil))
+  (when max-lines (jetpacs-check-integer max-lines ":max-lines" 1 nil))
+  (when (and min-lines max-lines (> min-lines max-lines))
+    (error "jetpacs-editor: :min-lines must not exceed :max-lines (SPEC 17.4)"))
+  (when (and max-lines (null min-lines) (not (eq single-line t))
+             (< max-lines 3))
+    (error "jetpacs-editor: :max-lines must not be below the default :min-lines 3 (SPEC 17.4)"))
+  (when (eq single-line t)
+    (when (and min-lines (/= min-lines 1))
+      (error "jetpacs-editor: single_line requires :min-lines 1 (SPEC 17.4)"))
+    (when (and max-lines (/= max-lines 1))
+      (error "jetpacs-editor: single_line requires :max-lines 1 (SPEC 17.4)"))
+    (when (and value (string-search "\n" value))
+      (error "jetpacs-editor: single_line prohibits U+000A in :value (SPEC 17.4)")))
   (when read-only (jetpacs-check-bool read-only ":read-only"))
   (when syntax (jetpacs-check-identifier syntax ":syntax"))
   (when line-numbers (jetpacs-check-bool line-numbers ":line-numbers"))
@@ -2354,6 +2600,8 @@ or a list of `jetpacs-toolbar-item's.  Booleans take t or :json-false."
   (jetpacs-make-node "editor"
                  :id id :document document :value value
                  :on_save on-save :on_enter on-enter
+                 :single_line single-line
+                 :min_lines min-lines :max_lines max-lines
                  :read_only read-only :syntax syntax :line_numbers line-numbers
                  :complete complete :chromeless chromeless
                  :publish_state publish-state :autofocus autofocus
@@ -2884,16 +3132,16 @@ as a single list."
   "The §17.2 content node types shared by the reference app and dialog profiles.")
 
 (defconst jetpacs-input-node-types
-  '("icon_button" "chip" "assist_chip" "menu" "checkbox" "switch"
-    "enum_list" "slider" "date_button" "time_button" "split_button"
+  '("icon_button" "chip" "menu" "checkbox" "switch"
+    "enum_list" "slider" "date_button" "time_button"
     "navigation_rail" "search_bar" "dropdown" "segmented_button")
   "The §17.4 input node types shared by the reference app and dialog profiles.")
 
 (defconst jetpacs-layout-node-types
   '("flow_row" "surface" "lazy_column" "card" "collapsible"
     "reorderable_list" "tabs" "table" "pane_scaffold"
-    "app_bar_row" "app_bar_column" "carousel" "fab_menu" "button_group"
-    "lazy_grid")
+    "carousel" "button_group"
+    "lazy_grid" "variant_host")
   "The §17.3 non-core layout node types (reference app profile).")
 
 (defconst jetpacs-viz-node-types '("chart" "canvas" "month_grid")
@@ -2904,14 +3152,14 @@ as a single list."
             "text_input" "scaffold" "editor")
           jetpacs-content-node-types jetpacs-input-node-types
           jetpacs-layout-node-types jetpacs-viz-node-types)
-  "The reference companion's advertised `app' node_types (all 44; §10.2/§16.2).
+  "The reference companion's advertised `app' node_types (§10.2/§16.2).
 The AUTHORITATIVE set for a connection is its welcome `surface_profiles'.")
 
 (defconst jetpacs-dialog-node-types
   (append '("text" "row" "column" "box" "spacer" "divider" "button" "text_input"
             "editor" "surface")
           jetpacs-content-node-types jetpacs-input-node-types)
-  "The reference companion's advertised `dialog' node_types (34).
+  "The implementation-neutral reference `dialog' node types.
 `surface' is in the set because `shape' and `elevation' live on exactly
 one node and BasicAlertDialog's whole subject is the CALLER-supplied
 Surface — without it a dialog spec could never carry its own container.
@@ -2932,8 +3180,60 @@ and NOT node-type discriminators: §14.1 action `args', §17.5 chart-point
 `meta', and a `dialog.submit' `value'.  These never contain nodes, so the
 node-type scan does not descend into them.")
 
+(defun jetpacs--check-semantics-document (tree)
+  "Validate authored Semantics throughout TREE and return TREE.
+This is the sender-side check that a node-local constructor cannot perform:
+each collection item must fit the nearest authored collection ancestor.
+Unknown Semantics members remain rejected for the current authoring API, and
+opaque application data is never interpreted as Nodes."
+  (cl-labels
+      ((walk
+        (value collections)
+        (cond
+         ((vectorp value)
+          (mapc (lambda (child) (walk child collections)) value))
+         ((hash-table-p value)
+          (maphash (lambda (_key child) (walk child collections)) value))
+         ((and (consp value) (keywordp (car value)))
+          (let* ((typed (stringp (plist-get value :t)))
+                 (has-semantics (and typed (plist-member value :semantics)))
+                 (semantics (and has-semantics
+                                 (plist-get value :semantics)))
+                 collection)
+            (when has-semantics
+              (jetpacs--check-semantics-object semantics)
+              (setq collection (plist-get semantics :collection))
+              (when-let* ((item (plist-get semantics :collection_item)))
+                (unless collections
+                  (error "jetpacs: semantic collection_item requires an authored collection ancestor (SPEC 16.5.1)"))
+                (let ((ancestor (car collections)))
+                  (when (> (+ (plist-get item :row_index)
+                              (plist-get item :row_span))
+                           (plist-get ancestor :row_count))
+                    (error "jetpacs: semantic collection_item row range exceeds its nearest collection ancestor (SPEC 16.5.1)"))
+                  (when (> (+ (plist-get item :column_index)
+                              (plist-get item :column_span))
+                           (plist-get ancestor :column_count))
+                    (error "jetpacs: semantic collection_item column range exceeds its nearest collection ancestor (SPEC 16.5.1)")))))
+            (let ((descendant-collections
+                   (if collection (cons collection collections) collections))
+                  (plist value))
+              (while plist
+                (let ((key (pop plist)) (child (pop plist)))
+                  (unless (or (eq key :semantics)
+                              (memq key jetpacs--opaque-members))
+                    (walk child descendant-collections)))))))
+         ((consp value)
+          (walk (car value) collections)
+          (walk (cdr value) collections)))))
+    (walk tree nil))
+  tree)
+
 (define-error 'jetpacs-duplicate-node-id
   "Duplicate node id in one document (SPEC 16.1)")
+
+(define-error 'jetpacs-duplicate-node-key
+  "Duplicate sibling node key in one document (SPEC 16.1)")
 
 (defvar jetpacs-node-id-claims nil
   "Document-wide table of claimed node ids, or nil outside a document build.
@@ -3064,9 +3364,13 @@ prefer `jetpacs-check-node-types' with that connection's advertised set."
   (jetpacs-check-node-types
    tree
    (pcase profile
-     ('app jetpacs-app-node-types)
-     ('dialog jetpacs-dialog-node-types)
-     ('notification jetpacs-notification-node-types)
+     ('app (append jetpacs-app-node-types
+                   (jetpacs-renderer-target-node-types 'app)))
+     ('dialog (append jetpacs-dialog-node-types
+                      (jetpacs-renderer-target-node-types 'dialog)))
+     ('notification
+      (append jetpacs-notification-node-types
+              (jetpacs-renderer-target-node-types 'notification)))
      (_ (error "jetpacs-check-profile: unknown profile %S (want app/dialog/notification)" profile)))
    (symbol-name profile)))
 

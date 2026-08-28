@@ -78,6 +78,15 @@ The selected Vault supplies defaults for the Files landing directory and
 win, and Jetpacs never changes the user's `default-directory`. The Vault never
 becomes a second Jetpacs configuration tree.
 
+The Files screen's top-bar Locations menu switches among its accessible roots;
+the sandbox ceiling no longer traps navigation inside whichever root was opened
+first. On Android it also probes the Emacs application-data directory and
+Termux's `files` directory. Emacs data is shown when readable. Termux is shown
+only when the running Emacs process can actually access it—for example, when
+the two APKs were installed with the same Android UID—and is omitted on normal
+isolated installations. This behavior can be disabled with
+`jetpacs-files-android-private-locations`.
+
 ## Package boundary: install once, require from init
 
 Installation and loading are separate Emacs operations. `(require 'jetpacs)`

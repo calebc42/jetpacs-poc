@@ -34,6 +34,7 @@ class DialogTest {
                         JsonArray(listOf("text", "column", "button").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
                 putJsonObject("dialog") {
                     put("node_types", JsonArray(listOf("text", "column",
@@ -41,6 +42,7 @@ class DialogTest {
                     put("builtins",
                         JsonArray(listOf("dialog.submit", "dialog.dismiss").map(::JsonPrimitive)))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_dialogs" to 2), nonceSource = { katSn })) { bytes ->

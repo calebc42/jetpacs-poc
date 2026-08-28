@@ -9,6 +9,9 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 
 mkdir -p "$CHECKOUT" "$EMACS_DIRECTORY/elpa"
 cp -R "$REPO_ROOT/.elpaignore" "$REPO_ROOT/emacs" "$REPO_ROOT/org" "$CHECKOUT/"
+# Model a clean source checkout even when the developer tree contains ignored
+# bytecode.  This only removes files from TEST_ROOT, which the test owns.
+find "$CHECKOUT" -type f -name '*.elc' -delete
 
 # package-vc expects a real checkout even though this test never uses a network.
 git -C "$CHECKOUT" init -q
@@ -48,12 +51,32 @@ emacs -Q --batch --eval '
                (string-prefix-p user-emacs-directory jetpacs-install-root)
                (string-suffix-p "/elpa/jetpacs/emacs/jetpacs.elc"
                                 (locate-library "jetpacs"))
-               (member (expand-file-name "jetpacs/emacs/apps/glasspane"
+               (member (expand-file-name "jetpacs/emacs/apps/packaged-apps"
                                          package-user-dir)
                        load-path)
+               (featurep (quote jetpacs-packaged-apps))
+               (equal (plist-get (car jetpacs-app-store-packaged-apps) :name)
+                      "glasspane.el")
+               (not (featurep (quote glasspane)))
                (not (file-exists-p
                      (expand-file-name
                       "jetpacs/emacs/spike/jetpacs-spike-rows.elc"
                       package-user-dir))))
-    (error "Jetpacs package installation contract failed"))
+    (error "Jetpacs package installation contract failed: %S"
+           (list :jetpacs (featurep (quote jetpacs))
+                 :init (featurep (quote jetpacs-init))
+                 :install-root jetpacs-install-root
+                 :library (locate-library "jetpacs")
+                 :packaged-load-path
+                 (member (expand-file-name "jetpacs/emacs/apps/packaged-apps"
+                                           package-user-dir)
+                         load-path)
+                 :manifest (featurep (quote jetpacs-packaged-apps))
+                 :catalog jetpacs-app-store-packaged-apps
+                 :glasspane-loaded (featurep (quote glasspane))
+                 :spike-elc
+                 (file-exists-p
+                  (expand-file-name
+                   "jetpacs/emacs/spike/jetpacs-spike-rows.elc"
+                   package-user-dir)))))
   (princ "package-vc-install-test: clean checkout installs and requires Jetpacs\n"))'

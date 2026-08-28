@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// EBP 2 pairing and mutual authentication. Implements ebp/SPEC.md section 9.
+// EBP 3 pairing and mutual authentication. Implements ebp/SPEC.md section 9.
 package com.calebc42.ebp.wire
 
 import kotlinx.serialization.json.JsonArray
@@ -177,7 +177,7 @@ object EbpAuth {
     fun helloParams(clientName: String, clientVersion: String, pairingId: String,
                     clientNonce: String, wants: List<String>): JsonObject =
         buildJsonObject {
-            put("protocol", 2)
+            put("protocol", PROTOCOL_VERSION)
             put("client", buildJsonObject {
                 put("name", clientName)
                 put("version", clientVersion)
@@ -206,13 +206,13 @@ object EbpAuth {
         pairingId: String,
         clientNonce: String,
         serverNonce: String,
-    ): String = "EBP/2 client:$pairingId:$clientNonce:$serverNonce"
+    ): String = "EBP/$PROTOCOL_VERSION client:$pairingId:$clientNonce:$serverNonce"
 
     private fun serverProofMessage(
         pairingId: String,
         clientNonce: String,
         serverNonce: String,
-    ): String = "EBP/2 companion:$pairingId:$serverNonce:$clientNonce"
+    ): String = "EBP/$PROTOCOL_VERSION companion:$pairingId:$serverNonce:$clientNonce"
 
     private fun hmacSha256(key: ByteArray, message: String): ByteArray =
         hmacSha256(key, message.toByteArray(Charsets.US_ASCII))

@@ -37,7 +37,7 @@
                       (:op "circle" :cx 150 :cy 50 :radius 40 :color "primary"
                        :stroke_width 3)
                       (:op "line" :x1 200 :y1 10 :x2 290 :y2 90
-                       :color "tertiary" :width 4)
+                       :color "secondary" :width 4)
                       (:op "path" :points [(:x 200 :y 90) (:x 245 :y 30)
                                            (:x 290 :y 90)]
                        :color "primary" :closed t)

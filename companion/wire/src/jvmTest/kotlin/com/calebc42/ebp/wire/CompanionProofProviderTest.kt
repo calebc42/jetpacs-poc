@@ -4,14 +4,31 @@ package com.calebc42.ebp.wire
 import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.spec.SecretKeySpec
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CompanionProofProviderTest {
+    private fun profiles(): JsonObject = buildJsonObject {
+        putJsonObject("app") {
+            put("node_types", JsonArray(listOf(
+                "text", "row", "column", "box", "spacer", "divider",
+                "button", "text_input",
+            ).map(::JsonPrimitive)))
+            put("builtins", JsonArray(listOf(
+                "view.switch", "companion.settings.open",
+            ).map(::JsonPrimitive)))
+            put("features", JsonArray(emptyList()))
+            put("extensions", JsonArray(emptyList()))
+        }
+    }
+
     private class RecordingKeyHandle(token: ByteArray) : CompanionHmacKeyHandle {
         private val key: SecretKey = SecretKeySpec(token.copyOf(), "HmacSHA256")
         val messages = mutableListOf<String>()
@@ -46,7 +63,7 @@ class CompanionProofProviderTest {
             serverVersion = "1.0.0",
             pairings = pairings,
             supportedCapabilities = emptySet(),
-            surfaceProfiles = JsonObject(emptyMap()),
+            surfaceProfiles = profiles(),
             limits = testLimits(),
             nonceSource = { katSn },
             proofProvider = provider,
@@ -89,7 +106,7 @@ class CompanionProofProviderTest {
         // A resolved capability owns its bytes; later mutation of the legacy
         // map value cannot alter HMACs already delegated to that handle.
         mutableToken.fill(0)
-        val message = ("EBP/2 client:" + katPid + ":" + katCn + ":" + katSn)
+        val message = ("EBP/3 client:" + katPid + ":" + katCn + ":" + katSn)
             .toByteArray(Charsets.US_ASCII)
         assertEquals(
             EbpAuth.clientProof(katToken, katPid, katCn, katSn),
@@ -112,8 +129,8 @@ class CompanionProofProviderTest {
         assertEquals(listOf(katPid), provider.resolvedPairingIds)
         assertEquals(
             listOf(
-                "EBP/2 client:" + katPid + ":" + katCn + ":" + katSn,
-                "EBP/2 companion:" + katPid + ":" + katSn + ":" + katCn,
+                "EBP/3 client:" + katPid + ":" + katCn + ":" + katSn,
+                "EBP/3 companion:" + katPid + ":" + katSn + ":" + katCn,
             ),
             handle.messages,
         )
@@ -135,7 +152,7 @@ class CompanionProofProviderTest {
 
         assertEquals(SessionState.CLOSED, engine.state)
         assertEquals(1203L, out.last().reqObj("error").reqLong("code"))
-        assertEquals(listOf("EBP/2 client:" + katPid + ":" + katCn + ":" + katSn), handle.messages)
+        assertEquals(listOf("EBP/3 client:" + katPid + ":" + katCn + ":" + katSn), handle.messages)
     }
 
     @Test
@@ -145,7 +162,7 @@ class CompanionProofProviderTest {
             serverVersion = "1.0.0",
             pairings = mapOf(katPid to katToken),
             supportedCapabilities = emptySet(),
-            surfaceProfiles = JsonObject(emptyMap()),
+            surfaceProfiles = profiles(),
             limits = testLimits(),
             nonceSource = { katSn },
         )
@@ -185,7 +202,7 @@ class CompanionProofProviderTest {
         assertEquals(1203L, out.last().reqObj("error").reqLong("code"))
         assertEquals(listOf(unknownPairingId), resolvedPairingIds)
         assertEquals(
-            listOf("EBP/2 client:" + unknownPairingId + ":" + katCn + ":" + katSn),
+            listOf("EBP/3 client:" + unknownPairingId + ":" + katCn + ":" + katSn),
             dummy.messages,
         )
     }

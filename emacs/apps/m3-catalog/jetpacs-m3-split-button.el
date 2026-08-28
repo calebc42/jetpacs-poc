@@ -51,9 +51,9 @@
   "Upstream SplitButtonExampleSourceUrl.")
 
 (defun jetpacs-m3-split-button--toggle (id label &rest options)
-  "A `split_button' labeled LABEL whose trailing half toggles, keyed on ID.
-OPTIONS are extra `jetpacs-split-button' keywords.  Every sample here but
-two starts at `mutableStateOf(false)' and flips it from the trailing
+  "A `material3.split_button' labeled LABEL with a trailing toggle keyed on ID.
+OPTIONS are extra `jetpacs-material3-split-button' keywords.  Every sample
+here but two starts at `mutableStateOf(false)' and flips it from the trailing
 half's `onCheckedChange': `:checked :json-false' is that state and is
 what makes the trailing half a toggle at all, ID is the §16.1 address it
 is published on, and `:on-change' receives the flipped boolean.  The
@@ -65,7 +65,7 @@ on the trailing semantics.  What that semantics block also sets and the
 wire does not carry is `stateDescription', the \"Expanded\"/\"Collapsed\"
 a screen reader would announce alongside the name."
   (jetpacs-with-attrs
-   (apply #'jetpacs-split-button label (jetpacs-m3-demo label)
+   (apply #'jetpacs-material3-split-button label (jetpacs-m3-demo label)
           :trailing-description "Toggle Button"
           :checked :json-false
           :on-change (jetpacs-m3-demo "Toggle Button")
@@ -82,7 +82,7 @@ a screen reader would announce alongside the name."
 The one sample whose trailing half is a plain `onClick' TrailingButton
 rather than a toggle: no `:checked', so the node is stateless and takes
 no `:id', and `:on-trailing-tap' is the third of the trailing forms."
-  (jetpacs-split-button "My Button" (jetpacs-m3-demo "My Button")
+  (jetpacs-material3-split-button "My Button" (jetpacs-m3-demo "My Button")
                         :icon "edit" :variant "filled"
                         :trailing-description "Toggle Button"
                         :on-trailing-tap (jetpacs-m3-demo "Toggle Button")))
@@ -96,7 +96,7 @@ their upstream labels and Outlined leading icons; what the MenuItem
 record cannot carry rides along as loss, exactly as in
 `jetpacs-m3-menus.el': the HorizontalDivider above \"Send Feedback\" and
 that item's \"F11\" trailing shortcut text."
-  (jetpacs-split-button "My Button" (jetpacs-m3-demo "My Button")
+  (jetpacs-material3-split-button "My Button" (jetpacs-m3-demo "My Button")
                         :icon "edit" :variant "filled"
                         :trailing-description "Toggle Button"
                         :items
@@ -143,7 +143,7 @@ the accessible fallback name: upstream's tooltip naming the leading half
 \"Button\" cannot ride, since the icon slot takes an identifier, not a
 node."
   (jetpacs-with-attrs
-   (jetpacs-split-button nil (jetpacs-m3-demo "Button")
+   (jetpacs-material3-split-button nil (jetpacs-m3-demo "Button")
                          :icon "edit"
                          :trailing-description "Toggle Button"
                          :checked :json-false
@@ -176,7 +176,7 @@ Button\"."
                                    :icon "edit" :size "xlarge"))
 
 (jetpacs-m3-defcomponent "split-button"
-  :builders (list #'jetpacs-split-button)
+  :builders (list #'jetpacs-material3-split-button)
   :name "Split Button"
   :description
   "Split buttons let user perform additional actions besides the main action"

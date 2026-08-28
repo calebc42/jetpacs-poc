@@ -51,7 +51,7 @@
 ;; no colors member, so a rendered pill is always M3's standard palette
 ;; (surfaceContainer, with a primaryContainer FAB).
 ;;
-;; The two Overflowing samples ride the `app_bar_row'/`app_bar_column'
+;; The two Overflowing samples ride the namespaced Material app-bar nodes
 ;; nodes now: the five actions measure INSIDE the pill and fold into
 ;; the more_vert menu at layout time, in either orientation.
 ;;
@@ -190,18 +190,16 @@ no size of its own.  The container is composed the way a FAB is composed
 everywhere in this catalog: a `surface' at 6dp of `:shadow-elevation'
 with the tap on a centered `box', because `surface' has no on_tap.
 
-Its role is primary_container, not the vibrant palette's
-tertiaryContainer: the Companion's role table has no `tertiary_container'
-and would fall back to on_surface.  primary_container is what a floating
-toolbar's STANDARD colors give the FAB, and standard is what the pill
-around it draws anyway -- `colors' is not a wire member."
+Its role is the neutral `primary'.  The Material-only container and vibrant
+tertiary tones are renderer-private derivations; `colors' is not a wire
+member."
   (jetpacs-with-attrs
    (jetpacs-surface
-    (jetpacs-box (jetpacs-icon "add" :size 24 :color "on_primary_container"
+    (jetpacs-box (jetpacs-icon "add" :size 24 :color "on_primary"
                                :content-description "Localized description")
                  :alignment "center"
                  :on-tap (or on-tap (jetpacs-m3-demo "Add")))
-    :color "primary_container" :shadow-elevation 6)
+    :color "primary" :shadow-elevation 6)
    :corner 16))
 
 (defun jetpacs-m3-floating-toolbar--cluster-row ()
@@ -286,7 +284,7 @@ VerticalFloatingToolbar's content, in upstream's order."
   "The Overflowing samples' five actions as a measuring overflow strip.
 Download, Favorite, Add, Person and ArrowUpward render inline while
 they fit inside the pill and fold into the more_vert menu at layout
-time; VERTICAL picks `app_bar_column', the strip stood on end."
+time; VERTICAL picks `material3.app_bar_column', the strip stood on end."
   (let ((items (list (jetpacs-app-bar-item "Download" "download"
                                            (jetpacs-m3-demo "Download"))
                      (jetpacs-app-bar-item "Favorite" "favorite"
@@ -297,8 +295,8 @@ time; VERTICAL picks `app_bar_column', the strip stood on end."
                                            (jetpacs-m3-demo "Person"))
                      (jetpacs-app-bar-item "Upload" "arrow_upward"
                                            (jetpacs-m3-demo "Upload")))))
-    (if vertical (jetpacs-app-bar-column items)
-      (jetpacs-app-bar-row items))))
+    (if vertical (jetpacs-material3-app-bar-column items)
+      (jetpacs-material3-app-bar-row items))))
 
 (defun jetpacs-m3-floating-toolbar--overflow-row ()
   "Upstream OverflowingHorizontalFloatingToolbarSample: the pill that folds.
@@ -306,7 +304,7 @@ HorizontalFloatingToolbar gives its trailingContent an `AppBarRow' of
 five clickableItems, and where they end up is the whole sample: the
 strip measures INSIDE the pill and folds whatever does not fit into the
 more_vert menu at layout time.  That width is one Emacs never sees,
-which is why `app_bar_row' is a node rather than a list trimmed here.
+which is why `material3.app_bar_row' is a node rather than a list trimmed here.
 `floating_toolbar_orientation' horizontal is what makes the slot the
 pill the five actions have to fit into."
   (jetpacs-m3-floating-toolbar--overflow-strip nil))
@@ -332,7 +330,7 @@ The four IconButtons \(Person, Edit, Favorite, MoreVert) and the vibrant
 Add FAB share one `surface': the fab slot takes ONE node and a scaffold
 cannot nest inside a scaffold, so the pill and the FAB fused to its end
 \(upstream's `floatingActionButton =') are composed here rather than asked
-for.  primary_container is the role the wire can name for
+for.  `primary' is the closest neutral role the wire can name for
 vibrantFloatingToolbarColors.
 
 Re-checked against the members that landed since: `floating_toolbar_fab'
@@ -352,7 +350,7 @@ for an inexact one is not a win, so the composition stays."
      (jetpacs-m3-floating-toolbar--primary "add" "Add" 56)
      :spacing 4 :align "center")
     :padding 8)
-   :color "primary_container" :shape "circle" :elevation 6))
+   :color "primary" :shape "circle" :elevation 6))
 
 (jetpacs-m3-defcomponent "floating-toolbar"
   :builders (list #'jetpacs-scaffold)

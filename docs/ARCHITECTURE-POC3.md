@@ -42,26 +42,27 @@ Android app is a dumb renderer: it selects a document from Jetpacs' durable Room
 implementation of accepted EBP state, renders it, and returns typed EBP
 actions. It must not compile a second Kotlin copy of the catalog.
 
-Material 3 IS the design language, and "m3" and "Jetpacs" are synonymous
-(ratified 2026-08-06). Jetpacs leans into Material Design exactly as it leans
-into Kotlin, Android, and Compose: the node vocabulary is Material's
-vocabulary, and there is no design-system abstraction layer between them —
-nor is one wanted. A different design system does not mean a Jetpacs option;
-it means a different Companion implementation, which is precisely what EBP
-being design-agnostic already buys. An abstraction here would cost the
-fidelity that makes the catalog a usable component reference and buy an
-indirection nobody would ever take.
+Jetpacs is coupled to EBP semantics and, on Android, to ordinary Compose—not
+to Material. The eight-node EBP Core Node Set has a Foundation-only reference
+renderer. Design-system-specific semantics live in positively negotiated
+renderer extensions, so a different design system can implement the same core
+without importing Material or emulating Material-only controls.
 
-The Material VERSION is pinned, with ONE source of truth:
-`companion/gradle/libs.versions.toml`'s `material3` entry, currently
-`1.5.0-alpha16`. A major bump — a future Material 4 — is one deliberate,
-coordinated change, made in three places updated UNANIMOUSLY: that toml
-entry, the catalog's `jetpacs-m3-material-version` constant, and this
-paragraph. The constant is not a second source of truth; it restates the toml
-so the phone can say which Material it is showing, and
-`test/jetpacs-m3-catalog-test.el` reads the toml at test time and asserts the
-two are equal — so bumping one without the other goes red rather than
-shipping a catalog that lies about its own version.
+The reference Companion installs `:renderer:material3` as Glasspane's
+selectable implementation. Glasspane and Jetpacs Components explicitly require
+its `glasspane.material3` extension. The schema and golden witnesses live in
+`renderer-extensions/`, outside EBP. EBP 3 carries only positive target
+profiles; Jetpacs dual-gates each extension node on its advertised node name
+and the app's declared extension requirement. A receiver never implies support
+from a prefix, and an unavailable app remains outside its builders and gets an
+explanatory Apps screen. This keeps Jetpacs' Compose-shaped foundation reusable
+while letting Glasspane be deliberately and faithfully Material 3.
+
+The Material renderer's version is pinned by
+`companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
+`jetpacs-m3-material-version` constant restates that value so the device can
+identify the implementation it demonstrates; the catalog suite reads the
+version catalog and fails if those two values diverge.
 
 Durable delivery crosses two independent failure domains. Jetpacs commits
 outgoing events to a Room 3 transactional outbox. Emacs commits received
@@ -83,18 +84,19 @@ UI toolkit, or product dependency.
 | Module | Responsibility | May depend on |
 |---|---|---|
 | `:ebp-kmp` | Storage-neutral durable-store SPI, reducers, and rollback-capable memory reference implementation | Kotlin, serialization |
-| `:wire` | Transport, framing, contract vocabulary, and protocol handling/state | `:ebp-kmp`, Kotlin, serialization, coroutines, platform transport abstractions only |
+| `:wire` | Transport, framing, EBP vocabulary, generic injected renderer-admission seam, and protocol handling/state | `:ebp-kmp`, Kotlin, serialization, coroutines, platform transport abstractions only |
 | `:core:model` | Jetpacs read models and identifiers | Kotlin |
 | `:core:database` | Complete Room 3 schema, DAOs, builders, migrations, and exported schemas | Room 3, SQLite |
 | `:core:ebp-store` | Jetpacs Room implementation of the storage-independent EBP transaction SPI | `:ebp-kmp`, `:core:database` |
 | `:core:data` | Read-only Room `Flow` projections for Jetpacs UI state | `:core:model`, `:core:database` |
 | `:core:navigation` | Serializable Nav 3 destination keys | Nav 3 |
 | `:core:testing` | Shared read-model fakes and backend contract fixtures | `:core:data`, `:core:model` |
-| `:renderer:model` | Target-neutral normalized renderer IR and profile registries | public storage-neutral EBP contract types only |
-| `:renderer:compose` | Compose renderer for the application target | `:renderer:model`, Compose |
+| `:renderer:model` | Toolkit-neutral renderer contribution/profile registry, shared raw-EBP JSON readers, and the authored/derived semantic projection | `:wire`, serialization; no Compose or design-system dependency |
+| `:renderer:compose` | Foundation-only reference renderer for the eight EBP core nodes and the one Compose mapping of generic EBP semantics | `:renderer:model`, Compose Foundation/UI; no Material or Styles |
+| `:renderer:material3` | Glasspane Material 3 extension, rich app renderer, theme projection, custom Styles components, and visual/accessibility tests | `:renderer:compose`, Material 3, adaptive Compose, experimental Foundation Styles |
 | `:renderer:glance` (later) | Restricted widget renderer/profile | `:renderer:model`, Glance |
 | `:feature:pairing`, `:feature:surface`, `:feature:settings` | ViewModels, entry providers, and Jetpacs feature UI | Jetpacs `:core:*` modules |
-| `:app` | Single Android composition root, transport/platform adapters, and dumb renderer shell | `:wire`, Jetpacs core/feature modules |
+| `:app` | Single Android composition root, transport/platform adapters, shell/navigation, and selection of the installed renderer implementation | `:wire`, `:renderer:material3`, Jetpacs core/feature modules |
 
 The present split is intentional: `:wire` consumes `:ebp-kmp` for portable
 durability behavior, while `:core:ebp-store` supplies Jetpacs' Room-backed
@@ -199,8 +201,9 @@ port one durable vertical slice at a time. The final data path is:
         -> committed Room 3 state
         -> read-only repository Flow
         -> screen ViewModel StateFlow
-        -> target-neutral renderer model
-        -> dumb Compose EBP renderer (or later target profile)
+        -> registry-derived target profile
+        -> Compose Foundation core renderer
+        -> selected design renderer (`:renderer:material3` here)
 ```
 
 The former typed post-accept cache callback is not a persistence seam. A
@@ -211,6 +214,52 @@ selects a cached EBP surface; it does not define the catalog.
 
 The complete work packages, schema, transaction matrix, import policy, and
 cutover gates live in `PLAN-room3-rebuild.md`.
+
+### Receiver component styling and accessibility
+
+The Compose Styles API is confined to `:renderer:material3`; it is neither a
+new EBP styling language nor a dependency of the Foundation renderer.
+`EbpTheme` resolves the system or authored EBP palette, derives private
+Material color roles from the 13 neutral wire roles, installs `MaterialTheme`,
+and projects the same colors and shapes through
+`ProvideJetpacsStyleTokens`. Only custom, receiver-owned components consume
+`JetpacsComponentStyles`; Material components continue to use their supported
+parameters and Material tokens.
+
+Styles own appearance and animated interaction states. Ordinary modifiers own
+click/select behavior, enabled state, focus, and semantics. The first two
+components deliberately exercise different contracts:
+
+- `JetpacsCatalogAction` is one full-row button target used by the native app
+  catalog.
+- `JetpacsChoiceRow` is one full-row radio target; its Material `RadioButton`
+  glyph has no callback, so accessibility services never encounter duplicate
+  controls for one setting.
+
+Generic accessibility is not Material-owned. `:renderer:model` consumes the
+contract-generated §16.5.1 schema and node defaults, resolves accessible names
+in the order `semantics.name`, `content_description`, textual `label`, icon
+name, node type, then `node`, and derives roles and state only from existing
+Node members. `:renderer:compose` maps that projection through Compose
+Foundation. Both the Foundation renderer and Glasspane Material renderer use
+the same additive modifier; it never clears or merges children.
+
+The projection is attached to the bounds that own the interaction. Inner
+glyphs remain decorative, a control retains one click target, section headers
+are headings, progress and collapsibles expose their derived state, and
+labeled swipe sides become custom accessibility actions. Authored custom
+actions call `RenderCtx.action`, so dialog rebinding, confirmation, durable
+admission, offline policy, capture fields, and result handling are identical
+to a visible action. Compose reports success after that ordinary-path handoff,
+not after a remote completion. Chrome places its existing screen title in
+`pane_title`; this changes announcements only and has no layout or styling
+effect.
+
+The Material renderer's component gallery and its screenshot and
+device-semantics envelopes are recorded in
+[`companion/TESTING.md`](../companion/TESTING.md). Screenshot references are
+deterministic renderer fixtures; real-device tests remain required for focus,
+accessibility services, input, persistence, reconnect, and navigation.
 
 Before adapter work, run a local-source best-practices audit and make its
 findings an explicit gate:

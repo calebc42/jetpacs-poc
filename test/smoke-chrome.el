@@ -39,7 +39,7 @@
                                        :content_description "nav-search"
                                        :on_tap (:action "demo.nav2"))])
               :floating_toolbar (:t "row" :padding 4
-                                 :children [(:t "assist_chip" :label "Tool"
+                                 :children [(:t "material3.assist_chip" :label "Tool"
                                              :on_tap (:action "demo.tool"))])
               :drawer (:t "column" :padding 16
                        :children [(:t "text" :text "Drawer" :style "title")

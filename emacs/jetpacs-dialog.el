@@ -239,7 +239,7 @@ by degrade rather than by refusing the whole prompt."
                (usable (and rendered
                             (cl-every #'jetpacs-dialog--context-ok-p
                                       rendered))))
-          (push (jetpacs-section-header (buffer-name buf)) nodes)
+          (when (jetpacs-node-advertised-p "section_header" :dialog) (push (jetpacs-section-header (buffer-name buf)) nodes))
           (if usable
               (setq nodes (append (reverse rendered) nodes))
             (push (jetpacs-text
@@ -259,15 +259,33 @@ by degrade rather than by refusing the whole prompt."
   (jetpacs-text (string-trim-right prompt "[ :：]+") :style "headline"))
 
 (defun jetpacs-dialog--frame (prompt &rest body)
-  "The shared dialog skeleton: title, context cards, BODY, Cancel."
-  (apply #'jetpacs-column
-         (append (list (jetpacs-dialog--title prompt))
-                 (jetpacs-dialog--context-nodes)
-                 (list (jetpacs-with-attrs (jetpacs-spacer) :height 8))
-                 (delq nil body)
-                 (list (jetpacs-with-attrs (jetpacs-spacer) :height 8)
-                       (jetpacs-button "Cancel" (jetpacs-dialog-dismiss)
-                                       :variant "text")))))
+  "The shared dialog skeleton: title, context cards, BODY, and actions.
+When BODY ends in a button, place that primary action and Cancel together in
+one trailing row.  Choice layouts ending in a row or column retain the
+standalone Cancel action below them."
+  (let* ((body (delq nil body))
+         (primary (and (equal (plist-get (car (last body)) :t) "button")
+                       (car (last body))))
+         (content (if primary (butlast body) body))
+         ;; Callers historically inserted their own gap before OK.  The
+         ;; skeleton owns the footer gap now, so do not keep both.
+         (content (if (and primary
+                           (equal (plist-get (car (last content)) :t)
+                                  "spacer"))
+                      (butlast content)
+                    content))
+         (cancel (jetpacs-button "Cancel" (jetpacs-dialog-dismiss)
+                                 :variant "text"))
+         (footer (if primary
+                     (jetpacs-row cancel primary :spacing 8 :arrange "end")
+                   cancel)))
+    (apply #'jetpacs-column
+           (append (list (jetpacs-dialog--title prompt))
+                   (jetpacs-dialog--context-nodes)
+                   (list (jetpacs-with-attrs (jetpacs-spacer) :height 8))
+                   content
+                   (list (jetpacs-with-attrs (jetpacs-spacer) :height 8)
+                         footer)))))
 
 (defun jetpacs-dialog--submitted-value (conclusion)
   "The authored `:value' of a submitted CONCLUSION; quit on dismissal."
@@ -633,7 +651,7 @@ instead, and the last shadow is what the user submitted."
                       prompt
                       (jetpacs-editor
                        editor-id :document document :value shadow
-                       :complete t :chromeless t)
+                       :complete t :chromeless t :single-line t)
                       (jetpacs-with-attrs (jetpacs-spacer) :height 8)
                       (jetpacs-button "OK" (jetpacs-dialog-submit)))))
                    (status (car conclusion))

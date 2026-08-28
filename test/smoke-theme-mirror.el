@@ -40,8 +40,8 @@
 (setq jetpacs-theme-mode 'mirror)
 
 ;; A small surface so the screenshot shows themed chrome AND content:
-;; badges wear success/warning, the box wears primary_container, and
-;; the toggle button drives modus.toggle.
+;; badges wear success/warning, the box wears the derived surface ramp, and
+;; the toggle button drives a fixture-owned adapter to Modus.
 (defun smoke-tm--builder ()
   (jetpacs-column
    (jetpacs-text "JA-1 theme mirror" :style "headline")
@@ -50,9 +50,15 @@
    (jetpacs-with-attrs
     (jetpacs-box (list (jetpacs-text "container tone" :style "body")))
     :padding 12)
-   (jetpacs-button "Toggle" (jetpacs-action "jetpacs.theme.modus-toggle"))))
+   (jetpacs-button "Toggle" (jetpacs-action "smoke.theme.toggle"))))
+
+(defun smoke-tm--toggle (args params)
+  "Toggle the configured Modus pair for smoke event ARGS and PARAMS."
+  (jetpacs-modus--action-toggle args params))
 
 (with-jetpacs-owner "tm"
+  (jetpacs-defaction "smoke.theme.toggle" #'smoke-tm--toggle
+                     :doc "Toggle Modus from the theme-mirror smoke surface")
   (jetpacs-shell-define-root "tm" #'smoke-tm--builder))
 
 (defvar smoke-tm--ready nil)

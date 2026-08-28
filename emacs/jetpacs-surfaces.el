@@ -32,6 +32,8 @@
 (require 'subr-x)
 (require 'seq)
 (require 'ebp)
+(require 'jetpacs-vocabulary)
+(require 'jetpacs-renderer-registry)
 ;; The path sandbox was promoted OUT of this file: containing a name a
 ;; peer sent is wire-and-Emacs work naming no owner, action, surface or
 ;; state, so it is `ebp-path' now.  Required here so every rung that
@@ -858,7 +860,7 @@ present on that stack); this module stays kit-agnostic.")
 (defvar jetpacs--any-surface-actions (make-hash-table :test #'equal)
   "Action names registered with :any-surface — D1 GLOBAL VERBS.
 An owned action is otherwise scoped to its owner's surfaces at
-dispatch; a global verb (base's `jetpacs.theme.modus-toggle': owned,
+dispatch; a global verb (base's `jetpacs.devtools.inspect': owned,
 owns ZERO surfaces, any surface may render its button) declares the
 exception EXPLICITLY rather than having the gate infer it.")
 
@@ -1067,6 +1069,29 @@ floor, so a failed push cannot make a surface permanently stale."
 
 ;;;; State (the SPEC 14.6 fan-out; ebp owns the store and reconciliation)
 
+(defun jetpacs-renderer-extension-for-node (type)
+  "Return the registered renderer extension owning node TYPE, or nil.
+The ownership table is installed by optional Jetpacs presentation modules;
+EBP does not register downstream renderers.  Callers must not infer ownership
+from a name prefix."
+  (cl-loop for (extension . nodes) in jetpacs-renderer-extensions
+           when (member type nodes)
+           return extension))
+
+(defun jetpacs-extension-advertised-p (extension &optional target)
+  "Non-nil when the live welcome advertises EXTENSION for TARGET.
+TARGET defaults to `:app'.  With no attached client, offline builders and
+tests retain the usual richer-form assumption.  A live target profile is
+authoritative and an absent `:extensions' array means no design extension."
+  (if-let* ((client (jetpacs-client)))
+      (if-let* ((profile (plist-get (ebp-client-profiles client)
+                                    (or target :app))))
+          (and (member extension
+                       (append (plist-get profile :extensions) nil))
+               t)
+        (null (jetpacs--capability-gated-target-p target)))
+    t))
+
 (defun jetpacs-node-advertised-p (type &optional target)
   "Non-nil when the live welcome advertises node TYPE for TARGET (SPEC 16.2).
 TARGET defaults to `:app'.  Only the Core Node Set — `text', `row',
@@ -1078,7 +1103,13 @@ first and degrade when the answer is no.  With no client attached
   (if-let* ((client (jetpacs-client)))
       (if-let* ((profile (plist-get (ebp-client-profiles client)
                                     (or target :app))))
-          (and (member type (append (plist-get profile :node_types) nil)) t)
+          (and (member type (append (plist-get profile :node_types) nil))
+               (if-let* ((extension
+                          (jetpacs-renderer-extension-for-node type)))
+                   (member extension
+                           (append (plist-get profile :extensions) nil))
+                 t)
+               t)
         ;; No profile for this target on a LIVE client.  For a
         ;; CAPABILITY-GATED target that absence is the answer: SPEC 10.2
         ;; carries a dialog/notification/widget/tile profile precisely

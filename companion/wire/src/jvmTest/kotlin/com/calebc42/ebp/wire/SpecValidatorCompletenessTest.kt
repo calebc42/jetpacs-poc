@@ -115,6 +115,72 @@ class SpecValidatorCompletenessTest {
             advertisedBuiltins = dialogBuiltins)
     }
 
+    @Test
+    fun surfaceOpenRequiresAnAppSurfaceId() {
+        val appBuiltins = setOf("surface.open")
+        SpecValidator.validateSurfaceSpec(
+            node("button", "label" to JsonPrimitive("Apps"),
+                "on_tap" to buildJsonObject {
+                    put("builtin", "surface.open")
+                    put("surface", "app:jetpacs.app-store")
+                }),
+            advertisedTypes = setOf("button", "column"),
+            advertisedBuiltins = appBuiltins,
+        )
+        for (target in listOf("notification:wrong", "app:", "app:has space")) {
+            try {
+                SpecValidator.validateSurfaceSpec(
+                    node("button", "label" to JsonPrimitive("Apps"),
+                        "on_tap" to buildJsonObject {
+                            put("builtin", "surface.open")
+                            put("surface", target)
+                        }),
+                    advertisedTypes = setOf("button", "column"),
+                    advertisedBuiltins = appBuiltins,
+                )
+                fail("accepted invalid surface.open target $target")
+            } catch (e: ContentInvalid) {
+                assertTrue(e.reason.contains("app Surface ID"))
+            }
+        }
+    }
+
+    @Test
+    fun remoteOpenSurfaceIsFeatureGatedAndRequiresAnAppSurfaceId() {
+        fun action(target: String) = buildJsonObject {
+            put("action", "app.open")
+            put("open_surface", target)
+        }
+        val button = { target: String ->
+            node("button", "label" to JsonPrimitive("Open"),
+                "on_tap" to action(target))
+        }
+        SpecValidator.validateSurfaceSpec(
+            button("app:org-mode"),
+            advertisedFeatures = setOf("action.open_surface"),
+        )
+        try {
+            SpecValidator.validateSurfaceSpec(
+                button("app:org-mode"),
+                advertisedFeatures = emptySet(),
+            )
+            fail("accepted open_surface without its member-gating feature")
+        } catch (e: ContentInvalid) {
+            assertTrue(e.reason.contains("not valid in this context"))
+        }
+        for (target in listOf("notification:wrong", "app:", "app:has space")) {
+            try {
+                SpecValidator.validateSurfaceSpec(
+                    button(target),
+                    advertisedFeatures = setOf("action.open_surface"),
+                )
+                fail("accepted invalid remote open_surface target $target")
+            } catch (e: ContentInvalid) {
+                assertTrue(e.reason.contains("app Surface ID"))
+            }
+        }
+    }
+
     // ------------------------------------------------------- content (17.2)
 
     @Test
@@ -212,6 +278,16 @@ class SpecValidatorCompletenessTest {
             "line counts of 1")
         accepts(node("text_input", "id" to JsonPrimitive("a"),
             "min_lines" to JsonPrimitive(2), "max_lines" to JsonPrimitive(4)))
+        accepts(node("editor", "id" to JsonPrimitive("e"),
+            "single_line" to JsonPrimitive(true)))
+        rejects(node("editor", "id" to JsonPrimitive("e"),
+            "single_line" to JsonPrimitive(true),
+            "value" to JsonPrimitive("two\nlines")), "U+000A")
+        rejects(node("editor", "id" to JsonPrimitive("e"),
+            "single_line" to JsonPrimitive(true),
+            "min_lines" to JsonPrimitive(2)), "line counts of 1")
+        rejects(node("editor", "id" to JsonPrimitive("e"),
+            "max_lines" to JsonPrimitive(2)), "must not exceed")
     }
 
     @Test

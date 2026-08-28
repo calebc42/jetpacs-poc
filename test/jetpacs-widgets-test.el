@@ -19,6 +19,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'jetpacs-widgets)
+(require 'glasspane-material3)
 
 (defvar jetpacs-test--dir
   (file-name-directory (or load-file-name buffer-file-name))
@@ -40,6 +41,22 @@
         (forward-line 1)))
     h))
 
+(defun jetpacs-test--glasspane-material3-goldens ()
+  "Return Glasspane's renderer-owned golden vectors by index."
+  (let ((h (make-hash-table :test 'equal)))
+    (with-temp-buffer
+      (insert-file-contents
+       (expand-file-name "../renderer-extensions/glasspane-material3.golden"
+                         jetpacs-test--dir))
+      (goto-char (point-min))
+      (while (not (eobp))
+        (unless (looking-at-p "^[[:space:]]*$")
+          (let ((line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position))))
+            (puthash (substring line 0 2) (substring line 3) h)))
+        (forward-line 1)))
+    h))
+
 (defun jetpacs-test--contract ()
   "Parse `ebp/contract.json' as an alist (symbol keys, list arrays)."
   (with-temp-buffer
@@ -47,7 +64,7 @@
      (expand-file-name "../ebp/contract.json" jetpacs-test--dir))
     (json-parse-buffer :object-type 'alist :array-type 'list)))
 
-;;;; Byte-parity: ActionDescriptor / builtin vectors (widgets.golden 61-71, 100)
+;;;; Byte-parity: ActionDescriptor / builtin vectors (widgets.golden 61-71, 100-101)
 
 (ert-deftest jetpacs-widgets/action-goldens ()
   "Every action/builtin vector in widgets.golden builds byte-identically."
@@ -73,6 +90,15 @@
       (chk "69" (jetpacs-dialog-submit :value "ok"))
       (chk "70" (jetpacs-dialog-submit :capture-fields '("name")))
       (chk "71" (jetpacs-dialog-dismiss))
+      (chk "101" (jetpacs-surface-open "app:jetpacs.app-store"))
+      (should (equal (jetpacs-variant-switch "org.visibility")
+                     '(:builtin "variant.switch" :id "org.visibility")))
+      (should (equal (jetpacs-variant-switch "org.visibility" :value "all")
+                     '(:builtin "variant.switch" :id "org.visibility"
+                       :value "all")))
+      (chk "102" (jetpacs-action "app.open"
+                                  :args '(:app "org-mode")
+                                  :open-surface "app:org-mode"))
       ;; §14.1 object-form confirm (amendment #168): the authored face.
       (chk "100" (jetpacs-action "demo.guarded"
                                  :confirm '(:text "Delete this note?"
@@ -213,7 +239,18 @@
                        (jetpacs-table-rule))
                  :aligns '("start" "center")
                  :on-add-col (jetpacs-action "col.add")
-                 :on-add-row (jetpacs-action "row.add"))))))
+                 :on-add-row (jetpacs-action "row.add")))
+      (chk "103"
+           (jetpacs-variant-host
+            "org.visibility" "contents"
+            (list
+             (jetpacs-variant
+              "contents"
+              (jetpacs-row
+               (jetpacs-button
+                "Show all"
+                (jetpacs-variant-switch "org.visibility" :value "all"))))
+             (jetpacs-variant "all" (jetpacs-text "Everything"))))))))
 
 (ert-deftest jetpacs-widgets/layout-validation ()
   "Layout constructors enforce their §17.3 invariants."
@@ -236,6 +273,35 @@
   ;; table row kind + collapsible header
   (should-error (jetpacs-table-row 'footer (jetpacs-table-cell (list (jetpacs-span "x")))))
   (should-error (jetpacs-collapsible "s" "not-a-node")))
+
+(ert-deftest jetpacs-widgets/variant-host-validation ()
+  "Retained alternatives are bounded, closed, read-only node trees."
+  (let ((a (jetpacs-variant "a" (jetpacs-text "A")))
+        (b (jetpacs-variant "b" (jetpacs-text "B"))))
+    (should (jetpacs-variant-host "host" "a" (list a b)))
+    (should-error (jetpacs-variant-host "host" "a" (list a)))
+    (should-error
+     (jetpacs-variant-host
+      "host" "a" (cl-loop for i below 9
+                           collect (jetpacs-variant
+                                    (format "v%d" i) (jetpacs-text "x")))))
+    (should-error (jetpacs-variant-host "host" "missing" (list a b)))
+    (should-error (jetpacs-variant-host "host" "a" (list a a)))
+    (should-error
+     (jetpacs-variant
+      "stateful" (jetpacs-text-input "draft" :value "x")))
+    (should-error
+     (jetpacs-variant
+      "editor" (jetpacs-editor "body" :value "x")))
+    (should-error
+     (jetpacs-variant
+      "nested" (jetpacs-variant-host "inner" "a" (list a b))))
+    (should-error
+     (jetpacs-variant-host
+      "duplicate" "a"
+      (list
+       (jetpacs-variant "a" (jetpacs-with-attrs (jetpacs-text "A") :id "same"))
+       (jetpacs-variant "b" (jetpacs-with-attrs (jetpacs-text "B") :id "same")))))))
 
 (ert-deftest jetpacs-widgets/descriptor-validation ()
   "Post-audit: on_* / on_trigger / swipe fields are validated (§17.1, §17.3)."
@@ -278,8 +344,6 @@
       (chk "38" (jetpacs-chip "Tag"))
       (chk "39" (jetpacs-chip "Tag" :enabled t :icon "tag"
                               :on-tap (jetpacs-action "demo.tap") :selected t))
-      (chk "40" (jetpacs-assist-chip "Help" :icon "info"
-                                     :on-tap (jetpacs-action "demo.tap")))
       (chk "41" (jetpacs-menu
                  (list (jetpacs-menu-item "Open" (jetpacs-action "demo.tap"))
                        (jetpacs-menu-item "Delete" (jetpacs-action "demo.delete")
@@ -317,6 +381,16 @@
                                 :max 10 :min 0 :value 5))
       (chk "55" (jetpacs-slider "zoom" (jetpacs-action "zoom.set")
                                 :value 2 :values '(1 2 4))))))
+
+(ert-deftest jetpacs-widgets/glasspane-material3-golden ()
+  "Glasspane's assist-chip builder matches its renderer-owned witness."
+  (let ((goldens (jetpacs-test--glasspane-material3-goldens)))
+    (should
+     (equal
+      (jetpacs-node->canonical-json
+       (jetpacs-material3-assist-chip
+        "Help" :icon "info" :on-tap (jetpacs-action "demo.tap")))
+      (gethash "00" goldens)))))
 
 (ert-deftest jetpacs-widgets/input-validation ()
   "Input constructors enforce their §17.4 rules."
@@ -399,6 +473,14 @@
   ;; complete requires document
   (should-error (jetpacs-editor "e" :complete t))
   (should (jetpacs-editor "e" :complete t :document "doc:x"))
+  ;; A single-line editor is an actual one-line value contract.
+  (let ((editor (jetpacs-editor "e" :single-line t)))
+    (should (eq (plist-get editor :single_line) t)))
+  (should-error (jetpacs-editor "e" :single-line t :min-lines 2))
+  (should-error (jetpacs-editor "e" :single-line t :max-lines 2))
+  (should-error (jetpacs-editor "e" :single-line t :value "two\nlines"))
+  (should-error (jetpacs-editor "e" :min-lines 3 :max-lines 2))
+  (should-error (jetpacs-editor "e" :max-lines 2))
   ;; a toolbar command op requires document
   (should-error (jetpacs-editor "e" :toolbar (list (jetpacs-toolbar-item
                                                     :command "cmd" :icon "i"))))
@@ -608,12 +690,15 @@
 
 (ert-deftest jetpacs-widgets/profile-gating ()
   "jetpacs-check-profile / -node-types gate emitted types to the target (§16.2)."
-  ;; reference set sizes + exact membership (app == the 52 node types)
-  (should (= (length jetpacs-app-node-types) 52))
-  (should (= (length jetpacs-dialog-node-types) 34))
+  ;; EBP remains the 48-node base; the selected design layer contributes five.
+  (should (= (length jetpacs-app-node-types) 48))
+  (should (= (length jetpacs-dialog-node-types) 32))
   (should (= (length jetpacs-notification-node-types) 6))
   (should (equal (sort (copy-sequence jetpacs-app-node-types) #'string<)
                  (sort (copy-sequence jetpacs-node-types) #'string<)))
+  (should (= (length (append jetpacs-app-node-types
+                             (jetpacs-renderer-target-node-types 'app)))
+             53))
   ;; post-audit: a data key named "t" inside opaque args/meta is NOT a node type
   (should (jetpacs-check-profile
            (jetpacs-button "Go" (jetpacs-action "foo.bar" :args '(:t "note"))) 'app))
@@ -747,6 +832,122 @@ serializer every future rung depends on before those rungs exist."
 (ert-deftest jetpacs-widgets/with-attrs-rejects-non-universal ()
   (should-error (jetpacs-with-attrs '(:t "text" :text "hi") :text "no")))
 
+;;;; Toolkit-neutral semantics (§16.5.1)
+
+(ert-deftest jetpacs-widgets/semantics-constructors-normalize ()
+  "Public constructors emit closed wire-shaped objects without mutating NODE."
+  (let* ((node (jetpacs-text "hello"))
+         (action (jetpacs-semantic-action
+                  "Activate" (jetpacs-action "demo.activate")))
+         (decorated
+          (jetpacs-with-semantics
+           node
+           :name "Greeting"
+           :description "A welcome message"
+           :state-description "Ready"
+           :error "Temporarily unavailable"
+           :pane-title "Welcome"
+           :heading-level 2
+           :live-region 'polite
+           :collection (jetpacs-semantic-collection 3 2)
+           :collection-item (jetpacs-semantic-collection-item 1 1 0 2)
+           :traversal-group :json-false
+           :traversal-index 1.5
+           :actions (list action)))
+         (semantics (plist-get decorated :semantics)))
+    (should-not (plist-member node :semantics))
+    (should (equal (plist-get semantics :collection)
+                   '(:row_count 3 :column_count 2)))
+    (should (equal (plist-get semantics :collection_item)
+                   '(:row_index 1 :row_span 1
+                     :column_index 0 :column_span 2)))
+    (should (eq (plist-get semantics :traversal_group) :json-false))
+    (should (equal (plist-get semantics :live_region) "polite"))
+    (should (vectorp (plist-get semantics :actions)))
+    (should (equal (aref (plist-get semantics :actions) 0) action))))
+
+(ert-deftest jetpacs-widgets/semantics-canonical-and-wire-bytes ()
+  "Semantics participate in the ordinary canonical and live byte accounting."
+  (let* ((node (jetpacs-with-semantics
+                (jetpacs-text "hello")
+                :name "Greeting"
+                :traversal-group :json-false
+                :actions
+                (list (jetpacs-semantic-action
+                       "Activate" (jetpacs-action "demo.activate")))))
+         (canonical
+          "{\"semantics\":{\"actions\":[{\"label\":\"Activate\",\"on_action\":{\"action\":\"demo.activate\"}}],\"name\":\"Greeting\",\"traversal_group\":false},\"t\":\"text\",\"text\":\"hello\"}"))
+    (should (equal (jetpacs-node->canonical-json node) canonical))
+    (should (= (jetpacs-node-wire-bytes node)
+               (string-bytes
+                (json-serialize node
+                                :false-object :json-false
+                                :null-object nil))))))
+
+(ert-deftest jetpacs-widgets/semantics-reject-invalid-authoring ()
+  "The current helper is closed and enforces every local semantic bound."
+  (let ((node (jetpacs-text "x")))
+    (should-error (jetpacs-with-semantics node))
+    (should-error (jetpacs-with-semantics node :name ""))
+    (should-error (jetpacs-with-semantics node :heading-level 0))
+    (should-error (jetpacs-with-semantics node :heading-level 7))
+    (should-error (jetpacs-with-semantics node :live-region 'immediate))
+    (should-error
+     (jetpacs-with-semantics node :collection
+                             (jetpacs-semantic-collection -1 1)))
+    (should-error
+     (jetpacs-with-semantics node :collection-item
+                             (jetpacs-semantic-collection-item 0 0 0 1)))
+    (should-error (jetpacs-with-semantics node :traversal-group nil))
+    (should-error (jetpacs-semantic-action "" (jetpacs-action "demo.x")))
+    (should-error
+     (jetpacs-semantic-action
+      "Bad" '(:action "demo.bad" :builtin "dialog.dismiss")))
+    (should-error
+     (jetpacs-with-attrs node :semantics '(:name "Known" :future t)))
+    (should-error
+     (jetpacs-with-attrs node :semantics '(:name "One" :name "Two")))
+    (let ((too-many
+           (cl-loop for index below
+                    (1+ jetpacs-max-semantic-actions-per-node)
+                    collect
+                    (jetpacs-semantic-action
+                     (format "Action %d" index)
+                     (jetpacs-action (format "demo.action%d" index))))))
+      (should-error (jetpacs-with-semantics node :actions too-many)))
+    (should-error
+     (jetpacs-with-semantics
+      node :actions
+      (list (jetpacs-semantic-action "Same" (jetpacs-action "demo.one"))
+            (jetpacs-semantic-action "Same" (jetpacs-action "demo.two")))))))
+
+(ert-deftest jetpacs-widgets/semantic-collection-binds-to-nearest-ancestor ()
+  "The sender rejects orphaned, overflowing, and wrong-nearest items."
+  (let* ((item (lambda (row column)
+                 (jetpacs-with-semantics
+                  (jetpacs-text "item")
+                  :collection-item
+                  (jetpacs-semantic-collection-item row 1 column 1))))
+         (valid
+          (jetpacs-with-semantics
+           (jetpacs-column (funcall item 1 1))
+           :collection (jetpacs-semantic-collection 2 2))))
+    (should (eq (jetpacs--check-semantics-document valid) valid))
+    (should-error (jetpacs--check-semantics-document (funcall item 0 0)))
+    (should-error
+     (jetpacs--check-semantics-document
+      (jetpacs-with-semantics
+       (jetpacs-column (funcall item 2 0))
+       :collection (jetpacs-semantic-collection 2 2))))
+    (should-error
+     (jetpacs--check-semantics-document
+      (jetpacs-with-semantics
+       (jetpacs-column
+        (jetpacs-with-semantics
+         (jetpacs-column (funcall item 0 1))
+         :collection (jetpacs-semantic-collection 1 1)))
+       :collection (jetpacs-semantic-collection 2 2))))))
+
 (ert-deftest jetpacs-widgets/color-valid ()
   (should (jetpacs-color-valid-p "primary"))
   (should (jetpacs-color-valid-p "#fff"))
@@ -825,15 +1026,31 @@ case is the sharp one (0 is truthy, so a presence-only check let it pass)."
   (should-error (jetpacs-action "a.b" :capture-fields '("bad!")))    ; not an id
   (should (jetpacs-action "a.b" :capture-fields '("a" "b"))))
 
+(ert-deftest jetpacs-widgets/action-open-surface ()
+  (should-error (jetpacs-action "a.b" :open-surface "notification:wrong"))
+  (should-error (jetpacs-action "a.b" :open-surface "app:"))
+  (should-error (jetpacs-action "a.b" :open-surface "app:has space"))
+  (should (equal (plist-get (jetpacs-action "a.b"
+                                            :open-surface "app:org-mode")
+                            :open_surface)
+                 "app:org-mode")))
+
 ;;;; Builtin argument validation
 
 (ert-deftest jetpacs-widgets/builtin-arg-validation ()
   (should-error (jetpacs-view-switch nil))          ; nil would drop → missing member
   (should-error (jetpacs-view-switch "has space"))  ; view is a §4.4 identifier
+  (should-error (jetpacs-variant-switch nil))
+  (should-error (jetpacs-variant-switch "host" :value "has space"))
+  (should-error (jetpacs-surface-open "notification:wrong"))
+  (should-error (jetpacs-surface-open "app:"))
+  (should-error (jetpacs-surface-open "app:has space"))
   (should-error (jetpacs-clipboard-copy nil))       ; text must be a string
   (should-error (jetpacs-trigger-fire "bad!"))      ; id is a §4.4 identifier
   (should-error (jetpacs-share nil))
   (should (jetpacs-view-switch "detail"))
+  (should (jetpacs-variant-switch "host"))
+  (should (jetpacs-surface-open "app:jetpacs.app-store"))
   (should (jetpacs-clipboard-copy ""))              ; empty text is a valid string
   (should (jetpacs-share "x" :title "y")))
 
@@ -871,8 +1088,8 @@ case is the sharp one (0 is truthy, so a presence-only check let it pass)."
 ;; check is future work.
 
 (ert-deftest jetpacs-widgets/catalog-node-types ()
-  "The 44-type catalog stays in lockstep with contract.json `node_types'.
-When a 45th type appears, this fails -- a reminder to add its constructor."
+  "The 48-type EBP catalog stays in lockstep with `contract.json'.
+Renderer-owned schemas are tested against their own manifests."
   (should (equal jetpacs-node-types
                  (alist-get 'node_types (jetpacs-test--contract)))))
 
@@ -893,6 +1110,53 @@ When a 45th type appears, this fails -- a reminder to add its constructor."
                  (mapcar (lambda (s) (intern (concat ":" s)))
                          (alist-get 'universal_node_attributes
                                     (jetpacs-test--contract))))))
+
+(ert-deftest jetpacs-widgets/catalog-semantics-schema ()
+  "Generated nested schemas, enums, limit, precedence, and defaults stay pinned."
+  (let* ((contract (jetpacs-test--contract))
+         (semantics (alist-get 'semantics_schema contract))
+         (objects (alist-get 'objects semantics))
+         (enums (alist-get 'enums semantics))
+         (fixed (alist-get 'fixed (alist-get 'limits contract)))
+         (row
+          (lambda (source)
+            (list :required (alist-get 'required source)
+                  :optional (alist-get 'optional source)
+                  :field-types
+                  (mapcar (lambda (pair)
+                            (cons (symbol-name (car pair)) (cdr pair)))
+                          (alist-get 'field_types source))))))
+    (should
+     (equal jetpacs-semantics-schema (funcall row semantics)))
+    (should
+     (equal jetpacs-semantic-object-schema
+            (mapcar (lambda (entry)
+                      (list (symbol-name (car entry))
+                            (funcall row (cdr entry))))
+                    objects)))
+    (should
+     (equal jetpacs-semantic-members
+            (mapcar (lambda (member) (intern (concat ":" member)))
+                    (alist-get 'optional semantics))))
+    (should (equal jetpacs-semantic-live-regions
+                   (alist-get 'live_region enums)))
+    (should (equal jetpacs-semantic-roles (alist-get 'role enums)))
+    (should (equal jetpacs-accessible-name-precedence
+                   (alist-get 'accessible_name_precedence semantics)))
+    (should (= jetpacs-max-semantic-actions-per-node
+               (alist-get 'max_semantic_actions_per_node fixed)))
+    (let ((defaults (alist-get 'default_node_semantics semantics)))
+      (should (equal (mapcar #'car jetpacs-default-node-semantics)
+                     (mapcar (lambda (entry) (symbol-name (car entry)))
+                             defaults)))
+      (should (= 2 (plist-get
+                    (cdr (assoc "section_header"
+                                jetpacs-default-node-semantics))
+                    :heading_level)))
+      (should (equal '("swipe_start" "swipe_end")
+                     (plist-get
+                      (cdr (assoc "card" jetpacs-default-node-semantics))
+                      :custom_actions_from))))))
 
 (ert-deftest jetpacs-widgets/catalog-node-schema ()
   "The GENERATED `jetpacs-node-schema' still matches the contract.

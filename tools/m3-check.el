@@ -6,6 +6,7 @@
 ;; forty.  Run from the repo root:
 ;;
 ;;   emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
+;;     --eval '(setq load-prefer-newer t)' \
 ;;     -l tools/m3-check.el -f jetpacs-m3-check-batch buttons
 ;;
 ;; Checks, per component: its screen and each of its example screens
@@ -13,10 +14,15 @@
 ;; canonicalize, carry document-unique ids (SPEC 16.1), that no
 ;; `:build' degraded to the "Sample failed to build" card, that no
 ;; example still carries the triage sentinel, and that every icon
-;; literal names an icon the Companion can resolve.  Exits non-zero
-;; with a report on the first component that fails.
+;; literal names an icon the Companion can resolve.  The component's
+;; self-documenting `:builders' metadata is also closed, unique, bound,
+;; vocabulary-prefixed, and backed by readable docstrings.  The catalog app
+;; must also declare the renderer extension its namespaced nodes require.
+;; Exits non-zero with a report on the first component that fails.
 
 ;;; Code:
+
+(setq load-prefer-newer t)
 
 (require 'cl-lib)
 (require 'jetpacs-m3-catalog)
@@ -74,11 +80,36 @@ on ten correct names."
    (t acc)))
 
 (defun jetpacs-m3-check-component (id icons)
-  "Check component ID; return a list of problem strings (nil = clean)."
+  "Check component ID against ICONS; return its problem strings."
   (let* ((component (jetpacs-m3-component id))
          (problems nil))
+    (unless (equal
+             (plist-get (cdr (assoc jetpacs-m3-owner
+                                    jetpacs-apps--registry))
+                        :requires-extensions)
+             '("glasspane.material3"))
+      (push "catalog: missing glasspane.material3 app requirement" problems))
     (if (null component)
         (list (format "%s: no such component" id))
+      (let ((builders (plist-get component :builders)))
+        (unless (and (proper-list-p builders) builders)
+          (push (format "%s: needs a non-empty :builders list" id) problems))
+        (when (proper-list-p builders)
+          (unless (= (length builders)
+                     (length (cl-remove-duplicates builders :test #'eq)))
+            (push (format "%s: repeats a :builders entry" id) problems))
+          (dolist (builder builders)
+            (cond
+             ((not (and (symbolp builder) (fboundp builder)))
+              (push (format "%s: unbound builder %S" id builder) problems))
+             ((or (not (string-prefix-p "jetpacs-" (symbol-name builder)))
+                  (string-prefix-p "jetpacs-m3-" (symbol-name builder)))
+              (push (format "%s: non-vocabulary builder %S" id builder)
+                    problems))
+             ((not (jetpacs-m3-builder-doc builder))
+              (push (format "%s: builder %S has no readable docstring"
+                            id builder)
+                    problems))))))
       (let ((screens (list (cons "component"
                                  (jetpacs-m3-component-screen component nil)))))
         (cl-loop
@@ -92,6 +123,12 @@ on ten correct names."
                       problems))
               (when (and reason (< (length reason) 21))
                 (push (format "%s/%s: :unsupported reason is too terse"
+                              id name)
+                      problems))
+              (when (and (not reason)
+                         (jetpacs-m3--example-builder example)
+                         (not (jetpacs-m3-example-doc example)))
+                (push (format "%s/%s: named builder has no readable docstring"
                               id name)
                       problems))
               (when (plist-get example :build)

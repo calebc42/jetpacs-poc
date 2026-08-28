@@ -17,6 +17,7 @@
   (declare (indent 0))
   `(let ((jetpacs-apps--registry nil)
          (jetpacs-apps--current nil)
+         (jetpacs-apps--unavailable nil)
          (jetpacs-apps-core-dock-items
           (lambda (_surface) jetpacs-apps-test--core))
          (jetpacs-apps-core-drawer-rows nil)
@@ -27,6 +28,46 @@
                 (lambda (surface &rest _) (push surface pushed))))
        (ignore pushed)
        ,@body)))
+
+(ert-deftest jetpacs-apps-renderer-requirements-validate-and-gate-open ()
+  "Apps declare extensions eagerly and refuse an unsupported live renderer."
+  (jetpacs-apps-test--env
+    (dolist (bad '(glasspane.material3
+                   ("material3")
+                   ("glasspane.material3" "glasspane.material3")))
+      (should-error
+       (jetpacs-defapp "bad" :surfaces '("bad.main")
+                       :requires-extensions bad)))
+    (jetpacs-defapp "catalog" :label "Components"
+                    :surfaces '("catalog.main")
+                    :requires-extensions '("glasspane.material3"))
+    (let ((client (ebp-client-create
+                   :receipt-file (make-temp-file "jetpacs-apps-receipts"))))
+      (setf (ebp-client-state client) 'ready
+            (ebp-client-profiles client)
+            '(:app (:node_types ["text" "row" "column" "button"]
+                    :builtins [] :features [] :extensions [])))
+      (cl-letf (((symbol-function 'jetpacs-client) (lambda () client)))
+        (should-not (jetpacs-apps-available-p "catalog"))
+        (should (equal (jetpacs-apps--action-open
+                        '(:app "catalog") nil)
+                       'accepted))
+        (should-not jetpacs-apps--current)
+        (should (equal jetpacs-apps--unavailable
+                       '("catalog" . ("glasspane.material3"))))
+        (should (equal pushed '("jetpacs.app-store")))
+        (let ((json (jetpacs-node->canonical-json
+                     (jetpacs-apps-unavailable-view))))
+          (should (string-search
+                   "Components cannot run on this renderer" json))
+          (should (string-search
+                   "Missing renderer extension: glasspane.material3" json)))
+        (setf (ebp-client-profiles client)
+              '(:app (:node_types ["text" "material3.assist_chip"]
+                      :builtins [] :features []
+                      :extensions ["glasspane.material3"])))
+        (should (jetpacs-apps-available-p "catalog"))
+        (should-not (jetpacs-apps-missing-extensions "catalog"))))))
 
 (defun jetpacs-apps-test--labels (items)
   (mapcar (lambda (i) (plist-get i :label)) items))
@@ -289,13 +330,48 @@ its status decides whether the caller should suppress the native hub."
         (walk (jetpacs-apps--view)))
       (should (equal (nreverse labels) '("Alpha" "Zeta"))))))
 
+(ert-deftest jetpacs-apps-launch-actions-open-locally-and-remotely ()
+  "Cards, routes, and contributed rails explicitly cross the Nav3 boundary."
+  (jetpacs-apps-test--env
+    (jetpacs-defapp
+     "notes" :surfaces '("notes.main")
+     :dock (list (list :label "Inbox" :on-tap '(:action "notes.inbox")))
+     :destinations '((:key "review" :label "Review" :verb "notes.review"
+                      :open-surface "app:jetpacs.files")))
+    (let* ((entry (assoc "notes" jetpacs-apps--registry))
+           (card-tap (plist-get (jetpacs-apps--card entry) :on_tap))
+           (route-tap (plist-get
+                       (jetpacs-apps--destination-row
+                        "notes" (car (jetpacs-apps-destinations "notes")))
+                       :on_tap))
+           (dock-tap (plist-get
+                      (car (jetpacs-apps--app-items entry "app:hub"))
+                      :on-tap)))
+      (dolist (tap (list card-tap dock-tap))
+        (should (equal (plist-get tap :open_surface) "app:notes.main")))
+      ;; A route may publish a different app Surface.  Local Nav3 selection
+      ;; follows that declaration while app.open still performs the remote
+      ;; owner-scoped redispatch.
+      (should (equal (plist-get route-tap :open_surface)
+                     "app:jetpacs.files"))
+      (should (equal (plist-get card-tap :action) "app.open"))
+      (should (equal (plist-get route-tap :action) "app.open"))
+      (should (equal (plist-get dock-tap :action) "notes.inbox")))
+    ;; Older strict Companions do not advertise the member; retain their
+    ;; legacy remote-only behavior rather than shipping an unknown field.
+    (cl-letf (((symbol-function 'jetpacs-feature-advertised-p)
+               (lambda (&rest _) nil)))
+      (should-not (plist-member
+                   (jetpacs-apps--app-open-action "notes")
+                   :open_surface)))))
+
 (ert-deftest jetpacs-apps-drawer-row-opens-the-combined-view ()
   "Pass 2: one plain Apps row targeting the app-store surface."
   (let ((row (jetpacs-apps-drawer-row)))
     (should (equal (plist-get row :t) "card"))
     (let ((tap (plist-get row :on_tap)))
-      (should (equal (plist-get tap :action) "jetpacs.launcher.open"))
-      (should (equal (plist-get (plist-get tap :args) :surface)
+      (should (equal (plist-get tap :builtin) "surface.open"))
+      (should (equal (plist-get tap :surface)
                      "app:jetpacs.app-store")))))
 
 ;;;; The S1 destination registry (CHROME-VOCABULARY v3, build-within)
@@ -324,6 +400,10 @@ re-checked (and isolated) per read."
                                   :destinations
                                   '((:key "a" :label "A" :verb "a.open"
                                      :bar sometimes))))
+    (should-error (jetpacs-defapp "bad" :surfaces '("bad.main")
+                                  :destinations
+                                  '((:key "a" :label "A" :verb "a.open"
+                                     :open-surface "notification:wrong"))))
     ;; The function form registers unchecked and a BROKEN one costs
     ;; only that app's reads — including the escape hatches: a function
     ;; returning a FUNCTION, or an improper list, must not slip a

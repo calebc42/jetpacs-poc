@@ -136,8 +136,8 @@ paragraph reflowed across its lines with a joiner span."
 
 (ert-deftest jetpacs-hypertext-emitted-colors-are-registered ()
   "Every :color the emitter puts on a node is a registered 16.6 role —
-the poc's `surface_container' was not, and the Companion's fallback made
-code blocks silently lose their tint."
+renderer-private container roles must never leak onto the wire, where
+the Companion would replace them with its fallback."
   (let (colors)
     (cl-labels ((walk (n)
                   (when (plist-get n :color) (push (plist-get n :color) colors))

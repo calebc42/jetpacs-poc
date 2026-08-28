@@ -85,15 +85,19 @@
       :icon "more_vert" :label "Org"
       :menu
       (list
-       (jetpacs-toolbar-item :label "Insert heading"
+       (jetpacs-toolbar-item :label "Insert heading" :icon "post_add"
                              :command "org-insert-heading-respect-content")
-       (jetpacs-toolbar-item :label "Cycle TODO" :command "org-todo")
-       (jetpacs-toolbar-item :label "Schedule" :command "org-schedule")
-       (jetpacs-toolbar-item :label "Deadline" :command "org-deadline")
-       (jetpacs-toolbar-item :label "Refile" :command "org-refile")
-       (jetpacs-toolbar-item
-        :label "Encrypt section"
-        :command "jetpacs-editor-org-encrypt-entry"))))))
+       (jetpacs-toolbar-item :label "Cycle TODO" :icon "check_circle"
+                             :command "org-todo")
+       (jetpacs-toolbar-item :label "Schedule" :icon "schedule"
+                             :command "org-schedule")
+       (jetpacs-toolbar-item :label "Deadline" :icon "event_busy"
+                             :command "org-deadline")
+       (jetpacs-toolbar-item :label "Refile" :icon "drive_file_move"
+                             :command "org-refile")
+       (jetpacs-toolbar-item :label "Encrypt section" :icon "lock"
+                             :command
+                             "jetpacs-editor-org-encrypt-entry"))))))
 
 (defun jetpacs-editor-org--toolbar (_path)
   "Return the complete Org toolbar for the current editor rung."
@@ -147,14 +151,14 @@ subtree and records its Emacs-owned splice identity for the save gate."
       (add-hook 'before-save-hook #'org-encrypt-entries nil t)))
   nil)
 
-(defun jetpacs-editor-org--fab (path)
-  "Return the Org add-heading FAB for PATH."
-  (jetpacs-icon-button
-   "post_add"
-   (jetpacs-org-add-heading-descriptor
-    (buffer-name (find-file-noselect path t)))
-   :content-description "Add heading"))
 
+(defun jetpacs-editor-org--fab (path)
+  "Return the Org FAB menu for PATH."
+  (let ((buf (buffer-name (find-file-noselect path t))))
+    (jetpacs-icon-button
+     "post_add"
+     (jetpacs-org-add-heading-descriptor buf)
+     :content-description "Add heading")))
 (defun jetpacs-editor-org--before-save (_path buffer)
   "Re-encrypt decrypted Org Crypt entries in BUFFER before Files writes."
   (with-current-buffer buffer

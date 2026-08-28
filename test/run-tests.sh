@@ -3,6 +3,18 @@
 set -e
 cd "$(dirname "$0")/.."
 
+# The workspace may contain ignored developer bytecode.  Every suite must read
+# the current source without deleting or overwriting those unrelated artifacts.
+# All invocations below start with `emacs -Q --batch'; consume that common
+# prefix here and inject the source-preference setting before any test is loaded.
+emacs() {
+  if [ "$#" -ge 2 ] && [ "$1" = "-Q" ] && [ "$2" = "--batch" ]; then
+    shift 2
+  fi
+  command emacs -Q --batch --eval '(setq load-prefer-newer t)' \
+    -L emacs/apps/glasspane-material3 "$@"
+}
+
 # The startup-layout contract: one selected HOME, one marked early-init
 # redirect, one marked normal-init seam, and every managed artifact below
 # ~/.emacs.d/jetpacs. This is a hermetic fake-device run of the exact Termux
@@ -65,11 +77,21 @@ fi
 
 # Byte-compile guard: free-variable and undefined-function warnings are
 # treated as errors (catches unescaped-quote docstrings and typos before
-# they reach a device).
+# they reach a device).  Outputs belong to this test run, never to the source
+# tree: a developer may already have .elc files there, and verification must
+# neither overwrite nor delete artifacts it does not own.
+jetpacs_compile_dest=$(mktemp -d)
+trap 'rm -rf "$jetpacs_compile_dest"' EXIT
 emacs -Q --batch -L emacs \
-  --eval '(setq byte-compile-error-on-warn t)' \
+  --eval "(progn
+             (setq load-prefer-newer t)
+             (setq byte-compile-error-on-warn t)
+             (setq byte-compile-dest-file-function
+                   (lambda (file)
+                     (expand-file-name
+                      (concat (file-name-nondirectory file) \"c\")
+                      \"$jetpacs_compile_dest\"))))" \
   -f batch-byte-compile emacs/ebp.el
-rm -f emacs/ebp.elc
 
 # Same guard for EVERY application-layer module. A glob, not a list: the
 # previous hand-kept 16-name list silently omitted jetpacs-modus.el, and a
@@ -81,11 +103,18 @@ rm -f emacs/ebp.elc
 # subdirectory (the M3 catalog is 42 files) must not escape the guard by
 # living one level down.
 for f in emacs/*.el emacs/apps/*/*.el; do
-  emacs -Q --batch -L emacs -L emacs/apps/m3-catalog -L emacs/apps/glasspane \
+  emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
+    -L emacs/apps/glasspane-material3 -L ../glasspane \
     -L emacs/apps/ef-themes \
-    --eval '(setq byte-compile-error-on-warn t)' \
+    --eval "(progn
+               (setq load-prefer-newer t)
+               (setq byte-compile-error-on-warn t)
+               (setq byte-compile-dest-file-function
+                     (lambda (file)
+                       (expand-file-name
+                        (concat (file-name-nondirectory file) \"c\")
+                        \"$jetpacs_compile_dest\"))))" \
     -f batch-byte-compile "$f"
-  rm -f "${f%.el}.elc"
 done
 
 # Storage-independent SPEC 14.4 receipt/work contract and its built-in
@@ -262,7 +291,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
 # GR-6b save-policy seam: encryption-abort rollback, optional Vulpea,
 # whole-cache coherence, EBP seam ownership, the additive downstream editor
 # adapter, and SRS durability inside the engine form.
-emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+emacs -Q --batch -L emacs -L ../glasspane \
   -l test/jetpacs-editor-org-test.el \
   -f ert-run-tests-batch-and-exit
 
@@ -278,7 +307,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-clock-test.el \
 
 # GR-3 reminder-owner cutover: canonical agenda extraction, horizon/id/dedupe,
 # confirmed-set suppression, and the three-pipeline hook singleton.
-emacs -Q --batch -L emacs -L emacs/apps/glasspane \
+emacs -Q --batch -L emacs -L ../glasspane \
   -l test/jetpacs-org-reminders-test.el \
   -f ert-run-tests-batch-and-exit
 
@@ -340,7 +369,7 @@ emacs -Q --batch -L emacs -l test/ebp-wire-test.el -l test/jetpacs-integration-t
 emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
   -f ert-run-tests-batch-and-exit
 
-# The Material 3 Compose Catalog (Tier-1 app) exit gate: the upstream
+# Jetpacs Components (the Material 3 Tier-1 app) exit gate: the upstream
 # inventory — 41 components, 279 examples, upstream order — plus a build
 # of EVERY screen it can show, each checked for the §16.2 profile, §16.1
 # id uniqueness, and canonical serialization.  Nothing else in the tree
@@ -348,6 +377,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
 # Material version pin: the toml is read off disk and asserted equal to
 # `jetpacs-m3-material-version', so the two move unanimously or go red.
 emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
+  --eval '(setq load-prefer-newer t)' \
   -l test/jetpacs-m3-catalog-test.el \
   -f ert-run-tests-batch-and-exit
 
@@ -366,18 +396,10 @@ emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
   -l test/jetpacs-m3-repl-test.el \
   -f ert-run-tests-batch-and-exit
 
-# Glasspane app ladder gates (docs/PLAN-glasspane-app.md): every rung's
-# NAMED local-gate assertions accumulate in one suite, the M3 pattern.
-emacs -Q --batch -L emacs -L emacs/apps/glasspane -L emacs/apps/ef-themes \
-  -l test/glasspane-test.el \
-  -f ert-run-tests-batch-and-exit
-
-# PARA ladder gates (docs/PLAN-glasspane-para.md): PA-2a creates the suite
-# with Areas' category layering, cache/rotten-file discipline, staged route,
-# and public-seam boundaries.  Later PARA rungs accumulate here.
-emacs -Q --batch -L emacs -L emacs/apps/glasspane -L emacs/apps/ef-themes \
-  -l test/glasspane-para-test.el \
-  -f ert-run-tests-batch-and-exit
+# Glasspane is now a separately owned downstream applet at ../glasspane.
+# The legacy ladder suites retained in this POC are implementation evidence,
+# not current authority.  Glasspane's own focused ERT, static validator,
+# warning-as-error compile, and trusted determinism check run from that repo.
 
 # Icon lint: SPEC 17.1's placeholder degrade means a misspelled icon
 # never fails at runtime — this is the only gate that catches a typo.

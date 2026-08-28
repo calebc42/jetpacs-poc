@@ -7,6 +7,7 @@ package com.calebc42.ebp.wire
 import java.io.File
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -53,6 +54,73 @@ class SurfaceStoreTest {
                        spec: JsonObject = textSpec(),
                        resetIds: JsonArray? = null): SurfaceResult =
         s.update(surface, rev, spec, null, null, resetIds)
+
+    @Test
+    fun surfaceRefreshWritesDraftsOnlyWhenReconciliationChangesThem() {
+        class CountingBacking : SurfaceBacking {
+            var recordWrites = 0
+            var draftWrites = 0
+            override fun load() = SurfaceState(emptyList(), emptyList())
+            override fun replaceRecords(records: List<PersistedRecord>) {
+                recordWrites++
+            }
+            override fun replaceDrafts(drafts: List<PersistedDraft>) {
+                draftWrites++
+            }
+        }
+
+        val backing = CountingBacking()
+        val s = SurfaceStore(16, 1024, backing = backing)
+        update(s, "app:main", 1, inputSpec("authored"))
+        assertEquals(1, backing.recordWrites)
+        assertEquals(0, backing.draftWrites)
+
+        s.putDraft("app:main", "title", JsonPrimitive("typed"))
+        assertEquals(1, backing.draftWrites)
+        update(s, "app:main", 2, inputSpec("typed"))
+        assertEquals(2, backing.recordWrites)
+        assertEquals(2, backing.draftWrites)
+    }
+
+    @Test
+    fun removeRollsBackAndDoesNotWriteTheTombstoneWhenDraftCommitFails() {
+        class FaultBacking : SurfaceBacking {
+            var state = SurfaceState(emptyList(), emptyList())
+            var recordWrites = 0
+            var failNextDraft = false
+            override fun load() = state
+            override fun replaceRecords(records: List<PersistedRecord>) {
+                recordWrites++
+                state = state.copy(records = records)
+            }
+            override fun replaceDrafts(drafts: List<PersistedDraft>) {
+                if (failNextDraft) {
+                    failNextDraft = false
+                    throw java.io.IOException("synthetic draft failure")
+                }
+                state = state.copy(drafts = drafts)
+            }
+        }
+
+        val backing = FaultBacking()
+        val s = SurfaceStore(16, 1024, backing = backing)
+        update(s, "app:main", 1, inputSpec("authored"))
+        s.putDraft("app:main", "title", JsonPrimitive("typed"))
+        backing.failNextDraft = true
+        try {
+            s.remove("app:main", 2)
+            fail("draft persistence failure was swallowed")
+        } catch (_: SurfacePersistenceFailed) { }
+
+        assertEquals("drafts-first failure must skip the record write",
+            1, backing.recordWrites)
+        assertEquals(1L, s.revisionOf("app:main"))
+        assertEquals(JsonPrimitive("typed"), s.currentValue("app:main", "title"))
+        val restored = SurfaceStore(16, 1024, backing = backing)
+        assertEquals(1L, restored.revisionOf("app:main"))
+        assertEquals(JsonPrimitive("typed"),
+            restored.currentValue("app:main", "title"))
+    }
 
     // ----------------------------------------------- idempotency (13.2-3)
 
@@ -252,6 +320,20 @@ class SurfaceStoreTest {
         s.putDraft("app:d", "title", JsonPrimitive("doomed"))
         s.remove("app:d", 10)
         assertFalse(s.hasDraft("app:d", "title"))
+    }
+
+    @Test
+    fun singleLineEditorRejectsAMultilineLocalDraft() {
+        val s = store()
+        fun editor(singleLine: Boolean = false) = buildJsonObject {
+            put("t", "editor"); put("id", "command")
+            put("publish_state", true); put("value", "authored")
+            if (singleLine) put("single_line", true)
+        }
+        update(s, "app:editor", 1, editor())
+        s.putDraft("app:editor", "command", JsonPrimitive("two\nlines"))
+        update(s, "app:editor", 2, editor(singleLine = true))
+        assertFalse(s.hasDraft("app:editor", "command"))
     }
 
     @Test
@@ -785,6 +867,75 @@ class VocabularyDriftTest {
         val universal = contract.reqArr("universal_node_attributes")
             .map { it.asStringOrNull()!! }.toSet()
         assertEquals(universal, UNIVERSAL_NODE_ATTRIBUTES)
+        val semantics = contract.reqObj("semantics_schema")
+        fun strings(row: JsonObject, member: String) =
+            row.reqArr(member).map { it.asStringOrNull()!! }.toSet()
+        fun fieldTypes(row: JsonObject) = row.reqObj("field_types")
+            .mapValues { (_, value) -> value.asStringOrNull()!! }
+        assertEquals(strings(semantics, "required"), SEMANTICS_SCHEMA.required)
+        assertEquals(strings(semantics, "optional"), SEMANTICS_SCHEMA.optional)
+        assertEquals(fieldTypes(semantics), SEMANTICS_SCHEMA.fieldTypes)
+        val semanticObjects = semantics.reqObj("objects")
+        assertEquals(semanticObjects.keys, SEMANTIC_OBJECT_SCHEMA.keys)
+        for ((name, generated) in SEMANTIC_OBJECT_SCHEMA) {
+            val row = semanticObjects.reqObj(name)
+            assertEquals("$name semantic required", strings(row, "required"),
+                generated.required)
+            assertEquals("$name semantic optional", strings(row, "optional"),
+                generated.optional)
+            assertEquals("$name semantic types", fieldTypes(row),
+                generated.fieldTypes)
+        }
+        val semanticEnums = semantics.reqObj("enums")
+        assertEquals(
+            semanticEnums.reqArr("live_region").map { it.asStringOrNull()!! }.toSet(),
+            SEMANTIC_LIVE_REGIONS,
+        )
+        assertEquals(
+            semanticEnums.reqArr("role").map { it.asStringOrNull()!! }.toSet(),
+            SEMANTIC_ROLES,
+        )
+        assertEquals(
+            semantics.reqArr("accessible_name_precedence")
+                .map { it.asStringOrNull()!! },
+            ACCESSIBLE_NAME_PRECEDENCE,
+        )
+        val semanticDefaults = semantics.reqObj("default_node_semantics")
+        assertEquals(semanticDefaults.keys, DEFAULT_NODE_SEMANTICS.keys)
+        for ((name, generated) in DEFAULT_NODE_SEMANTICS) {
+            val row = semanticDefaults.reqObj(name)
+            val expected = DefaultSemanticRow(
+                role = row.stringOrNull("role"),
+                roleConditionMember = row.stringOrNull("role_condition_member"),
+                headingLevel = integralLongOrNull(row["heading_level"])?.toInt(),
+                enabledMember = row.stringOrNull("enabled_member"),
+                readOnlyMember = row.stringOrNull("read_only_member"),
+                readOnlyInverted = row.boolOrNull("read_only_inverted") ?: false,
+                checkedMember = row.stringOrNull("checked_member"),
+                checkedDefault = row.boolOrNull("checked_default"),
+                toggleStateMember = row.stringOrNull("toggle_state_member"),
+                selectedMember = row.stringOrNull("selected_member"),
+                selectedDefault = row.boolOrNull("selected_default"),
+                selectionMember = row.stringOrNull("selection_member"),
+                selectionDefaultIndex =
+                    integralLongOrNull(row["selection_default_index"])?.toInt(),
+                expandedMember = row.stringOrNull("expanded_member"),
+                expandedInverted = row.boolOrNull("expanded_inverted") ?: false,
+                progressValueMember = row.stringOrNull("progress_value_member"),
+                progressMinMember = row.stringOrNull("progress_min_member"),
+                progressMaxMember = row.stringOrNull("progress_max_member"),
+                progressMin = row["progress_min"]?.asDoubleOrNull(),
+                progressMax = row["progress_max"]?.asDoubleOrNull(),
+                indeterminateWhenValueAbsent =
+                    row.boolOrNull("indeterminate_when_value_absent") ?: false,
+                progressValueDefaultsToMin =
+                    row.boolOrNull("progress_value_defaults_to_min") ?: false,
+                customActionsFrom = row.arrOrNull("custom_actions_from")
+                    ?.mapNotNull(JsonElement::asStringOrNull)
+                    ?: emptyList(),
+            )
+            assertEquals("$name semantic defaults", expected, generated)
+        }
         val actions = contract.reqObj("actions").reqObj("schema")
         assertEquals(actions.keys, ACTION_SCHEMA.keys)
         // LD-10: the projected field types match the contract exactly.

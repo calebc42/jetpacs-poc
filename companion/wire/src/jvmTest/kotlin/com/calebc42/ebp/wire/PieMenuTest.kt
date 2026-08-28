@@ -33,6 +33,7 @@ class PieMenuTest {
                     putJsonArray("node_types") { add("text") }
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_pie_menus" to maxPie),

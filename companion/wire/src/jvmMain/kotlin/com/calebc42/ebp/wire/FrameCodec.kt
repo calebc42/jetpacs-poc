@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// EBP 2 framing, Companion side. Implements ebp/SPEC.md sections 6 and 4.1.
+// EBP 3 framing, Companion side. Implements ebp/SPEC.md sections 6 and 4.1.
 // The Kotlin twin of emacs/ebp.el's decoder: same error taxonomy, same
 // chunk-size independence, verified by the same goldens/wire corpus.
 package com.calebc42.ebp.wire
@@ -17,6 +17,9 @@ object WireLimits {
     const val MAX_JSON_DEPTH = 64
     const val MAX_NODES_PER_SNAPSHOT = 10_000
     const val MAX_CHILDREN_PER_NODE = 10_000
+    // SPEC 4.5/17.3: retained alternatives are deliberately much tighter
+    // than ordinary children because the host may precompose every branch.
+    const val MAX_VARIANTS_PER_HOST = 8
     const val MAX_IDENTIFIER_OCTETS = 128
     const val MAX_REQUEST_ID_OCTETS = 64
     const val MAX_METHOD_OCTETS = 128
@@ -66,7 +69,7 @@ class FrameDecoder {
     private var bodyStart = -1 // absolute index of the body's first byte
 
     fun feed(bytes: ByteArray): List<JsonObject> =
-        mutableListOf<JsonObject>().also { feed(bytes, it::add) }
+        mutableListOf<JsonObject>().also { feed(bytes, 0, bytes.size, it::add) }
 
     /**
      * Deliver each complete message to CONSUMER in wire order as it is
@@ -76,7 +79,15 @@ class FrameDecoder {
      * can answer the bad frame per SPEC 6.2 and keep the earlier work.
      */
     fun feed(bytes: ByteArray, consumer: (JsonObject) -> Unit) {
-        append(bytes)
+        feed(bytes, 0, bytes.size, consumer)
+    }
+
+    /** Decode LENGTH bytes starting at SOURCE-OFFSET from a reusable buffer. */
+    fun feed(bytes: ByteArray, sourceOffset: Int, length: Int,
+             consumer: (JsonObject) -> Unit) {
+        require(sourceOffset >= 0 && length >= 0 && sourceOffset <= bytes.size &&
+            length <= bytes.size - sourceOffset) { "invalid input slice" }
+        append(bytes, sourceOffset, length)
         while (true) {
             if (expected < 0) {
                 val term = indexOfTerminator(maxOf(offset, scanned))
@@ -94,13 +105,18 @@ class FrameDecoder {
                 bodyStart = term + 4
             }
             if (size - bodyStart < expected) return // retain partial data
-            val body = buffer.copyOfRange(bodyStart, bodyStart + expected)
+            // Decode directly from the accumulator. copyOfRange used to make
+            // a second full payload just before strict JSON parsing allocated
+            // its tree, magnifying GC pauses for large SurfaceSpecs.
+            val text = decodeBody(bodyStart, expected)
             offset = bodyStart + expected
             scanned = offset
             expected = -1
             bodyStart = -1
             compact()
-            consumer(parseBody(body))
+            // Consume the complete body before reporting malformed UTF-8 so
+            // the recoverable-error drain resumes at the following frame.
+            consumer(parseBody(text ?: throw WireParseError("invalid UTF-8")))
         }
     }
 
@@ -110,11 +126,11 @@ class FrameDecoder {
             throw FrameIncomplete("stream ended with ${size - offset} pending octets")
     }
 
-    private fun append(bytes: ByteArray) {
-        if (size + bytes.size > buffer.size)
-            buffer = buffer.copyOf(maxOf(buffer.size * 2, size + bytes.size))
-        System.arraycopy(bytes, 0, buffer, size, bytes.size)
-        size += bytes.size
+    private fun append(bytes: ByteArray, sourceOffset: Int, length: Int) {
+        if (size + length > buffer.size)
+            buffer = buffer.copyOf(maxOf(buffer.size * 2, size + length))
+        System.arraycopy(bytes, sourceOffset, buffer, size, length)
+        size += length
     }
 
     /** Reclaim consumed space between frames (never while a header/body is
@@ -177,21 +193,21 @@ class FrameDecoder {
      * Grammar, duplicate members, depth <= 64, surrogate pairing, integer
      * range, and finiteness are all enforced IN-PARSE by EbpJson — the two
      * compensating full-text re-scans this method used to run are gone. */
-    private fun parseBody(body: ByteArray): JsonObject {
-        val text = try {
+    private fun decodeBody(start: Int, length: Int): String? =
+        try {
             StandardCharsets.UTF_8.newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
                 .onUnmappableCharacter(CodingErrorAction.REPORT)
-                .decode(ByteBuffer.wrap(body)).toString()
+                .decode(ByteBuffer.wrap(buffer, start, length)).toString()
         } catch (_: CharacterCodingException) {
-            throw WireParseError("invalid UTF-8")
+            null
         }
-        val value = EbpJson.parse(text)
-        if (value !is EbpValue.EObj)
+
+    private fun parseBody(text: String): JsonObject {
+        val value = EbpJson.parseJsonElement(text)
+        if (value !is JsonObject)
             throw InvalidRequest("top-level value is not a single message object")
-        // The cast is the top-level-object check, same as before the swap:
-        // `value` is already known to be an EObj, so this cannot fail.
-        return EbpJson.toJsonElement(value) as JsonObject
+        return value
     }
 }
 

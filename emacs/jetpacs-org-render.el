@@ -29,9 +29,11 @@
 ;; upgrade: tapping its readable text folds/unfolds it, while a trailing
 ;; more_vert icon opens the existing structured Org action sheet.  The
 ;; footnote/timestamp arms land with their dialog handlers (JA-5d/e), and
-;; links follow through Org itself before the destination drills into the
-;; originating surface.  Everything else — citations, inline math, list markers, src blocks (which org's native
-;; fontification already highlights) — renders exactly as the user's
+;; links follow through Org itself before the destination is offered to the
+;; current document host.  A host can keep its own chrome and scroll or open
+;; the destination there; otherwise the generic drill remains the fallback.
+;; Everything else — citations, inline math, list markers, src blocks (which
+;; org's native fontification already highlights) — renders exactly as the user's
 ;; font-lock shows it.  If anything in the upgrade pass fails, the
 ;; buffer falls back to the pure Tier-0 render: this skin can subtract
 ;; nothing.
@@ -116,6 +118,21 @@ spaces are layout, not prose, and wrap destructively on a narrow device.
 The reader collapses that run and replaces the full blank line following
 a heading with a small spacer.  The ordinary Tier-1 renderer stays byte-
 faithful unless a reader explicitly asks for this mobile reflow.")
+
+(defvar jetpacs-org-render-follow-destination-function nil
+  "Optional host presenter for destinations resolved by Org links.
+The function receives (SOURCE DESTINATION POSITION SURFACE), where
+SOURCE and DESTINATION are live buffers, POSITION is Org's resolved
+point in DESTINATION, and SURFACE is the full originating surface id.
+Return non-nil when the host presented the destination or deliberately
+refused it; nil delegates to the generic drill in
+`jetpacs-navigate-thunk'.
+
+This is presentation policy only.  Org remains the authority that
+parses and follows the link, while a Files-backed reader can preserve
+its document screen, top-bar actions, and FAB.  A host that enforces a
+stricter boundary must return non-nil after a refusal so the generic
+fallback cannot bypass that boundary.")
 
 ;;;; Native upgrades: table
 
@@ -327,6 +344,9 @@ Failure markers are free — they carry no image bytes."
 (defvar jetpacs-org-render--latex-memo (make-hash-table :test #'equal)
   "KEY -> (DATA-URI . WIDTH-PX), or `fail'.  The durable formula cache.")
 
+(defvar jetpacs-org-render--cache-generation 0
+  "Generation of async Org presentation results used by reader snapshots.")
+
 (defvar jetpacs-org-render--latex-order nil
   "Successful memo KEYs, oldest first — the FIFO eviction order.")
 
@@ -369,6 +389,8 @@ resolves everywhere and is honored untouched."
 
 (defun jetpacs-org-render--latex-memoize (key value)
   "Store VALUE for KEY in the memo, FIFO-evicting successful entries."
+  (unless (equal value (gethash key jetpacs-org-render--latex-memo))
+    (cl-incf jetpacs-org-render--cache-generation))
   (when (consp value)
     (setq jetpacs-org-render--latex-order
           (nconc jetpacs-org-render--latex-order (list key)))
@@ -523,25 +545,83 @@ leak hidden content."
                      (when-let* ((n (jetpacs-org-render--image-node el)))
                        (list n 0 (jetpacs-org-render--visual-end el)))))))
               (when node
-                (let ((caption (jetpacs-org-render--element-caption el)))
+                (let* ((caption (jetpacs-org-render--element-caption el))
+                       (source-beg
+                        (org-element-property :post-affiliated el))
+                       (raw-native
+                        (jetpacs-org-render--with-source-key
+                         node source-beg "native"))
+                       (prefix-spans (jetpacs-org-render--native-prefix-spans source-beg))
+                       (native (if prefix-spans
+                                   (jetpacs-row
+                                    (jetpacs-rich-text (vconcat prefix-spans))
+                                    (jetpacs-with-attrs raw-native :weight 1)
+                                    :align "top")
+                                 raw-native))
+                       (caption-node
+                        (when caption
+                          (jetpacs-org-render--with-source-key
+                           (jetpacs-text
+                            (jetpacs-scalar-text caption)
+                            :style "caption")
+                           beg "caption"))))
                   ;; With a caption the affiliated lines fold into the
                   ;; upgrade (the caption re-emerges under the node);
                   ;; without one they stay Tier-0 meta text.
                   (push (list (if caption
                                   beg
-                                (org-element-property :post-affiliated el))
+                                source-beg)
                               (car end)
                               (delq nil
-                                    (list node
-                                          (when caption
-                                            (jetpacs-text
-                                             (jetpacs-scalar-text caption)
-                                             :style "caption"))))
+                                    (list native caption-node))
                               cells)
                         out))))))))
     (sort (nreverse out) (lambda (a b) (< (car a) (car b))))))
 
 ;;;; Span-action routing
+
+
+(defun jetpacs-org-render--native-prefix-spans (beg)
+  "Return spans for line numbers and org-indent at BEG, if any."
+  (let ((spans nil)
+        (prefix (get-char-property beg 'line-prefix)))
+    (when (stringp prefix)
+      (push (jetpacs-span prefix :mono t :color jetpacs-buffer--line-number-color) spans))
+    (when jetpacs-line-numbers
+      (let* ((pt-line (line-number-at-pos (point)))
+             (num-fmt (format "%%%dd " (length (number-to-string (line-number-at-pos (point-max))))))
+             (ln (line-number-at-pos beg)))
+        (push (jetpacs-buffer--line-number-span ln pt-line num-fmt) spans)))
+    (nreverse spans)))
+
+
+(defun jetpacs-org-render--source-key (buffer-name pos suffix)
+  "Return a stable presentation key for BUFFER-NAME at POS and SUFFIX.
+The key intentionally follows Emacs source identity, not the node's current
+lazy-list index: overview/contents/all insert and remove rows while unchanged
+source rows must retain their Compose identity."
+  (jetpacs-wire-id
+   "org-row"
+   (format "%s:%d:%s" buffer-name (or pos 0) suffix)))
+
+(defun jetpacs-org-render--with-source-key
+    (node pos suffix &optional buffer-name)
+  "Give NODE a stable Org source key unless it already has one."
+  (if (or (null node) (plist-member node :key))
+      node
+    (jetpacs-with-attrs
+     node :key (jetpacs-org-render--source-key
+                (or buffer-name (buffer-name)) pos suffix))))
+
+(defun jetpacs-org-render--line-key (node bol _eol buffer-name)
+  "Return the source identity for one Tier-0 Org line NODE at BOL."
+  (jetpacs-org-render--source-key
+   buffer-name bol
+   (if (and (equal (plist-get node :t) "text")
+            (equal (plist-get node :text)
+                   "… output truncated (surface budget)"))
+       "truncated"
+     "line")))
 
 (defun jetpacs-org-render--checkbox-at (pos)
   "The (BEG . END) bounds of the item checkbox POS sits inside, or nil.
@@ -690,13 +770,20 @@ on device)."
         (jetpacs-org-render--action-p (plist-get span :on_tap)
                                       "jetpacs.org.heading"))
       (append (plist-get node :spans) nil)))
+    ("box"
+     (or (jetpacs-org-render--action-p (plist-get node :on_long_tap)
+                                       "jetpacs.org.narrow")
+         (seq-some #'jetpacs-org-render--heading-node-p
+                   (append (plist-get node :children) nil))))
     ("row"
+     (seq-some #'jetpacs-org-render--heading-node-p
+               (append (plist-get node :children) nil)))
+    ("menu"
      (seq-some
-      (lambda (child)
-        (and (equal (plist-get child :t) "icon_button")
-             (jetpacs-org-render--action-p (plist-get child :on_tap)
-                                           "jetpacs.org.heading")))
-      (append (plist-get node :children) nil)))))
+      (lambda (item)
+        (jetpacs-org-render--action-p (plist-get item :on_tap)
+                                      "jetpacs.org.heading"))
+      (append (plist-get node :items) nil)))))
 
 (defun jetpacs-org-render--blank-line-node-p (node)
   "Whether NODE is Tier 0's faithful representation of one blank line."
@@ -747,6 +834,36 @@ tag-alignment whitespace become one space."
        (string-match-p "\\`[ \t]*[▸▾]\\'"
                        (or (plist-get span :text) ""))))
 
+
+(defun jetpacs-org-render--node-transform (node bol eol buffer-name)
+  "Apply heading controls and source block controls."
+  (let ((n1 (jetpacs-org-render--heading-controls node bol eol buffer-name)))
+    (jetpacs-org-render--src-controls n1 bol eol buffer-name)))
+
+(defun jetpacs-org-render--src-controls (node bol _eol buffer-name)
+  "Add an execution \"Play\" button to `#+begin_src` lines."
+  (if (not (and (equal (plist-get node :t) "rich_text")
+                (jetpacs-node-advertised-p "icon_button")
+                (save-excursion
+                  (goto-char bol)
+                  (looking-at "^[ 	]*#\+[Bb][Ee][Gg][Ii][Nn]_[Ss][Rr][Cc]"))))
+      node
+    (let ((scroll-here (plist-get node :scroll_here)))
+      (when scroll-here (cl-remf node :scroll_here))
+      (jetpacs-buffer-expose buffer-name bol "jetpacs.org.execute-src-block")
+      (let* ((btn (jetpacs-icon-button
+                   "play_arrow"
+                   (jetpacs-action "jetpacs.org.execute-src-block"
+                                   :args (list :buffer buffer-name :pos bol))
+                   :content-description "Execute source block"))
+             (row (jetpacs-row
+                   (jetpacs-with-attrs node :weight 1)
+                   btn
+                   :align "center")))
+        (if scroll-here
+            (jetpacs-with-attrs row :scroll_here scroll-here)
+          row)))))
+
 (defun jetpacs-org-render--heading-controls (node bol _eol buffer-name)
   "Give the Org heading line NODE at BOL its mobile controls.
 The readable headline folds on tap; special inline actions such as links
@@ -764,37 +881,91 @@ caret is removed because the headline itself is now the affordance."
                        (copy-sequence node)))
            (fold (jetpacs-action "jetpacs.buffer.fold"
                                  :args (list :buffer buffer-name :pos bol)))
-           (actions (jetpacs-action "jetpacs.org.heading"
-                                    :args (list :buffer buffer-name :pos bol)))
            (scroll-here (plist-get headline :scroll_here))
+           (todo-kw (save-excursion (goto-char bol) (org-get-todo-state)))
+           (todo-found nil)
            spans)
       (dolist (span (append (plist-get headline :spans) nil))
         (unless (jetpacs-org-render--fold-arrow-span-p span)
           (let* ((copy (copy-sequence span))
+                 (text (plist-get copy :text))
                  (tap (plist-get copy :on_tap))
                  (action (plist-get tap :action)))
             ;; Links, timestamps and the other more-specific Org span
             ;; actions still win.  Ordinary headline runs all become the
             ;; large fold target, including indentation and line numbers.
-            (when (or (null tap)
-                      (member action
-                              '("jetpacs.org.heading"
-                                "jetpacs.buffer.fold"
-                                "emacs.buffer.act")))
-              (plist-put copy :on_tap fold))
+            (cond
+             ((and todo-kw
+                   (not todo-found)
+                   (equal text todo-kw))
+              (setq todo-found t)
+              (plist-put
+               copy :on_tap
+               (jetpacs-action
+                "jetpacs.org.heading"
+                :args (list :buffer buffer-name :pos bol
+                            :value "set-todo"))))
+             ((or (null tap)
+                  (member action
+                          '("jetpacs.org.heading"
+                            "jetpacs.buffer.fold"
+                            "emacs.buffer.act")))
+              (plist-put copy :on_tap fold)))
             (push copy spans))))
       (plist-put headline :spans (vconcat (nreverse spans)))
       (when scroll-here (cl-remf headline :scroll_here))
-      (let ((row
-             (jetpacs-row
-              (jetpacs-with-attrs headline :weight 1)
-              (jetpacs-icon-button
-               "more_vert" actions
-               :content-description "Org actions for heading")
-              :align "center" :fill t)))
+      (let* ((drawers (with-current-buffer (get-buffer buffer-name)
+                                        (save-excursion
+                                          (goto-char bol)
+                                          (let ((limit (save-excursion (outline-next-heading) (point)))
+                                                props logbook)
+                                            (while (re-search-forward "^[ \t]*:\\(PROPERTIES\\|LOGBOOK\\):[ \t]*$" limit t)
+                                              (let* ((name (match-string 1))
+                                                     (start (line-beginning-position))
+                                                     (end (save-excursion
+                                                            (if (re-search-forward "^[ \t]*:END:[ \t]*$" limit t)
+                                                                (line-end-position)
+                                                              start))))
+                                                (if (equal name "PROPERTIES")
+                                                    (setq props (cons start end))
+                                                  (setq logbook (cons start end)))))
+                                            (list props logbook)))))
+             (row-children
+              (delq nil
+                    (list
+                     (jetpacs-with-attrs headline :weight 1)
+                     (when (car drawers)
+                       (let* ((pos (car (car drawers)))
+                              (end (cdr (car drawers)))
+                              (hidden (cl-some (lambda (o) (overlay-get o 'jetpacs-drawer))
+                                               (with-current-buffer (get-buffer buffer-name)
+                                                 (overlays-at pos)))))
+                         (jetpacs-icon-button
+                          "tune"
+                          (jetpacs-action "jetpacs.org.toggle-drawer"
+                                          :args (list :buffer buffer-name :pos pos :end end))
+                          :variant (if hidden nil "tonal")
+                          :content-description "Toggle properties")))
+                     (when (cadr drawers)
+                       (let* ((pos (car (cadr drawers)))
+                              (end (cdr (cadr drawers)))
+                              (hidden (cl-some (lambda (o) (overlay-get o 'jetpacs-drawer))
+                                               (with-current-buffer (get-buffer buffer-name)
+                                                 (overlays-at pos)))))
+                         (jetpacs-icon-button
+                          "history"
+                          (jetpacs-action "jetpacs.org.toggle-drawer"
+                                          :args (list :buffer buffer-name :pos pos :end end))
+                          :variant (if hidden nil "tonal")
+                          :content-description "Toggle logbook")))
+                     (jetpacs-org-dialogs--heading-menu (get-buffer buffer-name) bol))))
+             (row (apply #'jetpacs-row (append row-children (list :align "center" :fill t))))
+             (narrow (jetpacs-action "jetpacs.org.narrow"
+                                     :args (list :buffer buffer-name :pos bol)))
+             (box (jetpacs-box row :on-long-tap narrow)))
         (if scroll-here
-            (jetpacs-with-attrs row :scroll_here scroll-here)
-          row)))))
+            (jetpacs-with-attrs box :scroll_here scroll-here)
+          box)))))
 
 (defun jetpacs-org-render--apply-reader-typography (nodes)
   "Return NODES with Orgro-shaped mobile heading spacing.
@@ -826,7 +997,14 @@ to the pure Tier-0 render."
       (let* ((jetpacs-buffer-span-action-function
               #'jetpacs-org-render--span-action)
              (jetpacs-buffer-node-transform-function
-              #'jetpacs-org-render--heading-controls)
+              #'jetpacs-org-render--node-transform)
+             (jetpacs-buffer-node-key-function
+              #'jetpacs-org-render--line-key)
+             ;; Share face resolution across the Tier-0 chunks separated by
+             ;; native Org upgrades.  All chunks are from this same buffer
+             ;; under the same typography/default-face bindings.
+             (jetpacs-buffer--style-cache
+              (make-hash-table :test #'equal))
              (jetpacs-buffer-monospace
               (and (not jetpacs-org-render-proportional-prose)
                    jetpacs-buffer-monospace))
@@ -931,8 +1109,100 @@ to the pure Tier-0 render."
       (jetpacs-buffer-defer-refresh (plist-get params :surface))
       'accepted))))
 
+
+(defun jetpacs-org-render--narrow (args params)
+  "Narrow the buffer to the subtree at POS."
+  (let* ((name (plist-get args :buffer))
+         (pos (plist-get args :pos))
+         (buf (and (stringp name) (get-buffer name))))
+    (cond
+     ((not buf) 'rejected)
+     ((not (integerp pos)) 'rejected)
+     ((jetpacs-event-stale-p params) 'stale)
+     ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.narrow"))
+      'rejected)
+     (t
+      (with-current-buffer buf
+        (widen)
+        (goto-char pos)
+        (org-narrow-to-subtree))
+      (jetpacs-buffer-defer-refresh (plist-get params :surface))
+      'accepted))))
+
+(defun jetpacs-org-render--toggle-drawer (args params)
+  "Toggle the visibility of a drawer entirely from the rendered output."
+  (let* ((name (plist-get args :buffer))
+         (pos (plist-get args :pos))
+         (end (plist-get args :end))
+         (buf (and (stringp name) (get-buffer name))))
+    (cond
+     ((not (and buf (integerp pos) (integerp end))) 'rejected)
+     ((jetpacs-event-stale-p params) 'stale)
+     ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.toggle-drawer"))
+      'rejected)
+     (t
+      (with-current-buffer buf
+        (let ((ovs (cl-remove-if-not (lambda (o) (overlay-get o 'jetpacs-drawer))
+                                     (overlays-at pos))))
+          (if ovs
+              (mapc #'delete-overlay ovs)
+            (let ((ov (make-overlay pos end)))
+              (overlay-put ov 'jetpacs-drawer t)
+              (overlay-put ov 'invisible t)))))
+      (jetpacs-buffer-defer-refresh (plist-get params :surface))
+      'accepted))))
+
+
+(defun jetpacs-org-render--execute-src-block (args params)
+  "Execute the source block at POS."
+  (let* ((name (plist-get args :buffer))
+         (pos (plist-get args :pos))
+         (buf (and (stringp name) (get-buffer name))))
+    (cond
+     ((not (and buf (integerp pos))) 'rejected)
+     ((jetpacs-event-stale-p params) 'stale)
+     ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.execute-src-block"))
+      'rejected)
+     (t
+      (with-current-buffer buf
+        (org-with-wide-buffer
+         (goto-char pos)
+         (if (not (org-in-src-block-p))
+             'stale
+           (condition-case err
+               (let ((org-confirm-babel-evaluate nil))
+                 (org-babel-execute-src-block)
+                 (ebp-org-cache-invalidate)
+                 (when buffer-file-name (ebp-org-defer-save))
+                 (jetpacs-buffer-defer-refresh (plist-get params :surface))
+                 (jetpacs-shell-notify "Executed block" (plist-get params :surface))
+                 'accepted)
+             (error (jetpacs-shell-notify (jetpacs-error-label err) (plist-get params :surface))
+                    'rejected)))))))))
+
+
+(defun jetpacs-org-render--encrypt (args params)
+  "Encrypt the current subtree."
+  (let* ((name (plist-get args :buffer))
+         (buf (and (stringp name) (get-buffer name))))
+    (cond
+     ((not buf) 'rejected)
+     ((jetpacs-event-stale-p params) 'stale)
+     (t
+      (with-current-buffer buf
+        (condition-case err
+            (progn
+              (org-encrypt-entry)
+              (ebp-org-cache-invalidate)
+              (when buffer-file-name (ebp-org-defer-save))
+              (jetpacs-buffer-defer-refresh (plist-get params :surface))
+              (jetpacs-shell-notify "Encrypted entry" (plist-get params :surface))
+              'accepted)
+          (error (jetpacs-shell-notify (jetpacs-error-label err) (plist-get params :surface))
+                 'rejected)))))))
+
 (defun jetpacs-org-render--follow (args params)
-  "Follow the exposed Org link and drill into its destination."
+  "Follow the exposed Org link and present its resolved destination."
   (let* ((name (plist-get args :buffer))
          (pos (plist-get args :pos))
          (buf (and (stringp name) (get-buffer name))))
@@ -947,15 +1217,20 @@ to the pure Tier-0 render."
                (org-in-regexp org-link-any-re))))
       'stale)
      (t
-      (jetpacs-navigate-thunk
-       (lambda ()
-         ;; Deliberately leave the destination buffer current: the
-         ;; navigator's shim captures both it and Org's destination point.
-         (set-buffer buf)
-         (goto-char pos)
-         (org-open-at-point))
-       (plist-get params :surface)
-       "Org link")
+      (let ((presenter jetpacs-org-render-follow-destination-function))
+        (jetpacs-navigate-thunk
+         (lambda ()
+           ;; Deliberately leave the destination buffer current: the
+           ;; navigator's shim captures both it and Org's destination point.
+           (set-buffer buf)
+           (goto-char pos)
+           (org-open-at-point))
+         (plist-get params :surface)
+         "Org link"
+         (and (functionp presenter)
+              (lambda (destination destination-position surface)
+                (funcall presenter buf destination destination-position
+                         surface)))))
       'accepted))))
 
 (defun jetpacs-org-render--footnote-return (args params)
@@ -985,6 +1260,10 @@ to the pure Tier-0 render."
 
 (jetpacs-defaction "jetpacs.org.checkbox" #'jetpacs-org-render--checkbox)
 (jetpacs-defaction "jetpacs.org.widen" #'jetpacs-org-render--widen)
+(jetpacs-defaction "jetpacs.org.narrow" #'jetpacs-org-render--narrow)
+(jetpacs-defaction "jetpacs.org.toggle-drawer" #'jetpacs-org-render--toggle-drawer)
+(jetpacs-defaction "jetpacs.org.encrypt" #'jetpacs-org-render--encrypt)
+(jetpacs-defaction "jetpacs.org.execute-src-block" #'jetpacs-org-render--execute-src-block)
 (jetpacs-defaction "jetpacs.org.follow" #'jetpacs-org-render--follow)
 (jetpacs-defaction "jetpacs.org.footnote-return"
                    #'jetpacs-org-render--footnote-return)
@@ -1070,7 +1349,6 @@ App layers call THIS; the table stays private."
      (jetpacs-org-add-heading-descriptor
       (buffer-name (find-file-noselect path t)))
      :content-description "Add heading")))
-
 (defun jetpacs-org-render--files-after-save (truename)
   "The after-save hook: a device-side org save busts the engine memo."
   (when (jetpacs-org-render--org-path-p truename)
@@ -1127,7 +1405,8 @@ from their own state on the deferred re-push."
   "Reset render-module state: LaTeX memo/queue/timer, view modes."
   (clrhash jetpacs-org-render--latex-memo)
   (setq jetpacs-org-render--latex-order nil
-        jetpacs-org-render--latex-queue nil)
+        jetpacs-org-render--latex-queue nil
+        jetpacs-org-render--cache-generation 0)
   (when (timerp jetpacs-org-render--latex-timer)
     (cancel-timer jetpacs-org-render--latex-timer))
   (setq jetpacs-org-render--latex-timer nil)
@@ -1142,6 +1421,10 @@ from their own state on the deferred re-push."
         (assq-delete-all 'org-mode jetpacs-render-buffer-functions))
   (jetpacs-undefaction "jetpacs.org.checkbox")
   (jetpacs-undefaction "jetpacs.org.widen")
+  (jetpacs-undefaction "jetpacs.org.narrow")
+  (jetpacs-undefaction "jetpacs.org.toggle-drawer")
+  (jetpacs-undefaction "jetpacs.org.encrypt")
+  (jetpacs-undefaction "jetpacs.org.execute-src-block")
   (jetpacs-undefaction "jetpacs.org.follow")
   (jetpacs-undefaction "jetpacs.org.footnote-return")
   (jetpacs-undefaction "jetpacs.org.view-mode")

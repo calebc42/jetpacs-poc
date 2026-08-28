@@ -48,7 +48,7 @@
                            (:t "chip" :label "Chip" :icon "label"
                             :on_tap (:action "demo.chip"))
                            (:t "spacer" :width 8)
-                           (:t "assist_chip" :label "Assist"
+                           (:t "material3.assist_chip" :label "Assist"
                             :on_tap (:action "demo.assist"))
                            (:t "spacer" :width 8)
                            (:t "menu" :icon "more_vert"

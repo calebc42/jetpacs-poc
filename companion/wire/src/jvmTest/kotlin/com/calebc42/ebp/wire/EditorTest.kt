@@ -30,6 +30,7 @@ class EditorTest {
                     put("node_types", JsonArray(listOf("text", "editor").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_editor_sessions" to 8, "max_editor_bytes" to 65_536),
@@ -659,6 +660,7 @@ class EditorTest {
                             .map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_editor_sessions" to 8, "max_editor_bytes" to 65_536),
@@ -756,7 +758,19 @@ class EditorTest {
                 serverName = "kat", serverVersion = "1",
                 pairings = mapOf(katPid to katToken),
                 supportedCapabilities = setOf("editor.sync"),
-                surfaceProfiles = JsonObject(emptyMap()),
+                surfaceProfiles = buildJsonObject {
+                    putJsonObject("app") {
+                        put("node_types", JsonArray(listOf(
+                            "text", "row", "column", "box", "spacer",
+                            "divider", "button", "text_input",
+                        ).map(::JsonPrimitive)))
+                        put("builtins", JsonArray(listOf(
+                            "view.switch", "companion.settings.open",
+                        ).map(::JsonPrimitive)))
+                        put("features", JsonArray(emptyList()))
+                        put("extensions", JsonArray(emptyList()))
+                    }
+                },
                 limits = bare, nonceSource = { katSn })) { }
         }.isFailure
         assertTrue(failed)

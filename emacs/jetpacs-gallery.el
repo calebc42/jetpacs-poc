@@ -137,7 +137,7 @@ v1 authored bare y-lists; v3 series carry ChartPoint objects (T3)."
      :width 100 :height 64 :border '(:width 2 :color "primary"))
     (jetpacs-with-attrs
      (jetpacs-surface (list (jetpacs-text "rounded, fills rest"))
-                      :color "surface_container" :shape "rounded")
+                      :color "surface" :shape "rounded")
      :height 64 :fill_fraction 1.0)
     :spacing 12 :align "center")
    (jetpacs-spacer :height 12)))

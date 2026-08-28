@@ -114,6 +114,7 @@ title-case, so `ef-melissa-dark' reads as \"Melissa Dark\"."
                                        :dark-p-fn #'jetpacs-ef-themes--dark-p
                                        :color-fn #'jetpacs-ef-themes--color
                                        :mirror-action "ef.mirror"
+                                       :theme-mode jetpacs-theme-mode
                                        :none-label "No ef theme active"))
 
 (defun jetpacs-ef-themes--actions-row ()
@@ -315,20 +316,9 @@ connection."
     "ef.mirror" "ef.option")
   "The verbs this module owns, for the register/unregister sweep.")
 
-(defun jetpacs-ef-themes--settings-link ()
-  "The Settings-root satellite row leading to the Ef Themes screen.
-Satellite screens live in Settings, not the drawer (the drawer-UX
-rule, unchanged from v1)."
-  (jetpacs-chrome-row "Ef Themes"
-                      :subtitle "Pick, preview, and tune the colorful ef-themes"
-                      :icon "colorize"
-                      :on-tap (jetpacs-action "ef.show")
-                      :key "jetpacs-ef-themes-link"))
-
 (defun jetpacs-ef-themes-register ()
-  "Register the ef verbs and the Settings satellite link.
-Called by the Jetpacs composition root.  Idempotent: re-registration replaces
-handlers in place and the link is re-added exactly once."
+  "Register the ef verbs.
+Called by the Jetpacs composition root."
   (with-jetpacs-owner "jetpacs.ef"
     ;; This one action is emitted by the Settings root before the guest screen
     ;; exists.  The push sanctions that guest; every inner action below then
@@ -347,16 +337,12 @@ handlers in place and the link is re-added exactly once."
     (jetpacs-defaction "ef.mirror" #'jetpacs-ef-themes--on-mirror
                        :doc "Mirror the Emacs theme onto the companion")
     (jetpacs-defaction "ef.option" #'jetpacs-ef-themes--on-option
-                       :doc "Set an ef style option from its switch")
-    (jetpacs-settings-remove-link #'jetpacs-ef-themes--settings-link)
-    ;; Keep the optional provider close to the other appearance controls.
-    (jetpacs-settings-add-link 81 #'jetpacs-ef-themes--settings-link)))
+                       :doc "Set an ef style option from its switch")))
 
 (defun jetpacs-ef-themes-unregister ()
-  "Drop the ef verbs and the Settings satellite link."
+  "Drop the ef verbs."
   (dolist (name jetpacs-ef-themes--verbs)
-    (jetpacs-undefaction name))
-  (jetpacs-settings-remove-link #'jetpacs-ef-themes--settings-link))
+    (jetpacs-undefaction name)))
 
 ;;;###autoload
 (defun jetpacs-ef-themes-open ()

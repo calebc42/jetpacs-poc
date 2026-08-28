@@ -223,19 +223,31 @@ and :tag both ship (they drive meta lines and org tags)."
           (jetpacs-theme--on-theme-change)
           (should-not jetpacs-theme--timer))))))
 
-;;;; jetpacs.theme.modus-toggle through the real dispatch
+;;;; modus.toggle through the real dispatch
+
+(ert-deftest jetpacs-theme/modus-actions-declare-their-public-contract ()
+  "Every Modus verb exposes readable docs and its consumed arguments."
+  (dolist (name '("modus.show" "modus.load" "modus.toggle" "modus.rotate"
+                  "modus.set" "modus.reset" "modus.mirror"))
+    (let ((doc (plist-get (jetpacs-action-schema name) :doc)))
+      (should (and (stringp doc) (not (string-empty-p doc))))))
+  (should (equal (mapcar (lambda (arg) (plist-get arg :name))
+                         (plist-get (jetpacs-action-schema "modus.set") :args))
+                 '(name value))))
 
 (ert-deftest jetpacs-theme/modus-toggle-real-dispatch ()
   (jetpacs-theme-test--with-modus 'modus-operandi
     (jetpacs-theme-test--attached (jetpacs-theme-test--client)
       ;; jetpacs-attach replayed the load-time registration.
-      (should (gethash "jetpacs.theme.modus-toggle" (ebp-client-actions client)))
+      (should (gethash "modus.toggle" (ebp-client-actions client)))
       (unwind-protect
           (let ((modus-themes-to-toggle '(modus-operandi modus-vivendi)))
             (let ((result (ebp-client--handle-event-action
                            client
                            (list :event_id (make-string 32 ?a)
-                                 :action "jetpacs.theme.modus-toggle"
+                                 :action "modus.toggle"
+                                 :surface (concat "app:" jetpacs-settings-surface)
+                                 :revision_seen 0
                                  :occurred_at_ms 1784700000000))))
               (should (equal (plist-get result :status) "accepted"))
               (should (eq (jetpacs-modus-current) 'modus-vivendi))))
@@ -248,13 +260,16 @@ refusal is a clean rejected, not a no-prompts warning."
   (jetpacs-theme-test--with-modus 'modus-operandi
     (jetpacs-theme-test--attached (jetpacs-theme-test--client)
       (let ((prompted 0))
+        (should (gethash "modus.toggle" (ebp-client-actions client)))
         (cl-letf (((symbol-function 'completing-read)
                    (lambda (&rest _) (cl-incf prompted) "modus-vivendi")))
           (let ((modus-themes-to-toggle '(modus-operandi)))
             (let ((result (ebp-client--handle-event-action
                            client
                            (list :event_id (make-string 32 ?b)
-                                 :action "jetpacs.theme.modus-toggle"
+                                 :action "modus.toggle"
+                                 :surface (concat "app:" jetpacs-settings-surface)
+                                 :revision_seen 0
                                  :occurred_at_ms 1784700000000))))
               (should (equal (plist-get result :status) "rejected"))
               (should (= prompted 0)))))))))
@@ -303,16 +318,23 @@ refusal is a clean rejected, not a no-prompts warning."
                                      table)
                           when hit return (nth 2 hit)))))
       (let ((colors (jetpacs-theme--colors)))
+        (should (equal (cl-loop for (key _value) on colors by #'cddr
+                                collect key)
+                       '(:primary :on_primary :secondary :on_secondary
+                         :error :on_error :background :on_background
+                         :surface :on_surface :outline :success :warning)))
         (should (equal (plist-get colors :primary) "#c080ff"))
         (should (equal (plist-get colors :background) "#101418"))
         (should (equal (plist-get colors :error) "#ff5555"))
         (should (equal (plist-get colors :success) "#50fa7b"))
         (should (equal (plist-get colors :warning) "#f1fa8c"))
         (should (equal (plist-get colors :outline) "#888888"))
-        ;; The container blend runs for real over the stubbed inputs.
-        (should (equal (plist-get colors :primary_container)
-                       (jetpacs-theme--blend "#c080ff" "#101418" 0.22)))
-        (should (equal (plist-get colors :tertiary) "#66d9ef"))))))
+        ;; The neutral secondary blend runs for real over the stubbed inputs.
+        (should (equal (plist-get colors :secondary)
+                       (jetpacs-theme--blend
+                        "#c080ff"
+                        (jetpacs-theme--blend "#e0e0e0" "#101418" 0.5)
+                        0.5)))))))
 
 
 ;;;; E6: off, the payload seam, synchronous READY, and the wiring pins
@@ -394,9 +416,8 @@ enable/disable-theme hooks and the ready-hook install.  Pin all three."
   (should (memq #'jetpacs-theme--on-theme-change disable-theme-functions))
   (should (memq #'jetpacs-theme--on-ready jetpacs-ready-functions)))
 
-(ert-deftest jetpacs-theme-modus-module-is-hook-free ()
-  "`jetpacs-modus' is the JA-10 substrate: requiring it must observably
-change NOTHING — a Tier-1 loads it for the queries, not the machinery."
+(ert-deftest jetpacs-theme-modus-module-installs-no-theme-hooks ()
+  "Loading the settings screen must not arm theme or teardown hooks."
   (let ((enable-theme-functions nil)
         (disable-theme-functions nil)
         (jetpacs-teardown-functions nil))

@@ -161,7 +161,8 @@ it carries the error SYMBOL, never the datum (SPEC 23.3)."
 (ert-deftest jetpacs-devtools-profiler-times-and-keeps-spec ()
   (jetpacs-devtools-test--with (jetpacs-devtools-test--client)
     (jetpacs-devtools-test--recording recs
-      (let ((jetpacs-devtools-recording t))
+      (let ((jetpacs-devtools-profile t)
+            (jetpacs-devtools-recording t))
         (jetpacs-devtools-test--define-root "devt")
         ;; Defining only registers; the build the profiler times happens
         ;; on a push.
@@ -182,14 +183,19 @@ it carries the error SYMBOL, never the datum (SPEC 23.3)."
 but the built spec is NOT kept (SPEC 23.3 — a spec embeds payload)."
   (jetpacs-devtools-test--with (jetpacs-devtools-test--client)
     (jetpacs-devtools-test--recording recs
-      (jetpacs-devtools-test--define-root "devt")
-      (jetpacs-chrome-push-screen
-       "devt" "detail"
-       (lambda (back) (jetpacs-chrome-screen "Detail" (jetpacs-text "d")
-                                             :back back)))
-      (should recs)
-      (should (gethash "app:devt" jetpacs-devtools--builds))
-      (should-not (jetpacs-devtools-last-spec "app:devt")))))
+      (let ((jetpacs-devtools-profile t))
+        (jetpacs-devtools-test--define-root "devt")
+        (jetpacs-chrome-push-screen
+         "devt" "detail"
+         (lambda (back) (jetpacs-chrome-screen "Detail" (jetpacs-text "d")
+                                               :back back)))
+        (should recs)
+        (should (gethash "app:devt" jetpacs-devtools--builds))
+        (should-not (jetpacs-devtools-last-spec "app:devt"))))))
+
+(ert-deftest jetpacs-devtools-profiler-defaults-off ()
+  "Daily-driver pushes do not pay for diagnostic whole-spec serialization."
+  (should-not (default-value 'jetpacs-devtools-profile)))
 
 (ert-deftest jetpacs-devtools-shell-build-failure-recorded ()
   "The surface build catch fires the seam: a plain define-root builder
@@ -264,6 +270,7 @@ turning recording off by THAT door must clear retention too."
 sizes itself to the threshold."
   (let ((jetpacs-devtools--pushes (make-hash-table :test 'equal))
         (jetpacs-devtools--push-times nil)
+        (jetpacs-devtools-profile t)
         (jetpacs-devtools-storm-threshold 100)
         (jetpacs-devtools--storm-warned-at 0)
         (warned nil))
@@ -275,9 +282,13 @@ sizes itself to the threshold."
 
 (ert-deftest jetpacs-devtools-note-push-tallies-and-sizes ()
   (let ((jetpacs-devtools--pushes (make-hash-table :test 'equal))
-        (jetpacs-devtools--push-times nil))
-    (jetpacs-devtools--note-push "app:x" (jetpacs-text "hello"))
-    (jetpacs-devtools--note-push "app:x" (jetpacs-text "hello again"))
+        (jetpacs-devtools--push-times nil)
+        (jetpacs-devtools-profile t))
+    (cl-letf (((symbol-function 'jetpacs-node->canonical-json)
+               (lambda (_spec)
+                 (error "golden serializer reached from live profiler"))))
+      (jetpacs-devtools--note-push "app:x" (jetpacs-text "hello"))
+      (jetpacs-devtools--note-push "app:x" (jetpacs-text "hello again")))
     (let ((rec (gethash "app:x" jetpacs-devtools--pushes)))
       (should (= 2 (plist-get rec :count)))
       (should (natnump (plist-get rec :last-bytes)))

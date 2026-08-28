@@ -3,7 +3,7 @@
 // the same ebp corpus (SPEC 24.5-24.6): the 9.3 known-answer vector, every
 // goldens/wire fixture at whole/1-octet/7-octet chunkings against the
 // manifest's expected outcome, encoder byte syntax, and handshake params
-// checked against contract.json (format 6).
+// checked against contract.json (format 8).
 package com.calebc42.ebp.wire
 
 import java.io.File
@@ -31,10 +31,10 @@ class WireConformanceTest {
     @Test
     fun katProofsReproduceExactly() {
         assertEquals(
-            "03e270fd0af4566336283444b641a722b5828c190ebdbe3dc50c5be2c9c9fb43",
+            "a76f9e392582c990ef08858fe69740323499ab87566d9b4e6f99a246bdd024a6",
             EbpAuth.clientProof(katToken, katPid, katCn, katSn))
         assertEquals(
-            "e9333d48cfc2780d708db4a9782705c5e1c988c7eedc2d1734051f2fb9be58ec",
+            "ca1c37bcb735442fb979127a07fc41d2a15ea0fcf58ae1ffa4bf06edc0bdfdcc",
             EbpAuth.serverProof(katToken, katPid, katCn, katSn))
         assertTrue(EbpAuth.verifyServerProof(
             EbpAuth.serverProof(katToken, katPid, katCn, katSn),
@@ -253,7 +253,7 @@ class WireConformanceTest {
         var i = 0
         while (i < encoded.size) {
             val n = minOf(8192, encoded.size - i)
-            d.feed(encoded.copyOfRange(i, i + n)) { out.add(it) }
+            d.feed(encoded, i, n) { out.add(it) }
             i += n
         }
         d.finish()

@@ -18,6 +18,11 @@ private val SURFACE_ID = Regex("(app|notification|widget):[A-Za-z0-9][A-Za-z0-9.
 
 data class SurfaceResult(val status: String, val revision: Long, val present: Boolean)
 
+/** A validated surface mutation could not be committed durably. The engine
+ * maps this to JSON-RPC internal-error after [SurfaceStore] restores its prior
+ * in-memory state. */
+class SurfacePersistenceFailed(cause: Exception) : Exception(cause)
+
 /** T3/LD-2: the value a stateful node's widget should display, and the
  * generation that value belongs to. See [SurfaceStore.inputDisplays].
  *
@@ -44,6 +49,11 @@ class SurfaceStore(
     // invalid-context gate. null = allow all.
     private val appBuiltins: Set<String>? = null,
     private val notificationBuiltins: Set<String>? = null,
+    // SPEC 22.4: target-scoped constraining/member-gating features.
+    private val appFeatures: Set<String>? = null,
+    private val notificationFeatures: Set<String>? = null,
+    /** EBP schemas plus receiver-selected renderer extension schemas. */
+    private val nodeVocabulary: NodeVocabulary = EBP_NODE_VOCABULARY,
     /** SPEC 13.1/15.1: durable surface histories + input_state. In-memory
      * by default; DeviceBridge wires a file so both survive process death. */
     private val backing: SurfaceBacking = MemorySurfaceBacking(),
@@ -58,6 +68,11 @@ class SurfaceStore(
     )
 
     private val records = LinkedHashMap<String, Record>()
+    // Loaded records start durable. Every accepted record mutation marks this
+    // dirty until replaceRecords succeeds; strict low-frequency state can then
+    // repair a prior best-effort surface write without serializing the entire
+    // surface catalog on the ordinary successful path.
+    private var recordsDirty = false
     // R6: a present key IS the draft; its value follows the draft seam, where
     // Kotlin null is the JSON null (see [PersistedDraft]).
     private val drafts = HashMap<Pair<String, String>, JsonElement?>()
@@ -87,8 +102,10 @@ class SurfaceStore(
                             maxCaptureFields = maxCaptureFields,
                             advertisedTypes = notificationNodeTypes,
                             advertisedBuiltins = notificationBuiltins,
+                            advertisedFeatures = notificationFeatures,
                             maxChartPoints = maxChartPoints, maxCanvasOps = maxCanvasOps,
-                            maxRichSpans = maxRichSpans, maxTableCells = maxTableCells)
+                            maxRichSpans = maxRichSpans, maxTableCells = maxTableCells,
+                            nodeVocabulary = nodeVocabulary)
                         emptyMap()
                     } else {
                         SpecValidator.validateSurfaceSpec(r.spec,
@@ -96,7 +113,9 @@ class SurfaceStore(
                             maxChartPoints = maxChartPoints, maxCanvasOps = maxCanvasOps,
                             maxRichSpans = maxRichSpans, maxTableCells = maxTableCells,
                             advertisedTypes = appNodeTypes,
-                            advertisedBuiltins = appBuiltins)
+                            advertisedBuiltins = appBuiltins,
+                            advertisedFeatures = appFeatures,
+                            nodeVocabulary = nodeVocabulary)
                     }
                 }.getOrNull()
                 if (revalidated == null) {
@@ -116,6 +135,8 @@ class SurfaceStore(
                 } else revalidated
             } else emptyMap()
             records[r.surface] = Record(r.revision, present, spec, currentView, statefuls)
+            if (present != r.present || spec != r.spec || currentView != r.currentView)
+                recordsDirty = true
         }
         // SPEC 10.2/13.6: a draft belongs to a stateful node of a PRESENT
         // surface. The two files persist independently, so a reload can carry
@@ -123,38 +144,81 @@ class SurfaceStore(
         // publish a phantom in the welcome `input_state`.
         for (d in state.drafts) {
             val rec = records[d.surface] ?: continue
-            if (!rec.present || !rec.statefuls.containsKey(d.id)) continue
+            val node = rec.statefuls[d.id]
+            // Equality with the loaded authored value is NOT an
+            // acknowledgement. The user may have changed away and then back
+            // while offline; only acceptance of a later snapshot can clear
+            // that latest dirty value under §13.6.
+            if (!rec.present || node == null || !compatible(node, d.value)) continue
             drafts[d.surface to d.id] = d.value
         }
     }
 
-    /**
-     * SPEC 15.1: commit the surface histories and the input_state snapshot
-     * durably. Best-effort like the queue's expiry sweep — a persist failure
-     * leaves the last durable state, and Emacs re-pushes surfaces on
-     * reconnect regardless. Called on every accepted mutation, so a draft
-     * is durable before any later durable event (SPEC 15.1 ordering).
-     */
-    private fun persistRecords() {
-        runCatching {
-            backing.replaceRecords(records.map { (surface, r) ->
-                PersistedRecord(surface, r.revision, r.present, r.spec, r.currentView)
-            })
+    /** Best-effort record persistence for receiver-local presentation state.
+     * RPC surface mutations use [persistSurfaceMutation] instead: they may not
+     * return `applied` until their accepted state is durable. */
+    private fun tryPersistRecords(): Boolean =
+        try {
+            backing.replaceRecords(persistedRecords())
+            recordsDirty = false
+            true
+        } catch (_: Exception) {
+            recordsDirty = true
+            false
         }
-    }
+
+    private fun persistRecords() { tryPersistRecords() }
+
+    private fun persistedRecords(): List<PersistedRecord> =
+        records.map { (surface, r) ->
+            PersistedRecord(surface, r.revision, r.present, r.spec, r.currentView)
+        }
 
     private fun persistDrafts() {
         runCatching {
-            backing.replaceDrafts(drafts.map { (k, v) -> PersistedDraft(k.first, k.second, v) })
+            backing.replaceDrafts(persistedDrafts())
         }
     }
 
-    /** LD-14: an update or remove touches both files. The order is
-     * drafts-then-records so a §15.1 reader that saw the new records also
-     * sees the reconciled drafts, never a draft the new spec has dropped. */
-    private fun persist() {
-        persistDrafts()
-        persistRecords()
+    private fun persistedDrafts(): List<PersistedDraft> =
+        drafts.map { (k, v) -> PersistedDraft(k.first, k.second, v) }
+
+    /**
+     * SPEC 13.2-13.3 + LD-14: commit a validated update/remove before claiming
+     * it. When reconciliation removed drafts, write that complete candidate
+     * first and records second. A reader that sees the new revision can then
+     * never see a draft it cleared. If the record replace fails after the
+     * draft replace, compensate with the preceding draft snapshot before
+     * reporting failure; the caller restores the in-memory candidate.
+     *
+     * Empty [removedDrafts] is the ordinary refresh hot path: one record-file
+     * replace and no draft serialization or fsync.
+     */
+    private fun persistSurfaceMutation(removedDrafts: List<PersistedDraft>) {
+        val nextDrafts = removedDrafts.takeIf { it.isNotEmpty() }?.let {
+            persistedDrafts()
+        }
+        var draftsReplaced = false
+        try {
+            if (nextDrafts != null) {
+                backing.replaceDrafts(nextDrafts)
+                draftsReplaced = true
+            }
+            backing.replaceRecords(persistedRecords())
+            recordsDirty = false
+        } catch (failure: Exception) {
+            recordsDirty = true
+            if (draftsReplaced) {
+                try {
+                    // Removed keys are absent from nextDrafts, so concatenation
+                    // reconstructs the complete preceding draft snapshot.
+                    backing.replaceDrafts(nextDrafts!! + removedDrafts)
+                } catch (rollbackFailure: Exception) {
+                    failure.addSuppressed(rollbackFailure)
+                }
+            }
+            throw SurfacePersistenceFailed(failure)
+        }
     }
 
     fun isValidSurfaceId(id: String): Boolean =
@@ -180,6 +244,7 @@ class SurfaceStore(
         val views = r.spec?.objOrNull("views") ?: return false
         if (view !in views) return false
         r.currentView = view
+        recordsDirty = true
         persistRecords() // view choice is record state, no draft touched
         return true
     }
@@ -199,6 +264,45 @@ class SurfaceStore(
     fun isStatefulNode(surface: String, id: String): Boolean =
         records[surface]?.statefuls?.containsKey(id) == true
 
+    /** Resolve `variant.switch` against the accepted authored branch order.
+     * No mutation occurs here; [CompanionEngine.publishState] remains the one
+     * durable draft/state.changed funnel. A missing requested value advances
+     * cyclically, while an explicit current value is a clean no-op. */
+    fun resolveVariantSwitch(surface: String, id: String,
+                             requested: String?): String? {
+        val node = records[surface]?.statefuls?.get(id)
+            ?.takeIf { it.stringOr("t") == "variant_host" } ?: return null
+        val values = node.arrOrNull("variants")?.mapNotNull {
+            (it as? JsonObject)?.stringOrNull("value")
+        }.orEmpty()
+        if (values.size < 2) return null // accepted specs cannot reach this
+        val current = currentValue(surface, id)?.asStringOrNull()
+            ?.takeIf { it in values } ?: node.stringOr("value")
+        val next = if (requested != null) {
+            requested.takeIf { it in values }
+        } else {
+            values[(values.indexOf(current).coerceAtLeast(0) + 1) % values.size]
+        }
+        return next?.takeUnless { it == current }
+    }
+
+    /** The current selection for every retained host of every present
+     * surface. Kept separate from [inputDisplays] by the Android bridge so a
+     * local presentation switch does not invalidate unrelated widgets. */
+    fun variantSelections(): Map<Pair<String, String>, String> {
+        val out = HashMap<Pair<String, String>, String>()
+        for ((surface, record) in records) {
+            if (!record.present) continue
+            for ((id, node) in record.statefuls) {
+                if (node.stringOr("t") != "variant_host") continue
+                currentValue(surface, id)?.asStringOrNull()?.let {
+                    out[surface to id] = it
+                }
+            }
+        }
+        return out
+    }
+
     fun namespace(id: String): String = id.substringBefore(':')
 
     // ------------------------------------------------------ update (13.2)
@@ -216,8 +320,10 @@ class SurfaceStore(
             SpecValidator.validateNotificationSpec(spec, maxCaptureFields = maxCaptureFields,
                 advertisedTypes = notificationNodeTypes,
                 advertisedBuiltins = notificationBuiltins,
+                advertisedFeatures = notificationFeatures,
                 maxChartPoints = maxChartPoints, maxCanvasOps = maxCanvasOps,
-                maxRichSpans = maxRichSpans, maxTableCells = maxTableCells)
+                maxRichSpans = maxRichSpans, maxTableCells = maxTableCells,
+                nodeVocabulary = nodeVocabulary)
             if (currentView != null)
                 throw ContentInvalid("current_view", "not valid for a notification surface")
             if (resetIds != null && resetIds.size > 0)
@@ -226,8 +332,10 @@ class SurfaceStore(
                 SpecValidator.validateNotificationSpec(it, "stale_spec", maxCaptureFields,
                     advertisedTypes = notificationNodeTypes,
                     advertisedBuiltins = notificationBuiltins,
+                    advertisedFeatures = notificationFeatures,
                     maxChartPoints = maxChartPoints, maxCanvasOps = maxCanvasOps,
-                    maxRichSpans = maxRichSpans, maxTableCells = maxTableCells)
+                    maxRichSpans = maxRichSpans, maxTableCells = maxTableCells,
+                    nodeVocabulary = nodeVocabulary)
             }
             statefuls = emptyMap()
             reset = emptySet()
@@ -237,7 +345,9 @@ class SurfaceStore(
                 spec, maxCaptureFields = maxCaptureFields,
                 maxChartPoints = maxChartPoints, maxCanvasOps = maxCanvasOps,
                 maxRichSpans = maxRichSpans, maxTableCells = maxTableCells,
-                advertisedTypes = appNodeTypes, advertisedBuiltins = appBuiltins)
+                advertisedTypes = appNodeTypes, advertisedBuiltins = appBuiltins,
+                advertisedFeatures = appFeatures,
+                nodeVocabulary = nodeVocabulary)
             reset = resetIds?.let { SpecValidator.validateResetIds(it, statefuls) }
                 ?: emptySet()
             // SPEC 13.5/14.2/17.1: a stale_spec is RENDERED while
@@ -247,7 +357,8 @@ class SurfaceStore(
             // rather than be held to its per-type schema.
             staleSpec?.let { SpecValidator.validateStaleSpec(it, "views" in spec,
                 maxCaptureFields, maxChartPoints, maxCanvasOps,
-                maxRichSpans, maxTableCells, appNodeTypes, appBuiltins) }
+                maxRichSpans, maxTableCells, appNodeTypes, appBuiltins,
+                appFeatures, nodeVocabulary) }
             isMultiView = "views" in spec
             if (currentView != null) {
                 if (!isMultiView || currentView !in spec.reqObj("views"))
@@ -269,40 +380,52 @@ class SurfaceStore(
             // Reactivating a tombstone is invalid at max_surfaces.
             throw ContentInvalid("surface", "surface-limit")
         }
-        val next = record ?: Record(-1, false, null, null, emptyMap())
         // SPEC 13.4: preserve the user's view unless it vanished, the
         // surface is new, or the request names one.
-        next.currentView = when {
+        val nextCurrentView = when {
             !isMultiView -> null
             currentView != null -> currentView
-            next.present && next.currentView != null &&
-                next.currentView!! in spec.reqObj("views") -> next.currentView
+            record?.present == true && record.currentView != null &&
+                record.currentView!! in spec.reqObj("views") -> record.currentView
             else -> spec.reqString("initial_view")
         }
         // SPEC 13.6: the pre-update node types decide draft compatibility.
-        val oldStatefuls = next.statefuls
+        val oldStatefuls = record?.statefuls ?: emptyMap()
         // T3/LD-2: what the display is showing right now, before this
         // snapshot is applied — the draft when the user has one, else the
         // authored value.
         val shownBefore = (oldStatefuls.keys + statefuls.keys)
             .associateWith { currentValue(surface, it) }
-        next.revision = revision
-        next.present = true
-        next.spec = spec
-        next.statefuls = statefuls
+        // Install a fresh candidate rather than mutating RECORD in place. It
+        // remains the complete rollback value until the durable commit wins.
+        val next = Record(revision, true, spec, nextCurrentView, statefuls)
+        val wasRecordsDirty = recordsDirty
         records[surface] = next
-        reconcileDrafts(surface, oldStatefuls, statefuls, reset)
+        recordsDirty = true
+        val removedDrafts = reconcileDrafts(surface, oldStatefuls, statefuls, reset)
         // T3/LD-2: THE stamping point. A node whose displayed value is not
         // what it was, when the user did not change it, has been decided by
         // this snapshot — its widget must reseed. This catches both shapes at
         // once: an erased draft (the authored value now governs) and a moved
         // authored value with no draft standing. A surviving draft compares
         // equal to itself, so a user's in-progress edit never reseeds.
-        for ((id, before) in shownBefore) {
-            if (!jsonValueEquals(before, currentValue(surface, id)))
-                epochs[surface to id] = ++epochClock
+        val changedDisplays = shownBefore.filter { (id, before) ->
+            !jsonValueEquals(before, currentValue(surface, id))
+        }.keys
+        try {
+            // Most surface refreshes (including Org visibility) remove no
+            // input draft. persistSurfaceMutation keeps those on the one-file
+            // record-only path.
+            persistSurfaceMutation(removedDrafts)
+        } catch (failure: SurfacePersistenceFailed) {
+            if (record == null) records.remove(surface) else records[surface] = record
+            removedDrafts.forEach { d -> drafts[d.surface to d.id] = d.value }
+            recordsDirty = wasRecordsDirty
+            throw failure
         }
-        persist()
+        // Stamp only after the durable candidate commits. A failed update did
+        // not decide a displayed value and must not advance its generation.
+        for (id in changedDisplays) epochs[surface to id] = ++epochClock
         return SurfaceResult("applied", revision, true)
     }
 
@@ -315,16 +438,23 @@ class SurfaceStore(
             return SurfaceResult("stale", floor, record?.present ?: false)
         if (record == null && records.size.toLong() >= maxSurfaceIds)
             throw ContentInvalid("surface", "surface-limit")
-        val next = record ?: Record(-1, false, null, null, emptyMap())
-        next.revision = revision
-        next.present = false
-        next.spec = null
-        next.currentView = null
-        next.statefuls = emptyMap()
+        val next = Record(revision, false, null, null, emptyMap())
+        val wasRecordsDirty = recordsDirty
         records[surface] = next
+        recordsDirty = true
         // SPEC 13.3: tombstoning erases every draft belonging to the surface.
-        drafts.keys.removeAll { it.first == surface }
-        persist()
+        val removedDrafts = drafts.keys.filter { it.first == surface }.map { key ->
+            PersistedDraft(key.first, key.second, drafts[key])
+        }
+        removedDrafts.forEach { drafts.remove(it.surface to it.id) }
+        try {
+            persistSurfaceMutation(removedDrafts)
+        } catch (failure: SurfacePersistenceFailed) {
+            if (record == null) records.remove(surface) else records[surface] = record
+            removedDrafts.forEach { d -> drafts[d.surface to d.id] = d.value }
+            recordsDirty = wasRecordsDirty
+            throw failure
+        }
         return SurfaceResult("applied", revision, false)
     }
 
@@ -387,6 +517,49 @@ class SurfaceStore(
         persistDrafts()
     }
 
+    /**
+     * Admission path for receiver-local state whose presentation must not
+     * move unless reconnect can recover the same value. The candidate first
+     * has to fit the complete serialized `input_state`, then the backing must
+     * confirm both the accepted surface namespace and the atomic draft-file
+     * replacement. Either failure rolls the in-memory map back and returns
+     * false; ordinary high-frequency typing retains the historical
+     * best-effort [putDraft] path.
+     */
+    fun tryPutDraft(surface: String, id: String, value: JsonElement?,
+                    maxInputStateBytes: Long): Boolean {
+        val node = records[surface]?.statefuls?.get(id) ?: return false
+        if (node.boolOr("password") || !compatible(node, value)) return false
+        val key = surface to id
+        val existed = key in drafts
+        val old = drafts[key]
+        drafts[key] = value
+        fun rollback() {
+            if (existed) drafts[key] = old else drafts.remove(key)
+        }
+        val bytes = inputState().toString().toByteArray(Charsets.UTF_8).size.toLong()
+        if (bytes > maxInputStateBytes) {
+            rollback()
+            return false
+        }
+        return try {
+            // A prior accepted surface update may have hit the historical
+            // best-effort record persistence path. Confirm the stateful
+            // namespace itself is durable before claiming this strict draft
+            // commit; otherwise process recreation would discard an orphaned
+            // draft even though the visible branch had moved.
+            if (recordsDirty && !tryPersistRecords()) {
+                rollback()
+                return false
+            }
+            backing.replaceDrafts(persistedDrafts())
+            true
+        } catch (_: Exception) {
+            rollback()
+            false
+        }
+    }
+
     fun draft(surface: String, id: String): JsonElement? = drafts[surface to id]
 
     fun hasDraft(surface: String, id: String): Boolean = (surface to id) in drafts
@@ -444,7 +617,8 @@ class SurfaceStore(
     }
 
     private fun reconcileDrafts(surface: String, oldStatefuls: Map<String, JsonObject>,
-                                newStatefuls: Map<String, JsonObject>, reset: Set<String>) {
+                                newStatefuls: Map<String, JsonObject>,
+                                reset: Set<String>): List<PersistedDraft> {
         val stale = drafts.keys.filter { (s, id) ->
             s == surface && run {
                 val node = newStatefuls[id]
@@ -460,7 +634,11 @@ class SurfaceStore(
                     jsonValueEquals(authoredValue(node), value) // acknowledged
             }
         }
+        val removed = stale.map { key ->
+            PersistedDraft(key.first, key.second, drafts[key])
+        }
         stale.forEach(drafts::remove)
+        return removed
     }
 
     /** SPEC 13.6: value-schema compatibility is exact. */
@@ -528,7 +706,12 @@ class SurfaceStore(
                     }
                 } ?: false
             "editor" -> value is JsonPrimitive && value.isString &&
-                node.boolOr("publish_state") && "document" !in node
+                node.boolOr("publish_state") && "document" !in node &&
+                (!node.boolOr("single_line") || '\n' !in value.content)
+            "variant_host" -> value is JsonPrimitive && value.isString &&
+                node.reqArr("variants").any {
+                    (it as? JsonObject)?.stringOrNull("value") == value.content
+                }
             else -> false
         }
 
@@ -562,6 +745,7 @@ class SurfaceStore(
                     JsonArray(listOf(floor, node["value_end"] ?: floor))
                 } else node["value"]
                     ?: node.arrOrNull("values")?.get(0) ?: node["min"] ?: JsonPrimitive(0)
+            "variant_host" -> node["value"]
             else -> null
         }
 

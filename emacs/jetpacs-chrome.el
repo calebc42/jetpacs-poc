@@ -62,6 +62,15 @@ bounded too."
 BUILDER takes one argument BACK — a `view.switch' descriptor, or nil at
 the stack bottom — and returns a root Node.")
 
+(defvar jetpacs-chrome--view-cache (make-hash-table :test #'equal)
+  "SURFACE id -> last successfully composed stack views and budget states.
+The cache is consulted only under an explicit current-view refresh.  Every
+ordinary push still rebuilds the whole stack, so unrelated model changes
+cannot leave a hidden screen stale.")
+
+(defvar jetpacs-chrome--target-refresh-view nil
+  "Dynamically bound view id whose builder alone needs to run this push.")
+
 (defvar jetpacs-chrome-dock-function nil
   "Function (SURFACE) -> Node or nil: a DOCKED bottom bar for SURFACE.
 The docs/CHROME-VOCABULARY.md view switcher is chrome that persists —
@@ -144,26 +153,28 @@ The optional slots follow docs/CHROME-VOCABULARY.md: DRAWER holds
 app-level destinations (the Companion adds the opening hamburger on
 the left by itself); BOTTOM-BAR is canonically a view switcher —
 three to five sibling places, never document actions."
-  (apply
-   #'jetpacs-scaffold
-   :top-bar (apply #'jetpacs-row
-                   (append
-                    (when back
-                      (list (jetpacs-icon-button "arrow_back" back
-                                                 :content-description "back")))
-                    (list (jetpacs-with-attrs
-                           (jetpacs-text title :style "title")
-                           :weight 1))
-                    actions
-                    (list :align "center" :spacing 4)))
-   :body body :fab fab :drawer drawer :bottom-bar bottom-bar
-   :on-refresh on-refresh :floating-toolbar floating-toolbar
-   ;; The M3-catalog sprint proved the styled bars end to end, so chrome
-   ;; wears the REAL M3 small top bar by default now — proper insets,
-   ;; the drawer hamburger as its navigationIcon, and a scroll behavior
-   ;; one :scaffold keyword away.  cl-defun keeps the FIRST duplicate
-   ;; keyword, so an explicit :top-bar-style in SCAFFOLD still wins.
-   (append scaffold (list :top-bar-style "small"))))
+  (jetpacs-with-semantics
+   (apply
+    #'jetpacs-scaffold
+    :top-bar (apply #'jetpacs-row
+                    (append
+                     (when back
+                       (list (jetpacs-icon-button "arrow_back" back
+                                                  :content-description "back")))
+                     (list (jetpacs-with-attrs
+                            (jetpacs-text title :style "title")
+                            :weight 1))
+                     actions
+                     (list :align "center" :spacing 4)))
+    :body body :fab fab :drawer drawer :bottom-bar bottom-bar
+    :on-refresh on-refresh :floating-toolbar floating-toolbar
+    ;; The M3-catalog sprint proved the styled bars end to end, so chrome
+    ;; wears the REAL M3 small top bar by default now — proper insets,
+    ;; the drawer hamburger as its navigationIcon, and a scroll behavior
+    ;; one :scaffold keyword away.  cl-defun keeps the FIRST duplicate
+    ;; keyword, so an explicit :top-bar-style in SCAFFOLD still wins.
+    (append scaffold (list :top-bar-style "small")))
+   :pane-title title))
 
 (cl-defun jetpacs-chrome-row (title &key subtitle icon leading trailing
                                     on-tap on-long-tap key)
@@ -225,10 +236,10 @@ process."
   "One bottom-bar destination from a dock ITEM plist.
 The REAL M3 NavigationBarItem, in the composition the catalog proved
 on device (jetpacs-m3-navigation-bar): the icon above the label, the
-64x32 secondary_container active indicator behind a selected icon, and
-the NavigationBarItemDefaults color roles — on_secondary_container in
-the pill, on_surface for the selected label, on_surface_variant
-everywhere else.  Equal weights are the bars\' EqualWeight default."
+64x32 active indicator behind a selected icon.  The wire uses neutral
+`secondary', `on_secondary', and `on_surface' roles; the Material renderer
+owns any more specific tonal derivation.  Equal weights are the bars\'
+EqualWeight default."
   (let ((selected (plist-get item :selected)))
     (jetpacs-with-attrs
      (jetpacs-box
@@ -236,16 +247,16 @@ everywhere else.  Equal weights are the bars\' EqualWeight default."
        (jetpacs-with-attrs
         (jetpacs-box (jetpacs-icon (plist-get item :icon)
                                    :color (if selected
-                                              "on_secondary_container"
-                                            "on_surface_variant")
+                                              "on_secondary"
+                                            "on_surface")
                                    :badge (plist-get item :badge)
                                    :content-description
                                    (plist-get item :label))
                      :alignment "center")
         :width 64 :height 32 :corner 16
-        :bg (and selected "secondary_container"))
+        :bg (and selected "secondary"))
        (jetpacs-text (plist-get item :label) :style "label"
-                     :color (if selected "on_surface" "on_surface_variant"))
+                     :color (if selected "on_surface" "on_surface"))
        :spacing 4 :align "center")
       :alignment "center"
       :on-tap (plist-get item :on-tap))
@@ -375,6 +386,12 @@ remains the top-bar-only override for a host with no items to give.
 Degrades like the dock: a signal or malformed items cost the globals,
 never the surface.")
 
+(defvar jetpacs-chrome-fab-menu-function nil
+  "Optional function (ITEMS) -> one design-layer FAB-menu node.
+Jetpacs chrome owns placement and normalized action data, but not a Material
+control.  A selected design implementation installs this seam.  Without one,
+several global actions fall back to ordinary Compose-shaped icon buttons.")
+
 (defun jetpacs-chrome--global-items (surface)
   "SURFACE's shell-global ITEMS, validated and isolated; nil without the seam.
 The check is all-or-nothing like the dock's: an item missing what
@@ -440,13 +457,15 @@ globals, not a creation act."
       (jetpacs-icon-button (plist-get (car items) :icon)
                            (plist-get (car items) :on-tap)
                            :content-description (plist-get (car items) :label))
-    (jetpacs-fab-menu
-     (mapcar (lambda (item)
-               (jetpacs-fab-menu-item (plist-get item :label)
-                                      (plist-get item :icon)
-                                      (plist-get item :on-tap)))
-             items)
-     :icon "more_vert")))
+    (if jetpacs-chrome-fab-menu-function
+        (funcall jetpacs-chrome-fab-menu-function items)
+      (jetpacs-column
+       (mapcar (lambda (item)
+                 (jetpacs-icon-button
+                  (plist-get item :icon) (plist-get item :on-tap)
+                  :content-description (plist-get item :label)))
+               items)
+       :spacing 8))))
 
 (defun jetpacs-chrome--join-global-fab (surface n items)
   "Give SURFACE's scaffold N the shell globals as its `fab', de-duped.
@@ -463,7 +482,7 @@ per screen (the de-dup answer is per-screen), so it carries its own
 isolation: a malformed item costs the fab, never the screen.
 
 The injected fab subtree is run through the per-view gate and the
-join DROPPED if it fails: `fab_menu' is outside the Core Node Set,
+join DROPPED if it fails: a design-layer menu is outside the Core Node Set,
 so a session whose profile lacks it would otherwise turn EVERY
 screen of every chrome surface into an error card for as long as the
 placement stayed set — a total loss for a presentation preference.
@@ -581,9 +600,17 @@ every screen re-authors for the new class."
   "Seed the class memo and attach the window hook.
 The welcome mirrors the geometry before ready runs (SPEC 20.1.1), so
 seeding here means the first `window.changed\' re-pushes only on a REAL
-class flip — not on the notification that merely repeats the welcome."
-  (setq jetpacs-chrome--window-classes
-        (cons (jetpacs-window-class :width) (jetpacs-window-class :height)))
+class flip — not on the notification that merely repeats the welcome.
+If surfaces were pushed offline before ready, their initial render used
+the default compact class; a flip here re-pushes them for the real geometry."
+  (setq jetpacs-chrome--window-classes '("compact" . "compact"))
+  (let ((classes (cons (jetpacs-window-class :width)
+                       (jetpacs-window-class :height))))
+    (unless (equal classes jetpacs-chrome--window-classes)
+      (setq jetpacs-chrome--window-classes classes)
+      (maphash (lambda (surface _stack)
+                 (jetpacs-shell--schedule-repush surface))
+               jetpacs-chrome--stacks)))
   (cl-pushnew #'jetpacs-chrome--on-window-changed
               (ebp-client-window-changed-functions client)))
 
@@ -619,7 +646,7 @@ has the Companion PERSIST this text on the device."
             n))
         (funcall card nil))))
 
-(defun jetpacs-chrome--gate-view (surface node)
+(defun jetpacs-chrome--gate-view (surface node &optional analysis)
   "Signal when NODE uses what SURFACE's LIVE session does not allow.
 A per-view pre-run of the shell's GATE 1 (node types, builtins,
 features) and GATE 4 (the ratified amendments — an ungranted `wake'
@@ -629,15 +656,28 @@ lifetime.  No client (offline render, tests) is a no-op; a missing
 profile skips only GATE 1 — `--gate-spec' would signal its own
 \='no profile\=' error for every view, strictly worse than one
 push-level failure.  The authority remains the shell's gates on the
-assembled spec; this is the same check run earlier, per screen."
-  (when-let* ((client (jetpacs-client)))
-    (when (plist-get (ebp-client-profiles client)
-                     (jetpacs-shell--surface-target surface))
-      (jetpacs-shell--gate-spec client surface node nil))
-    (jetpacs-shell--gate-amendments client node)))
+assembled spec; this is the same check run earlier, per screen.
 
-(defun jetpacs-chrome--claim-screen-ids (node seen)
+ANALYSIS, when supplied, is `jetpacs-shell--analyze-spec' output.  The
+returned analysis also supplies exact ids to the caller.  Sharing this one
+walk matters for long Files and Org views: the old path independently walked
+the same tree for profile uses, amendments, and ids before the shell walked
+the complete snapshot again."
+  (let ((analysis (or analysis (jetpacs-shell--analyze-spec node))))
+    (when-let* ((client (jetpacs-client)))
+      (when (plist-get (ebp-client-profiles client)
+                       (jetpacs-shell--surface-target surface))
+        (jetpacs-shell--gate-spec client surface node nil analysis nil))
+      (jetpacs-shell--gate-amendments client node analysis))
+    ;; Claiming across screens happens separately, but an authored duplicate
+    ;; within this screen is already known by the shared analysis.
+    (jetpacs-shell--gate-ids node nil analysis nil)
+    analysis))
+
+(cl-defun jetpacs-chrome--claim-screen-ids
+    (node seen &optional (known-ids nil known-ids-p))
   "Check NODE's ids against SEEN (prior screens) and record them.
+KNOWN-IDS may be the exact list captured for an unchanged cached NODE.
 Signals `jetpacs-duplicate-node-id' when NODE repeats an id an earlier
 screen emitted, or repeats one within itself — SPEC 16.1 scopes
 uniqueness to the whole document and the Companion answers a duplicate
@@ -646,8 +686,9 @@ and SEEDED into `jetpacs-node-id-claims' (as t, never clobbering a
 minter's count), so a LATER screen's minted id routes around an earlier
 screen's literal.  Minted ids are already unique by construction — the
 signal here means a LITERAL authored id collided, and the caller turns
-it into that screen's error card."
-  (let ((ids (jetpacs-collect-node-ids node nil))
+it into that screen's error card.  Returns the ids used."
+  (let ((ids (if known-ids-p known-ids
+               (jetpacs-collect-node-ids node nil)))
         (mine (make-hash-table :test #'equal)))
     (dolist (id ids)
       (when (or (gethash id seen) (gethash id mine))
@@ -657,122 +698,237 @@ it into that screen's error card."
       (puthash id t seen)
       (when jetpacs-node-id-claims
         (unless (gethash id jetpacs-node-id-claims)
-          (puthash id t jetpacs-node-id-claims))))))
+          (puthash id t jetpacs-node-id-claims))))
+    ids))
+
+(defun jetpacs-chrome--gate-signature ()
+  "Snapshot the live session facts that make a cached view gate-valid."
+  (when-let* ((client (jetpacs-client)))
+    (list :client client
+          :profiles (copy-tree (ebp-client-profiles client))
+          :granted (copy-sequence (ebp-client-granted client))
+          :limits (copy-tree (ebp-client-limits client)))))
+
+(defun jetpacs-chrome--budget-snapshot ()
+  "Copy the render budgets at the current point in a surface build."
+  (list :main (and jetpacs-buffer-budget
+                   (cons (car jetpacs-buffer-budget)
+                         (cdr jetpacs-buffer-budget)))
+        :extra (and jetpacs-buffer-extra-budget
+                    (copy-tree jetpacs-buffer-extra-budget))))
+
+(defun jetpacs-chrome--restore-budget (snapshot)
+  "Restore render budgets from SNAPSHOT inside the current build."
+  (let ((main (plist-get snapshot :main)))
+    (when (and main jetpacs-buffer-budget)
+      (setcar jetpacs-buffer-budget (car main))
+      (setcdr jetpacs-buffer-budget (cdr main))))
+  (setq jetpacs-buffer-extra-budget
+        (copy-tree (plist-get snapshot :extra))))
+
+(defun jetpacs-chrome--same-stack-p (cached live)
+  "Whether CACHED and LIVE contain the identical immutable stack entries."
+  (and (= (length cached) (length live))
+       (cl-loop for old in cached
+                for new in live
+                always (eq old new))))
+
+(defun jetpacs-chrome--cache-compatible-p (cache stack target gate-signature)
+  "Whether CACHE can supply every STACK view below topmost TARGET.
+Budget snapshots are part of compatibility: a changed welcome limit or
+different earlier spend forces the ordinary full rebuild."
+  (and cache target (equal target (caar stack))
+       (equal gate-signature (plist-get cache :gate-signature))
+       (jetpacs-chrome--same-stack-p (plist-get cache :stack) stack)
+       (let ((screens (plist-get cache :screens))
+             (expected (jetpacs-chrome--budget-snapshot))
+             (ok t))
+         (dolist (entry (reverse stack) ok)
+           (unless (equal (car entry) target)
+             (let ((record (gethash (car entry) screens)))
+               (if (and record
+                       (eq entry (plist-get record :entry))
+                       (plist-get record :reusable)
+                       (plist-get record :analysis)
+                       (equal expected (plist-get record :before)))
+                   (setq expected (plist-get record :after))
+                 (setq ok nil))))))))
 
 (defun jetpacs-chrome--build (surface)
-  "The registered root builder: the stack as one multi_view.
-Walks bottom-first so each screen's BACK targets the one below it;
-`initial_view' is the stack TOP, so SPEC 13.4's new-surface and
-vanished-view fallbacks land where Emacs believes the user is.  Signals
-on an empty/missing stack — the shell degrades that to its error spec.
-
-A screen whose builder signals, returns a non-node, or emits what the
-session does not allow costs ITS OWN view and nothing else.  Degrading
-the whole spec instead would drop `views', which nils `current_view' at
-the shell's GATE 2 and makes the Companion clear the retained view
-\(SPEC 13.4): the back affordance and the navigation state would die
-together, on every rebuild."
+  "Build SURFACE's stack as one complete multi_view snapshot.
+Ordinary pushes rebuild every screen.  When
+`jetpacs-chrome--target-refresh-view' names the unchanged stack top, reuse
+the last lower views and run only that visible screen's builder.  The cached
+views remain in the complete snapshot required by SPEC 13.2."
   (let ((stack (gethash surface jetpacs-chrome--stacks)))
     (unless stack
       (error "jetpacs-chrome: no chrome stack for %s" surface))
     (jetpacs-buffer-with-budget
-     (let ((seen (make-hash-table :test #'equal))
-           (dock (jetpacs-chrome--dock-slot surface))
-           (drawer (jetpacs-chrome--drawer surface))
-           (globals (jetpacs-chrome--global-slot surface))
-           views prev-id)
-      (dolist (entry (reverse stack))
-        (let* ((id (car entry))
-               (back (and prev-id (jetpacs-view-switch prev-id)))
-               (budget jetpacs-buffer-budget)
-               (spans (car-safe budget))
-               (bytes (cdr-safe budget))
-               (fail nil)
-               (node (condition-case err
-                         ;; The recorder seam fires HERE, stack intact —
-                         ;; the catch below unwinds the crash away.
-                         (handler-bind
-                             ((error (lambda (e)
-                                       (jetpacs-shell--note-builder-error
-                                        (list :surface surface :screen id)
-                                        e))))
-                           (let ((n (funcall (cdr entry) back)))
-                             ;; The DRAWER (S8) joins only at the stack
-                             ;; BOTTOM — `back' is nil exactly there: the
-                             ;; root wears the hamburger, a drill wears
-                             ;; the back arrow, a guest (never the
-                             ;; bottom) never wears the host's drawer,
-                             ;; and the drawer's literal row ids stay in
-                             ;; ONE view of the document (SPEC 16.1).
-                             ;; Single-slot authored-wins.
-                             (when (and drawer (null back)
-                                        (jetpacs-root-node-p n)
-                                        (equal (plist-get n :t) "scaffold")
-                                        (not (plist-member n :drawer)))
-                               (setq n (append n (list :drawer drawer))))
-                             ;; The dock joins BEFORE the gates so what is
-                             ;; checked is what ships; `append' copies, so
-                             ;; the builder's own node is never mutated.
-                             ;; The RATIFIED injection rule
-                             ;; (CHROME-VOCABULARY v3, the standalone
-                             ;; pole): authoring ANY dock slot opts out
-                             ;; on EVERY slot — the old guard tested
-                             ;; only the slot the dock chose, leaking
-                             ;; an injected :rail over an authored
-                             ;; :bottom_bar on medium and expanded
-                             ;; windows (the S5 defect named against
-                             ;; that sentence).
-                             (when (and dock (jetpacs-root-node-p n)
-                                        (equal (plist-get n :t) "scaffold")
-                                        (not (plist-member n :bottom_bar))
-                                        (not (plist-member n :rail)))
-                               (setq n (append n (list (car dock)
-                                                       (cdr dock)))))
-                             ;; App-default FABs join before shell
-                             ;; globals: the app's creation action owns
-                             ;; this slot, while a global set to `fab'
-                             ;; falls back to the top bar.  Resolution
-                             ;; is per SCREEN owner, so guests never
-                             ;; inherit the host app's default.
-                             (setq n (jetpacs-chrome--join-app-fab
-                                      surface id n))
-                             ;; The shell globals join EVERY screen (the
-                             ;; dock's rule, not the drawer's root-only
-                             ;; one) in whichever slot
-                             ;; `jetpacs-chrome-global-actions-placement'
-                             ;; names; a taken fab slot falls back to
-                             ;; the top bar, so the placement moves the
-                             ;; affordance, not its reach.  The one
-                             ;; screen shape outside every arm's reach
-                             ;; is a BAR-LESS scaffold at `top-bar'
-                             ;; placement — the fab arms can dress it,
-                             ;; the bar arm has nothing to append to.
-                             (setq n (jetpacs-chrome--join-globals
-                                      surface n globals))
-                             (jetpacs-chrome--gate-view surface n)
-                             (jetpacs-chrome--claim-screen-ids n seen)
-                             n))
-                       (error (setq fail err) nil))))
-          (unless (or fail (jetpacs-root-node-p node))
-            (setq fail 'wrong-type-argument)
-            ;; A non-node RETURN synthesizes its failure — no signal, no
-            ;; builder stack — so the seam is told directly; the bare
-            ;; symbol is the whole story there is to keep.
-            (jetpacs-shell--note-builder-error
-             (list :surface surface :screen id) fail))
-          (when fail
-            ;; The dead screen SPENT budget it never ships; hand it back,
-            ;; or one broken screen silently truncates the healthy ones
-            ;; built after it (SPEC 4.5 counts per SurfaceSpec).
-            (when (consp budget)
-              (setcar budget spans)
-              (setcdr budget bytes))
-            (message "jetpacs-chrome: screen %s failed to build: %s"
-                     id (jetpacs-error-label fail))
-            (setq node (jetpacs-chrome--error-screen surface id back fail)))
-          (push (cons id node) views)
-          (setq prev-id id)))
-      (jetpacs-multi-view (nreverse views) (caar stack))))))
+      (let* ((seen (make-hash-table :test #'equal))
+             (dock (jetpacs-chrome--dock-slot surface))
+             (drawer (jetpacs-chrome--drawer surface))
+             (globals (jetpacs-chrome--global-slot surface))
+             (gate-signature (jetpacs-chrome--gate-signature))
+             (old-cache (gethash surface jetpacs-chrome--view-cache))
+             (reuse-cache
+              (and (jetpacs-chrome--cache-compatible-p
+                    old-cache stack jetpacs-chrome--target-refresh-view
+                    gate-signature)
+                   old-cache))
+             (old-screens (and reuse-cache (plist-get reuse-cache :screens)))
+             (new-screens (make-hash-table :test #'equal))
+             analyses views prev-id)
+        (dolist (entry (reverse stack))
+          (let* ((id (car entry))
+                 (back (and prev-id (jetpacs-view-switch prev-id)))
+                 (before (jetpacs-chrome--budget-snapshot))
+                 (budget jetpacs-buffer-budget)
+                 (spans (car-safe budget))
+                 (bytes (cdr-safe budget))
+                 (extra (copy-tree jetpacs-buffer-extra-budget))
+                 (prior-record (and old-screens (gethash id old-screens)))
+                 (record (and (not (equal id
+                                          jetpacs-chrome--target-refresh-view))
+                              prior-record))
+                 (cached (and record (plist-get record :node)))
+                 (exposure-capture (and (not cached) (list nil)))
+                 (jetpacs-buffer--exposure-capture exposure-capture)
+                 (fail nil)
+                 analysis
+                 ids
+                 node)
+            (if cached
+                (progn
+                  (setq node cached)
+                  (setq analysis (plist-get record :analysis))
+                  (jetpacs-chrome--restore-budget (plist-get record :after))
+                  ;; Restore the exact SPEC 23.1 operations captured while the
+                  ;; view was built.  Walking arbitrary action args here was
+                  ;; both slower and less exact.
+                  (jetpacs-buffer-restore-exposures
+                   (plist-get record :exposures))
+                  (setq node
+                        (condition-case err
+                            (handler-bind
+                                ((error
+                                  (lambda (e)
+                                    (jetpacs-shell--note-builder-error
+                                     (list :surface surface :screen id) e))))
+                              ;; The identical node passed this per-screen gate
+                              ;; under the identical welcome signature when it
+                              ;; entered the cache.  The shell's final gates
+                              ;; still validate the complete outgoing snapshot.
+                              (setq ids
+                                    (jetpacs-chrome--claim-screen-ids
+                                     node seen (plist-get record :ids)))
+                              node)
+                          (error (setq fail err) nil))))
+              (setq node
+                    (condition-case err
+                        ;; The recorder seam fires HERE, stack intact — the
+                        ;; catch below unwinds only this screen's crash.
+                        (handler-bind
+                            ((error
+                              (lambda (e)
+                                (jetpacs-shell--note-builder-error
+                                 (list :surface surface :screen id) e))))
+                          (let ((n (funcall (cdr entry) back)))
+                            ;; Root-only drawer; authored slots always win.
+                            (when (and drawer (null back)
+                                       (jetpacs-root-node-p n)
+                                       (equal (plist-get n :t) "scaffold")
+                                       (not (plist-member n :drawer)))
+                              (setq n (append n (list :drawer drawer))))
+                            ;; Adaptive dock; authored bar/rail opts out.
+                            (when (and dock (jetpacs-root-node-p n)
+                                       (equal (plist-get n :t) "scaffold")
+                                       (not (plist-member n :bottom_bar))
+                                       (not (plist-member n :rail)))
+                              (setq n (append n (list (car dock) (cdr dock)))))
+                            (setq n (jetpacs-chrome--join-app-fab surface id n))
+                            (setq n (jetpacs-chrome--join-globals
+                                     surface n globals))
+                            ;; A targeted refresh still runs the visible
+                            ;; builder.  When its authored node is structurally
+                            ;; unchanged under the same gate signature, reuse
+                            ;; its immutable facts instead of allocating a new
+                            ;; full-tree analysis merely to rediscover them.
+                            (if (and prior-record
+                                     (plist-get prior-record :reusable)
+                                     (plist-get prior-record :analysis)
+                                     (equal n (plist-get prior-record :node)))
+                                (progn
+                                  (setq analysis
+                                        (plist-get prior-record :analysis))
+                                  (setq ids
+                                        (jetpacs-chrome--claim-screen-ids
+                                         n seen
+                                         (plist-get prior-record :ids))))
+                              (setq analysis
+                                    (jetpacs-chrome--gate-view surface n))
+                              (setq ids
+                                    (jetpacs-chrome--claim-screen-ids
+                                     n seen (plist-get analysis :ids))))
+                            n))
+                      (error (setq fail err) nil))))
+            (unless (or fail (jetpacs-root-node-p node))
+              (setq fail 'wrong-type-argument)
+              (jetpacs-shell--note-builder-error
+               (list :surface surface :screen id) fail))
+            (when fail
+              ;; A dead screen spent budget it never ships.  Restore both
+              ;; the main and extra aggregate allowances before degrading it.
+              (when (consp budget)
+                (setcar budget spans)
+                (setcdr budget bytes))
+              (setq jetpacs-buffer-extra-budget (copy-tree extra))
+              (message "jetpacs-chrome: screen %s failed to build: %s"
+                       id (jetpacs-error-label fail))
+              (setq node (jetpacs-chrome--error-screen surface id back fail))
+              (setq analysis (jetpacs-shell--analyze-spec node)))
+            (push analysis analyses)
+            (puthash id
+                     (list :entry entry :node node :before before
+                           :after (jetpacs-chrome--budget-snapshot)
+                           :analysis analysis
+                           :ids ids
+                           :exposures
+                           (if cached
+                               (plist-get record :exposures)
+                             (nreverse (car exposure-capture)))
+                           :reusable (null fail))
+                     new-screens)
+            (push (cons id node) views)
+            (setq prev-id id)))
+        (let* ((spec (jetpacs-multi-view (nreverse views) (caar stack)))
+               (analysis
+                (jetpacs-shell--merge-analyses (nreverse analyses))))
+          (when (consp jetpacs-shell--analysis-capture)
+            (setcar jetpacs-shell--analysis-capture (cons spec analysis)))
+          (puthash surface
+                   (list :stack (copy-sequence stack)
+                         :gate-signature gate-signature
+                         :screens new-screens)
+                   jetpacs-chrome--view-cache)
+          spec)))))
+
+(defun jetpacs-chrome-defer-current-view-refresh (surface)
+  "Defer a complete SURFACE push rebuilding only its current stack top.
+The stack and budget cache are revalidated inside the eventual build.  If
+navigation, builders, or limits changed in between, `jetpacs-chrome--build'
+automatically performs an ordinary full rebuild instead."
+  (let* ((surface (jetpacs-shell--resolve-surface surface))
+         (view (caar (gethash surface jetpacs-chrome--stacks))))
+    (if (not view)
+        (jetpacs-buffer-defer-refresh surface)
+      (run-at-time
+       0 nil
+       (lambda ()
+         (let ((jetpacs-chrome--target-refresh-view view))
+           (jetpacs-buffer--refresh surface)))))))
+
+(setq jetpacs-buffer-view-refresh-function
+      #'jetpacs-chrome-defer-current-view-refresh)
 
 (cl-defun jetpacs-chrome-define-root (surface-or-owner id builder
                                                        &key required)
@@ -781,6 +937,7 @@ Call under `with-jetpacs-owner' — the shell records the owner and
 re-binds it around every build.  Returns the surface id."
   (let ((surface (jetpacs-shell--resolve-surface surface-or-owner)))
     (jetpacs-check-identifier id "screen id")
+    (remhash surface jetpacs-chrome--view-cache)
     (puthash surface (list (cons id builder)) jetpacs-chrome--stacks)
     (jetpacs-shell-define-root surface
                                (lambda () (jetpacs-chrome--build surface))
@@ -1040,6 +1197,7 @@ Also sweeps the owner's GUEST screens off foreign stacks (S4): the
 live-unregister path arrives here, not through session teardown."
   (let ((surface (jetpacs-shell--resolve-surface surface-or-owner)))
     (remhash surface jetpacs-chrome--stacks)
+    (remhash surface jetpacs-chrome--view-cache)
     (remhash surface jetpacs-chrome--guests)
     (when (stringp surface-or-owner)
       (unless (string-search ":" surface-or-owner)
@@ -1150,9 +1308,16 @@ owner's claims are gone by now and recomputing sees only the D1
 primary, leaking every secondary surface's stack — the leaked stack
 pins builder closures and answers a later drill with false success."
   (dolist (surface jetpacs-teardown-surfaces)
-    (remhash surface jetpacs-chrome--stacks)))
+    (remhash surface jetpacs-chrome--stacks)
+    (remhash surface jetpacs-chrome--view-cache)))
+
+(defun jetpacs-chrome-reset-cache ()
+  "Forget every reusable composed view."
+  (clrhash jetpacs-chrome--view-cache))
 
 (add-hook 'jetpacs-teardown-functions #'jetpacs-chrome--on-teardown)
+
+(add-hook 'jetpacs-reset-functions #'jetpacs-chrome-reset-cache)
 
 (add-hook 'jetpacs-ready-functions #'jetpacs-chrome--on-ready)
 

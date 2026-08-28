@@ -3,13 +3,15 @@
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
 ;; The on-phone half of app distribution (behavior reference: POC 1's
-;; jetpacs-app-store.el, on POC 3's layout): a Manage Apps screen
-;; listing every bundle staged under `jetpacs-app-store-staging-dirs' —
-;; one row per file name, newest copy wins — with an install or
-;; uninstall affordance according to membership in the persisted
-;; install list.
+;; jetpacs-app-store.el, on POC 3's layout): a Manage Apps screen for
+;; two deliberately different sources.  A PACKAGED app ships inside
+;; the Jetpacs APK and is enabled or disabled here; its source is never
+;; deleted.  A SIDE-LOADED bundle staged under
+;; `jetpacs-app-store-staging-dirs' is adopted or uninstalled as before.
+;; Packaged apps win a same-name collision, so an obsolete Download copy
+;; can never shadow the version distributed with Jetpacs.
 ;;
-;; Install ADOPTS: the staged file is copied into the private adopt
+;; Side-load install ADOPTS: the staged file is copied into the private adopt
 ;; directory (stripping the \".txt\" MediaStore appends to shared
 ;; .el files — the device-verified rename trap), byte-compiled
 ;; best-effort, loaded live, and recorded; the app's surfaces appear in
@@ -72,7 +74,21 @@ not one anyone edits on a phone.  Larger bundles are refused, loudly."
   :type 'integer :group 'jetpacs)
 
 (defvar jetpacs-app-store-installed nil
-  "Installed bundle names (\"name.el\"), the persisted list.")
+  "Installed side-loads and enabled packaged apps (\"name.el\").
+This remains one persisted list so the historical install-consent test used
+by app code keeps working across the packaged-app transition.")
+
+(defvar jetpacs-app-store-packaged-apps nil
+  "Trusted optional apps distributed inside the APK.
+The catalog is inert data: merely loading the app store does not require an
+app feature or run its registration function.  Distribution composition lives
+outside the foundation layer and fills this variable through the generic
+`jetpacs-packaged-apps' manifest when that satellite is on `load-path'.")
+
+;; Metadata only: this soft require never loads an app feature.  The public
+;; `jetpacs' entry adds every emacs/apps/* directory before it composes init;
+;; direct foundation-only test loads deliberately see an empty catalog.
+(require 'jetpacs-packaged-apps nil t)
 
 (defvar jetpacs-app-store--edit nil
   "The bundle the Edit screen shows:
@@ -117,6 +133,22 @@ installable over the running one.")
 
 ;;;; The scan
 
+(defun jetpacs-app-store--packaged-entry (name)
+  "The trusted packaged-app descriptor named NAME, or nil."
+  (and (stringp name)
+       (seq-find (lambda (entry)
+                   (equal (plist-get entry :name) name))
+                 jetpacs-app-store-packaged-apps)))
+
+(defun jetpacs-app-store--packaged-p (entry)
+  "Non-nil when scan ENTRY describes APK-packaged source."
+  (eq (plist-get entry :source) 'packaged))
+
+(defun jetpacs-app-store--packaged-active-p (entry)
+  "Non-nil when packaged ENTRY currently has its app identity registered."
+  (and-let* ((id (plist-get entry :app-id)))
+    (and (assoc id jetpacs-apps--registry) t)))
+
 (defun jetpacs-app-store--canonical (file)
   "FILE's bundle name: the base name with MediaStore's .txt stripped."
   (let ((name (file-name-nondirectory file)))
@@ -133,9 +165,9 @@ installable over the running one.")
       (match-string 1))))
 
 (defun jetpacs-app-store--scan ()
-  "Staged bundles, sorted by name: one plist per distinct bundle name.
-Duplicates resolve newest-wins, so the row shown is the copy that
-would install."
+  "Available apps, sorted by name: one plist per distinct app name.
+Staged duplicates resolve newest-wins; packaged entries then replace any
+same-name staged copy so the APK distribution remains authoritative."
   (let ((best (make-hash-table :test 'equal)))
     (dolist (dir jetpacs-app-store-staging-dirs)
       (when (file-directory-p dir)
@@ -148,20 +180,40 @@ would install."
     (let (entries)
       (maphash
        (lambda (name path)
-         (push (list :name name :path path
+         (push (list :name name :path path :source 'staged
                      :installed (and (member name jetpacs-app-store-installed)
                                      t)
                      :summary (ignore-errors
                                 (jetpacs-app-store--summary path)))
                entries))
        best)
+      ;; APK-packaged source is always available and wins a same-name staged
+      ;; copy.  `:installed' includes a live untracked registration so Apps
+      ;; tells the truth when a user explicitly required the app elsewhere;
+      ;; Disable can then tear that registration down as well.
+      (dolist (app jetpacs-app-store-packaged-apps)
+        (let* ((name (plist-get app :name))
+               (active (jetpacs-app-store--packaged-active-p app)))
+          (setq entries
+                (cl-delete name entries
+                           :key (lambda (entry) (plist-get entry :name))
+                           :test #'equal))
+          (push (append app
+                        (list :source 'packaged
+                              :active active
+                              :installed
+                              (and (or active
+                                       (member name
+                                               jetpacs-app-store-installed))
+                                   t)))
+                entries)))
       (sort entries (lambda (a b) (string< (plist-get a :name)
                                            (plist-get b :name)))))))
 
 (defun jetpacs-app-store--entry (name)
-  "The fresh-scan entry for bundle NAME, or nil.
+  "The fresh-scan entry for app NAME, or nil.
 The validation gate every wire action passes through: an action names a
-bundle, this resolves it against what is actually staged right now."
+catalog or staged app, and this resolves it against what is available now."
   (and (stringp name)
        (not (string-search "/" name))
        (seq-find (lambda (e) (equal (plist-get e :name) name))
@@ -170,9 +222,9 @@ bundle, this resolves it against what is actually staged right now."
 ;;;; Persistence (the create-once list file)
 
 (defconst jetpacs-app-store--template
-  ";;; apps.el --- installed Jetpacs app bundles -*- lexical-binding: t; -*-
+  ";;; apps.el --- installed and enabled Jetpacs apps -*- lexical-binding: t; -*-
 ;; Yours to edit — but the phone's Manage Apps screen also writes it,
-;; and each install/uninstall rewrites this whole file from the list
+;; and each lifecycle change rewrites this whole file from the list
 ;; below (hand comments do not survive that).
 
 (setq jetpacs-app-store-installed '(%s))
@@ -185,18 +237,39 @@ bundle, this resolves it against what is actually staged right now."
                                      jetpacs-app-store-installed " "))
                   nil jetpacs-app-store-file nil 'silent)))
 
+(defun jetpacs-app-store--activate-packaged (entry)
+  "Load and register trusted packaged app ENTRY.
+`require' performs the first activation for traditional app entry files;
+REGISTER restores activation after a live Disable left the feature loaded."
+  (let ((feature (plist-get entry :feature))
+        (register (plist-get entry :register)))
+    (unless (symbolp feature)
+      (error "Packaged app %s has no feature" (plist-get entry :name)))
+    (require feature)
+    (unless (jetpacs-app-store--packaged-active-p entry)
+      (unless (and (symbolp register) (fboundp register))
+        (error "Packaged app %s has no register function"
+               (plist-get entry :name)))
+      (funcall register))
+    (unless (jetpacs-app-store--packaged-active-p entry)
+      (error "Packaged app %s did not register"
+             (plist-get entry :name)))))
+
 (defun jetpacs-app-store-boot ()
-  "Load the persisted list, then every adopted bundle — each isolated.
+  "Load persisted choices, then activate each app — each isolated.
 One broken bundle costs itself, never the boot (the session-hook
 lesson)."
   (when (file-readable-p jetpacs-app-store-file)
     (ignore-errors (load jetpacs-app-store-file nil 'nomessage)))
   (dolist (name jetpacs-app-store-installed)
-    (let ((adopted (expand-file-name name (jetpacs-app-store--adopt-dir))))
-      (condition-case err
-          (load adopted nil 'nomessage)
-        (error (message "jetpacs-app-store: %s failed to load: %s"
-                        name (error-message-string err)))))))
+    (condition-case err
+        (if-let* ((packaged (jetpacs-app-store--packaged-entry name)))
+            (jetpacs-app-store--activate-packaged packaged)
+          (let ((adopted
+                 (expand-file-name name (jetpacs-app-store--adopt-dir))))
+            (load adopted nil 'nomessage)))
+      (error (message "jetpacs-app-store: %s failed to load: %s"
+                      name (error-message-string err))))))
 
 ;;;; Install / uninstall
 
@@ -212,6 +285,44 @@ lesson)."
     (cl-pushnew name jetpacs-app-store-installed :test #'equal)
     (jetpacs-app-store--persist)))
 
+(defun jetpacs-app-store--enable-packaged (entry)
+  "Enable packaged ENTRY and persist that choice after activation succeeds."
+  (let ((before (copy-sequence jetpacs-app-store-installed))
+        (name (plist-get entry :name)))
+    ;; Make install consent visible while the feature loads: packaged apps may
+    ;; use this same historical register for managed defaults and policy.
+    (cl-pushnew name jetpacs-app-store-installed :test #'equal)
+    (condition-case err
+        (progn
+          (jetpacs-app-store--activate-packaged entry)
+          (jetpacs-app-store--persist))
+      (error
+       (setq jetpacs-app-store-installed before)
+       (when-let* ((unregister (plist-get entry :unregister)))
+         (when (fboundp unregister)
+           (ignore-errors (funcall unregister))))
+       (signal (car err) (cdr err))))))
+
+(defun jetpacs-app-store--disable-packaged (entry)
+  "Persist packaged ENTRY as disabled and tear down its live registration.
+Return non-nil when the live app is also inactive.  The durable choice is
+written first, so even imperfect Elisp teardown cannot reactivate it next
+boot."
+  (let ((name (plist-get entry :name))
+        (unregister (plist-get entry :unregister)))
+    (setq jetpacs-app-store-installed
+          (delete name jetpacs-app-store-installed))
+    (jetpacs-app-store--persist)
+    (condition-case err
+        (progn
+          (when (and (symbolp unregister) (fboundp unregister))
+            (funcall unregister))
+          (not (jetpacs-app-store--packaged-active-p entry)))
+      (error
+       (message "jetpacs-app-store: %s live disable failed: %s"
+                name (error-message-string err))
+       nil))))
+
 (defun jetpacs-app-store--uninstall (name)
   "Unrecord NAME, delete its adopted copies, unload what elisp can."
   (setq jetpacs-app-store-installed
@@ -226,27 +337,38 @@ lesson)."
 
 (defun jetpacs-app-store--row (entry)
   (let* ((name (plist-get entry :name))
+         (label (or (plist-get entry :label) (file-name-base name)))
+         (packaged (jetpacs-app-store--packaged-p entry))
          (installed (plist-get entry :installed)))
     (jetpacs-chrome-row
-     (file-name-base name)
+     label
      :subtitle (or (plist-get entry :summary) name)
-     :icon (if installed "check_circle" "apps")
+     :icon (or (and packaged (plist-get entry :icon))
+               (if installed "check_circle" "apps"))
      :trailing
      (if installed
-         ;; Installed rows carry the whole lifecycle: edit the adopted
-         ;; source, or uninstall (launching lives on the Running rows —
-         ;; a bundle that registered an app via `jetpacs-defapp').
-         (list
-          (jetpacs-icon-button
-           "edit"
-           (jetpacs-action "apps.edit" :args `(:bundle ,name)
-                           :when-offline "drop")
-           :content-description (format "Edit %s" name))
-          (jetpacs-icon-button
-           "delete"
-           (jetpacs-action "apps.uninstall" :args `(:bundle ,name)
-                           :when-offline "drop")
-           :content-description (format "Uninstall %s" name)))
+         (if packaged
+             ;; Packaged source belongs to the APK, so the honest inverse is
+             ;; Disable: unregister live and stop activating it at boot.
+             (jetpacs-icon-button
+              "power_settings_new"
+              (jetpacs-action "apps.disable" :args `(:bundle ,name)
+                              :when-offline "drop")
+              :content-description (format "Disable %s" label))
+           ;; Side-loaded rows carry the whole lifecycle: edit the adopted
+           ;; source, or uninstall (launching lives on the Running rows —
+           ;; a bundle that registered an app via `jetpacs-defapp').
+           (list
+            (jetpacs-icon-button
+             "edit"
+             (jetpacs-action "apps.edit" :args `(:bundle ,name)
+                             :when-offline "drop")
+             :content-description (format "Edit %s" name))
+            (jetpacs-icon-button
+             "delete"
+             (jetpacs-action "apps.uninstall" :args `(:bundle ,name)
+                             :when-offline "drop")
+             :content-description (format "Uninstall %s" name))))
        (jetpacs-icon-button
         "download"
         (jetpacs-action
@@ -254,46 +376,54 @@ lesson)."
          :when-offline "drop"
          ;; §14.1 object form (amendment #168): installing is running
          ;; code; the gate says so, wearing an authored face.
-         :confirm (list :title "Install app?"
+         :confirm (list :title (if packaged "Enable app?" "Install app?")
                         :icon "download"
-                        :text (format "Installing runs %s with your Emacs's full permissions."
-                                      name)
-                        :confirm-label "Install"
+                        :text (if packaged
+                                  (format "%s is included with Jetpacs. Enabling it runs the app with your Emacs's full permissions."
+                                          label)
+                                (format "Installing runs %s with your Emacs's full permissions."
+                                        name))
+                        :confirm-label (if packaged "Enable" "Install")
                         :dismiss-label "Cancel"))
-        :content-description (format "Install %s" name)))
+        :content-description (format "%s %s"
+                                     (if packaged "Enable" "Install") label)))
      :key (jetpacs-wire-id "as" name))))
 
 (defun jetpacs-app-store--view ()
   "The combined Apps view (owner decision 2026-08-06 pass 2):
 installing, removing, editing, and launching in one screen.  Running =
 Tier 1 apps registered via `jetpacs-defapp' (tap to launch); Installed
-= adopted bundles (edit/uninstall); Available = staged bundles
-(install, behind the consent gate)."
-  (let* ((entries (jetpacs-app-store--scan))
-         (installed (cl-remove-if-not
-                     (lambda (e) (plist-get e :installed)) entries))
-         (available (cl-remove-if
-                     (lambda (e) (plist-get e :installed)) entries)))
-    (jetpacs-chrome-screen
-     "Apps"
-     (apply #'jetpacs-lazy-column
-            (append
-             (when jetpacs-apps--registry
-               (cons (jetpacs-section-header "Running")
-                     (mapcar #'jetpacs-apps--card jetpacs-apps--registry)))
-             (when installed
-               (cons (jetpacs-section-header "Installed")
-                     (mapcar #'jetpacs-app-store--row installed)))
-             (when available
-               (cons (jetpacs-section-header "Available")
-                     (mapcar #'jetpacs-app-store--row available)))
-             (unless (or jetpacs-apps--registry entries)
-               (list (jetpacs-empty-state
-                      :icon "apps" :title "No apps"
-                      :caption
-                      (format "Drop a bundle .el into %s and refresh."
-                              (car jetpacs-app-store-staging-dirs)))))))
-     :on-refresh (jetpacs-action "apps.refresh-store" :when-offline "drop"))))
+= enabled packaged apps (disable) plus adopted bundles (edit/uninstall);
+Available = disabled packaged apps plus staged bundles (enable/install,
+behind the consent gate)."
+  (or (jetpacs-apps-unavailable-view)
+      (let* ((entries (jetpacs-app-store--scan))
+             (installed (cl-remove-if-not
+                         (lambda (e) (plist-get e :installed)) entries))
+             (available (cl-remove-if
+                         (lambda (e) (plist-get e :installed)) entries)))
+        (jetpacs-chrome-screen
+         "Apps"
+         (apply #'jetpacs-lazy-column
+                (append
+                 (when jetpacs-apps--registry
+                   (cons (jetpacs-section-header "Running")
+                         (mapcar #'jetpacs-apps--card
+                                 jetpacs-apps--registry)))
+                 (when installed
+                   (cons (jetpacs-section-header "Installed")
+                         (mapcar #'jetpacs-app-store--row installed)))
+                 (when available
+                   (cons (jetpacs-section-header "Available")
+                         (mapcar #'jetpacs-app-store--row available)))
+                 (unless (or jetpacs-apps--registry entries)
+                   (list (jetpacs-empty-state
+                          :icon "apps" :title "No apps"
+                          :caption
+                          (format "Drop a bundle .el into %s and refresh."
+                                  (car jetpacs-app-store-staging-dirs)))))))
+         :on-refresh
+         (jetpacs-action "apps.refresh-store" :when-offline "drop")))))
 
 (defun jetpacs-app-store--refresh ()
   (jetpacs-flow-continue
@@ -457,22 +587,56 @@ install action's decision to make, not a save's."
      ((null entry) 'rejected)
      ((plist-get entry :installed) 'accepted) ; idempotent
      (t
-      ;; Adoption reads, compiles, and LOADS: continuation work, and its
-      ;; outcome reports by toast (D2 keeps the dispatch immediate).
+      ;; Enabling or adoption LOADS code: continuation work, with its outcome
+      ;; reported by toast (D2 keeps the dispatch immediate).
       (jetpacs-flow-continue
        (lambda ()
-         (condition-case err
-             (progn (jetpacs-app-store--install entry)
-                    (jetpacs-toast (format "Installed %s"
-                                           (plist-get entry :name))))
-           (error (jetpacs-toast (format "Install failed: %s"
-                                         (error-message-string err)))))
+         (let* ((packaged (jetpacs-app-store--packaged-p entry))
+                (verb (if packaged "Enable" "Install"))
+                (past (if packaged "Enabled" "Installed"))
+                (label (or (plist-get entry :label)
+                           (plist-get entry :name))))
+           (condition-case err
+               (progn
+                 (if packaged
+                     (jetpacs-app-store--enable-packaged entry)
+                   (jetpacs-app-store--install entry))
+                 (jetpacs-toast (format "%s %s" past label)))
+             (error
+              (jetpacs-toast
+               (format "%s failed: %s" verb
+                       (error-message-string err))))))
          (ignore-errors (jetpacs-shell-push jetpacs-app-store-surface))))
       'accepted))))
 
+(defun jetpacs-app-store--action-disable (args _params)
+  "Disable a packaged app without deleting its APK-distributed source."
+  (let ((entry (jetpacs-app-store--entry (plist-get args :bundle))))
+    (if (not (and entry
+                  (jetpacs-app-store--packaged-p entry)
+                  (plist-get entry :installed)))
+        'rejected
+      (jetpacs-flow-continue
+       (lambda ()
+         (condition-case err
+             (let ((live-disabled
+                    (jetpacs-app-store--disable-packaged entry))
+                   (label (or (plist-get entry :label)
+                              (plist-get entry :name))))
+               (jetpacs-toast
+                (if live-disabled
+                    (format "Disabled %s" label)
+                  (format "%s will be disabled after restart" label))))
+           (error
+            (jetpacs-toast
+             (format "Disable failed: %s" (error-message-string err)))))
+         (ignore-errors (jetpacs-shell-push jetpacs-app-store-surface))))
+      'accepted)))
+
 (defun jetpacs-app-store--action-uninstall (args _params)
   (let ((name (plist-get args :bundle)))
-    (if (not (member name jetpacs-app-store-installed))
+    (if (or (jetpacs-app-store--packaged-entry name)
+            (not (member name jetpacs-app-store-installed)))
         'rejected
       (jetpacs-flow-continue
        (lambda ()
@@ -484,9 +648,15 @@ install action's decision to make, not a save's."
 
 (with-jetpacs-owner "jetpacs.app-store"
   (jetpacs-chrome-define-root jetpacs-app-store-surface "home"
-                              (lambda (_back) (jetpacs-app-store--view))))
+                              (lambda (_back) (jetpacs-app-store--view))
+                              ;; The global drawer reaches this with the
+                              ;; receiver-local `surface.open' builtin.  Such a
+                              ;; target must already exist in the durable
+                              ;; catalog, including after a cold cache load.
+                              :required t))
 (jetpacs-defaction "apps.refresh-store" #'jetpacs-app-store--action-refresh)
 (jetpacs-defaction "apps.install" #'jetpacs-app-store--action-install)
+(jetpacs-defaction "apps.disable" #'jetpacs-app-store--action-disable)
 (jetpacs-defaction "apps.uninstall" #'jetpacs-app-store--action-uninstall)
 (jetpacs-defaction "apps.edit" #'jetpacs-app-store--action-edit)
 (jetpacs-defaction "jetpacs.app-store.save" #'jetpacs-app-store--action-save)

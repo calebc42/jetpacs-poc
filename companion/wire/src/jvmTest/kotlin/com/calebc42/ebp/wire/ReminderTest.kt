@@ -30,6 +30,7 @@ class ReminderTest {
                     put("node_types", JsonArray(listOf("text").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_reminders" to maxReminders),

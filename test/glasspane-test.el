@@ -988,28 +988,37 @@ the symbol's boolean custom-type is what derives its switch."
 ;;;; G3 — keystone: glasspane-ui.el
 
 (ert-deftest glasspane-test-ui-settings-nodes ()
-  "Settings body shapes: the app screen is the saved searches ALONE
-after §3 step 2 (the TODO/tags editors are the foundation's Org
-workflow satellite now — jetpacs-org-settings-test.el owns them), and
-the body, the satellite link, and the pushed screen all round-trip
-the canonical wire encoding."
+  "Settings body shapes: Area membership, confirmed demo generators, and
+saved searches stay app opinions; flat TODO/tag editors remain in Org workflow."
   (require 'glasspane-ui)
-  (let ((glasspane-org-custom-agendas '(("Errands" . "tags:errand"))))
+  (let ((glasspane-org-custom-agendas '(("Errands" . "tags:errand")))
+        (org-tag-alist '((:startgrouptag) ("Area") (:grouptags)
+                         ("House") ("Auto") (:endgrouptag))))
     (let* ((body (glasspane-ui--settings-body))
            (json (jetpacs-node->canonical-json body)))
       (should (equal (plist-get body :t) "lazy_column"))
+      (should (string-search "Area Tags" json))
+      (should (string-search "House" json))
+      (should (string-search "Auto" json))
+      (should (string-search "settings.areas.save" json))
+      (should (string-search "Demo Content" json))
+      (should (string-search "demo.setup-org" json))
+      (should (string-search "demo.setup" json))
+      (should (string-search "Regenerate Org demo?" json))
+      (should (string-search "glasspane-demo-*" json))
       (should (string-search "Errands" json))
       (should (string-search "tags:errand" json))
       (should (string-search "settings.agenda.edit" json))
       (should (string-search "settings.agenda.delete" json))
-      ;; The moved editors must NOT resurface here.
+      ;; The generic moved editors must NOT resurface here.
       (should-not (string-search "Sequence 1" json))
       (should-not (string-search "settings.todo" json))
       (should-not (string-search "org-tags" json)))
     (let ((json (jetpacs-node->canonical-json
                  (glasspane-ui--settings-link))))
       (should (string-search "glasspane.settings.open" json))
-      (should (string-search "Saved searches" json)))
+      (should (string-search
+               "Area tags, demo content, and saved searches" json)))
     (let ((screen (glasspane-ui--settings-screen nil)))
       (should (equal (plist-get screen :t) "scaffold"))
       (should (stringp (jetpacs-node->canonical-json screen))))))
@@ -1112,6 +1121,21 @@ the registry."
               ;; (The settings.tags / settings.todo.* arms left with §3
               ;; step 2 — jetpacs-org-settings-test.el covers the
               ;; foundation's jetpacs.org.* family now.)
+              ;; The app-owned Area subset writes one native tag group.
+              (should (eq (run "settings.areas.save"
+                               '(:value ["House" "Auto"]))
+                          'accepted))
+              (should (equal
+                       (jetpacs-org-settings-tag-group-members "Area")
+                       '("House" "Auto")))
+              (should (assq 'org-tag-alist saved))
+              (should (eq (run "settings.areas.save"
+                               '(:value ["Bad Tag"]))
+                          'rejected))
+              (should (eq (run "settings.areas.save" '(:value []))
+                          'accepted))
+              (should-not
+               (jetpacs-org-settings-tag-group-members "Area"))
               ;; settings.agenda.edit: dialog verb — no-client refusal.
               (should (eq (run "settings.agenda.edit" '(:name 42)) 'rejected))
               (should (eq (run "settings.agenda.edit" '(:name "Errands"))
@@ -1394,7 +1418,7 @@ signalling out of the builder."
               (should (string-search "Remember the roses." json))
               (should (string-search "\"syntax\":\"org\"" json))
               ;; Done title: color degrade, never :strike (gap #7).
-              (should (string-search "on_surface_variant" json))
+              (should (string-search "on_surface" json))
               (should-not (string-search "strike" json))
               ;; Tag chips ride search.by-tag.
               (should (string-search "search.by-tag" json)))
@@ -1831,7 +1855,7 @@ wire encoding."
       (should (string-search "\"token\":\"tok-arch\"" json))
       (should (string-search "Archive this subtree?" json))
       ;; The done title takes the color degrade (gap #7), never strike.
-      (should (string-search "on_surface_variant" json))
+      (should (string-search "on_surface" json))
       (should-not (string-search "strike" json))
       (should (string-search "search.by-tag" json)))
     ;; No tokens -> a static card: no tap, no long-tap, no swipes.
@@ -1847,6 +1871,7 @@ wire encoding."
                   '(:file "/v/tasks.org" :clocked-in nil)
                   '(:main "detail-token"))))))
     (should (string-search "detail.open-file" json))
+    (should (string-search "\"open_surface\":\"app:jetpacs.files\"" json))
     (should (string-search "open_in_new" json))
     (should (string-search "Open in file" json))
     (should (string-search "detail-token" json)))
@@ -2869,7 +2894,7 @@ all pure, over fixture alists."
                           (priority . "B")))))
             (should (= (length spans) 2))
             (should (equal (plist-get (cadr spans) :color)
-                           "on_surface_variant"))))
+                           "on_surface"))))
       (setq-default org-done-keywords old))))
 
 (ert-deftest glasspane-test-views-rendering-roundtrip ()
@@ -4479,7 +4504,8 @@ day-named date as one block with the day name recomputed in the C
 locale, whatever follows the date (times, repeater cookies) rides
 along unchanged, and the fixed-width stamp keeps table alignment
 intact."
-  (let ((content (cdr (assoc "trackers.org" glasspane-demo--org-files))))
+  (let ((content (cdr (assoc "glasspane-demo-trackers.org"
+                             glasspane-demo--org-files))))
     (should (equal (glasspane-demo--shift-timestamps content 0) content)))
   (let* ((sample (concat "DEADLINE: <2026-07-06 Mon>\n"
                          "SCHEDULED: <2026-07-05 Sun +1w>\n"
@@ -4502,19 +4528,20 @@ intact."
     (should (string-search "| [2026-07-01 Wed] |       40 |" shifted))))
 
 (ert-deftest glasspane-test-demo-seed ()
-  "Corpus seeding over a throwaway vault: both write targets derive
-from the roots defcustoms (never hardcoded paths — the G8 rule),
-every written file re-reads as parseable org INSIDE the ebp-org
-allowlist, the corpus's IDs are unique across files (id: links must
-land on exactly one entry), and the anchor-dated stamp lands on the
-day the seed ran."
+  "The regenerated corpus is namespaced, parseable, and representative.
+It preserves an ordinary inbox, declares native Areas (including House+Bills
+and Auto+Bills intersections), exercises the TODO workflow and sibling
+archives, keeps IDs unique, and shifts its anchor stamp onto the setup day."
   (let* ((vault (make-temp-file "glasspane-demo-vault" t))
          (org-directory (file-name-as-directory vault))
          (org-agenda-files nil)
          (ebp-org-roots nil)
+         (sentinel (expand-file-name "inbox.org" vault))
          (ids nil))
     (unwind-protect
         (progn
+          (should (commandp 'glasspane-demo-setup))
+          (should (commandp 'glasspane-demo-setup-org))
           ;; The org-target derivation, both arms: nil roots fall
           ;; through to `org-directory'; an explicit head anchors to it.
           (should (equal (glasspane-demo--org-target) org-directory))
@@ -4527,8 +4554,19 @@ day the seed ran."
           (should (equal glasspane-demo-directory
                          (expand-file-name "glasspane-demo"
                                            jetpacs-files-default-dir)))
+          ;; The on-device buttons are easy to reach, so fixture names are a
+          ;; runtime safety boundary: never replace a plausible real file.
+          (write-region "#+TITLE: My real inbox\n" nil sentinel nil 'silent)
+          (dolist (spec glasspane-demo--org-files)
+            (should (glasspane-demo--safe-org-filename-p (car spec))))
+          (let ((glasspane-demo--org-files '(("inbox.org" . "unsafe"))))
+            (should-error (glasspane-demo-setup-org)))
           (let ((dir (glasspane-demo-setup-org)))
             (should (equal dir org-directory))
+            (should (equal (with-temp-buffer
+                             (insert-file-contents sentinel)
+                             (buffer-string))
+                           "#+TITLE: My real inbox\n"))
             (dolist (spec glasspane-demo--org-files)
               (let ((file (expand-file-name (car spec) dir)))
                 (should (file-exists-p file))
@@ -4545,6 +4583,61 @@ day the seed ran."
                   (while (re-search-forward
                           "^[ \t]*:ID: +\\(\\S-+\\)[ \t]*$" nil t)
                     (push (match-string 1) ids)))))
+            ;; Reset means reset even when one generated file is open and
+            ;; locally modified; the refreshed buffer must match durable disk.
+            (let* ((guide-file
+                    (expand-file-name "glasspane-demo-guide.org" dir))
+                   (guide-buffer (find-file-noselect guide-file)))
+              (with-current-buffer guide-buffer
+                (erase-buffer)
+                (insert "locally mangled demo")
+                (set-buffer-modified-p t))
+              (glasspane-demo-setup-org dir)
+              (with-current-buffer guide-buffer
+                (should-not (buffer-modified-p))
+                (should (string-prefix-p "#+TITLE: Exploring Glasspane"
+                                         (buffer-string)))))
+            ;; FILETAGS supplies file/heading inheritance for Health.
+            (let* ((health-file
+                    (expand-file-name "glasspane-demo-health.org" dir))
+                   (health (glasspane-areas--scan-file health-file)))
+              (should (member "Health" (plist-get health :areas)))
+              (should (equal (plist-get health :file-areas) '("Health"))))
+            ;; Heading-local members demonstrate both example intersections.
+            (let* ((tracker-file
+                    (expand-file-name "glasspane-demo-trackers.org" dir))
+                   (scan (glasspane-areas--scan-file tracker-file))
+                   (items (plist-get scan :items))
+                   (grocery
+                    (cl-find "Weekly grocery run" items
+                             :key (lambda (item) (alist-get 'headline item))
+                             :test #'equal))
+                   (insurance
+                    (cl-find "Call the insurance company about the claim"
+                             items
+                             :key (lambda (item) (alist-get 'headline item))
+                             :test #'equal)))
+              (should (equal (append (alist-get 'areas grocery) nil)
+                             '("House" "Bills")))
+              (should (equal (append (alist-get 'areas insurance) nil)
+                             '("Auto" "Bills"))))
+            ;; The Projects source advertises every primary workflow state,
+            ;; including the NEXT/WAITING chips missing from the old corpus.
+            (let ((keywords
+                   (glasspane-projects--file-todo-keywords
+                    (expand-file-name "glasspane-demo-projects.org" dir))))
+              (dolist (keyword '("TODO" "NEXT" "WAITING"
+                                 "DONE" "CANCELLED"))
+                (should (member keyword keywords))))
+            ;; A sibling _archive is discoverable from its source Resource.
+            (let ((archives
+                   (glasspane-resources-archives-for-files
+                    (list (expand-file-name
+                           "glasspane-demo-projects.org" dir)))))
+              (should (= (length archives) 1))
+              (should (string-suffix-p
+                       "glasspane-demo-projects.org_archive"
+                       (plist-get (car archives) :path))))
             ;; Unique-ID lint across the whole corpus.
             (should (> (length ids) 0))
             (should (= (length ids)
@@ -4557,8 +4650,13 @@ day the seed ran."
                                (format-time-string "%Y-%m-%d %a")))
                      (with-temp-buffer
                        (insert-file-contents
-                        (expand-file-name "inbox.org" dir))
+                        (expand-file-name "glasspane-demo-inbox.org" dir))
                        (buffer-string))))))
+      (dolist (buffer (buffer-list))
+        (when-let* ((file (buffer-file-name buffer))
+                    ((file-in-directory-p file vault)))
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)))
       (delete-directory vault t))))
 
 (ert-deftest glasspane-test-demo-handlers ()
@@ -4600,7 +4698,7 @@ squatting where the target directory must go) notifies, then answers
                 (ebp-org-roots nil))
             (should (eq (funcall setup-org nil params) 'accepted))
             (should (file-exists-p
-                     (expand-file-name "health.org" vault))))
+                     (expand-file-name "glasspane-demo-health.org" vault))))
           (should (= pushes 0))
           (should (= (length continuations) 1))
           (funcall (car continuations))
@@ -4764,7 +4862,8 @@ unknown theme, and a load that SIGNALS — never a swallowed
   ;; the opener's push registers a sanctioned guest, and the gate
   ;; delegates to `jetpacs-guest-delegation-function' instead — scoped
   ;; to the screen's lifetime, not granted forever.
-  (dolist (name '("settings.agenda.edit" "settings.agenda.delete"
+  (dolist (name '("settings.areas.save"
+                  "settings.agenda.edit" "settings.agenda.delete"
                   "glasspane.packages.install"))
     (should (gethash name jetpacs-action-handlers))
     (should-not (gethash name jetpacs--any-surface-actions)))
@@ -5094,7 +5193,7 @@ point: a new screen cannot ship unreachable.")
 (defconst glasspane-test--non-opening-verbs
   '("agenda.nav" "agenda.save-custom" "agenda.select-date"
     "agenda.set-mode" "agenda.set-month" "agenda.today" "config.sync"
-    "areas.drill"
+    "areas.drill" "areas.filter"
     "demo.setup" "demo.setup-org" "detail.open-file"
     "detail.planning.edit" "detail.save"
     "detail.toggle-read" "files.filter"
@@ -5109,11 +5208,12 @@ point: a new screen cannot ship unreachable.")
     "org.babel.execute" "org.link.open"
     "org.search.run" "org.table.add-col" "org.table.add-row"
     "org.table.cell-menu" "org.table.edit" "resources.open-file"
+    "resources.return"
     "review.habits.open"
     "search.by-tag"
     "search.clear-filters" "search.update-filter"
     "settings.agenda.delete" "settings.agenda.edit"
-    "settings.agenda.save"
+    "settings.agenda.save" "settings.areas.save"
     "srs.answer.page" "srs.answer.show" "srs.item.create"
     "srs.postpone" "srs.quit" "srs.rate" "srs.review.start"
     "srs.suspend" "srs.undo" "tasks.filter" "views.cal.select-date"
@@ -5121,8 +5221,8 @@ point: a new screen cannot ship unreachable.")
     "views.rendering" "views.reorder" "views.save")
   "Every verb that opens NO Glasspane peer screen of its own, and therefore
 needs no hub entry: the in-screen controls (filters, navigation, ratings,
-cell and heading mutations), the dialog-fired saves, the M-x-only seeders
-(demo.setup*), the drill-ins reached FROM a screen the hub opens, and the
+cell and heading mutations), the dialog-fired saves, the confirmed Settings/M-x
+seeders (demo.setup*), the drill-ins reached FROM a screen the hub opens, and the
 explicit handoffs into native Jetpacs surfaces (Resources files and Habits).
 Classification only — the list exists so the inventory below is total.")
 

@@ -15,6 +15,10 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
+/** Constant, non-sensitive diagnostic for strict retained-presentation state
+ * admission. Shared with the Android receiver-local offline fallback. */
+const val VARIANT_SAVE_FAILURE_MESSAGE = "Could not save the presentation choice"
+
 /** Static configuration for one Companion endpoint. */
 data class CompanionConfig(
     val serverName: String,
@@ -27,6 +31,8 @@ data class CompanionConfig(
     val surfaceProfiles: JsonObject,
     /** The welcome limits object (SPEC 4.5). */
     val limits: JsonObject,
+    /** EBP schemas plus receiver-selected renderer extension admission data. */
+    val nodeVocabulary: NodeVocabulary = EBP_NODE_VOCABULARY,
     /** SPEC 20.1: the device report, echoed in the welcome when `capabilities`
      * or `triggers` is granted. Its `caps` are the exact capability.invoke
      * catalog this Companion supports; empty means neither module is offered. */
@@ -60,7 +66,10 @@ class CompanionEngine(
         nodeTypesFromProfiles(config.surfaceProfiles, "app"),
         nodeTypesFromProfiles(config.surfaceProfiles, "notification"),
         builtinsFromProfiles(config.surfaceProfiles, "app"),
-        builtinsFromProfiles(config.surfaceProfiles, "notification")),
+        builtinsFromProfiles(config.surfaceProfiles, "notification"),
+        featuresFromProfiles(config.surfaceProfiles, "app"),
+        featuresFromProfiles(config.surfaceProfiles, "notification"),
+        config.nodeVocabulary),
     /** Shared across connections AND restarts: the SPEC 15 durable queue. */
     val queue: DurableQueue = DurableQueue(
         MemoryQueueStore(),
@@ -95,10 +104,16 @@ class CompanionEngine(
      * endpoint's, what to draw is the application's). */
     var surfaceListener: ((String) -> Unit)? = null
 
+    /** Narrow presentation hook for a retained variant selection. Unlike a
+     * surface update, this does not replace or republish the SurfaceSpec. */
+    var variantListener: ((String, String, String) -> Unit)? = null
+
+    /** Constant, non-sensitive local diagnostic for a receiver-owned state
+     * transition that could not satisfy durable admission. */
+    var localStateProblemListener: ((String) -> Unit)? = null
+
     private val decoder = FrameDecoder()
 
-    /** Re-entry marker for feed()'s post-fault drain: no new bytes. */
-    private val EMPTY_CHUNK = ByteArray(0)
     private var pendingPairingId: String? = null
 
     /** SPEC 9.1: the authenticated pairing identity, for host state that must
@@ -119,6 +134,12 @@ class CompanionEngine(
     // thread and the reader thread share one ordered sink (SPEC 7.4).
     @Synchronized
     fun feed(bytes: ByteArray) {
+        feed(bytes, 0, bytes.size)
+    }
+
+    /** Feed a valid slice of a reusable transport read buffer. */
+    @Synchronized
+    fun feed(bytes: ByteArray, offset: Int, length: Int) {
         if (state == SessionState.CLOSED) return
         // A recoverable body fault unwinds the decoder's drain loop, so any
         // frames PIPELINED BEHIND the bad one stay buffered. Re-entering with
@@ -128,12 +149,13 @@ class CompanionEngine(
         // never answered until more bytes happen to arrive — the unbounded
         // stall amendment #91 forbids. Terminates: every pass either drains
         // to completion or consumes at least one more whole frame.
-        var input: ByteArray? = bytes
-        while (input != null) {
-            val chunk = input
-            input = null
+        var sourceOffset = offset
+        var sourceLength = length
+        var drain = true
+        while (drain) {
+            drain = false
             try {
-                decoder.feed(chunk) { msg ->
+                decoder.feed(bytes, sourceOffset, sourceLength) { msg ->
                     if (state != SessionState.CLOSED) {
                         try {
                             dispatch(msg)
@@ -151,13 +173,21 @@ class CompanionEngine(
                 // a Parse Error with id:null; the stream stayed synchronized,
                 // so the connection MAY (and here does) continue.
                 emitFramingError(-32700, "Parse error", "parse-error")
-                if (state != SessionState.CLOSED) input = EMPTY_CHUNK
+                if (state != SessionState.CLOSED) {
+                    sourceOffset = 0
+                    sourceLength = 0
+                    drain = true
+                }
             } catch (e: InvalidRequest) {
                 // SPEC 6.2/4.1: a non-object top level, batch array, or
                 // duplicate member names get one Invalid Request with
                 // id:null; continue.
                 emitFramingError(-32600, "Invalid Request", "invalid-request")
-                if (state != SessionState.CLOSED) input = EMPTY_CHUNK
+                if (state != SessionState.CLOSED) {
+                    sourceOffset = 0
+                    sourceLength = 0
+                    drain = true
+                }
             }
         }
     }
@@ -388,6 +418,19 @@ class CompanionEngine(
                     config.limits.reqLong("max_event_bytes"))
                     sendRequest("event.action", params) { _, _ -> }
             }
+            "variant.switch" -> {
+                val id = descriptor.stringOrNull("id") ?: return
+                val requested = descriptor.stringOrNull("value")
+                val next = surfaces.resolveVariantSwitch(surface, id, requested) ?: return
+                // Retained presentation moves only after the complete
+                // input_state fits its advertised bound and the draft commit
+                // succeeds. A failed commit leaves both UI and wire still.
+                if (!tryPublishState(surface, id, JsonPrimitive(next))) {
+                    localStateProblemListener?.invoke(VARIANT_SAVE_FAILURE_MESSAGE)
+                    return
+                }
+                variantListener?.invoke(surface, id, next)
+            }
             "trigger.fire" -> {
                 // SPEC 14.2/21.5: fire the named manual trigger through the
                 // normal pipeline; requires the triggers capability.
@@ -395,7 +438,7 @@ class CompanionEngine(
                 val id = descriptor.stringOrNull("id") ?: return
                 pendingPairingId?.let { firing.fireManual(it, id, "tap") }
             }
-            "clipboard.copy", "share.send", "companion.settings.open" ->
+            "surface.open", "clipboard.copy", "share.send", "companion.settings.open" ->
                 hostBuiltinListener?.invoke(descriptor.stringOr("builtin"), descriptor)
             // dialog.submit/dismiss are valid only inside their dialog; the
             // renderer routes those through DialogContext. Reaching here is an
@@ -505,6 +548,12 @@ class CompanionEngine(
                         integralLongOrNull(descriptor["ttl_s"])
                             ?: throw NoSuchElementException("ttl_s"))) {
                     is AdmitResult.Admitted -> {
+                        descriptor.stringOrNull("open_surface")?.let { target ->
+                            hostBuiltinListener?.invoke("surface.open", buildJsonObject {
+                                put("builtin", "surface.open")
+                                put("surface", target)
+                            })
+                        }
                         if (policy == "wake" && state != SessionState.READY &&
                             queue.effectiveNow() - lastWakeMs >= 60_000) {
                             lastWakeMs = queue.effectiveNow()
@@ -530,6 +579,15 @@ class CompanionEngine(
                 }
             }
             else -> { // drop: live delivery only (SPEC 15.1)
+                // Amendment #175: the receiver-local presentation adjunct is
+                // independent of remote availability. Confirmation has already
+                // been resolved by the host before this funnel is entered.
+                descriptor.stringOrNull("open_surface")?.let { target ->
+                    hostBuiltinListener?.invoke("surface.open", buildJsonObject {
+                        put("builtin", "surface.open")
+                        put("surface", target)
+                    })
+                }
                 if (state != SessionState.READY) return
                 sendRequest("event.action", params) { result, error ->
                     callback?.invoke(result?.stringOr("status"), error)
@@ -544,24 +602,24 @@ class CompanionEngine(
      * P1 #2 flush barrier holds trivially — nothing is ever pending.
      * State-before-action ordering falls out of the shared ordered sink.
      */
-    private val syncingDirty = LinkedHashSet<Pair<String, String>>()
+    // The accepted revision is part of the occurrence, not something READY
+    // may re-read from a newer snapshot. Assignment makes the latest edit of
+    // one (surface,id) win while LinkedHashMap preserves deterministic flush
+    // order across distinct fields.
+    private val syncingDirty = LinkedHashMap<Pair<String, String>, Long>()
 
-    @Synchronized
-    fun publishState(surface: String, id: String, value: JsonElement?,
-                     caret: Int? = null) {
-        // SPEC 14.6: a password node MUST NOT emit state.changed, and
-        // only stateful nodes in the accepted snapshot have a wire
-        // address at all.
-        if (!surfaces.isStatefulNode(surface, id)) return
-        if (surfaces.isPasswordNode(surface, id)) return
-        surfaces.putDraft(surface, id, value)
+    /** Publish the already-admitted draft through the ordinary §14.6 wire
+     * path. The caller has committed the store mutation first. */
+    private fun publishCommittedState(surface: String, id: String,
+                                      value: JsonElement?, caret: Int?) {
+        val revision = surfaces.revisionOf(surface) ?: return
         if (state != SessionState.READY) {
             // SPEC 10.3: divergent values changed before READY flush on
-            // entering READY, ahead of any released event.
-            syncingDirty.add(surface to id)
+            // entering READY, ahead of any released event. Stamp the accepted
+            // occurrence revision now; the surface can advance before READY.
+            syncingDirty[surface to id] = revision
             return
         }
-        val revision = surfaces.revisionOf(surface) ?: return
         // R6: Kotlin null means JSON null at this seam — the elvis survives.
         emit(notification("state.changed", buildJsonObject {
             put("surface", surface)
@@ -572,6 +630,31 @@ class CompanionEngine(
             // a node authored with report_caret.
             caret?.let { put("caret", it) }
         }))
+    }
+
+    /** Strict local-builtin admission. Unlike ordinary typing, success is
+     * observable immediately as a retained branch switch, so persistence and
+     * max_input_state_bytes admission must be confirmed before publication. */
+    private fun tryPublishState(surface: String, id: String,
+                                value: JsonElement?, caret: Int? = null): Boolean {
+        if (!surfaces.isStatefulNode(surface, id) ||
+            surfaces.isPasswordNode(surface, id)) return false
+        if (!surfaces.tryPutDraft(surface, id, value,
+                config.limits.reqLong("max_input_state_bytes"))) return false
+        publishCommittedState(surface, id, value, caret)
+        return true
+    }
+
+    @Synchronized
+    fun publishState(surface: String, id: String, value: JsonElement?,
+                     caret: Int? = null) {
+        // SPEC 14.6: a password node MUST NOT emit state.changed, and
+        // only stateful nodes in the accepted snapshot have a wire
+        // address at all.
+        if (!surfaces.isStatefulNode(surface, id)) return
+        if (surfaces.isPasswordNode(surface, id)) return
+        surfaces.putDraft(surface, id, value)
+        publishCommittedState(surface, id, value, caret)
     }
 
     private fun handleRequest(id: JsonElement, method: String, rawParams: JsonElement?) {
@@ -635,12 +718,12 @@ class CompanionEngine(
                 state = sessionStep(state, SessionEvent.READY_CONFIRMED) ?: state
                 // SPEC 10.3: flush every divergent value changed during
                 // SYNCING as ordered state.changed BEFORE releasing events.
-                for ((surface, nodeId) in syncingDirty.toList()) {
+                for ((address, occurrenceRevision) in syncingDirty.toList()) {
+                    val (surface, nodeId) = address
                     if (!surfaces.hasDraft(surface, nodeId)) continue
-                    val revision = surfaces.revisionOf(surface) ?: continue
                     emit(notification("state.changed", buildJsonObject {
                         put("surface", surface)
-                        put("revision_seen", revision)
+                        put("revision_seen", occurrenceRevision)
                         put("id", nodeId)
                         // R6: a null draft is JSON null — the elvis survives.
                         put("value", surfaces.draft(surface, nodeId) ?: JsonNull)
@@ -862,6 +945,11 @@ class CompanionEngine(
         } catch (e: ContentInvalid) {
             respondError(id, 1201, "Invalid content", "content-invalid",
                 buildJsonObject { put("path", e.path); put("reason", e.reason) })
+        } catch (_: SurfacePersistenceFailed) {
+            // SPEC 13.2: never claim `applied` before the snapshot and its
+            // reconciled drafts are durable. SurfaceStore has restored the
+            // prior in-memory state, so the request can be retried safely.
+            respondError(id, -32603, "Storage failed", "internal-error")
         }
     }
 
@@ -1066,6 +1154,8 @@ class CompanionEngine(
         } catch (e: ContentInvalid) {
             respondError(id, 1201, "Invalid content", "content-invalid",
                 buildJsonObject { put("path", e.path); put("reason", e.reason) })
+        } catch (_: SurfacePersistenceFailed) {
+            respondError(id, -32603, "Storage failed", "internal-error")
         }
     }
 
@@ -2317,7 +2407,9 @@ class CompanionEngine(
                 // SPEC 14.2 (LD-17): a builtin outside the dialog profile's
                 // advertised set is an invalid context here — e.g. a
                 // clipboard.copy in a dialog rejects the document.
-                advertisedBuiltins = builtinsFromProfiles(config.surfaceProfiles, "dialog"))
+                advertisedBuiltins = builtinsFromProfiles(config.surfaceProfiles, "dialog"),
+                advertisedFeatures = featuresFromProfiles(config.surfaceProfiles, "dialog"),
+                nodeVocabulary = config.nodeVocabulary)
         } catch (e: ContentInvalid) {
             return respondError(id, 1201, "Invalid content", "content-invalid",
                 buildJsonObject { put("path", e.path); put("reason", e.reason) })
@@ -2432,12 +2524,14 @@ class CompanionEngine(
     private val hexId = Regex("[0-9a-f]{32}")
 
     private fun handleHello(id: JsonElement, params: JsonObject) {
-        // Integer SPELLING only: the number 2 is the protocol marker; 2.0 and
-        // "2" are mismatches, exactly as the old Int-equality check had it.
-        if (params.wireIntOrNull("protocol") != 2L) {
+        // Integer SPELLING only: the generated major is the protocol marker;
+        // 3.0 and "3" are mismatches, exactly as the old Int-equality check.
+        if (params.wireIntOrNull("protocol") != PROTOCOL_VERSION.toLong()) {
             // SPEC 9.2/12: protocol mismatch is 1202 with data.supported.
             return respondError(id, 1202, "Unsupported protocol major", "protocol-version",
-                buildJsonObject { put("supported", buildJsonArray { add(2) }) })
+                buildJsonObject {
+                    put("supported", buildJsonArray { add(PROTOCOL_VERSION) })
+                })
         }
         val client = params.objOrNull("client")
         val pairingId = params.stringOrNull("pairing_id")
@@ -2456,7 +2550,7 @@ class CompanionEngine(
             return respondError(id, -32602, "Invalid params", "invalid-params")
         // SPEC 9.1: never reveal whether the pairing ID is known; challenge
         // regardless and fail at the proof.
-        lastWants = wantsList!!.map { it!! }
+        lastWants = requireNotNull(wantsList).map(::requireNotNull)
         pendingPairingId = pairingId
         pendingClientNonce = clientNonce
         pendingServerNonce = config.nonceSource()
@@ -2523,7 +2617,7 @@ class CompanionEngine(
         sessionBoundarySeq = queue.boundarySeq()
         return buildJsonObject {
             put("server_proof", serverProof)
-            put("protocol", 2)
+            put("protocol", PROTOCOL_VERSION)
             put("server", buildJsonObject {
                 put("name", config.serverName)
                 put("version", config.serverVersion)
@@ -2574,6 +2668,35 @@ class CompanionEngine(
      */
     private fun checkLimits() {
         val l = config.limits
+        require("app" in config.surfaceProfiles) {
+            "surface_profiles.app is required"
+        }
+        val identifier = Regex("[A-Za-z0-9][A-Za-z0-9._:/-]*")
+        for (target in config.surfaceProfiles.keys) {
+            val profile = requireNotNull(config.surfaceProfiles.objOrNull(target)) {
+                "surface_profiles.$target must be an object"
+            }
+            for (member in listOf("node_types", "builtins", "features", "extensions")) {
+                val array = requireNotNull(profile.arrOrNull(member)) {
+                    "surface_profiles.$target.$member is required"
+                }
+                val values = array.map { element ->
+                    requireNotNull(element.asStringOrNull()) {
+                        "surface_profiles.$target.$member entries must be strings"
+                    }
+                }
+                require(values.distinct().size == values.size) {
+                    "surface_profiles.$target.$member entries must be distinct"
+                }
+                require(values.all { value ->
+                    identifier.matches(value) &&
+                        value.toByteArray(Charsets.UTF_8).size <=
+                        WireLimits.MAX_IDENTIFIER_OCTETS
+                }) {
+                    "surface_profiles.$target.$member contains an invalid identifier"
+                }
+            }
+        }
         fun floor(name: String, min: Long) {
             val v = l.longOr(name, -1)
             require(v >= min) { "limits.$name must be at least $min" }
@@ -2606,8 +2729,38 @@ class CompanionEngine(
         }
         for (target in config.surfaceProfiles.keys) {
             val types = nodeTypesFromProfiles(config.surfaceProfiles, target) ?: continue
+            val extensions = requireNotNull(
+                extensionsFromProfiles(config.surfaceProfiles, target),
+            ) {
+                "surface_profiles.$target.extensions is required"
+            }
+            require(types.all { it in config.nodeVocabulary.schema }) {
+                "surface_profiles.$target advertises a node without an installed schema"
+            }
+            require(extensions.all { extension ->
+                "." in extension && extension in config.nodeVocabulary.extensions
+            }) {
+                "surface_profiles.$target contains an unknown renderer extension"
+            }
+            for ((extension, ownedTypes) in config.nodeVocabulary.extensions) {
+                require(types.none { it in ownedTypes } || extension in extensions) {
+                    "surface_profiles.$target extension nodes require $extension"
+                }
+            }
             if ("rich_text" in types) floor("max_rich_spans", 1)
             if ("table" in types) floor("max_table_cells", 1)
+            if (target == "app" && "variant_host" in types) {
+                val builtins = builtinsFromProfiles(config.surfaceProfiles, target)
+                    ?: emptySet()
+                require("variant.switch" in builtins) {
+                    "surface_profiles.app.variant_host requires variant.switch"
+                }
+                require(l.longOr("max_variants_per_host") ==
+                    WireLimits.MAX_VARIANTS_PER_HOST.toLong()) {
+                    "limits.max_variants_per_host must equal " +
+                        WireLimits.MAX_VARIANTS_PER_HOST
+                }
+            }
         }
         // SPEC 4.5: the actual server strings must fit the 128-octet bound
         // the reservation reserves for them (SPEC 10.2).
@@ -2632,7 +2785,7 @@ class CompanionEngine(
             put("id", "a".repeat(WireLimits.MAX_REQUEST_ID_OCTETS))
             put("result", buildJsonObject {
                 put("server_proof", "0".repeat(64))
-                put("protocol", 2)
+                put("protocol", PROTOCOL_VERSION)
                 // SPEC 4.5: fixed members at their maximum legal encoded size.
                 put("server", buildJsonObject {
                     put("name", "a".repeat(128))

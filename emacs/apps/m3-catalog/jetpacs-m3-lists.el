@@ -83,7 +83,7 @@ carries only what upstream's content/supportingContent slots held."
   (jetpacs-column
    (jetpacs-text (format "Item %d" n))
    (jetpacs-text "Additional info" :style "caption"
-                 :color "on_surface_variant")
+                 :color "on_surface")
    :spacing 2))
 
 (defun jetpacs-m3-lists--single-selection (id &optional segmented)
@@ -107,12 +107,11 @@ riding the children's universal attributes."
                                 child))
    :on-change (jetpacs-m3-demo "Selection")))
 
-(defconst jetpacs-m3-lists--segmented-color "surface_variant"
+(defconst jetpacs-m3-lists--segmented-color "surface"
   "The nearest §16.6 role to the samples\\=' surfaceContainer.
 Upstream passes `ListItemDefaults.colors(containerColor =
 MaterialTheme.colorScheme.surfaceContainer)'; the wire color vocabulary
-has no surfaceContainer, and `surface_variant' is the tonal step it
-names.")
+is design-neutral, so the Material renderer derives any tonal step.")
 
 (defconst jetpacs-m3-lists--segmented-gap 2
   "The dp gap upstream spells `ListItemDefaults.SegmentedGap'.")
@@ -132,11 +131,11 @@ which M3 moves off center for the three-line variants."
                          (append
                           (when overline
                             (list (jetpacs-text overline :style "label"
-                                                :color "on_surface_variant")))
+                                                :color "on_surface")))
                           (list (jetpacs-text headline))
                           (when supporting
                             (list (jetpacs-text supporting :style "caption"
-                                                :color "on_surface_variant")))
+                                                :color "on_surface")))
                           (list :spacing 2)))
                   :weight 1))
            (when trailing (list trailing))
@@ -195,7 +194,7 @@ DESCRIPTION is its contentDescription, absent where upstream passes nil."
           "Two line list item with trailing"
           :supporting "Secondary text"
           :trailing (jetpacs-text "meta" :style "label"
-                                  :color "on_surface_variant")
+                                  :color "on_surface")
           :leading (jetpacs-m3-lists--favorite "Localized description")))))
 
 (defun jetpacs-m3-lists--three-line-overline ()
@@ -208,7 +207,7 @@ and trailing content to the top once a row is three lines tall."
           :overline "OVERLINE"
           :supporting "Secondary text"
           :trailing (jetpacs-text "meta" :style "label"
-                                  :color "on_surface_variant")
+                                  :color "on_surface")
           :leading (jetpacs-m3-lists--favorite "Localized description")
           :align "top"))))
 
@@ -221,7 +220,7 @@ lines, so the row is three lines tall with no overline."
           "Three line list item"
           :supporting "Secondary text that\nspans multiple lines"
           :trailing (jetpacs-text "meta" :style "label"
-                                  :color "on_surface_variant")
+                                  :color "on_surface")
           :leading (jetpacs-m3-lists--favorite "Localized description")
           :align "top"))))
 

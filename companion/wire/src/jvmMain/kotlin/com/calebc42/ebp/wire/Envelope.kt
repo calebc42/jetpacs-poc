@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// EBP 2 JSON-RPC envelope conventions. Implements ebp/SPEC.md section 7.
+// EBP 3 JSON-RPC envelope conventions. Implements ebp/SPEC.md section 7.
 package com.calebc42.ebp.wire
 
 import kotlinx.serialization.json.JsonElement

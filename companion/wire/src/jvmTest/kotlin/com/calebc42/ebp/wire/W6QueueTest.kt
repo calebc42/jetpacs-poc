@@ -39,6 +39,7 @@ class W6QueueTest {
                     JsonArray(listOf("text", "text_input", "button").map(::JsonPrimitive)))
                 put("builtins", JsonArray(emptyList()))
                 put("features", JsonArray(emptyList()))
+                put("extensions", JsonArray(emptyList()))
             }
         },
         limits = testLimits(), nonceSource = { katSn })
@@ -442,6 +443,46 @@ class W6QueueTest {
         assertTrue(stateIdx in 0 until eventIdx)
         assertEquals("syncing edit",
             out[stateIdx].reqObj("params").reqString("value"))
+    }
+
+    @Test
+    fun syncingEditsKeepTheirOccurrenceRevisionAndLatestEditWinsPerField() {
+        val out = mutableListOf<JsonObject>()
+        val q = DurableQueue(MemoryQueueStore(), 256, 8_388_608)
+        fun twoInputs() = buildJsonObject {
+            put("t", "column")
+            put("children", JsonArray(listOf(
+                buildJsonObject {
+                    put("t", "text_input"); put("id", "title")
+                    put("value", "authored title")
+                },
+                buildJsonObject {
+                    put("t", "text_input"); put("id", "note")
+                    put("value", "authored note")
+                },
+            )))
+        }
+        val store = SurfaceStore(16, 1024)
+        store.update("app:main", 1, twoInputs(), null, null, null)
+        val e = engineOn(q, store, out)
+        e.handshake(toReady = false)
+
+        e.publishState("app:main", "title", JsonPrimitive("at revision one"))
+        e.publishState("app:main", "note", JsonPrimitive("first note edit"))
+        store.update("app:main", 2, twoInputs(), null, null, null)
+        // A later edit of this SAME address replaces its saved occurrence.
+        e.publishState("app:main", "note", JsonPrimitive("at revision two"))
+        e.feed(frame(request("r1", "session.ready", JsonObject(emptyMap()))))
+
+        val changes = out.filter { it.stringOrNull("method") == "state.changed" }
+            .associate { message ->
+                val params = message.reqObj("params")
+                params.reqString("id") to params
+            }
+        assertEquals(1L, changes.getValue("title").reqLong("revision_seen"))
+        assertEquals("at revision one", changes.getValue("title").reqString("value"))
+        assertEquals(2L, changes.getValue("note").reqLong("revision_seen"))
+        assertEquals("at revision two", changes.getValue("note").reqString("value"))
     }
 
     // ------------------------------ offline draft + sync + replay (item 11)

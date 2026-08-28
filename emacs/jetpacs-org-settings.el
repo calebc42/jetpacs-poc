@@ -227,13 +227,181 @@ Returns non-nil when persisting succeeded."
 
 ;;;; Tag vocabulary
 
+(defun jetpacs-org-settings--tag-name (entry)
+  "Return ENTRY's tag name, or nil for a structural tag-alist entry."
+  (cond
+   ((stringp entry) entry)
+   ((and (consp entry) (stringp (car entry))) (car entry))))
+
+(defun jetpacs-org-settings--tag-group-start-p (entry)
+  "Return non-nil when ENTRY starts either kind of Org tag group."
+  (memq (car-safe entry) '(:startgroup :startgrouptag)))
+
+(defun jetpacs-org-settings--tag-group-end-p (entry)
+  "Return non-nil when ENTRY ends either kind of Org tag group."
+  (memq (car-safe entry) '(:endgroup :endgrouptag)))
+
+(defun jetpacs-org-settings-tag-group-members (group &optional alist)
+  "Return GROUP's direct members from tag ALIST or `org-tag-alist'."
+  (condition-case nil
+      (copy-sequence
+       (cdr (assoc-string group
+                          (org-tag-alist-to-groups
+                           (or alist org-tag-alist))
+                          t)))
+    (error nil)))
+
+(defun jetpacs-org-settings--tag-entry (name alist)
+  "Return NAME's first tag entry in ALIST, preserving its fast key."
+  (cl-find name alist :key #'jetpacs-org-settings--tag-name
+           :test #'equal))
+
+(defun jetpacs-org-settings--tag-group-block-name (block)
+  "Return BLOCK's group tag, the name before its `:grouptags' marker."
+  (let (name)
+    (catch 'done
+      (dolist (entry block)
+        (when (eq (car-safe entry) :grouptags)
+          (throw 'done name))
+        (when-let* ((tag (jetpacs-org-settings--tag-name entry)))
+          (unless name (setq name tag))))
+      name)))
+
+(defun jetpacs-org-settings--without-tag-group (group alist)
+  "Return ALIST without any complete tag-group block named GROUP."
+  (let ((rest (copy-sequence alist))
+        result)
+    (while rest
+      (let ((entry (pop rest)))
+        (if (not (jetpacs-org-settings--tag-group-start-p entry))
+            (setq result (append result (list entry)))
+          (let ((block (list entry))
+                (depth 1))
+            (while (and rest (> depth 0))
+              (let ((next (pop rest)))
+                (setq block (append block (list next)))
+                (cond
+                 ((jetpacs-org-settings--tag-group-start-p next)
+                  (cl-incf depth))
+                 ((jetpacs-org-settings--tag-group-end-p next)
+                  (cl-decf depth)))))
+            (unless (equal (jetpacs-org-settings--tag-group-block-name block)
+                           group)
+              (setq result (append result block)))))))
+    result))
+
+(defun jetpacs-org-settings--remove-ungrouped-tags (names alist)
+  "Remove tag NAMES outside group blocks from ALIST."
+  (let ((depth 0)
+        result)
+    (dolist (entry alist (nreverse result))
+      (cond
+       ((jetpacs-org-settings--tag-group-start-p entry)
+        (cl-incf depth)
+        (push entry result))
+       ((jetpacs-org-settings--tag-group-end-p entry)
+        (push entry result)
+        (setq depth (max 0 (1- depth))))
+       ((and (= depth 0)
+             (member (jetpacs-org-settings--tag-name entry) names)))
+       (t (push entry result))))))
+
+(defun jetpacs-org-settings--group-entry (name alist)
+  "Return a valid grouped tag entry for NAME, keeping ALIST's fast key."
+  (let ((entry (jetpacs-org-settings--tag-entry name alist)))
+    (if (and (consp entry) (stringp (car entry)))
+        (copy-tree entry)
+      (list name))))
+
+(defun jetpacs-org-settings--tag-alist-with-group (group members alist)
+  "Return ALIST with non-exclusive GROUP set to distinct MEMBERS.
+Former members remain ordinary tags when removed from the group.  Existing
+fast-selection keys and every unrelated group block survive unchanged."
+  (let* ((members
+          (delete-dups
+           (cl-remove-if
+            (lambda (member)
+              (or (not (stringp member))
+                  (string-empty-p member)
+                  (equal member group)))
+            (mapcar (lambda (member)
+                      (and (stringp member) (string-trim member)))
+                    members))))
+         (old-members
+          (jetpacs-org-settings-tag-group-members group alist))
+         (without-group
+          (jetpacs-org-settings--without-tag-group group alist))
+         (reserved (delete-dups
+                    (append (list group) old-members members)))
+         (base (jetpacs-org-settings--remove-ungrouped-tags
+                reserved without-group))
+         (present (delq nil (mapcar #'jetpacs-org-settings--tag-name base)))
+         (retired (cl-set-difference old-members members :test #'equal))
+         (retired-entries
+          (mapcar (lambda (name)
+                    (or (jetpacs-org-settings--tag-entry name alist) name))
+                  (cl-remove-if (lambda (name) (member name present))
+                                retired)))
+         (group-block
+          (when members
+            (append
+             (list '(:startgrouptag)
+                   (jetpacs-org-settings--group-entry group alist)
+                   '(:grouptags))
+             (mapcar (lambda (name)
+                       (jetpacs-org-settings--group-entry name alist))
+                     members)
+             (list '(:endgrouptag))))))
+    (append base retired-entries group-block)))
+
+(defun jetpacs-org-settings--tag-alist-preserving-groups (tags alist)
+  "Select flat TAGS in ALIST without flattening any tag-group block."
+  (let ((depth 0)
+        kept grouped)
+    (dolist (entry alist)
+      (let ((name (jetpacs-org-settings--tag-name entry)))
+        (cond
+         ((jetpacs-org-settings--tag-group-start-p entry)
+          (cl-incf depth)
+          (push entry kept))
+         ((jetpacs-org-settings--tag-group-end-p entry)
+          (push entry kept)
+          (setq depth (max 0 (1- depth))))
+         ((> depth 0)
+          (push entry kept)
+          (when name (push name grouped)))
+         ((null name) (push entry kept))
+         (t nil))))
+    (setq kept (nreverse kept))
+    (dolist (tag tags kept)
+      (unless (member tag grouped)
+        (setq kept
+              (append kept
+                      (list (or (jetpacs-org-settings--tag-entry tag alist)
+                                tag))))))))
+
+(defun jetpacs-org-settings--tag-alist-apply (alist)
+  "Persist ALIST and refresh every live Org tag cache and derived memo."
+  (setq org-tag-alist alist)
+  (prog1 (jetpacs-settings-save-variable 'org-tag-alist org-tag-alist)
+    (dolist (buffer (buffer-list))
+      (with-current-buffer buffer
+        (when (derived-mode-p 'org-mode)
+          (ignore-errors (org-mode-restart)))))
+    (ebp-org-cache-invalidate)))
+
+(defun jetpacs-org-settings-set-tag-group-members (group members)
+  "Set global non-exclusive tag GROUP to MEMBERS and persist it."
+  (jetpacs-org-settings--tag-alist-apply
+   (jetpacs-org-settings--tag-alist-with-group
+    group members org-tag-alist)))
+
 (defun jetpacs-org-settings-tag-options ()
   "The global tag names from `org-tag-alist', strings only, distinct.
 Public: workflow and downstream detail-view tag pickers can build from
 the same vocabulary.
-Group markers (`:startgroup' and friends) are cons-free symbols the
-enum cannot carry; duplicates would fail the widget's SPEC 4.3
-distinctness check at build time."
+Structural group entries are excluded; duplicates would fail the widget's
+SPEC 4.3 distinctness check at build time."
   (cl-remove-duplicates
    (cl-remove-if-not #'stringp
                      (mapcar (lambda (x) (if (consp x) (car x) x))
@@ -422,10 +590,9 @@ members."
         (if (not (cl-every #'stringp tags))
             'rejected
           (when tags
-            (setq org-tag-alist
-                  (mapcar (lambda (tg) (or (assoc tg org-tag-alist) tg))
-                          tags))
-            (jetpacs-settings-save-variable 'org-tag-alist org-tag-alist)
+            (jetpacs-org-settings--tag-alist-apply
+             (jetpacs-org-settings--tag-alist-preserving-groups
+              tags org-tag-alist))
             (jetpacs-shell-notify "Settings saved"))
           (jetpacs-settings-refresh)
           'accepted)))))

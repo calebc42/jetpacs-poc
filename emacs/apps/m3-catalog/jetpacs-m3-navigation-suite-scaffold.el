@@ -89,7 +89,7 @@
                      (jetpacs-icon (if (= i jetpacs-m3-nav-suite--selected)
                                        "favorite" "favorite_border")
                                    :color (if (= i jetpacs-m3-nav-suite--selected)
-                                              "primary" "on_surface_variant"))
+                                              "primary" "on_surface"))
                      (jetpacs-text label :style "caption")
                      :align "center" :spacing 2)
                     :on-tap (jetpacs-m3-selection-action

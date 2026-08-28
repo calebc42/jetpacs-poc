@@ -126,7 +126,7 @@ Info node just to throw most of it away is CPU spent for nothing."
   (and (stringp s) (not (string-empty-p s)) s))
 
 (defun jetpacs-hypertext--spans-text (spans)
-  "Concatenate the plain text of SPANS (span PLISTS — format 6)."
+  "Concatenate the plain text of SPANS represented as span plists."
   (mapconcat (lambda (s) (or (plist-get s :text) "")) spans ""))
 
 ;; --- The image resolver ------------------------------------------------------
@@ -394,9 +394,8 @@ Degrades to a flattened Core `text' when `rich_text' is unadvertised
 (defun jetpacs-hypertext--pre (seg)
   "A preformatted/code block node from SEG on a tinted surface.
 The surface wrapper is OPTIONAL (SPEC 16.2); unadvertised, the bare
-monospace text stands alone.  `surface_variant' is the REGISTERED
-16.6 role (the poc's `surface_container' is not registered — the
-Companion's fallback made code blocks silently lose their tint)."
+monospace text stands alone.  `surface' is the neutral EBP 3 role; any
+Material tonal variation is derived by the selected receiver."
   (let* ((syntax (plist-get seg :syntax))
          (body (jetpacs-text (or (plist-get seg :text) "")
                              :style "mono"
@@ -405,7 +404,7 @@ Companion's fallback made code blocks silently lose their tint)."
     (if (jetpacs-node-advertised-p "surface")
         (jetpacs-with-attrs
          (jetpacs-surface (list body)
-                          :color "surface_variant" :shape "rounded_small")
+                          :color "surface" :shape "rounded_small")
          :padding 3)
       body)))
 
@@ -416,7 +415,7 @@ or the bare paragraph when `surface' is unadvertised (SPEC 16.2)."
     (if (jetpacs-node-advertised-p "surface")
         (jetpacs-with-attrs
          (jetpacs-surface (list para)
-                          :color "surface_variant" :shape "rounded_small")
+                          :color "surface" :shape "rounded_small")
          :padding 3)
       para)))
 

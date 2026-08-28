@@ -1,4 +1,4 @@
-;;; ebp.el --- EBP 2 wire core, client side -*- lexical-binding: t; -*-
+;;; ebp.el --- EBP 3 wire core, client side -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "30.1"))
@@ -6,12 +6,12 @@
 ;;; Commentary:
 
 ;; The Emacs-side wire core for the Emacs Bridge Protocol, written against
-;; ebp/SPEC.md (protocol 2, document 2.0.0-draft).  Rung W1 of
+;; ebp/SPEC.md (protocol 3, document 3.1.0-draft).  Rung W1 of
 ;; docs/REWRITE-PLAN.md: framing (SPEC 6), envelope conventions (SPEC 7),
 ;; the JSON data-model receiver rules this layer owns (SPEC 4.1),
 ;; pairing/proof construction (SPEC 9), and a pure client session state
-;; machine (SPEC 10.1).  Transport wiring (network process, reconnect)
-;; is rung W3 and does not live here yet.
+;; machine and reconnect lifecycle (SPEC 5.2, 10.1).  Transport wiring is
+;; generic EBP endpoint behavior; no Jetpacs application policy lives here.
 ;;
 ;; Every function cites the section it implements.  Behavior with no
 ;; section is a bug in this file or an amendment owed to ebp/.
@@ -45,6 +45,28 @@ A connection's :replay-retry-delay config overrides it."
 
 (defcustom ebp-replay-retry-max 60
   "Ceiling in seconds for the replay retry backoff (SPEC 15.3)."
+  :type 'number)
+
+(defcustom ebp-auto-reconnect t
+  "Whether an unexpected transport loss schedules a fresh EBP handshake.
+The Android loopback profile makes Emacs the dialer (SPEC 5.2), so the
+default keeps one logical endpoint alive while the Companion process is
+stopped and restarted.  Redials use jittered bounded backoff.  An explicit
+`session.superseded' notification and `ebp-client-close' both stop automatic
+redial.  A connection's :auto-reconnect config overrides this option."
+  :type 'boolean)
+
+(defcustom ebp-reconnect-initial-delay 1
+  "Initial seconds before an automatic transport redial (SPEC 5.2).
+Each failed attempt doubles the base delay up to
+`ebp-reconnect-max-delay'; every scheduled delay is jittered.  A
+connection's :reconnect-initial-delay config overrides this option."
+  :type 'number)
+
+(defcustom ebp-reconnect-max-delay 15
+  "Ceiling in seconds for automatic transport redial backoff (SPEC 5.2).
+The actual delay is jittered below this ceiling.  A connection's
+:reconnect-max-delay config overrides this option."
   :type 'number)
 
 (defcustom ebp-request-timeout 10
@@ -439,14 +461,14 @@ use the decoded raw octets as the HMAC key."
   "SPEC 9.3 client proof over the exact ASCII concatenation."
   (ebp--hex (ebp--hmac-sha256
              token
-             (format "EBP/2 client:%s:%s:%s"
+             (format "EBP/3 client:%s:%s:%s"
                      pairing-id client-nonce server-nonce))))
 
 (defun ebp-server-proof (token pairing-id client-nonce server-nonce)
   "SPEC 9.3 companion proof; note the swapped nonce order."
   (ebp--hex (ebp--hmac-sha256
              token
-             (format "EBP/2 companion:%s:%s:%s"
+             (format "EBP/3 companion:%s:%s:%s"
                      pairing-id server-nonce client-nonce))))
 
 (defun ebp--constant-time-equal (a b)
@@ -468,7 +490,7 @@ use the decoded raw octets as the HMAC key."
 
 (defun ebp-hello-params (client-name client-version pairing-id client-nonce wants)
   "Build `session.hello' params (SPEC 9.2)."
-  `(:protocol 2
+  `(:protocol 3
     :client (:name ,client-name :version ,client-version)
     :pairing_id ,pairing-id
     :client_nonce ,client-nonce
@@ -565,6 +587,14 @@ Events: `hello-sent', `nonce-received', `auth-sent', `welcome-verified',
   config          ; plist: :client-name :client-version :pairing-id :token
                   ;        :wants, :receipt-file, and for tests :client-nonce
   connection      ; jsonrpc-process-connection
+  ;; SPEC 5.2 transport identity and logical-endpoint lifecycle.  A client
+  ;; object survives ordinary Companion process death: only its transport and
+  ;; session-scoped mirrors are replaced.  `terminal-p' distinguishes an
+  ;; explicit/protocol close from the transient CLOSED state between redials.
+  host port
+  terminal-p
+  reconnect-timer
+  (reconnect-attempt 0)
   (handlers (make-hash-table :test #'equal)) ; method-name -> fn
   client-nonce
   ;; Welcome absorption (SPEC 10.2/10.3 steps 1-2).
@@ -658,7 +688,8 @@ plist plus optionally :ready-function, :state-changed-function,
 :after-replay-function (called with (CLIENT SUMMARY) when a replay pass
 settles with the backlog drained), :edit-open-function (the SPEC 19.3
 amendment-#71 seed-reconciliation seam), :receipt-file, and
-:replay-retry-delay.  Without :receipt-file the SPEC 14.4 EventId
+:replay-retry-delay, :auto-reconnect, :reconnect-initial-delay, and
+:reconnect-max-delay.  Without :receipt-file the SPEC 14.4 EventId
 receipts default to `ebp-receipts' under `user-emacs-directory' —
 `accepted' always names a durable commitment."
   (unless (plist-member config :receipt-file)
@@ -699,6 +730,8 @@ receipts default to `ebp-receipts' under `user-emacs-directory' —
                                  #'ebp-client--handle-edit-complete)
     (ebp-client-register-handler client "edit.candidate.doc"
                                  #'ebp-client--handle-candidate-doc)
+    (ebp-client-register-handler client "session.superseded"
+                                 #'ebp-client--handle-session-superseded)
     (ebp-client--receipts-load client)
     client))
 
@@ -709,15 +742,146 @@ result object or signal `jsonrpc-error'; the reply is the library's.
 For a notification the return value is ignored."
   (puthash method fn (ebp-client-handlers client)))
 
-(defun ebp-client-close (client reason)
-  "Enter `closed' (SPEC 10.1: any state may transition to CLOSED)."
-  (unless (eq (ebp-client-state client) 'closed)
-    (setf (ebp-client-state client) 'closed
-          (ebp-client-close-reason client) reason)
-    (when-let* ((timer (ebp-client-replay-retry-timer client)))
+(defun ebp-client-active-p (client)
+  "Non-nil while CLIENT is connected, handshaking, or waiting to redial.
+An ordinary transport loss enters transient `closed' between attempts; only
+`ebp-client-close', a terminal protocol failure, or `session.superseded'
+ends the logical endpoint."
+  (not (ebp-client-terminal-p client)))
+
+(defun ebp-client--auto-reconnect-p (client)
+  "Non-nil when CLIENT permits automatic transport redial."
+  (let ((config (ebp-client-config client)))
+    (if (plist-member config :auto-reconnect)
+        (plist-get config :auto-reconnect)
+      ebp-auto-reconnect)))
+
+(defun ebp-client--reconnect-setting (client key fallback)
+  "Read CLIENT's positive numeric reconnect KEY, defaulting to FALLBACK."
+  (let* ((config (ebp-client-config client))
+         (value (if (plist-member config key)
+                    (plist-get config key)
+                  fallback)))
+    (unless (and (numberp value) (> value 0))
+      (error "ebp: %s must be a positive number, got %S" key value))
+    value))
+
+(defun ebp--reconnect-jitter (base)
+  "Return a jittered delay in [0.75 * BASE, BASE].
+Randomizing even the capped attempts prevents two local authorities whose
+transports failed together from redialing in lockstep (SPEC 5.2)."
+  (* base (+ 0.75 (/ (random 250001) 1000000.0))))
+
+(defun ebp-client--cancel-session-work (client)
+  "Cancel retry work that belongs to CLIENT's current transport session."
+  (when-let* ((timer (ebp-client-replay-retry-timer client)))
+    (cancel-timer timer)
+    (setf (ebp-client-replay-retry-timer client) nil))
+  (setf (ebp-client-replay-in-flight client) nil))
+
+(defun ebp-client--reset-session (client)
+  "Prepare CLIENT's durable logical endpoint for one fresh handshake.
+Application registrations, revision floors, accepted-event receipts, and
+retained input values survive.  Negotiated presentation state and editor
+session identities do not."
+  (ebp-client--cancel-session-work client)
+  (clrhash (ebp-client-editors client))
+  (clrhash (ebp-client-input-carets client))
+  (clrhash (ebp-client-candidate-replies client))
+  (clrhash (ebp-client-edit-complete-overrides client))
+  (setf (ebp-client-state client) 'connected
+        (ebp-client-close-reason client) nil
+        (ebp-client-client-nonce client) nil
+        (ebp-client-granted client) nil
+        (ebp-client-profiles client) nil
+        (ebp-client-surfaces client) nil
+        (ebp-client-limits client) nil
+        (ebp-client-input-state client) nil
+        (ebp-client-device client) nil
+        (ebp-client-window client) nil
+        (ebp-client-replay-summary client) nil
+        (ebp-client-outstanding client) 0
+        (ebp-client-outstanding-held client) nil
+        (ebp-client-inbound-paused client) nil
+        (ebp-client-overloaded client) nil))
+
+(defun ebp-client--schedule-reconnect (client)
+  "Schedule CLIENT's next automatic dial with jittered bounded backoff."
+  (when (and (ebp-client-active-p client)
+             (ebp-client--auto-reconnect-p client)
+             (null (ebp-client-reconnect-timer client)))
+    (let* ((initial (ebp-client--reconnect-setting
+                     client :reconnect-initial-delay
+                     ebp-reconnect-initial-delay))
+           (maximum (ebp-client--reconnect-setting
+                     client :reconnect-max-delay
+                     ebp-reconnect-max-delay))
+           (attempt (ebp-client-reconnect-attempt client))
+           (base (min maximum (* initial (expt 2 attempt))))
+           (delay (ebp--reconnect-jitter base)))
+      (setf (ebp-client-reconnect-attempt client) (1+ attempt)
+            (ebp-client-reconnect-timer client)
+            (run-at-time delay nil #'ebp-client--run-reconnect client)))))
+
+(defun ebp-client--run-reconnect (client)
+  "Run one scheduled transport attempt for CLIENT."
+  (setf (ebp-client-reconnect-timer client) nil)
+  (when (and (ebp-client-active-p client)
+             (eq (ebp-client-state client) 'closed))
+    (condition-case err
+        (progn
+          (ebp-client--reset-session client)
+          (ebp-client--open-transport client))
+      (error
+       (setf (ebp-client-state client) 'closed
+             (ebp-client-close-reason client) '(transport-unavailable))
+       (message "ebp: reconnect attempt failed (%s); retrying"
+                (car err))
+       (ebp-client--schedule-reconnect client)))))
+
+(defun ebp-client-reconnect-now (client)
+  "Ask active CLIENT to redial immediately; return CLIENT.
+This is explicit user/application intent, so it cancels a pending backoff.
+It does not revive a terminal or explicitly superseded endpoint."
+  (when (and (ebp-client-active-p client)
+             (eq (ebp-client-state client) 'closed))
+    (when-let* ((timer (ebp-client-reconnect-timer client)))
       (cancel-timer timer)
-      (setf (ebp-client-replay-retry-timer client) nil))
-    (setf (ebp-client-replay-in-flight client) nil)
+      (setf (ebp-client-reconnect-timer client) nil))
+    (ebp-client--run-reconnect client))
+  client)
+
+(defun ebp-client--transport-lost (client connection)
+  "Conclude CLIENT's current CONNECTION and schedule a fresh handshake.
+jsonrpc.el calls this only after it has failed every outstanding continuation,
+so the next session cannot race callbacks owned by the dead transport."
+  (when (and (ebp-client-active-p client)
+             (eq connection (ebp-client-connection client)))
+    (ebp-client--cancel-session-work client)
+    (setf (ebp-client-state client) 'closed
+          (ebp-client-close-reason client) '(transport-lost)
+          (ebp-client-connection client) nil
+          (ebp-client-process client) nil)
+    (ebp-client--schedule-reconnect client)))
+
+(defun ebp-client--handle-session-superseded (client _params)
+  "Stand CLIENT down after `session.superseded' (SPEC 5.2).
+Explicit supersession is terminal for automatic reconnect.  A later manual
+`ebp-connect' is user intent and may create a new logical endpoint."
+  (ebp-client-close client '(session-superseded)))
+
+(defun ebp-client-close (client reason)
+  "Terminally close CLIENT for REASON (SPEC 10.1).
+Unlike the transient CLOSED state after an unexpected transport loss, this
+cancels automatic redial and releases durable storage."
+  (unless (ebp-client-terminal-p client)
+    (setf (ebp-client-terminal-p client) t
+          (ebp-client-state client) 'closed
+          (ebp-client-close-reason client) reason)
+    (when-let* ((timer (ebp-client-reconnect-timer client)))
+      (cancel-timer timer)
+      (setf (ebp-client-reconnect-timer client) nil))
+    (ebp-client--cancel-session-work client)
     (when-let* ((db (ebp-client-receipt-db client)))
       (ignore-errors (sqlite-close db))
       (setf (ebp-client-receipt-db client) nil))
@@ -1181,27 +1345,90 @@ not granted (SPEC 24.2; fail closed before any welcome)."
      (lambda (result error) (ebp-client--on-nonce client result error)))
     (ebp-client--step client 'hello-sent)))
 
+(defun ebp--transport-error-p (error)
+  "Non-nil when ERROR is jsonrpc.el's local dead-server conclusion.
+The rented transport synthesizes code -1 for every outstanding continuation
+before invoking its shutdown hook.  The hook, not a handshake callback, owns
+automatic redial."
+  (and error (eql (plist-get error :code) -1)))
+
 (defun ebp-client--on-nonce (client result error)
   "Handle the `session.hello' result (SPEC 9.2)."
-  (let ((server-nonce (and (null error) (plist-get result :server_nonce))))
-    (if (not (and server-nonce (ebp-valid-nonce-p server-nonce)))
+  (unless (ebp--transport-error-p error)
+    (let ((server-nonce (and (null error) (plist-get result :server_nonce))))
+      (if (not (and server-nonce (ebp-valid-nonce-p server-nonce)))
         (ebp-client-close client (list 'hello-failed error))
-      (ebp-client--step client 'nonce-received)
-      (let ((config (ebp-client-config client)))
-        (ebp-client--request
-         client 'auth.response
-         (ebp-auth-params (plist-get config :pairing-id)
-                          (ebp-client-client-nonce client)
-                          server-nonce
-                          (plist-get config :token))
-         (lambda (result error)
-           (ebp-client--on-welcome client server-nonce result error))))
-      (ebp-client--step client 'auth-sent))))
+        (ebp-client--step client 'nonce-received)
+        (let ((config (ebp-client-config client)))
+          (ebp-client--request
+           client 'auth.response
+           (ebp-auth-params (plist-get config :pairing-id)
+                            (ebp-client-client-nonce client)
+                            server-nonce
+                            (plist-get config :token))
+           (lambda (result error)
+             (ebp-client--on-welcome client server-nonce result error))))
+        (ebp-client--step client 'auth-sent)))))
 
 (defconst ebp--welcome-required
   '(:server_proof :protocol :server :granted :surface_profiles :surfaces
     :queued_events :limits)
   "SPEC 10.2: members the welcome result MUST contain.")
+
+(defconst ebp--surface-profile-required
+  '(:node_types :builtins :features :extensions)
+  "SPEC 10.2: arrays every target profile MUST contain.")
+
+(defun ebp--identifier-p (value)
+  "Non-nil when VALUE obeys the general EBP identifier grammar (§4.4)."
+  (and (stringp value)
+       (<= 1 (length value) 128)
+       (string-match-p "\\`[A-Za-z0-9][A-Za-z0-9._:/-]*\\'" value)))
+
+(defun ebp--distinct-identifier-vector-p (value &optional namespaced)
+  "Non-nil when VALUE is a distinct vector of EBP identifiers.
+When NAMESPACED is non-nil, every identifier must also contain a dot."
+  (and (vectorp value)
+       (let ((items (append value nil)))
+         (and (cl-every
+               (lambda (item)
+                 (and (ebp--identifier-p item)
+                      (or (not namespaced) (string-search "." item))))
+               items)
+              (= (length items)
+                 (length (delete-dups (copy-sequence items))))))))
+
+(defun ebp--valid-surface-profiles-p (profiles granted)
+  "Non-nil when PROFILES and GRANTED obey the SPEC 10.2 profile shape.
+The app profile is unconditional.  A granted surface capability makes its
+matching target profile mandatory.  Every vocabulary member is a distinct
+identifier array, and renderer extensions are namespaced identifiers."
+  (and (proper-list-p profiles)
+       (zerop (% (length profiles) 2))
+       (plist-member profiles :app)
+       (cl-loop for (target profile) on profiles by #'cddr
+                always
+                (and (keywordp target)
+                     (proper-list-p profile)
+                     (zerop (% (length profile) 2))
+                     (cl-every (lambda (member)
+                                 (plist-member profile member))
+                               ebp--surface-profile-required)
+                     (ebp--distinct-identifier-vector-p
+                      (plist-get profile :node_types))
+                     (ebp--distinct-identifier-vector-p
+                      (plist-get profile :builtins))
+                     (ebp--distinct-identifier-vector-p
+                      (plist-get profile :features))
+                     (ebp--distinct-identifier-vector-p
+                      (plist-get profile :extensions) t)))
+       (cl-loop for (capability . target)
+                in '(("surfaces.notification" . :notification)
+                     ("surfaces.widget" . :widget)
+                     ("surfaces.tile" . :tile)
+                     ("surfaces.dialog" . :dialog))
+                always (or (not (member capability (append granted nil)))
+                           (plist-member profiles target)))))
 
 (defun ebp-client--send-ready (client replay-errored)
   "SPEC 10.3 step 5: leave SYNCING once the replay barrier has concluded.
@@ -1211,24 +1438,33 @@ rather than assume the backlog is drained."
   (ebp-client--request
    client 'session.ready ebp--empty-object
    (lambda (_result error)
-     (if error
-         (ebp-client-close client (list 'ready-failed error))
-       (ebp-client--step client 'ready-confirmed)
-       (dolist (fn (ebp-client-ready-functions client))
-         (funcall fn client))
-       ;; SPEC 15.3: retry with bounded backoff while remaining.
-       (if replay-errored
-           (ebp-client--force-replay-retry client)
-         (ebp-client--schedule-replay-retry client nil)
-         (ebp-client--replay-settled client))))))
+     (cond
+      ((ebp--transport-error-p error) nil)
+      (error
+       (ebp-client-close client (list 'ready-failed error)))
+      (t
+        (ebp-client--step client 'ready-confirmed)
+        ;; A completed handshake proves the peer is back; the next transport
+        ;; loss begins again at the short end of the bounded backoff.
+        (setf (ebp-client-reconnect-attempt client) 0)
+        (dolist (fn (ebp-client-ready-functions client))
+          (funcall fn client))
+        ;; SPEC 15.3: retry with bounded backoff while remaining.
+        (if replay-errored
+            (ebp-client--force-replay-retry client)
+          (ebp-client--schedule-replay-retry client nil)
+          (ebp-client--replay-settled client)))))))
 
 (defun ebp-client--on-welcome (client server-nonce result error)
   "Verify and absorb the welcome (SPEC 9.3, 10.2), then run the
 synchronization barrier (SPEC 10.3)."
   (cond
+   ((ebp--transport-error-p error) nil)
    (error (ebp-client-close client (list 'auth-failed error)))
    ((cl-notevery (lambda (m) (plist-member result m)) ebp--welcome-required)
     (ebp-client-close client '(welcome-incomplete)))
+   ((not (equal (plist-get result :protocol) 3))
+    (ebp-client-close client '(protocol-version)))
    ((not (let ((config (ebp-client-config client)))
            ;; SPEC 9.3: verify server_proof before trusting welcome data.
            (ebp-verify-server-proof (plist-get result :server_proof)
@@ -1237,6 +1473,10 @@ synchronization barrier (SPEC 10.3)."
                                     (ebp-client-client-nonce client)
                                     server-nonce)))
     (ebp-client-close client '(server-proof-invalid)))
+   ((not (ebp--valid-surface-profiles-p
+          (plist-get result :surface_profiles)
+          (plist-get result :granted)))
+    (ebp-client-close client '(surface-profiles-invalid)))
    (t
     ;; SPEC 10.3 steps 1-2: absorb floors and merge input state.
     (setf (ebp-client-granted client) (plist-get result :granted)
@@ -1277,13 +1517,14 @@ synchronization barrier (SPEC 10.3)."
     (ebp-client--request
      client 'queue.replay ebp--empty-object
      (lambda (result error)
-       (if error
-           (display-warning
-            'ebp (format "queue.replay concluded with error %S; proceeding \
+       (unless (ebp--transport-error-p error)
+         (if error
+             (display-warning
+              'ebp (format "queue.replay concluded with error %S; proceeding \
 to session.ready and retrying in READY (SPEC 10.3)" error)
-            :warning)
-         (setf (ebp-client-replay-summary client) result))
-       (ebp-client--send-ready client (and error t)))
+              :warning)
+           (setf (ebp-client-replay-summary client) result))
+         (ebp-client--send-ready client (and error t))))
      300))))
 
 (defun ebp-client--schedule-replay-retry (client delay)
@@ -2352,13 +2593,10 @@ remain the authored-tree form; this is the out-of-band raise."
 
 ;;;; TCP transport (SPEC 5.2): jsonrpc-process-connection, unmodified
 
-;;;###autoload
-(defun ebp-connect (host port &rest config)
-  "Dial the Companion at HOST:PORT and start the handshake.
-CONFIG is `ebp-client-create' config.  Returns the client.  Transport,
-framing, and id bookkeeping are core jsonrpc.el's; reconnection policy
-stays with the caller for now."
-  (let* ((client (apply #'ebp-client-create config))
+(defun ebp-client--open-transport (client)
+  "Open CLIENT's configured loopback transport and start a fresh handshake."
+  (let* ((host (ebp-client-host client))
+         (port (ebp-client-port client))
          ;; Pin the coding system: jsonrpc.el 1.0.25 never sets one, so an
          ;; ambient `coding-system-for-read' (or `undecided' auto-detection
          ;; picking a non-UTF-8 charset, or DOS eol conversion mangling the
@@ -2388,8 +2626,8 @@ stays with the caller for now."
                 :notification-dispatcher
                 (lambda (c m p) (ebp-client--notification-dispatcher client c m p))
                 :on-shutdown
-                (lambda (_c)
-                  (ebp-client-close client '(shutdown))))))
+                (lambda (closed-connection)
+                  (ebp-client--transport-lost client closed-connection)))))
     (setf (ebp-client-connection client) conn
           (ebp-client-process client) proc
           (ebp--connection-client conn) client)
@@ -2424,6 +2662,28 @@ stays with the caller for now."
                           (ebp-client--inbound-check client)))))
                   '((name . ebp-overload)))
     (ebp-client-start client)
+    client))
+
+;;;###autoload
+(defun ebp-connect (host port &rest config)
+  "Dial the Companion at HOST:PORT and return one logical EBP client.
+CONFIG is `ebp-client-create' config.  Transport, framing, and id bookkeeping
+use core jsonrpc.el.  With automatic reconnect enabled (the default), an
+unavailable initial listener or later unexpected transport loss leaves the
+returned client active and schedules fresh handshakes with jittered bounded
+backoff (SPEC 5.2).  `ebp-client-close' ends that lifecycle."
+  (let ((client (apply #'ebp-client-create config)))
+    (setf (ebp-client-host client) host
+          (ebp-client-port client) port)
+    (condition-case err
+        (ebp-client--open-transport client)
+      (error
+       (setf (ebp-client-state client) 'closed
+             (ebp-client-close-reason client) '(transport-unavailable))
+       (if (ebp-client--auto-reconnect-p client)
+           (ebp-client--schedule-reconnect client)
+         (ebp-client-close client (list 'connect-failed (car err)))
+         (signal (car err) (cdr err)))))
     client))
 
 (provide 'ebp)

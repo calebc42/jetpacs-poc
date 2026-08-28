@@ -61,7 +61,7 @@
                 :children [(:t "badge" :label "one")
                            (:t "badge" :label "two")
                            (:t "badge" :label "three")])
-               (:t "surface" :color "surface_variant" :shape "rounded"
+               (:t "surface" :color "surface" :shape "rounded"
                 :elevation 2 :padding 8
                 :children [(:t "text" :text "on a surface")])
                (:t "lazy_column" :height 120 :spacing 4

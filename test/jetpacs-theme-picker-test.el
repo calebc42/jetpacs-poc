@@ -56,16 +56,15 @@ canonical wire encoding."
     (should (string-search "\"theme\":\"ef-night\"" json))
     ;; The active theme's card is not re-loadable.
     (should-not (string-search "\"theme\":\"ef-day\"" json)))
-  ;; Mirror note both ways; the mode variable is a hard require here.
-  (let ((jetpacs-theme-mode 'mirror))
-    (should (string-search "Mirroring"
-                           (jetpacs-node->canonical-json
-                            (jetpacs-theme-picker-mirror-note "ef.mirror")))))
-  (let ((jetpacs-theme-mode 'system))
-    (let ((json (jetpacs-node->canonical-json
-                 (jetpacs-theme-picker-mirror-note "ef.mirror"))))
-      (should (string-search "Mirror on phone" json))
-      (should (string-search "\"action\":\"ef.mirror\"" json))))
+  ;; Mirror note both ways; the provider supplies its current mode.
+  (should (string-search "Mirroring"
+                         (jetpacs-node->canonical-json
+                          (jetpacs-theme-picker-mirror-note "ef.mirror"
+                                                            'mirror))))
+  (let ((json (jetpacs-node->canonical-json
+               (jetpacs-theme-picker-mirror-note "ef.mirror" 'system))))
+    (should (string-search "Mirror on phone" json))
+    (should (string-search "\"action\":\"ef.mirror\"" json)))
   ;; Current-card none arm, and the customize cross-link.
   (should (string-search "No ef theme active"
                          (jetpacs-node->canonical-json
@@ -75,6 +74,7 @@ canonical wire encoding."
                            :dark-p-fn #'ignore
                            :color-fn #'ignore
                            :mirror-action "ef.mirror"
+                           :theme-mode 'system
                            :none-label "No ef theme active"))))
   (let ((json (jetpacs-node->canonical-json
                (jetpacs-theme-picker-more-link "ef-themes"))))

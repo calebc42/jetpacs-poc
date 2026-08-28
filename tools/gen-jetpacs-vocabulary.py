@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 6).
+"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 8).
 
 The sibling of tools/gen-vocabulary.py, which does the same for the
 Companion's Vocabulary.kt.  Same W0 rule: wire vocabulary is generated from
 the authored contract, never hand-maintained; a drift test re-reads
 contract.json and fails if the committed generated file disagrees.
 
-SCOPE.  jetpacs-widgets.el already mirrors `node_types', `core_node_set',
-`universal_node_attributes', `theme_roles' and `syntax_roles' by hand, and
-the `jetpacs-widgets/catalog-*' tests already fail on drift for each -- so
-those stay where they are.  What had NO mirror is `node_schema', the
-per-node member table, which is 39 rows nobody should type.  That is what
-this file generates.  Run from the llm-poc-2 root:
+SCOPE.  This projects the per-node schema plus the universal Semantics
+envelope, nested schemas, enums, limits, accessible-name order, and default
+node-derived semantics.  These values must not acquire handwritten twins in
+the authoring layer.  Run from the llm-poc-3 root:
 
     python3 tools/gen-jetpacs-vocabulary.py
 """
@@ -28,6 +26,28 @@ def el_strings(values):
     return " ".join(f'"{v}"' for v in values)
 
 
+def el_keywords(values):
+    return " ".join(f':{v}' for v in values)
+
+
+def el_value(value):
+    if value is True:
+        return "t"
+    if value is False:
+        return ":json-false"
+    if isinstance(value, str):
+        return json.dumps(value)
+    if isinstance(value, list):
+        return f'({" ".join(el_value(v) for v in value)})'
+    return str(value)
+
+
+def el_plist(mapping):
+    return "(" + " ".join(
+        f':{name} {el_value(value)}' for name, value in mapping.items()
+    ) + ")"
+
+
 rows = []
 for name in contract["node_types"]:
     row = contract["node_schema"][name]
@@ -35,6 +55,28 @@ for name in contract["node_types"]:
         f'    ("{name}" ({el_strings(sorted(row["required"]))})'
         f' ({el_strings(sorted(row["optional"]))}))'
     )
+
+semantics = contract["semantics_schema"]
+semantic_object_rows = []
+for name, row in semantics["objects"].items():
+    types = " ".join(
+        f'("{field}" . "{field_type}")'
+        for field, field_type in row["field_types"].items()
+    )
+    semantic_object_rows.append(
+        f'    ("{name}" (:required ({el_strings(row["required"])}) '
+        f':optional ({el_strings(row["optional"])}) '
+        f':field-types ({types})))'
+    )
+
+semantic_types = " ".join(
+    f'("{field}" . "{field_type}")'
+    for field, field_type in semantics["field_types"].items()
+)
+default_semantic_rows = [
+    f'    ("{name}" . {el_plist(row)})'
+    for name, row in semantics["default_node_semantics"].items()
+]
 
 body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-binding: t; -*-
 
@@ -64,8 +106,51 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
 (defconst jetpacs-contract-format {contract["contract_format"]}
   "The `contract_format' this vocabulary was generated from.")
 
+(defconst jetpacs-protocol-version {contract["protocol_version"]}
+  "The EBP wire major this vocabulary implements.")
+
 (defconst jetpacs-contract-spec-version "{contract["spec_version"]}"
   "The SPEC version this vocabulary was generated from.")
+
+(defconst jetpacs-universal-attributes
+  '({el_keywords(contract["universal_node_attributes"])})
+  "Contract-projected universal member keywords accepted on every Node.")
+
+(defconst jetpacs-semantics-schema
+  '(:required ({el_strings(semantics["required"])})
+    :optional ({el_strings(semantics["optional"])})
+    :field-types ({semantic_types}))
+  "Contract-projected outer Semantics object schema.")
+
+(defconst jetpacs-semantic-object-schema
+  '(
+{chr(10).join(semantic_object_rows)})
+  "Contract-projected schemas for nested Semantics objects.")
+
+(defconst jetpacs-semantic-members
+  '({el_keywords(semantics["optional"])})
+  "Known Semantics member keywords; authoring helpers reject all others.")
+
+(defconst jetpacs-semantic-live-regions
+  '({el_strings(semantics["enums"]["live_region"])})
+  "The contract-projected Semantics live-region enum.")
+
+(defconst jetpacs-semantic-roles
+  '({el_strings(semantics["enums"]["role"])})
+  "The receiver-derived semantic role vocabulary; not an author override.")
+
+(defconst jetpacs-max-semantic-actions-per-node
+  {contract["limits"]["fixed"]["max_semantic_actions_per_node"]}
+  "The fixed maximum number of authored custom actions on one Node.")
+
+(defconst jetpacs-accessible-name-precedence
+  '({el_strings(semantics["accessible_name_precedence"])})
+  "Accessible-name sources in normative first-present order.")
+
+(defconst jetpacs-default-node-semantics
+  '(
+{chr(10).join(default_semantic_rows)})
+  "Contract-projected roles and state derivations keyed by Node type.")
 
 (defconst jetpacs-node-schema
   '(

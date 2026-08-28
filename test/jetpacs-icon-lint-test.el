@@ -56,7 +56,7 @@
     (with-temp-buffer
       (insert-file-contents
        (jetpacs-icon-lint--file
-        "companion/app/src/main/kotlin/com/calebc42/ebp/companion/render/IconMap.kt"))
+        "companion/renderer/material3/src/main/kotlin/com/calebc42/ebp/companion/render/IconMap.kt"))
       (goto-char (point-min))
       (while (re-search-forward "cache\\[\"\\([a-z_0-9]+\\)\"\\]" nil t)
         (push (match-string 1) names)))

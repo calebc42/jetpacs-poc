@@ -126,8 +126,8 @@ Registration order is stable when replacing an existing ID."
                 (jetpacs-reader--key current)))))
 
 (defun jetpacs-reader-refresh (params)
-  "Schedule a refresh of PARAMS' source surface."
-  (jetpacs-buffer-defer-refresh (plist-get params :surface)))
+  "Schedule a view-local refresh of PARAMS' source surface."
+  (jetpacs-buffer-defer-view-refresh (plist-get params :surface)))
 
 (defun jetpacs-reader--files-body (path)
   "Files body seam: render PATH when its reader is active."

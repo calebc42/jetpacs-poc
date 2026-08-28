@@ -180,6 +180,7 @@ class ReminderBackingTest {
                         put("node_types", JsonArray(emptyList()))
                         put("builtins", JsonArray(emptyList()))
                         put("features", JsonArray(emptyList()))
+                        put("extensions", JsonArray(emptyList()))
                     }
                 },
                 limits = testLimits("max_reminders" to 256),

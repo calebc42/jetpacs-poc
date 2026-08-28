@@ -33,6 +33,7 @@ class ThemeTest {
                     putJsonArray("node_types") { add("text") }
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits(), nonceSource = { katSn })) { }

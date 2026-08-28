@@ -11,6 +11,22 @@ Jetpacs-specific policy lives outside both. Start with
 `docs/PLATFORM-RENTAL-REGISTER.md` for the detailed boundaries and local-source
 implementation references.
 
+The Android UI boundary is split deliberately. `:renderer:compose` implements
+only EBP's eight core nodes with Compose Foundation; it has no Material or
+Styles dependency. `:renderer:material3` is an optional design implementation
+selected by this Companion. Apps such as Glasspane declare
+`glasspane.material3`, and EBP 3 advertises that opaque extension identifier independently from its
+namespaced node types.
+
+EBP 3.1's optional `semantics` envelope follows the same boundary. Its schema,
+accessible-name order, node roles/state defaults, and eight-action limit are
+generated from `ebp/contract.json`; `:renderer:model` projects them without a
+UI toolkit and `:renderer:compose` owns the single Compose Foundation mapping.
+The Material renderer consumes that mapping and owns no duplicate generic
+accessibility contract. Jetpacs authors the envelope with
+`jetpacs-with-semantics`, `jetpacs-semantic-collection`,
+`jetpacs-semantic-collection-item`, and `jetpacs-semantic-action`.
+
 ## Lineage and walls
 
 - **`slop-fork/poc-v1`** (worktree `../llm-poc`) — the first PoC, closed by
@@ -49,9 +65,47 @@ implementation references.
 |---|---|
 | `ebp/` | Submodule: the governing spec, contract, goldens, validate.py |
 | `emacs/` | The elisp client, spec-first (`ebp.el` wire core, then modules) |
-| `companion/` | Storage-neutral `:ebp-kmp`, protocol `:wire`, and Jetpacs KMP app/core modules |
+| `companion/` | Storage-neutral `:ebp-kmp`, protocol `:wire`, Jetpacs core/app modules, and split renderer implementations |
+| `companion/renderer/model/` | Toolkit-neutral renderer registry and EBP JSON readers |
+| `companion/renderer/compose/` | Compose Foundation renderer for the EBP Core Node Set |
+| `companion/renderer/material3/` | Optional Material 3 implementation, Styles integration, screenshots, and semantics tests |
 | `test/` | ERT suites; every wire test is driven by `ebp/goldens/` |
 | `docs/PLAN-poc3-rebuild.md` | Cross-platform execution phases and exit gates |
 | `docs/PLATFORM-RENTAL-REGISTER.md` | Built-ins/libraries that POC 3 must rent instead of reimplementing |
 | `docs/REWRITE-PLAN.md` | Rung ladder, gates, port manifest |
 | `docs/ARCHITECTURE-POC3.md` | Local references, module boundaries, Room/Nav/track-changes plan |
+| `docs/EBP3-RENDERER-MIGRATION.md` | Protocol-major and renderer-extension migration contract |
+| `companion/TESTING.md` | Android unit, screenshot, semantics, and build gates |
+
+## Org document-link navigation
+
+Org Mode document links keep the Files document host instead of creating a
+generic screen titled `Org link`. The responsibility chain is deliberately
+inspectable:
+
+1. `jetpacs-org-render--follow` calls built-in `org-open-at-point`; Org alone
+   parses the link and resolves its destination buffer and point.
+2. The renderer passes `jetpacs-org-render-follow-destination-function` into
+   `jetpacs-navigate-thunk`, which captures that observable result and offers
+   it to the document host before using the generic drill fallback.
+3. `jetpacs-reader-org--present-followed-destination` handles the result only
+   when the source is the document currently owned by Files.
+4. A same-document result calls `jetpacs-files-retarget-current-edit`, which
+   changes only `:mark-pos` and refreshes the existing `edit` view. Its screen
+   id, top-bar actions, FAB, and synchronized editor identity are preserved.
+5. A different file calls `jetpacs-files-open-path`, so canonicalization,
+   configured-root containment, file eligibility, and normal reader selection
+   remain in force. A Files refusal is final and cannot fall through to an
+   unrestricted buffer drill.
+6. A destination that Files cannot represent, such as a non-file utility
+   buffer, retains the generic drill fallback.
+
+This split is deterministic within Jetpacs' bounds: link meaning comes from the
+exact Emacs/Org implementation (`org-open-at-point` in `org.el`, delegating to
+`org-link-open` in `ol.el`), presentation is a choice over the captured
+`(source destination position surface)` tuple, and the only
+same-document state change is an explicit `:mark-pos` update. To debug a link,
+inspect that tuple at
+`jetpacs-reader-org--present-followed-destination`, then inspect
+`jetpacs-files-current-edit-context`; no parallel link parser or hidden route
+table exists.

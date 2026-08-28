@@ -11,7 +11,11 @@
 ;; experience app identity and navigation, and composes the existing
 ;; Files and Habits surfaces.  Capture and recurring agenda reminders
 ;; live here because they belong to the Org app as a whole, not to one
-;; document presentation.  This is the precedent for a future
+;; document presentation.  Org itself resolves document links; the Org
+;; reader then reuses Files' existing `edit' screen for same-file targets
+;; and routes other files back through Files.  Link navigation therefore
+;; retains the document's top bar, FAB, path policy, and synchronized editor
+;; identity instead of inventing an "Org link" screen.  This is the precedent for a future
 ;; `jetpacs-elisp-mode.el': a mode app supplies adapters and a thin
 ;; composition root, not another editor protocol or file browser.
 
@@ -206,6 +210,16 @@ NOW is an Emacs time value and defaults to `current-time'."
   "Return OWNER's negotiated surface name."
   (jetpacs-shell-surface-for owner))
 
+(defun jetpacs-org-mode--open-seed-action (document)
+  "Build the Files handoff action for seeded DOCUMENT.
+Opening the cached Files surface is the receiver-local half of the gesture;
+`org-mode.open-seed' still performs the authoritative seed, path validation,
+document-host selection, and content publication in Emacs."
+  (jetpacs-shell-action-opening-surface
+   "org-mode.open-seed"
+   (jetpacs-org-mode--surface jetpacs-files-owner)
+   :args (list :document document)))
+
 (defun jetpacs-org-mode--on-open-seed (args params)
   "Open a known seeded document selected by ARGS through the Files app."
   (let ((document (plist-get args :document)))
@@ -244,24 +258,20 @@ NOW is an Emacs time value and defaults to `current-time'."
      "Open Org files"
      :subtitle "Browse, read, and edit .org documents"
      :icon "folder_open"
-     :on-tap (jetpacs-action
-              "jetpacs.launcher.open"
-              :args (list :surface
-                          (jetpacs-org-mode--surface jetpacs-files-owner)))
+     :on-tap (jetpacs-shell-open-surface-action
+              (jetpacs-org-mode--surface jetpacs-files-owner))
      :key "org-mode-files")
     (jetpacs-chrome-row
      "Orgro manual"
      :subtitle "Bundled upstream guide and feature examples"
      :icon "menu_book"
-     :on-tap (jetpacs-action "org-mode.open-seed"
-                             :args '(:document "manual"))
+     :on-tap (jetpacs-org-mode--open-seed-action "manual")
      :key "org-mode-manual")
     (jetpacs-chrome-row
      "Starter inbox"
      :subtitle "A safe, editable seed created only when missing"
      :icon "inbox"
-     :on-tap (jetpacs-action "org-mode.open-seed"
-                             :args '(:document "inbox"))
+     :on-tap (jetpacs-org-mode--open-seed-action "inbox")
      :key "org-mode-inbox")
     (jetpacs-chrome-row
      "Quick capture"
@@ -273,11 +283,8 @@ NOW is an Emacs time value and defaults to `current-time'."
      "Habits"
      :subtitle "Consistency graphs from built-in org-habit"
      :icon "event_repeat"
-     :on-tap (jetpacs-action
-              "jetpacs.launcher.open"
-              :args (list :surface
-                          (jetpacs-org-mode--surface
-                           jetpacs-org-habits-owner)))
+     :on-tap (jetpacs-shell-open-surface-action
+              (jetpacs-org-mode--surface jetpacs-org-habits-owner))
      :key "org-mode-habits")
     (jetpacs-card
      (jetpacs-column
@@ -304,11 +311,8 @@ NOW is an Emacs time value and defaults to `current-time'."
     (list
      (list :label jetpacs-org-mode-title
            :icon jetpacs-org-mode-icon
-           :on-tap (jetpacs-action
-                    "jetpacs.launcher.open"
-                    :args (list :surface
-                                (jetpacs-org-mode--surface
-                                 jetpacs-org-mode-owner)))
+           :on-tap (jetpacs-shell-open-surface-action
+                    (jetpacs-org-mode--surface jetpacs-org-mode-owner))
            :selected (and selected t)))))
 
 (defun jetpacs-org-mode-register ()

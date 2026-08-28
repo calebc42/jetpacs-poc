@@ -399,7 +399,7 @@ or it does not move."
 
 (ert-deftest jetpacs-m3-home-screen-carries-the-identity ()
   "The root screen says who this app is and which Material it is.
-The dock and drawer label stays the short \"Catalog\"; the full ratified
+The dock and drawer use the short `jetpacs-m3-label'; the full
 identity lives in the root screen's body, where a sixty-character
 string is not a top-bar flex trap."
   (let ((json (jetpacs-node->canonical-json (jetpacs-m3-home-screen nil))))
@@ -407,7 +407,13 @@ string is not a top-bar flex trap."
                                            jetpacs-m3-identity))
                             json))
     (should (string-match-p (regexp-quote jetpacs-m3-material-version)
-                            json))))
+                            json))
+    ;; The canonical serializer returns UTF-8 bytes, so assert the ASCII facts
+    ;; independently instead of making the middle-dot separators part of the
+    ;; test's string representation contract.
+    (should (string-match-p "41 components" json))
+    (should (string-match-p "279 examples" json))
+    (should (string-match-p "43 Elisp builders" json))))
 
 ;;;; App identity: `jetpacs-defapp''s first caller
 
@@ -417,8 +423,10 @@ and this is the only suite that can say so — `jetpacs-defapp' had zero
 callers before the catalog became one."
   (let ((entry (assoc jetpacs-m3-owner jetpacs-apps--registry)))
     (should entry)
-    (should (equal (plist-get (cdr entry) :label) "Catalog"))
+    (should (equal (plist-get (cdr entry) :label) jetpacs-m3-label))
     (should (member jetpacs-m3-owner (plist-get (cdr entry) :surfaces)))
+    (should (equal (plist-get (cdr entry) :requires-extensions)
+                   '("glasspane.material3")))
     ;; The home surface is the one the chrome root was defined on, so
     ;; `app.open' lands somewhere that exists.
     (should (equal (jetpacs-apps--home-surface entry) jetpacs-m3-owner))))
@@ -435,21 +443,21 @@ single-app contract."
     (should (equal (car (jetpacs-apps-current)) jetpacs-m3-owner))
     (let ((labels (mapcar (lambda (i) (plist-get i :label))
                           (jetpacs-apps-dock-items "app:hub"))))
-      (should (equal labels '("Home" "Files" "Catalog")))
+      (should (equal labels '("Home" "Files" "Components")))
       (should-not (member "Apps" labels)))
     ;; The destination reads selected only on the catalog's own surface.
     (let ((home (jetpacs-shell-surface-for jetpacs-m3-owner)))
       (cl-flet ((catalog-item (surface)
-                  (cl-find "Catalog" (jetpacs-apps-dock-items surface)
+                  (cl-find jetpacs-m3-label (jetpacs-apps-dock-items surface)
                            :key (lambda (i) (plist-get i :label))
                            :test #'equal)))
         (should-not (plist-get (catalog-item "app:hub") :selected))
         (should (plist-get (catalog-item home) :selected))
-        ;; A GLOBAL verb: the tap arrives from any surface the dock
-        ;; renders on, and it names the catalog's surface explicitly.
+        ;; Receiver-local host navigation: the tap arrives from any surface
+        ;; the dock renders on and names the catalog's surface explicitly.
         (let ((tap (plist-get (catalog-item "app:hub") :on-tap)))
-          (should (equal (plist-get tap :action) "jetpacs.launcher.open"))
-          (should (equal (plist-get (plist-get tap :args) :surface) home)))))))
+          (should (equal (plist-get tap :builtin) "surface.open"))
+          (should (equal (plist-get tap :surface) home)))))))
 
 ;;;; The verbs
 
@@ -648,18 +656,46 @@ lambdas, which have no symbol to carry a docstring."
 ;;;; The component's node builders
 
 (ert-deftest jetpacs-m3-every-component-names-its-builders ()
-  "All 41 map onto the node vocabulary, and every symbol is real.
-`jetpacs-m3-defcomponent' signals on an unbound one, so this is really
-asking that none was left empty — a component with no `:builders' shows
-a Description and then nothing about how to build the thing."
+  "All 41 map onto documented functions in the Jetpacs vocabulary.
+`jetpacs-m3-defcomponent' enforces the structural rules at registration;
+this source-backed gate additionally proves that every loaded function has
+the docstring the component screen promises to show."
   (dolist (component jetpacs-m3-components)
     (let ((builders (plist-get component :builders)))
       (should builders)
+      (should (= (length builders)
+                 (length (delete-dups (copy-sequence builders)))))
       (dolist (builder builders)
         (should (fboundp builder))
         ;; A node builder, not a verb or a helper that wandered in.
         (should (string-prefix-p "jetpacs-" (symbol-name builder)))
-        (should-not (string-prefix-p "jetpacs-m3-" (symbol-name builder)))))))
+        (should-not (string-prefix-p "jetpacs-m3-" (symbol-name builder)))
+        (should (jetpacs-m3-builder-doc builder))))))
+
+(ert-deftest jetpacs-m3-defcomponent-rejects-bad-builder-metadata ()
+  "Malformed self-documentation fails before it can enter the registry."
+  (dolist (builders
+           (list nil
+                 (list #'jetpacs-button #'jetpacs-button)
+                 (list #'jetpacs-m3-home-screen)
+                 (list (make-symbol "jetpacs-test-unbound"))))
+    (should-error
+     (jetpacs-m3-defcomponent "test-metadata"
+       :name "Test"
+       :description "Test component metadata."
+       :builders builders
+       :examples nil))))
+
+(ert-deftest jetpacs-m3-builder-index-is-derived-and-deterministic ()
+  "The reverse index is the loaded metadata, not a parallel API table."
+  (let* ((index (jetpacs-m3-builder-index))
+         (names (mapcar (lambda (entry) (symbol-name (car entry))) index)))
+    (should (= 43 (length index)))
+    (should (equal names (sort (copy-sequence names) #'string<)))
+    (should (equal (cdr (assq 'jetpacs-button index))
+                   '("buttons" "extended-fab" "floating-action-buttons"
+                     "togglebuttons")))
+    (should (equal 279 (jetpacs-m3-example-count)))))
 
 (ert-deftest jetpacs-m3-component-screen-carries-the-builder-docs ()
   "Upstream says what the component IS; the builder says what you write."
@@ -667,7 +703,10 @@ a Description and then nothing about how to build the thing."
          (texts (jetpacs-m3-test--texts
                  (jetpacs-m3-component-screen component nil))))
     (should (member "Description" texts))
-    (should (member "Elisp" texts))
+    (should (member "Jetpacs builders" texts))
+    (should (member
+             "Signatures and descriptions come from the loaded Elisp functions."
+             texts))
     (should (member "jetpacs-button" texts))
     ;; The real docstring, not a placeholder.
     (should (cl-some (lambda (s) (string-match-p "SPEC" s)) texts))

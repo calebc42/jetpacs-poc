@@ -48,13 +48,38 @@ object EbpJson {
      * (escaped or raw), non-finite or out-of-range number, over-deep nesting,
      * or trailing data; throws [InvalidRequest] for duplicate member names.
      */
-    fun parse(text: String): EbpValue {
+    fun parse(text: String): EbpValue = toEbpValue(parseJsonElement(text))
+
+    /**
+     * Parse directly into the immutable tree used by the receiver.  The live
+     * frame path must not first allocate an isomorphic [EbpValue] tree and
+     * then recursively project the complete message into a second tree: large
+     * SurfaceSpecs made that transient duplication a major source of GC and
+     * receiver latency.  This entry point has exactly the same parser and
+     * rejection taxonomy as [parse]; only its result representation differs.
+     */
+    fun parseJsonElement(text: String): JsonElement {
         val p = Parser(text)
         p.skipWs()
         val v = p.value(0)
         p.skipWs()
         if (!p.atEnd()) throw WireParseError("trailing data after message")
         return v
+    }
+
+    /** Keep the closed protocol-value API used by conformance callers. */
+    private fun toEbpValue(v: JsonElement): EbpValue = when (v) {
+        is JsonObject -> EbpValue.EObj(v.mapValues { (_, m) -> toEbpValue(m) })
+        is JsonArray -> EbpValue.EArr(v.map(::toEbpValue))
+        JsonNull -> EbpValue.ENull
+        is JsonPrimitive -> when {
+            v.isString -> EbpValue.EStr(v.content)
+            v.content == "true" -> EbpValue.EBool(true)
+            v.content == "false" -> EbpValue.EBool(false)
+            v.content.indexOfAny(charArrayOf('.', 'e', 'E')) >= 0 ->
+                EbpValue.ENum(v.content.toDouble())
+            else -> EbpValue.EInt(v.content.toLong())
+        }
     }
 
     /**
@@ -68,11 +93,12 @@ object EbpJson {
      * for exactly one customer — the response-id lookup's `as? Int` — and that
      * map is keyed on Long now, so the narrowing died with it.
      *
-     * The wire path is [parse] followed by this projection, never
-     * `Json.parseToJsonElement`: kotlinx's own parser has the wrong taxonomy at
-     * the frame boundary (it accepts duplicate member names and integers past
-     * 2^53-1). kotlinx parses persisted store files, where leniency is the
-     * requirement; it never parses wire bytes.
+     * This projection remains for the closed conformance API.  The live wire
+     * path uses [parseJsonElement] and constructs that immutable tree directly;
+     * it never calls `Json.parseToJsonElement`, whose duplicate-member and
+     * integer-boundary behavior is wrong for the frame boundary.  kotlinx
+     * parses persisted store files, where leniency is the requirement; it never
+     * parses wire bytes.
      */
     fun toJsonElement(v: EbpValue): JsonElement = when (v) {
         is EbpValue.EObj -> JsonObject(v.members.mapValues { (_, m) -> toJsonElement(m) })
@@ -95,15 +121,15 @@ object EbpJson {
                 i++
         }
 
-        fun value(depth: Int): EbpValue {
+        fun value(depth: Int): JsonElement {
             if (atEnd()) throw WireParseError("unexpected end of message")
             return when (s[i]) {
                 '{' -> obj(depth + 1)
                 '[' -> arr(depth + 1)
-                '"' -> EbpValue.EStr(string())
-                't' -> { literal("true"); EbpValue.EBool(true) }
-                'f' -> { literal("false"); EbpValue.EBool(false) }
-                'n' -> { literal("null"); EbpValue.ENull }
+                '"' -> JsonPrimitive(string())
+                't' -> { literal("true"); JsonPrimitive(true) }
+                'f' -> { literal("false"); JsonPrimitive(false) }
+                'n' -> { literal("null"); JsonNull }
                 '-', in '0'..'9' -> number()
                 else -> throw WireParseError("invalid JSON")
             }
@@ -115,12 +141,12 @@ object EbpJson {
                 throw WireParseError("nesting depth exceeds 64")
         }
 
-        private fun obj(depth: Int): EbpValue {
+        private fun obj(depth: Int): JsonObject {
             checkDepth(depth)
             i++ // '{'
-            val members = LinkedHashMap<String, EbpValue>()
+            val members = LinkedHashMap<String, JsonElement>()
             skipWs()
-            if (!atEnd() && s[i] == '}') { i++; return EbpValue.EObj(members) }
+            if (!atEnd() && s[i] == '}') { i++; return JsonObject(members) }
             while (true) {
                 skipWs()
                 if (atEnd() || s[i] != '"')
@@ -139,18 +165,18 @@ object EbpJson {
                 when {
                     atEnd() -> throw WireParseError("unexpected end of message")
                     s[i] == ',' -> i++
-                    s[i] == '}' -> { i++; return EbpValue.EObj(members) }
+                    s[i] == '}' -> { i++; return JsonObject(members) }
                     else -> throw WireParseError("expected ',' or '}'")
                 }
             }
         }
 
-        private fun arr(depth: Int): EbpValue {
+        private fun arr(depth: Int): JsonArray {
             checkDepth(depth)
             i++ // '['
-            val items = mutableListOf<EbpValue>()
+            val items = mutableListOf<JsonElement>()
             skipWs()
-            if (!atEnd() && s[i] == ']') { i++; return EbpValue.EArr(items) }
+            if (!atEnd() && s[i] == ']') { i++; return JsonArray(items) }
             while (true) {
                 skipWs()
                 items.add(value(depth))
@@ -158,7 +184,7 @@ object EbpJson {
                 when {
                     atEnd() -> throw WireParseError("unexpected end of message")
                     s[i] == ',' -> i++
-                    s[i] == ']' -> { i++; return EbpValue.EArr(items) }
+                    s[i] == ']' -> { i++; return JsonArray(items) }
                     else -> throw WireParseError("expected ',' or ']'")
                 }
             }
@@ -171,13 +197,29 @@ object EbpJson {
 
         private fun string(): String {
             i++ // opening '"'
-            val out = StringBuilder()
+            val start = i
+            var out: StringBuilder? = null
             while (true) {
                 if (atEnd()) throw WireParseError("unterminated string")
                 val c = s[i]
                 when {
-                    c == '"' -> { i++; return out.toString() }
-                    c == '\\' -> escape(out)
+                    c == '"' -> {
+                        val result = out?.toString() ?: s.substring(start, i)
+                        i++
+                        return result
+                    }
+                    c == '\\' -> {
+                        // SurfaceSpecs contain thousands of short identifiers,
+                        // member names, and text runs, and almost all contain
+                        // no escape.  Allocate a builder only for the uncommon
+                        // escaped string; when the first escape arrives, copy
+                        // the untouched prefix exactly once.
+                        val builder = out ?: StringBuilder(i - start + 16).also {
+                            it.append(s, start, i)
+                            out = it
+                        }
+                        escape(builder)
+                    }
                     c < ' ' ->
                         // RFC 8259: control characters MUST be escaped.
                         throw WireParseError("unescaped control character")
@@ -187,11 +229,14 @@ object EbpJson {
                         // keeps parse() total on arbitrary Strings too.
                         if (i + 1 >= s.length || !s[i + 1].isLowSurrogate())
                             throw WireParseError("unpaired surrogate")
-                        out.append(c).append(s[i + 1])
+                        out?.append(c)?.append(s[i + 1])
                         i += 2
                     }
                     c.isLowSurrogate() -> throw WireParseError("unpaired surrogate")
-                    else -> { out.append(c); i++ }
+                    else -> {
+                        out?.append(c)
+                        i++
+                    }
                 }
             }
         }
@@ -253,7 +298,7 @@ object EbpJson {
             return v.toChar()
         }
 
-        private fun number(): EbpValue {
+        private fun number(): JsonPrimitive {
             val start = i
             if (s[i] == '-') i++
             // int part: 0, or [1-9][0-9]* — leading zeros are not JSON.
@@ -289,7 +334,7 @@ object EbpJson {
                     ?: throw WireParseError("integer out of range")
                 if (v > MAX_SAFE_INTEGER || v < -MAX_SAFE_INTEGER)
                     throw WireParseError("integer out of range")
-                EbpValue.EInt(v)
+                JsonPrimitive(v)
             } else {
                 val v = text.toDouble()
                 // SPEC 4.2: a literal that overflows binary64 is refused —
@@ -300,7 +345,7 @@ object EbpJson {
                 // representable EBP value, so there is something conformant
                 // to hand downstream. Asymmetric on purpose (amendment #99).
                 if (!v.isFinite()) throw WireParseError("number out of range")
-                EbpValue.ENum(v)
+                JsonPrimitive(v)
             }
         }
     }

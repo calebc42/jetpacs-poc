@@ -48,9 +48,11 @@ class CapabilityTest {
             supportedCapabilities = setOf("capabilities"),
             surfaceProfiles = buildJsonObject {
                 putJsonObject("app") {
-                    put("node_types", JsonArray(NODE_SCHEMA.keys.map(::JsonPrimitive)))
+                    put("node_types", JsonArray(
+                        (NODE_SCHEMA.keys - "variant_host").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_device_report_bytes" to 8192,

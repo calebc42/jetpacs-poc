@@ -93,7 +93,7 @@ reconcilable."
      :pad (list :horizontal 16 :vertical 12))
     :on-tap (jetpacs-m3-demo label))
    :key (concat prefix "-" icon)
-   :bg (and selected "secondary_container")
+   :bg (and selected "secondary")
    :corner 28))
 
 (defun jetpacs-m3-navigation-drawer--items-column (prefix &rest options)

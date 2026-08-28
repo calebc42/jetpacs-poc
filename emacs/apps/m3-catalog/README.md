@@ -1,9 +1,19 @@
-# The Material 3 Compose Catalog, in Elisp
+# Jetpacs Components: the Material 3 catalog in Elisp
 
 A faithful re-creation of
 `resources/android/Compose-Material-3-Expressive-Catalog` as a Jetpacs
 Tier-1 app: **41 components, 279 examples**, three screens deep, all
-authored in Elisp and rendered by the Companion.
+authored in Elisp and rendered by the Companion. The visible app is
+**Jetpacs Components** (short dock label: **Components**). The established
+`jetpacs-m3-*` symbols and `m3catalog.*` wire verbs remain stable internal
+identifiers, so persisted screens, actions, and authoring workflows do not
+change when the product label does.
+
+This catalog is intentionally downstream of the optional
+`glasspane.material3` renderer extension. Jetpacs itself targets EBP semantics
+and Compose Foundation; the catalog declares its Material requirement through
+`jetpacs-defapp`, and Jetpacs refuses to enter or build it when a live app
+profile lacks that extension.
 
 ```
 emacs/jetpacs-m3-catalog.el          entry point: requires everything, registers the app
@@ -18,6 +28,28 @@ Navigation mirrors upstream `NavGraph.kt`: **Home** (a grid of
 components) → **Component** (icon, description, its examples) →
 **Example** (one sample, centered).  That is exactly
 `jetpacs-chrome-max-screens` (3), so the stack never evicts.
+
+## The self-documenting contract
+
+Each `jetpacs-m3-defcomponent` form owns a non-empty `:builders` list. The
+Component screen renders those loaded functions' names and docstrings and
+offers a bounded **Describe** action addressed by component id plus list index;
+no function symbol is accepted from the wire. Example screens similarly render
+the docstring of their named sample builder and can show its authored Elisp
+source.
+
+The metadata is executable policy, not display-only prose:
+
+* registration rejects empty, duplicate, unbound, or non-vocabulary builders;
+* `jetpacs-m3-builder-index` derives the reverse index from that same metadata;
+* `tools/m3-check.sh` requires readable component and named-example docstrings;
+* the same gate requires the catalog's `glasspane.material3` app declaration;
+* `test/jetpacs-m3-catalog-test.el` pins the complete inventory, reverse index,
+  screen text, safe action addressing, and metadata failures.
+
+This keeps one authority: the catalog shows the actual loaded Elisp functions,
+while the source-backed gates ensure a stripped or stale runtime cannot silently
+become the authoring truth.
 
 ## The fidelity rule
 
@@ -57,8 +89,9 @@ retired in the same change.
 
 `docs/lookup-tables/M3-COMPONENT-LOOKUP.org` is the historical
 authority on which M3 components Jetpacs wraps; the sprint outgrew its
-counts.  The vocabulary now stands at **52 node types** — Carousel,
-SearchBar, SegmentedButton, NavigationRail, ModalBottomSheet (the
+counts.  The vocabulary now stands at **53 node types**; five are owned by the
+`glasspane.material3` extension. Carousel, SearchBar, SegmentedButton,
+NavigationRail, ModalBottomSheet (the
 scaffold `sheet` slot), Tooltip, ExposedDropdownMenu (`dropdown`),
 FabMenu, ButtonGroup, LazyGrid and the app-bar strips all became
 nodes during the catalog work.  Still deliberately absent: ListItem
@@ -106,15 +139,15 @@ DateRangePicker.  A sample over an absent component is unsupported
 ### Gate (must pass before you are done)
 
 ```sh
-cd llm-poc-2 && tools/m3-check.sh <slug>
+cd llm-poc-3 && tools/m3-check.sh <slug>
 ```
 
 It byte-compiles the module with warnings as errors (into a temp
 directory, so concurrent checks cannot shadow each other with a stale
 `.elc`) and then builds every screen the component contributes,
 checking the §16.2 profile, §16.1 id uniqueness, canonical
-serialization, icon names, and that nothing still carries the triage
-sentinel.  The whole-app gate is
+serialization, icon names, builder metadata and docstrings, and that nothing
+still carries the triage sentinel.  The whole-app gate is
 `test/jetpacs-m3-catalog-test.el`.
 
 ## Node vocabulary cheat-sheet
@@ -179,7 +212,7 @@ Enum values are **strings**.  Booleans are `t` (true) or `:json-false`
                 :color ROLE :enabled :json-false)  ; :checked makes a ToggleButton (needs :id)
 (jetpacs-icon-button ICON ON-TAP :content-description S :badge "3" :enabled …)
 (jetpacs-chip LABEL :on-tap D :selected t :icon N :enabled …)         ; FilterChip
-(jetpacs-assist-chip LABEL :on-tap D :icon N :enabled …)              ; AssistChip
+(jetpacs-material3-assist-chip LABEL :on-tap D :icon N :enabled …)              ; AssistChip
 (jetpacs-menu ITEMS :icon N :initial-scroll "end" :footer NODE
               :groups (list (jetpacs-menu-group LABEL ITEMS) …))  ; exactly one of ITEMS/:groups
 (jetpacs-menu-item LABEL ON-TAP :icon N :supporting-text S :trailing-icon N
@@ -209,10 +242,10 @@ Enum values are **strings**.  Booleans are `t` (true) or `:json-false`
 (jetpacs-navigation-rail (list (jetpacs-rail-item LABEL ICON ON-TAP :selected B) …)
                          :variant "standard|wide|modal" :expanded B :arrangement S
                          :header NODE :on-expand-change D :hide-on-collapse t)
-(jetpacs-app-bar-row (list (jetpacs-app-bar-item ICON ON-TAP :label S) …))  ; measure-time overflow
+(jetpacs-material3-app-bar-row (list (jetpacs-app-bar-item LABEL ICON ON-TAP) …))  ; measure-time overflow
 (jetpacs-carousel CHILD… :strategy "multi_browse|uncontained|centered_hero"
                   :item-width DP :item-spacing DP :content-padding DP :item-corner DP)
-(jetpacs-fab-menu (list (jetpacs-fab-menu-item LABEL ICON ON-TAP) …) :icon N …)
+(jetpacs-material3-fab-menu (list (jetpacs-material3-fab-menu-item LABEL ICON ON-TAP) …) :icon N …)
 (jetpacs-button-group (list (jetpacs-button-group-item LABEL ON-TAP :icon N) …))
 (jetpacs-lazy-grid CHILD… :columns N :min-item-width DP :spacing DP)
 (jetpacs-tooltip CHILD… :text S :rich t :title S :action-label S :on-action D :shown B)
@@ -226,13 +259,10 @@ Enum values are **strings**.  Booleans are `t` (true) or `:json-false`
 ```
 
 Color roles (`docs/lookup-tables/COLORS-REFERENCE.org`): `primary`,
-`on_primary`, `primary_container`, `on_primary_container`, `secondary`,
-`on_secondary`, `secondary_container`, `on_secondary_container`,
-`tertiary`, `on_tertiary`, `tertiary_container`,
-`on_tertiary_container`, `error`, `on_error`, `error_container`,
-`on_error_container`, `background`, `on_background`, `surface`,
-`on_surface`, `surface_variant`, `on_surface_variant`, `outline`,
-`success`, `on_success`, `warning`, `on_warning` — or `#RRGGBB`.
+`on_primary`, `secondary`, `on_secondary`, `error`, `on_error`, `background`,
+`on_background`, `surface`, `on_surface`, `outline`, `success`, and `warning`
+— or `#RRGGBB`. Material-only container, tertiary, variant, and matching
+foreground roles are receiver-private derivations rather than wire names.
 
 **Not node types** (do not reach for them): NavigationBar (compose a
 bottom bar), ListItem (compose rows), RadioButton (`enum_list`),

@@ -29,4 +29,22 @@ class ReconnectNotificationTest {
         assertFalse(shouldPostReconnectNotification(true, false))
         assertFalse(shouldPostReconnectNotification(false, false))
     }
+
+    @Test
+    fun connectionIndicatorTracksTheNewestAuthenticatedSession() {
+        val first = Any()
+        val replacement = Any()
+        val tracker = AuthenticatedConnectionTracker<Any>()
+
+        assertFalse(tracker.connected.value)
+        tracker.authenticated(first)
+        assertTrue(tracker.connected.value)
+
+        tracker.authenticated(replacement)
+        assertFalse(tracker.disconnected(first))
+        assertTrue(tracker.connected.value)
+
+        assertTrue(tracker.disconnected(replacement))
+        assertFalse(tracker.connected.value)
+    }
 }

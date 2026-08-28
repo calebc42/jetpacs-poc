@@ -141,6 +141,9 @@ class SpecLimitsTest {
             "max_json_depth" to WireLimits.MAX_JSON_DEPTH,
             "max_nodes_per_snapshot" to WireLimits.MAX_NODES_PER_SNAPSHOT,
             "max_children_per_node" to WireLimits.MAX_CHILDREN_PER_NODE,
+            "max_variants_per_host" to WireLimits.MAX_VARIANTS_PER_HOST,
+            "max_semantic_actions_per_node" to
+                MAX_SEMANTIC_ACTIONS_PER_NODE,
             "max_identifier_bytes" to WireLimits.MAX_IDENTIFIER_OCTETS,
             "max_request_id_bytes" to WireLimits.MAX_REQUEST_ID_OCTETS,
             "max_method_bytes" to WireLimits.MAX_METHOD_OCTETS,

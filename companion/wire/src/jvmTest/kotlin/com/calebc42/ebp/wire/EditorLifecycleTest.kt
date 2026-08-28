@@ -32,11 +32,13 @@ class EditorLifecycleTest {
                     put("node_types", JsonArray(listOf("text", "column", "editor").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
                 putJsonObject("dialog") {
                     put("node_types", JsonArray(listOf("text", "column", "editor").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_editor_sessions" to maxEditors,
@@ -566,6 +568,7 @@ class EditorLifecycleTest {
                         put("node_types", JsonArray(listOf("text", "column", "editor").map(::JsonPrimitive)))
                         put("builtins", JsonArray(emptyList()))
                         put("features", JsonArray(emptyList()))
+                        put("extensions", JsonArray(emptyList()))
                     }
                 },
                 limits = testLimits("max_editor_sessions" to 8,

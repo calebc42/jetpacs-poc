@@ -14,6 +14,7 @@
 (require 'ert)
 (require 'ebp)
 (require 'jetpacs-widgets)
+(require 'glasspane-material3)
 (require 'jetpacs-async)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-shell)
@@ -33,7 +34,8 @@
           (or profiles
               `(:app (:node_types ,jetpacs-floor-test--core-types
                       :builtins ["view.switch"]
-                      :features [])))
+                      :features []
+                      :extensions [])))
           (ebp-client-limits client) (or limits '(:max_frame_bytes 4194304)))
     client))
 
@@ -407,6 +409,28 @@ reference defconst passes the same spec, proving it cannot witness."
                    42))
         (should (= (length sent) 1))))))
 
+(ert-deftest jetpacs-floor-gates-renderer-extension-and-node-independently ()
+  "EBP 3 §16.2.1 requires both the extension and its node advertisement."
+  (let ((node (jetpacs-material3-assist-chip
+               "Help" :on-tap (jetpacs-action "demo.help"))))
+    (jetpacs-floor-test--with-client
+        (client :profiles
+                '(:app (:node_types ["text" "material3.assist_chip"]
+                        :builtins [] :features [] :extensions [])))
+      (let (sent)
+        (jetpacs-floor-test--recording-push sent
+          (should-error (jetpacs-shell-push "app:demo" :spec node))
+          (should-not sent))))
+    (jetpacs-floor-test--with-client
+        (client :profiles
+                '(:app (:node_types ["text" "material3.assist_chip"]
+                        :builtins [] :features []
+                        :extensions ["glasspane.material3"])))
+      (let (sent)
+        (jetpacs-floor-test--recording-push sent
+          (should (= (jetpacs-shell-push "app:demo" :spec node) 42))
+          (should (= (length sent) 1)))))))
+
 (ert-deftest jetpacs-floor-gate-stale-spec-and-builtins ()
   (jetpacs-floor-test--with-client (client)
     (let ((sent nil))
@@ -433,6 +457,100 @@ reference defconst passes the same spec, proving it cannot witness."
           (should (member "text" (jetpacs--collect-node-types stale '())))
           (should-not (member "text_input"
                               (jetpacs--collect-node-types stale '()))))))))
+
+(ert-deftest jetpacs-floor-variant-host-strip-and-sender-gates ()
+  "Retained hosts are stateful, bounded, and contain no mutable subtree."
+  (jetpacs-floor-test--with-client
+      (client :profiles
+              '(:app (:node_types ["text" "column" "text_input"
+                                    "variant_host"]
+                       :builtins [] :features [])))
+    (let ((sent nil)
+          (valid
+           '(:t "variant_host" :id "host" :value "a"
+             :variants [(:value "a" :content (:t "text" :text "A"))
+                        (:value "b" :content (:t "text" :text "B"))])))
+      (jetpacs-floor-test--recording-push sent
+        (should (= (jetpacs-shell-push "app:demo" :spec valid) 42))
+        ;; A stale host is removed as one stateful unit, not traversed into
+        ;; inactive alternatives.
+        (jetpacs-shell-push
+         "app:demo" :spec (jetpacs-text "current")
+         :stale-spec (jetpacs-column (jetpacs-text "safe") valid))
+        (let ((stale (plist-get (nth 2 (car sent)) :stale-spec)))
+          (should-not (member "variant_host"
+                              (jetpacs--collect-node-types stale '()))))
+        (should-error
+         (jetpacs-shell-push
+          "app:demo"
+          :spec
+          (list :t "variant_host" :id "too-many" :value "v0"
+                :variants
+                (vconcat
+                 (cl-loop for i below 9
+                          collect
+                          (list :value (format "v%d" i)
+                                :content '(:t "text" :text "x")))))))
+        (should-error
+         (jetpacs-shell-push
+          "app:demo"
+          :spec
+          '(:t "variant_host" :id "mutable" :value "a"
+            :variants
+            [(:value "a" :content (:t "text_input" :id "draft"))
+             (:value "b" :content (:t "text" :text "B"))])))
+        ;; Only the two successful pushes above reached the wire.
+        (should (= (length sent) 2))))))
+
+(ert-deftest jetpacs-floor-retained-identity-gate-is-complete ()
+  "Inactive branches obey universal identity and sibling-key rules."
+  (jetpacs-floor-test--with-client
+      (client :profiles
+              '(:app (:node_types ["text" "column" "collapsible"
+                                    "variant_host"]
+                       :builtins [] :features [])))
+    (let* ((sent nil)
+           (valid
+            '(:t "variant_host" :id "host" :value "a"
+              :variants
+              [(:value "a" :content
+                (:t "column" :children
+                 [(:t "text" :text "A" :key "row")]))
+               (:value "b" :content
+                (:t "column" :children
+                 [(:t "text" :text "B" :key "row")]))]))
+           (duplicate
+            '(:t "variant_host" :id "host" :value "a"
+              :variants
+              [(:value "a" :content (:t "text" :text "A"))
+               (:value "b" :content
+                (:t "collapsible" :id "details"
+                 :header (:t "text" :text "Header" :key "same")
+                 :children
+                 [(:t "text" :text "Body" :key "same")]))])))
+      (jetpacs-floor-test--recording-push sent
+        ;; Branch values are identity boundaries, so the same descendant key
+        ;; in two alternatives is valid.
+        (should (= (jetpacs-shell-push "app:demo" :spec valid) 42))
+        ;; A named slot and Node[] below the same nearest Node are siblings.
+        (should-error
+         (jetpacs-shell-push "app:demo" :spec duplicate)
+         :type 'jetpacs-duplicate-node-key)
+        ;; Direct plists can bypass widget constructors; the final shell gate
+        ;; still rejects malformed key/id values in an unselected branch.
+        (dolist (bad
+                 '((:t "variant_host" :id "host" :value "a"
+                    :variants
+                    [(:value "a" :content (:t "text" :text "A"))
+                     (:value "b" :content
+                      (:t "text" :text "B" :key 7))])
+                   (:t "variant_host" :id "host" :value "a"
+                    :variants
+                    [(:value "a" :content (:t "text" :text "A"))
+                     (:value "b" :content
+                      (:t "text" :text "B" :id (:bad t))) ])))
+          (should-error (jetpacs-shell-push "app:demo" :spec bad)))
+        (should (= (length sent) 1))))))
 
 (ert-deftest jetpacs-floor-gate-missing-profile-and-capability ()
   (jetpacs-floor-test--with-client
@@ -482,6 +600,35 @@ reference defconst passes the same spec, proving it cannot witness."
       (let ((sent nil))
         (jetpacs-floor-test--recording-push sent
           (should (= (jetpacs-shell-push "app:demo" :spec spec) 42)))))))
+
+(ert-deftest jetpacs-floor-semantic-actions-use-ordinary-profile-gates ()
+  "Semantic descriptors are visible to the same builtin and feature gates."
+  (let ((builtin-spec
+         (jetpacs-with-semantics
+          (jetpacs-text "Settings")
+          :actions
+          (list (jetpacs-semantic-action
+                 "Open settings" (jetpacs-settings-open)))))
+        (feature-spec
+         (jetpacs-with-semantics
+          (jetpacs-text "Open")
+          :actions
+          (list (jetpacs-semantic-action
+                 "Open app"
+                 (jetpacs-action "demo.open"
+                                 :open-surface "app:other"))))))
+    (should-error
+     (jetpacs-shell--check-profile-uses
+      builtin-spec '("text") nil nil nil "app"))
+    (should-not
+     (jetpacs-shell--check-profile-uses
+      builtin-spec '("text") '("companion.settings.open") nil nil "app"))
+    (should-error
+     (jetpacs-shell--check-profile-uses
+      feature-spec '("text") nil nil nil "app"))
+    (should-not
+     (jetpacs-shell--check-profile-uses
+      feature-spec '("text") nil '("action.open_surface") nil "app"))))
 
 (ert-deftest jetpacs-floor-gate-editor-bytes-amendment-84 ()
   (jetpacs-floor-test--with-client
@@ -943,6 +1090,22 @@ is worse than a 1201 — SPEC 6.2 makes it 1400 and a CLOSED connection."
       (should (= 1 (jetpacs-shell-push "app:demo"
                                        :spec (jetpacs-text "small")))))))
 
+(ert-deftest jetpacs-floor-live-size-does-not-use-golden-canonicalizer ()
+  "Live frame measurement uses the compact jsonrpc representation.
+Key sorting is intentionally confined to golden regeneration."
+  (let ((spec (jetpacs-make-node "text" :text "café"
+                                  :selectable :json-false)))
+    (should
+     (= (jetpacs-node-wire-bytes spec)
+        (string-bytes
+         (json-serialize spec :false-object :json-false :null-object nil))))
+    (jetpacs-floor-test--with-client
+        (client :limits '(:max_frame_bytes 4096))
+      (cl-letf (((symbol-function 'jetpacs-node->canonical-json)
+                 (lambda (_value)
+                   (error "golden serializer reached from live gate"))))
+        (should-not (jetpacs-shell--gate-size client spec nil))))))
+
 (ert-deftest jetpacs-floor-gate-size-aggregates-and-depth ()
   "The four SPEC 4.5 aggregates are counted across the WHOLE spec, and
 the fixed 20-level node depth is enforced — neither was measured before."
@@ -1047,9 +1210,9 @@ and D1 makes it a permanent wire identifier."
   ;; Every owner a base module registered carries the prefix.
   (let (base-owners)
     (maphash (lambda (key owner)
-               (when (member (cdr key) '("app:jetpacs.clip" "app:jetpacs.theme"
+               (when (member (cdr key) '("app:jetpacs.clip" "app:jetpacs.settings"
                                          "jetpacs.clip.refresh"
-                                         "jetpacs.theme.modus-toggle"))
+                                         "modus.toggle"))
                  (push owner base-owners)))
              jetpacs--registrations)
     (should base-owners)

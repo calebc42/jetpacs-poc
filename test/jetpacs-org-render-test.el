@@ -118,6 +118,11 @@ are multibyte content), so it is written and read back as raw bytes."
   "The members of NODES whose :t is TYPE."
   (seq-filter (lambda (n) (equal (plist-get n :t) type)) nodes))
 
+(defun jetpacs-org-render-test--heading-keys (nodes)
+  "The source keys of the heading rows in NODES."
+  (mapcar (lambda (node) (plist-get node :key))
+          (seq-filter #'jetpacs-org-render--heading-node-p nodes)))
+
 (defun jetpacs-org-render-test--exposed-position (buffer action)
   "One exposed position in BUFFER for ACTION, or nil."
   (let ((table (gethash (buffer-name buffer) jetpacs-buffer-exposed))
@@ -147,6 +152,10 @@ one native table, one divider, one data: image with its caption, and
 the app profile passes."
   (jetpacs-org-render-test--with-file f jetpacs-org-render-test--golden-content
     (let ((nodes (jetpacs-org-render (jetpacs-org-render-test--buffer f))))
+      (let ((keys (mapcar (lambda (node) (plist-get node :key)) nodes)))
+        (should (cl-every #'jetpacs-identifier-p keys))
+        (should (= (length keys)
+                   (length (delete-dups (copy-sequence keys))))))
       (should (= 1 (length (jetpacs-org-render-test--nodes-of nodes "table"))))
       (should (= 1 (length (jetpacs-org-render-test--nodes-of nodes "divider"))))
       (let ((imgs (jetpacs-org-render-test--nodes-of nodes "image")))
@@ -158,6 +167,21 @@ the app profile passes."
       (should (seq-find (lambda (n) (equal (plist-get n :text) "The picture"))
                         nodes))
       (should (jetpacs-check-profile (vconcat nodes) 'app)))))
+
+(ert-deftest jetpacs-org-render-keys-survive-global-visibility-changes ()
+  "Unchanged headings retain identity when Org inserts/removes body rows."
+  (jetpacs-org-render-test--with-file f
+      "* One\nBody one\n\n* Two\nBody two\n"
+    (let ((buf (jetpacs-org-render-test--buffer f)) all overview)
+      (with-current-buffer buf
+        (org-fold-show-all)
+        (setq all (jetpacs-org-render-test--heading-keys
+                   (jetpacs-org-render buf)))
+        (org-cycle-overview)
+        (setq overview (jetpacs-org-render-test--heading-keys
+                        (jetpacs-org-render buf))))
+      (should (= 2 (length all)))
+      (should (equal all overview)))))
 
 (ert-deftest jetpacs-org-render-tier0-fallback-on-parse-error ()
   "A signaling upgrade pass degrades to the pure Tier-0 render —
@@ -392,24 +416,33 @@ under a root would hang `insert-file-contents' forever (JA-6 P1-4)."
 ;;;; Span-action arms
 
 (ert-deftest jetpacs-org-render-heading-tap-folds-and-overflow-opens-actions ()
-  "Headline text owns folding; more_vert owns the structured action sheet."
+  "Headline text folds; long press narrows; more_vert owns heading actions."
   (jetpacs-org-render-test--with-file f
       "* [[https://example.com][Parent]]\nBody\n** Child\n"
     (let* ((buf (jetpacs-org-render-test--buffer f))
            (name (buffer-name buf))
            (nodes (jetpacs-org-render buf))
            (heading (car nodes))
-           (children (append (plist-get heading :children) nil))
+           (row (car (append (plist-get heading :children) nil)))
+           (children (append (plist-get row :children) nil))
            (headline (car children))
            (overflow (cadr children))
            (spans (append (plist-get headline :spans) nil))
            (text (mapconcat (lambda (span) (plist-get span :text)) spans "")))
-      (should (equal (plist-get heading :t) "row"))
+      (should (equal (plist-get heading :t) "box"))
+      (should (equal (plist-get row :t) "row"))
+      (should (equal
+               (plist-get (plist-get heading :on_long_tap) :action)
+               "jetpacs.org.narrow"))
       (should (equal (plist-get headline :t) "rich_text"))
-      (should (equal (plist-get overflow :t) "icon_button"))
+      (should (equal (plist-get overflow :t) "menu"))
       (should (equal (plist-get overflow :icon) "more_vert"))
-      (should (equal (plist-get (plist-get overflow :on_tap) :action)
-                     "jetpacs.org.heading"))
+      (should
+       (seq-some
+        (lambda (item)
+          (equal (plist-get (plist-get item :on_tap) :action)
+                 "jetpacs.org.heading"))
+        (append (plist-get overflow :items) nil)))
       ;; The link keeps its more-specific action; ordinary headline runs
       ;; become the larger fold target.
       (should (seq-some
@@ -800,7 +833,7 @@ cleanup thunk — the drain never burns a tick on a view nobody shows."
         (should (= 0 (car compiles)))))))
 
 (ert-deftest jetpacs-org-render-link-follows-and-scrolls-to-target ()
-  "An internal Org link drills to Org's destination point on-device."
+  "Without a document host, an Org link uses the generic drill fallback."
   (jetpacs-org-render-test--with-file f
       "* Target\nDestination body.\n\n[[*Target][Jump]]\n"
     (let* ((buf (jetpacs-org-render-test--buffer f))
@@ -827,6 +860,39 @@ cleanup thunk — the drain never burns a tick on a view nobody shows."
           (should (seq-some (lambda (node)
                               (plist-get node :scroll_here))
                             nodes)))))))
+
+(ert-deftest jetpacs-org-render-link-offers-org-destination-to-host ()
+  "A document host sees Org's exact destination and suppresses drilling."
+  (jetpacs-org-render-test--with-file f
+      "* Target\nDestination body.\n\n[[*Target][Jump]]\n"
+    (let* ((buf (jetpacs-org-render-test--buffer f))
+           (name (buffer-name buf))
+           (surface "app:org-link-host-test")
+           presented
+           drilled)
+      (jetpacs-org-render buf)
+      (let ((pos (jetpacs-org-render-test--exposed-position
+                  buf "jetpacs.org.follow"))
+            (jetpacs-org-render-follow-destination-function
+             (lambda (source destination destination-position target)
+               (setq presented
+                     (list source destination destination-position target))
+               t))
+            (jetpacs-navigate-drill-function
+             (lambda (&rest args) (setq drilled args) t)))
+        (should (integerp pos))
+        (should (eq 'accepted
+                    (jetpacs-org-render--follow
+                     (list :buffer name :pos pos)
+                     (list :surface surface))))
+        (should-not drilled)
+        (should (eq (nth 0 presented) buf))
+        (should (eq (nth 1 presented) buf))
+        (should (equal (nth 3 presented) surface))
+        (with-current-buffer (nth 1 presented)
+          (save-excursion
+            (goto-char (nth 2 presented))
+            (should (looking-at-p "\\* Target"))))))))
 
 (ert-deftest jetpacs-org-render-footnote-definition-returns-to-reference ()
   "A definition label jumps back and scrolls to its previous reference."

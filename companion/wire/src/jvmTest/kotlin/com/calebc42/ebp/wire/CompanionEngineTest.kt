@@ -35,6 +35,7 @@ class CompanionEngineTest {
             put("builtins", JsonArray(listOf(
                 "view.switch", "companion.settings.open").map(::JsonPrimitive)))
             put("features", JsonArray(emptyList()))
+            put("extensions", JsonArray(emptyList()))
         }
     }
 
@@ -237,7 +238,7 @@ class CompanionEngineTest {
         engine.feed(frame(h))
         val error = out.last().reqObj("error")
         assertEquals(1202L, error.reqLong("code"))
-        assertEquals(2L, integralLongOrNull(error.reqObj("data").reqArr("supported")[0]))
+        assertEquals(3L, integralLongOrNull(error.reqObj("data").reqArr("supported")[0]))
     }
 
     @Test
@@ -310,6 +311,57 @@ class CompanionEngineTest {
         } catch (e: IllegalArgumentException) {
             assertTrue(e.message!!.contains("reservation")
                 || e.message!!.contains("max_"))
+        }
+    }
+
+    @Test
+    fun malformedRendererExtensionProfilesAreRejectedAtConstruction() {
+        val rendererVocabulary = EBP_NODE_VOCABULARY.copy(
+            schema = NODE_SCHEMA + ("example.assist" to
+                NodeRow(setOf("label"), emptySet())),
+            extensions = mapOf("example.design" to setOf("example.assist")),
+        )
+        fun construct(surfaceProfiles: JsonObject) = CompanionEngine(
+            CompanionConfig(
+                serverName = "kat-companion",
+                serverVersion = "1.0.0",
+                pairings = mapOf(katPid to katToken),
+                supportedCapabilities = emptySet(),
+                surfaceProfiles = surfaceProfiles,
+                limits = testLimits(),
+                nodeVocabulary = rendererVocabulary,
+            ),
+        ) { }
+
+        val missingArray = buildJsonObject {
+            putJsonObject("app") {
+                put("node_types", JsonArray(listOf(JsonPrimitive("text"))))
+                put("builtins", JsonArray(emptyList()))
+                put("features", JsonArray(emptyList()))
+            }
+        }
+        val missingOwner = buildJsonObject {
+            putJsonObject("app") {
+                put("node_types", JsonArray(listOf(
+                    JsonPrimitive("text"),
+                    JsonPrimitive("example.assist"),
+                )))
+                put("builtins", JsonArray(emptyList()))
+                put("features", JsonArray(emptyList()))
+                put("extensions", JsonArray(emptyList()))
+            }
+        }
+        val unknownExtension = buildJsonObject {
+            putJsonObject("app") {
+                put("node_types", JsonArray(listOf(JsonPrimitive("text"))))
+                put("builtins", JsonArray(emptyList()))
+                put("features", JsonArray(emptyList()))
+                put("extensions", JsonArray(listOf(JsonPrimitive("design.unknown"))))
+            }
+        }
+
+        for (profile in listOf(missingArray, missingOwner, unknownExtension)) {
+            assertTrue(runCatching { construct(profile) }.isFailure)
         }
     }
 

@@ -62,6 +62,7 @@ class PreSwapNumberTest {
                     put("node_types", JsonArray(listOf("text", "button").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = limits(),

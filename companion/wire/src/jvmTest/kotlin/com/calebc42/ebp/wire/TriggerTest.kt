@@ -49,9 +49,11 @@ class TriggerTest {
             supportedCapabilities = setOf("triggers"),
             surfaceProfiles = buildJsonObject {
                 putJsonObject("app") {
-                    put("node_types", JsonArray(NODE_SCHEMA.keys.map(::JsonPrimitive)))
+                    put("node_types", JsonArray(
+                        (NODE_SCHEMA.keys - "variant_host").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_triggers" to 3, "max_trigger_responses" to 4,

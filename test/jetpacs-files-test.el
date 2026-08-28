@@ -25,6 +25,18 @@
 (require 'jetpacs-navigate)
 (require 'jetpacs-files)
 
+(defconst jetpacs-files-test--required-at-load
+  (plist-get
+   (alist-get "app:jetpacs.files" jetpacs-shell--roots nil nil #'equal)
+   :required)
+  "Whether the globally reachable Files root registered as required.")
+
+(ert-deftest jetpacs-files-is-present-for-cold-dock-open ()
+  "The receiver-local Files destination is published during reconnect."
+  ;; Other tests deliberately clear the live root registry, so pin the value
+  ;; captured immediately after the module's top-level registration.
+  (should jetpacs-files-test--required-at-load))
+
 ;;;; Fixtures
 
 (defmacro jetpacs-files-test--with-tree (root &rest body)
@@ -38,6 +50,7 @@ host machine's /sdcard-alikes into the allowlist."
          (let ((jetpacs-files-roots (list ,root))
                (jetpacs-files-default-dir ,root)
                (jetpacs-files--dir nil)
+               (jetpacs-files--browse-cache nil)
                (jetpacs-files-shared-storage nil)
                (jetpacs-files--shared-dir nil))
            ,@body)
@@ -71,7 +84,7 @@ host machine's /sdcard-alikes into the allowlist."
 
 (defconst jetpacs-files-test--app-types
   ["text" "row" "column" "box" "spacer" "divider" "button" "text_input"
-   "card" "lazy_column" "icon_button" "icon" "empty_state" "scaffold"])
+   "card" "lazy_column" "icon_button" "icon" "menu" "empty_state" "scaffold"])
 
 (defun jetpacs-files-test--client ()
   (let ((client (ebp-client-create
@@ -314,6 +327,106 @@ never a `ebp-path-refused' a handler would answer to the device."
                              (file-truename f)))))
         (delete-directory shared t)))))
 
+(ert-deftest jetpacs-files-private-locations-are-capability-probed ()
+  "An isolated Emacs never gets a dead Termux root merely because it is Android."
+  (let ((system-type 'android)
+        (user-emacs-directory
+         "/data/data/org.gnu.emacs/files/.emacs.d/")
+        (jetpacs-files-android-private-locations t))
+    (cl-letf (((symbol-function 'file-accessible-directory-p)
+               (lambda (path)
+                 (equal (directory-file-name path)
+                        "/data/data/org.gnu.emacs"))))
+      (should (equal (jetpacs-files--android-private-dirs)
+                     '(("Emacs data" . "/data/data/org.gnu.emacs/"))))))
+  (let ((system-type 'android)
+        (jetpacs-files-android-private-locations nil))
+    (cl-letf (((symbol-function 'file-accessible-directory-p)
+               (lambda (_path) (ert-fail "disabled probe touched disk"))))
+      (should-not (jetpacs-files--android-private-dirs)))))
+
+(ert-deftest jetpacs-files-named-and-private-roots-reach-the-guard ()
+  "Every switcher destination is a real effective root, including named roots."
+  (let ((named (file-name-as-directory
+                (make-temp-file "jetpacs-files-named" t)))
+        (private (file-name-as-directory
+                  (make-temp-file "jetpacs-files-private" t))))
+    (unwind-protect
+        (let ((jetpacs-files-roots (list (cons "Named" named)))
+              (jetpacs-files--shared-dir nil))
+          (cl-letf (((symbol-function 'jetpacs-files--android-private-dirs)
+                     (lambda () (list (cons "Termux files" private)))))
+            (should (equal (jetpacs-files--roots) (list named private)))
+            (let ((file (jetpacs-files-test--touch (concat named "inside"))))
+              (should (equal (jetpacs-files--check file)
+                             (file-truename file))))))
+      (delete-directory named t)
+      (delete-directory private t))))
+
+(ert-deftest jetpacs-files-locations-menu-switches-among-accessible-roots ()
+  "The top-bar menu enumerates roots with exact paths and cd descriptors."
+  (let ((landing (file-name-as-directory
+                  (make-temp-file "jetpacs-files-landing" t)))
+        (named (file-name-as-directory
+                (make-temp-file "jetpacs-files-named-location" t)))
+        (private (file-name-as-directory
+                  (make-temp-file "jetpacs-files-private-location" t))))
+    (unwind-protect
+        (let ((jetpacs-files-default-dir landing)
+              (jetpacs-files-roots (list (cons "Named root" named)))
+              (jetpacs-files--shared-dir nil))
+          (cl-letf (((symbol-function 'jetpacs-files--android-private-dirs)
+                     (lambda () (list (cons "Termux files" private)))))
+            (let* ((menu (jetpacs-files--locations-menu))
+                   (items (append (plist-get menu :items) nil)))
+              (should (equal (plist-get menu :t) "menu"))
+              (should (equal (plist-get menu :icon) "folder_open"))
+              (should (equal (mapcar (lambda (item) (plist-get item :label))
+                                     items)
+                             '("Default folder" "Termux files" "Named root")))
+              (should (equal
+                       (mapcar (lambda (item)
+                                 (plist-get (plist-get item :on_tap) :action))
+                               items)
+                       '("jetpacs.files.cd" "jetpacs.files.cd"
+                         "jetpacs.files.cd")))
+              (should (equal
+                       (mapcar (lambda (item)
+                                 (plist-get (plist-get
+                                             (plist-get item :on_tap) :args)
+                                            :dir))
+                               items)
+                       (mapcar #'directory-file-name
+                               (list landing private named)))))))
+      (delete-directory landing t)
+      (delete-directory named t)
+      (delete-directory private t))))
+
+(ert-deftest jetpacs-files-locations-drop-remotes-before-any-stat ()
+  "A configured remote root cannot dial TRAMP while the menu is being built."
+  (jetpacs-files-test--with-tree root
+    (let ((jetpacs-files-roots (list "/ssh:host:/private"))
+          (stats 0))
+      (cl-letf* ((record
+                  (lambda (real)
+                    (lambda (&rest args)
+                      (when (cl-some (lambda (arg)
+                                       (and (stringp arg)
+                                            (file-remote-p arg)))
+                                     args)
+                        (cl-incf stats))
+                      (apply real args))))
+                 ((symbol-function 'file-equal-p)
+                  (funcall record (symbol-function 'file-equal-p)))
+                 ((symbol-function 'file-accessible-directory-p)
+                  (funcall record
+                           (symbol-function 'file-accessible-directory-p))))
+        (should (equal (mapcar (lambda (location)
+                                 (plist-get location :path))
+                               (jetpacs-files--locations))
+                       (list root)))
+        (should (= stats 0))))))
+
 ;;;; The dired card skin
 
 (defun jetpacs-files-test--card-titles (cards)
@@ -426,6 +539,48 @@ never a `ebp-path-refused' a handler would answer to the device."
       (should (equal (plist-get body :t) "lazy_column"))
       (should (equal (plist-get (aref (plist-get body :children) 0) :style)
                      "caption")))))
+
+(ert-deftest jetpacs-files-body-reuses-an-unchanged-directory-snapshot ()
+  "Unrelated surface pushes reuse rows but re-author stateful identity."
+  (jetpacs-files-test--with-tree root
+    (jetpacs-files-test--touch (concat root "f"))
+    (let ((builds 0)
+          (original (symbol-function 'jetpacs-files--build-content)))
+      (cl-letf (((symbol-function 'jetpacs-files--build-content)
+                 (lambda (true)
+                   (cl-incf builds)
+                   (funcall original true))))
+        (let ((first (jetpacs-files--body))
+              (second (jetpacs-files--body)))
+          (should (equal first second))
+          (should (= builds 1)))))))
+
+(ert-deftest jetpacs-files-body-reclaims-input-id-for-each-stacked-view ()
+  "A native root plus guest browser remains one valid SPEC 16.1 document."
+  (jetpacs-files-test--with-tree root
+    (let ((jetpacs-node-id-claims (make-hash-table :test #'equal)))
+      (let* ((native (jetpacs-files--body))
+             (guest (jetpacs-files--body))
+             (native-ids (jetpacs-files-test--collect native :id))
+             (guest-ids (jetpacs-files-test--collect guest :id)))
+        (should (member "files-grep-input" native-ids))
+        (should (member "files-grep-input-1" guest-ids))
+        (should-not (seq-intersection native-ids guest-ids #'equal))
+        ;; The expensive dired snapshot itself remains shared.
+        (should (plist-get jetpacs-files--browse-cache :content))))))
+
+(ert-deftest jetpacs-files-refresh-invalidates-the-directory-snapshot ()
+  (jetpacs-files-test--with-tree root
+    (setq jetpacs-files--browse-cache '(:key cached :content cached))
+    (jetpacs-files-test--attached (jetpacs-files-test--client)
+      (cl-letf (((symbol-function 'jetpacs-files--repush) #'ignore))
+        (should (eq (jetpacs--dispatch
+                     client '(:action "jetpacs.files.refresh"
+                              :surface "app:jetpacs.files")
+                     (gethash "jetpacs.files.refresh"
+                              jetpacs-action-handlers))
+                    'accepted))
+        (should-not jetpacs-files--browse-cache)))))
 
 ;;;; The browse verbs through the real dispatch (D1 + D2)
 
@@ -566,7 +721,7 @@ effects run OUTSIDE the dispatch extent (D2)."
       (cl-letf (((symbol-function 'jetpacs-flow-continue)
                  (lambda (fn) (funcall fn)))
                 ((symbol-function 'jetpacs-files--edit-open)
-                 (lambda (path surface &optional mark-pos)
+                 (lambda (path surface &optional mark-pos _return-action)
                    (setq opened (list path surface mark-pos)))))
         (should (eq (jetpacs-files-open-path
                      file "app:jetpacs.files" 7)
@@ -593,6 +748,38 @@ effects run OUTSIDE the dispatch extent (D2)."
                       'oversize))
           (should (= navigated-pos 9)))))))
 
+(ert-deftest jetpacs-files-retarget-current-edit-is-view-only ()
+  "Retargeting preserves the open document identity and reads no file data."
+  (jetpacs-files-test--with-tree root
+    (let* ((file (concat root "current.org"))
+           (other (concat root "other.org"))
+           (buffer (get-buffer-create "*files-retarget*"))
+           (record (list :path file :seed "seed" :mtime "stamp"
+                         :mark-pos 1 :document "doc:current.org"
+                         :editor-id "body" :buffer buffer))
+           (jetpacs-files--edit record)
+           refreshed)
+      (unwind-protect
+          (progn
+            (write-region "* Current\n" nil file nil 'silent)
+            (write-region "* Other\n" nil other nil 'silent)
+            (cl-letf (((symbol-function 'insert-file-contents)
+                       (lambda (&rest _) (error "retarget read the file")))
+                      ((symbol-function 'jetpacs-buffer-defer-view-refresh)
+                       (lambda (surface) (setq refreshed surface))))
+              (should (jetpacs-files-retarget-current-edit
+                       file 7 "app:jetpacs.files"))
+              (should (= (plist-get jetpacs-files--edit :mark-pos) 7))
+              (should (equal (plist-get jetpacs-files--edit :document)
+                             "doc:current.org"))
+              (should (eq (plist-get jetpacs-files--edit :buffer) buffer))
+              (should (equal refreshed "app:jetpacs.files"))
+              (setq refreshed nil)
+              (should-not (jetpacs-files-retarget-current-edit
+                           other 3 "app:jetpacs.files"))
+              (should-not refreshed)))
+        (kill-buffer buffer)))))
+
 (ert-deftest jetpacs-files-open-path-can-stage-its-native-browser ()
   "A caller may place Files' own browser below a directory or document.
 The caller supplies only the generic screen id; it never receives Files'
@@ -609,7 +796,7 @@ private builder or path state."
                  (lambda (surface id builder)
                    (push (list 'browser surface id builder) calls)))
                 ((symbol-function 'jetpacs-files--edit-open)
-                 (lambda (path surface &optional mark-pos)
+                 (lambda (path surface &optional mark-pos _return-action)
                    (push (list 'document path surface mark-pos) calls))))
         (should (eq (jetpacs-files-open-path
                      sub "app:host" nil "native-browser")
@@ -636,23 +823,27 @@ private builder or path state."
                              "app:host" 7)))))))
 
 (ert-deftest jetpacs-files-staged-browser-can-carry-an-authored-fab ()
-  "A guest caller may adorn Files without teaching Files its app policy."
+  "A guest caller may adorn Files and explicitly leave its surface."
   (jetpacs-files-test--with-tree root
     (let ((fab (jetpacs-icon-button
                 "add" (jetpacs-action "host.create")
                 :content-description "Create"))
+          (return (jetpacs-action "host.return"
+                                  :open-surface "app:host"))
           builder)
       (cl-letf (((symbol-function 'jetpacs-flow-continue)
                  (lambda (fn) (funcall fn)))
                 ((symbol-function 'jetpacs-chrome-push-screen)
                  (lambda (_surface _id fn) (setq builder fn))))
         (should (eq (jetpacs-files-open-path
-                     root "app:host" nil "native-browser" fab)
+                     root "app:host" nil "native-browser" fab return)
                     'accepted)))
       (should (functionp builder))
-      (should (equal (plist-get (funcall builder (jetpacs-view-switch "below"))
-                                :fab)
-                     fab)))))
+      (let* ((screen (funcall builder (jetpacs-view-switch "below")))
+             (top (plist-get screen :top_bar))
+             (leading (aref (plist-get top :children) 0)))
+        (should (equal (plist-get screen :fab) fab))
+        (should (equal (plist-get leading :on_tap) return))))))
 
 (ert-deftest jetpacs-files-staged-browser-honors-chrome-back ()
   "The same native Files builder exposes chrome's guest back descriptor."
@@ -1303,11 +1494,18 @@ ceiling; offline it is the custom ceiling alone."
 (ert-deftest jetpacs-files-edit-screen-shape ()
   (jetpacs-files-test--with-tree root
     (let* ((f (jetpacs-files-test--touch (concat root "notes.org")))
+           (return (jetpacs-action "host.return"
+                                   :open-surface "app:host"))
            (jetpacs-files--edit (list :path (file-truename f)
                                       :seed "seed text"
-                                      :mtime "123.000000")))
-      (let ((screen (jetpacs-files--edit-screen nil)))
+                                      :mtime "123.000000"
+                                      :return-action return)))
+      (let* ((screen (jetpacs-files--edit-screen
+                      (jetpacs-view-switch "native-below")))
+             (top (plist-get screen :top_bar))
+             (leading (aref (plist-get top :children) 0)))
         (should (member "notes.org" (jetpacs-files-test--collect screen :text)))
+        (should (equal (plist-get leading :on_tap) return))
         (should (equal (jetpacs-files-test--collect screen :value)
                        '("seed text")))
         (should (member "jetpacs.files.save"

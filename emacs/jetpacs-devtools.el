@@ -8,14 +8,13 @@
 ;; The measurement layer, ported from poc-v1 `jetpacs-devtools.el' and
 ;; grown a flight recorder.  Two halves, separately switched:
 ;;
-;; PROFILER (`jetpacs-devtools-profile', on by default) — per-surface
+;; PROFILER (`jetpacs-devtools-profile', OFF by default) — per-surface
 ;; builder wall clock, outbound push counts and serialized sizes, and
 ;; the push-storm tripwire for the builder-that-retriggers-itself
 ;; class of bug.  Timings, counts, and sizes are metadata, so SPEC
 ;; 23.3 does not constrain them — but sizing is not free: each push is
-;; serialized once more to measure it (the GATE 5 measure), single-
-;; digit milliseconds at typical spec sizes and tens of milliseconds
-;; near the frame budget.  Disable the profile if that matters.
+;; serialized once more to measure it (the same compact representation
+;; as GATE 5).  It is therefore an explicit diagnostic, not daily-driver work.
 ;;
 ;; FLIGHT RECORDER (`jetpacs-devtools-recording', OFF by default) —
 ;; the home the scrubbed error path never had.  SPEC 23.3 makes every
@@ -79,11 +78,12 @@
   "Instrumentation for the Jetpacs push loop."
   :group 'jetpacs)
 
-(defcustom jetpacs-devtools-profile t
+(defcustom jetpacs-devtools-profile nil
   "When non-nil, record builder timings, push counts, and push sizes.
 Metadata only — no payload, so SPEC 23.3 leaves it unconstrained.
-Sizing serializes each pushed spec once more (see the Commentary for
-the real cost); disable if a profiler fingers the recorder itself."
+This diagnostic is deliberately off by default: measuring the push size
+serializes the complete SurfaceSpec an additional time and can materially
+increase allocation and GC work on large Org or Files views."
   :type 'boolean :group 'jetpacs-devtools)
 
 (defcustom jetpacs-devtools-recording nil
@@ -253,15 +253,13 @@ Pure, for tests."
 
 (defun jetpacs-devtools--note-push (surface spec)
   "Tally one outbound push of SPEC to SURFACE; watch for storms.
-Size is the GATE 5 measure (`string-bytes' of the canonical JSON) —
-POC 3 rents jsonrpc.el for framing, so exact encoded frame sizes never
-surface; the spec's serialized size is the comparable number the size
-gate itself budgets against."
+Size is the compact live-wire measure used by GATE 5.  Key ordering does
+not change byte length, and recursively sorting a large hidden stack view
+solely for profiler metadata can cost more than the visible view build."
   (when jetpacs-devtools-profile
     (ignore-errors
       (let ((rec (gethash surface jetpacs-devtools--pushes))
-            (bytes (ignore-errors
-                     (string-bytes (jetpacs-node->canonical-json spec))))
+            (bytes (ignore-errors (jetpacs-node-wire-bytes spec)))
             (now (float-time)))
         (puthash surface (list :last-bytes bytes
                                :count (1+ (or (plist-get rec :count) 0))
@@ -567,7 +565,7 @@ nobody is looking at."
 ;; GLOBAL VERBS.  Devtools owns the actions and ZERO surfaces — the
 ;; affordance is a row in the hub's drawer, and an inspection is
 ;; legitimate from any screen — so the D1 scope exemption is declared
-;; explicitly, the way `jetpacs.theme.modus-toggle' declares it.  The
+;; explicitly on `jetpacs.devtools.inspect' itself.  The
 ;; :args/:doc schema is dogfooded here rather than described: the
 ;; inspector is the self-hosting program's own tool, and an action
 ;; editor reading `jetpacs-action-schema' can lay out this form.

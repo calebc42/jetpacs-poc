@@ -63,11 +63,11 @@ Alists compare as unordered member sets; lists as ordered arrays."
         (cn "202122232425262728292a2b2c2d2e2f")
         (sn "303132333435363738393a3b3c3d3e3f"))
     (should (equal (ebp-client-proof token pid cn sn)
-                   (concat "03e270fd0af4566336283444b641a722"
-                           "b5828c190ebdbe3dc50c5be2c9c9fb43")))
+                   (concat "a76f9e392582c990ef08858fe6974032"
+                           "3499ab87566d9b4e6f99a246bdd024a6")))
     (should (equal (ebp-server-proof token pid cn sn)
-                   (concat "e9333d48cfc2780d708db4a9782705c5"
-                           "e1c988c7eedc2d1734051f2fb9be58ec")))
+                   (concat "ca1c37bcb735442fb979127a07fc41d2"
+                           "a15ea0fcf58ae1ffa4bf06edc0bdfdcc")))
     (should (ebp-verify-server-proof
              (ebp-server-proof token pid cn sn) token pid cn sn))
     (should-not (ebp-verify-server-proof
@@ -222,7 +222,7 @@ safe integers; null and fractional numbers never."
   (should-not (ebp-valid-request-id-p 7.0))
   (should-not (ebp-valid-request-id-p nil)))
 
-;;;; Handshake params against contract.json (format 6)
+;;;; Handshake params against contract.json (format 8)
 
 (ert-deftest ebp-test-handshake-params-match-contract ()
   "Builder output carries exactly the contract's required params."
@@ -360,14 +360,15 @@ SURFACES overrides the empty surfaces map."
                                                 ebp-test--kat-pid
                                                 ebp-test--kat-cn
                                                 ebp-test--kat-sn))
-           :protocol 2
+           :protocol 3
            :server (:name "kat-companion" :version "1.0.0")
            :granted ["theme"]
            :surface_profiles
            (:app (:node_types ["text" "row" "column" "box" "spacer"
                                "divider" "button" "text_input"]
                   :builtins ["view.switch" "companion.settings.open"]
-                  :features []))
+                  :features []
+                  :extensions []))
            :surfaces ,(or surfaces ebp--empty-object)
            :queued_events 0
            :limits ,ebp-test--welcome-limits)))
@@ -376,14 +377,16 @@ SURFACES overrides the empty surfaces map."
                  unless (eq k drop) append (list k v))
       welcome)))
 
-(defun ebp-test--start-companion (script)
+(defun ebp-test--start-companion (script &optional service)
   "Loopback scripted companion; returns (:port P :received FN :stop FN).
-SCRIPT is called with (MSG SEND) per decoded inbound message."
+SCRIPT is called with (MSG SEND) per decoded inbound message.  SERVICE
+defaults to an ephemeral port; a number lets a restart bind the same port."
   (let* ((received '())
          (decoders (make-hash-table :test #'eq))
          (server
           (make-network-process
-           :name "ebp-test-companion" :server t :host "127.0.0.1" :service t
+           :name "ebp-test-companion" :server t :host "127.0.0.1"
+           :service (or service t) :reuseaddr t
            :coding 'binary :noquery t
            :filter
            (lambda (conn bytes)
@@ -399,7 +402,17 @@ SCRIPT is called with (MSG SEND) per decoded inbound message."
                               (ebp--json-serialize reply)))))))))))
     (list :port (cadr (process-contact server))
           :received (lambda () (reverse received))
-          :stop (lambda () (delete-process server)))))
+          :stop (lambda ()
+                  ;; A listening server process and each accepted connection
+                  ;; are separate Emacs processes.  A Companion process death
+                  ;; closes both; deleting only the listener would leave the
+                  ;; established EBP session alive and would not test restart.
+                  (maphash (lambda (connection _decoder)
+                             (when (process-live-p connection)
+                               (delete-process connection)))
+                           decoders)
+                  (when (process-live-p server)
+                    (delete-process server))))))
 
 (cl-defun ebp-test--kat-script (&key welcome-fn after-ready surface-fn
                                      replay-fn)
@@ -441,6 +454,36 @@ returns that call's summary plist."
          (funcall reply `(:status "applied"
                           :revision ,(alist-get 'revision (alist-get 'params msg))
                           :present :false))))))))
+
+(cl-defun ebp-test--reconnect-script (&key on-hello on-ready)
+  "A conformant script that derives each proof from the live client nonce.
+ON-HELLO receives that nonce and ON-READY runs after the barrier.  Unlike the
+fixed KAT script, this witnesses SPEC 5.2's fresh handshake on every redial."
+  (let (client-nonce)
+    (lambda (msg send)
+      (let* ((method (alist-get 'method msg))
+             (id (alist-get 'id msg))
+             (reply (lambda (result)
+                      (funcall send `(:jsonrpc "2.0" :id ,id :result ,result)))))
+        (pcase method
+          ("session.hello"
+           (setq client-nonce (alist-get 'client_nonce (alist-get 'params msg)))
+           (when on-hello (funcall on-hello client-nonce))
+           (funcall reply `(:server_nonce ,ebp-test--kat-sn)))
+          ("auth.response"
+           (let ((welcome (ebp-test--welcome-result)))
+             (plist-put welcome :server_proof
+                        (ebp-server-proof ebp-test--kat-token
+                                          ebp-test--kat-pid
+                                          client-nonce
+                                          ebp-test--kat-sn))
+             (funcall reply welcome)))
+          ("queue.replay"
+           (funcall reply '(:delivered 0 :rejected 0 :expired 0 :remaining 0
+                            :blocked_by :null)))
+          ("session.ready"
+           (funcall reply ebp--empty-object)
+           (when on-ready (funcall on-ready))))))))
 
 (defun ebp-test--connect (port &rest extra)
   (apply #'ebp-connect "127.0.0.1" port
@@ -493,6 +536,96 @@ ready — in order, with the KAT proof on the wire."
       (should (= (plist-get (ebp-client-limits client) :max_frame_bytes)
                  4194304)))))
 
+(ert-deftest ebp-test-session-superseded-stops-automatic-redial ()
+  "SPEC 5.2: an explicit supersession stands the old endpoint down."
+  (let ((client (ebp-client-create
+                 :receipt-file (make-temp-file "ebp-superseded-receipts"))))
+    (setf (ebp-client-state client) 'ready)
+    (ebp-client--notification-dispatcher
+     client nil 'session\.superseded ebp--empty-object)
+    (should (eq (ebp-client-state client) 'closed))
+    (should (equal (ebp-client-close-reason client) '(session-superseded)))
+    (should (ebp-client-terminal-p client))
+    (should-not (ebp-client-active-p client))
+    (should-not (ebp-client-reconnect-timer client))))
+
+(ert-deftest ebp-test-initially-unavailable-listener-redials-to-ready ()
+  "The logical endpoint keeps dialing when Emacs starts before Companion."
+  (let* ((probe (make-network-process
+                 :name "ebp-test-port-probe" :server t :host "127.0.0.1"
+                 :service t :reuseaddr t :noquery t))
+         (port (cadr (process-contact probe)))
+         (ready 0)
+         server client)
+    (delete-process probe)
+    (unwind-protect
+        (progn
+          (setq client
+                (ebp-connect
+                 "127.0.0.1" port
+                 :client-name "reconnect-test" :client-version "0.0.1"
+                 :pairing-id ebp-test--kat-pid :token ebp-test--kat-token
+                 :wants '("theme")
+                 :receipt-file (make-temp-file "ebp-redial-receipts")
+                 :reconnect-initial-delay 0.2 :reconnect-max-delay 0.3
+                 :ready-function (lambda (_client) (cl-incf ready))))
+          ;; `make-network-process' may return an asynchronous connector;
+          ;; its sentinel establishes unavailability a moment later.
+          (should (ebp-test--wait
+                   (lambda () (eq (ebp-client-state client) 'closed))))
+          (should (ebp-client-active-p client))
+          (should (ebp-client-reconnect-timer client))
+          (setq server (ebp-test--start-companion
+                        (ebp-test--reconnect-script) port))
+          (should (ebp-test--wait (lambda () (eq ready 1))))
+          (should (eq (ebp-client-state client) 'ready))
+          (should (= (ebp-client-reconnect-attempt client) 0)))
+      (when client (ignore-errors (ebp-client-close client 'test-done)))
+      (when server (funcall (plist-get server :stop))))))
+
+(ert-deftest ebp-test-companion-restart-redials-same-client ()
+  "A Companion-only restart performs a fresh handshake without Emacs restart."
+  (let ((ready 0) (nonces '()) server-1 server-2 client port)
+    (unwind-protect
+        (progn
+          (setq server-1
+                (ebp-test--start-companion
+                 (ebp-test--reconnect-script
+                  :on-hello (lambda (nonce) (push nonce nonces))
+                  :on-ready (lambda () (cl-incf ready))))
+                port (plist-get server-1 :port)
+                client
+                (ebp-connect
+                 "127.0.0.1" port
+                 :client-name "reconnect-test" :client-version "0.0.1"
+                 :pairing-id ebp-test--kat-pid :token ebp-test--kat-token
+                 :wants '("theme")
+                 :receipt-file (make-temp-file "ebp-restart-receipts")
+                 :reconnect-initial-delay 0.05 :reconnect-max-delay 0.1))
+          (should (ebp-test--wait (lambda () (and (= ready 1)
+                                                   (eq (ebp-client-state client)
+                                                       'ready)))))
+          (funcall (plist-get server-1 :stop))
+          (setq server-1 nil)
+          (should (ebp-test--wait
+                   (lambda () (eq (ebp-client-state client) 'closed))))
+          (should (ebp-client-active-p client))
+          (setq server-2
+                (ebp-test--start-companion
+                 (ebp-test--reconnect-script
+                  :on-hello (lambda (nonce) (push nonce nonces))
+                  :on-ready (lambda () (cl-incf ready)))
+                 port))
+          (should (ebp-test--wait (lambda () (and (= ready 2)
+                                                   (eq (ebp-client-state client)
+                                                       'ready)))))
+          (should (= (length nonces) 2))
+          (should-not (equal (car nonces) (cadr nonces)))
+          (should-not (ebp-client-terminal-p client)))
+      (when client (ignore-errors (ebp-client-close client 'test-done)))
+      (when server-1 (funcall (plist-get server-1 :stop)))
+      (when server-2 (funcall (plist-get server-2 :stop))))))
+
 (ert-deftest ebp-test-client-rejects-bad-server-proof ()
   "SPEC 9.3: Emacs MUST verify server_proof before trusting the welcome."
   (ebp-test--with-companion
@@ -518,6 +651,40 @@ ready — in order, with the KAT proof on the wire."
     (should (ebp-test--wait
              (lambda () (eq (ebp-client-state client) 'closed))))
     (should (equal (ebp-client-close-reason client) '(welcome-incomplete)))))
+
+(ert-deftest ebp-test-welcome-surface-profile-shape ()
+  "SPEC 10.2 profile arrays are present, distinct, and extension-aware."
+  (let ((valid (plist-get (ebp-test--welcome-result) :surface_profiles)))
+    (should (ebp--valid-surface-profiles-p valid ["theme"]))
+    (should-not
+     (ebp--valid-surface-profiles-p
+      '(:app (:node_types ["text"] :builtins [] :features [])) []))
+    (should-not
+     (ebp--valid-surface-profiles-p
+      '(:app (:node_types ["text" "text"] :builtins [] :features []
+              :extensions [])) []))
+    (should-not
+     (ebp--valid-surface-profiles-p
+      '(:app (:node_types ["text"] :builtins [] :features []
+              :extensions ["material3"])) []))
+    (should-not (ebp--valid-surface-profiles-p
+                 valid ["theme" "surfaces.dialog"]))))
+
+(ert-deftest ebp-test-client-rejects-malformed-surface-profile ()
+  "A profile omitting the EBP 3 extensions array cannot reach READY."
+  (ebp-test--with-companion
+      (server client
+              (ebp-test--kat-script
+               :welcome-fn
+               (lambda (welcome)
+                 (plist-put
+                  (copy-sequence welcome) :surface_profiles
+                  '(:app (:node_types ["text"] :builtins []
+                          :features []))))))
+    (should (ebp-test--wait
+             (lambda () (eq (ebp-client-state client) 'closed))))
+    (should (equal (ebp-client-close-reason client)
+                   '(surface-profiles-invalid)))))
 
 (ert-deftest ebp-test-client-answers-unknown-request ()
   "SPEC 7.3: an unknown request receives -32601 — hand-rolled, because

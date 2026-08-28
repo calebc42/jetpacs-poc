@@ -25,7 +25,9 @@ for slug in "$@"; do
     exit 2
   fi
   emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
+    -L emacs/apps/glasspane-material3 \
     --eval "(progn
+              (setq load-prefer-newer t)
               (setq byte-compile-error-on-warn t)
               (setq byte-compile-dest-file-function
                     (lambda (f)
@@ -35,4 +37,6 @@ for slug in "$@"; do
 done
 
 emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
+  -L emacs/apps/glasspane-material3 \
+  --eval '(setq load-prefer-newer t)' \
   -l tools/m3-check.el -f jetpacs-m3-check-batch "$@"

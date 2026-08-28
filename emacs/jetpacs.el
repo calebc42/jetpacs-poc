@@ -39,8 +39,11 @@
 
 ;; `require' forms are evaluated while a file is byte-compiled.  Compiling or
 ;; installing Jetpacs must not start the application; loading this entry point
-;; at runtime should.
+;; at runtime should.  Compose the inert packaged-app manifest here, after the
+;; nested app directories are on `load-path': package-vc may have loaded the
+;; app-store as a compile dependency earlier in this same Emacs process.
 (unless (bound-and-true-p byte-compile-current-file)
+  (require 'jetpacs-packaged-apps nil t)
   (require 'jetpacs-init))
 
 (provide 'jetpacs)

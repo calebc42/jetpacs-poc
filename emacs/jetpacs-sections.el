@@ -172,12 +172,12 @@ occurrence keeps the stable id and its device-local fold state."
                   (format "sec-%s" (jetpacs-sections--pos sec 'start)))))
     (jetpacs-claim-node-id base)))
 
-;; --- Span surgery (format 6: spans are PLISTS) -------------------------------
+;; --- Span surgery (spans are plists) -----------------------------------------
 
 (defun jetpacs-sections--strip-taps (spans)
   "Copies of SPANS without their tap actions.
 For a collapsible header, where a tap must mean fold/unfold rather than
-the span's own action.  Spans are plists in format 6, so this rebuilds
+the span's own action.  Spans are plists, so this rebuilds
 each without `:on_tap' instead of `assq-delete-all'."
   (mapcar (lambda (sp)
             (let (out)

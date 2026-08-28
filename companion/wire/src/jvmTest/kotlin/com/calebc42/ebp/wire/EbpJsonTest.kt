@@ -8,6 +8,7 @@
 package com.calebc42.ebp.wire
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
@@ -35,6 +36,46 @@ class EbpJsonTest {
         assertEquals(EbpValue.EBool(true), obj["t"])
         assertEquals(EbpValue.EBool(false), obj["f"])
         assertEquals(EbpValue.ENull, obj["z"])
+    }
+
+    @Test
+    fun stringsMatchAcrossUnescapedAndEscapedPaths() {
+        val obj = EbpJson.parseJsonElement(
+            """{"plain":"alpha beta","empty":"","escaped":"alpha\nbeta\u0021","astral":"😀"}"""
+        ) as kotlinx.serialization.json.JsonObject
+        fun text(key: String) =
+            (obj[key] as kotlinx.serialization.json.JsonPrimitive).content
+        assertEquals("alpha beta", text("plain"))
+        assertEquals("", text("empty"))
+        assertEquals("alpha\nbeta!", text("escaped"))
+        assertEquals("😀", text("astral"))
+    }
+
+    @Test
+    fun directReceiverTreeUsesTheSameStrictParserWithoutProjection() {
+        val obj = EbpJson.parseJsonElement(
+            """{"s":"x","i":42,"n":1.5,"t":true,"f":false,"z":null,"a":[1]}"""
+        ) as kotlinx.serialization.json.JsonObject
+        assertEquals("x", (obj["s"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals("42", (obj["i"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertEquals("1.5", (obj["n"] as kotlinx.serialization.json.JsonPrimitive).content)
+        assertSame(kotlinx.serialization.json.JsonNull, obj["z"])
+        rejectsDirect("""{"a":1,"a":2}""", InvalidRequest::class.java)
+        rejectsDirect("[".repeat(65) + "]".repeat(65))
+        rejectsDirect("9007199254740992")
+    }
+
+    private fun rejectsDirect(
+        text: String,
+        kind: Class<out Exception> = WireParseError::class.java,
+    ) {
+        try {
+            EbpJson.parseJsonElement(text)
+            fail("direct parser accepted: $text")
+        } catch (e: Exception) {
+            assertTrue("wrong direct-parser error ${e.javaClass.simpleName} for: $text",
+                kind.isInstance(e))
+        }
     }
 
     @Test

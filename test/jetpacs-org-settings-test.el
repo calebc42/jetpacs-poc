@@ -190,6 +190,39 @@ build-time distinctness check); the chip list builds and serializes."
       (should (string-search "jetpacs.org.tags" json))
       (should (string-search "\"allow_add\":true" json)))))
 
+(ert-deftest jetpacs-org-settings-tag-groups-round-trip ()
+  "Group edits preserve unrelated groups, tags, fast keys, and flat saves."
+  (let* ((alist '(("home" . ?h)
+                  (:startgrouptag) ("Area") (:grouptags)
+                  ("House" . ?H) ("Auto") (:endgrouptag)
+                  (:startgroup) ("State") (:grouptags)
+                  ("Hot") ("Cold") (:endgroup)))
+         (changed (jetpacs-org-settings--tag-alist-with-group
+                   "Area" '("Auto" "Bills") alist))
+         (groups (org-tag-alist-to-groups changed)))
+    (should (equal (jetpacs-org-settings-tag-group-members "Area" alist)
+                   '("House" "Auto")))
+    (should (equal (cdr (assoc-string "Area" groups t))
+                   '("Auto" "Bills")))
+    (should (equal (cdr (assoc-string "State" groups t))
+                   '("Hot" "Cold")))
+    ;; House left the Area subset but remains an ordinary keyed Org tag.
+    (should (member '("House" . ?H) changed))
+    (let ((cleared (jetpacs-org-settings--tag-alist-with-group
+                    "Area" nil alist)))
+      (should-not (assoc-string "Area" (org-tag-alist-to-groups cleared) t))
+      (should (member '("House" . ?H) cleared))
+      (should (member '("Auto") cleared)))
+    ;; The flat editor can change ordinary tags without destroying groups.
+    (let* ((flat (jetpacs-org-settings--tag-alist-preserving-groups
+                  '("work" "home") alist))
+           (flat-groups (org-tag-alist-to-groups flat)))
+      (should (equal (cdr (assoc-string "Area" flat-groups t))
+                     '("House" "Auto")))
+      (should (equal (cdr (assoc-string "State" flat-groups t))
+                     '("Hot" "Cold")))
+      (should (equal (last flat 2) '("work" ("home" . ?h)))))))
+
 (ert-deftest jetpacs-org-settings-workflow-verbs ()
   "The whole family registered OWNERLESS at load — present in the
 handler table, absent from the any-surface set (ownerless is
@@ -225,7 +258,9 @@ answers stale for vanished indices, rejected with no client;
 todo.save writes through `jetpacs-settings-save-variable' with the
 captured fields, stale on a raced index, rejected on empty states;
 todo.delete falls back to the stock sequence on last-delete."
-  (let ((org-tag-alist '(("home" . ?h)))
+  (let ((org-tag-alist '(("home" . ?h)
+                         (:startgrouptag) ("Area") (:grouptags)
+                         ("House") (:endgrouptag)))
         (org-todo-keywords '((sequence "TODO" "|" "DONE")))
         (jetpacs-settings--dialog nil)
         (saved nil) (continuations nil))
@@ -244,7 +279,10 @@ todo.delete falls back to the stock sequence on last-delete."
         ;; jetpacs.org.tags
         (should (eq (run "jetpacs.org.tags" '(:value ["work" "home"]))
                     'accepted))
-        (should (equal org-tag-alist '("work" ("home" . ?h))))
+        (should (equal org-tag-alist
+                       '((:startgrouptag) ("Area") (:grouptags)
+                         ("House") (:endgrouptag)
+                         "work" ("home" . ?h))))
         (should (assq 'org-tag-alist saved))
         (setq saved (assq-delete-all 'org-tag-alist saved))
         (should (eq (run "jetpacs.org.tags" '(:value [])) 'accepted))

@@ -83,6 +83,14 @@ object CompanionStores {
                 appNodeTypes = com.calebc42.ebp.companion.render.NodeSupport.APP_NODE_TYPES,
                 notificationNodeTypes =
                     com.calebc42.ebp.companion.render.NodeSupport.NOTIFICATION_NODE_TYPES,
+                appBuiltins = com.calebc42.ebp.companion.render.NodeSupport.APP_BUILTINS,
+                notificationBuiltins =
+                    com.calebc42.ebp.companion.render.NodeSupport.NOTIFICATION_BUILTINS,
+                appFeatures = com.calebc42.ebp.companion.render.NodeSupport.APP_FEATURES,
+                notificationFeatures =
+                    com.calebc42.ebp.companion.render.NodeSupport.NOTIFICATION_FEATURES,
+                nodeVocabulary =
+                    com.calebc42.ebp.companion.render.NodeSupport.NODE_VOCABULARY,
                 backing = FileSurfaceBacking(File(ctx.filesDir, "ebp-surfaces.json"))
             ).also { surfacesInstance = it }
         }

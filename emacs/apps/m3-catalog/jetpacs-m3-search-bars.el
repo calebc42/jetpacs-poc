@@ -70,7 +70,7 @@ the demo verb instead."
         (jetpacs-column
          (jetpacs-text label)
          (jetpacs-text "Additional info" :style "caption"
-                       :color "on_surface_variant")
+                       :color "on_surface")
          :spacing 2)
         :weight 1)
        :spacing 16 :align "center")

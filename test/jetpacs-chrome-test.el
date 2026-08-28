@@ -13,6 +13,7 @@
 (require 'cl-lib)
 (require 'ebp)
 (require 'jetpacs-widgets)
+(require 'glasspane-material3)
 (require 'jetpacs-async)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-shell)
@@ -57,16 +58,19 @@
 ;;;; Composition
 
 (ert-deftest jetpacs-chrome-screen-shape ()
-  (let ((json (jetpacs-node->canonical-json
-               (jetpacs-chrome-screen "Files" (jetpacs-text "body")
-                                      :back (jetpacs-view-switch "hub")))))
+  (let* ((screen (jetpacs-chrome-screen
+                  "Files" (jetpacs-text "body")
+                  :back (jetpacs-view-switch "hub")))
+         (json (jetpacs-node->canonical-json screen)))
     ;; Load-bearing: back precedes the title; weight rides ON the title;
     ;; back is the view.switch BUILTIN.
+    (should (equal (plist-get (plist-get screen :semantics) :pane_title)
+                   "Files"))
     (should (string-match-p "arrow_back" json))
     (should (string-match-p "\"builtin\":\"view.switch\",\"view\":\"hub\"" json))
     (should (string-match-p "\"text\":\"Files\",\"weight\":1" json))
     (should (< (string-search "arrow_back" json)
-               (string-search "\"Files\"" json))))
+               (string-search "\"text\":\"Files\"" json))))
   ;; No back: exactly one top-bar child, no icon_button anywhere.
   (let ((json (jetpacs-node->canonical-json
                (jetpacs-chrome-screen "Hub" (jetpacs-text "b")))))
@@ -220,6 +224,73 @@ snapshot still carries every view with initial_view at the stack top."
         (should-not (plist-get keys :current-view))
         (should (equal (plist-get spec :initial_view) "detail"))
         (should (gethash "hub" (plist-get spec :views)))))))
+
+(ert-deftest jetpacs-chrome-view-refresh-reuses-only-lower-stack-views ()
+  "A declared view-local refresh rebuilds the visible top and nothing below.
+The pushed document remains a complete multi_view; a later ordinary push
+rebuilds both screens, proving reuse is opt-in rather than sticky."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (let ((hub-builds 0) (detail-builds 0))
+          (with-jetpacs-owner "filesapp"
+            (jetpacs-chrome-define-root
+             "filesapp" "hub"
+             (lambda (_back)
+               (cl-incf hub-builds)
+               (jetpacs-chrome-screen "Hub" (jetpacs-text "hub")))))
+          (jetpacs-chrome-push-screen
+           "filesapp" "detail"
+           (lambda (back)
+             (cl-incf detail-builds)
+             (jetpacs-chrome-screen "Detail" (jetpacs-text "detail")
+                                    :back back)))
+          (should (= hub-builds 1))
+          (should (= detail-builds 1))
+
+          (let ((jetpacs-chrome--target-refresh-view "detail"))
+            (jetpacs-shell-push "app:filesapp"))
+          (should (= hub-builds 1))
+          (should (= detail-builds 2))
+          (let* ((spec (cadr (car recs)))
+                 (views (plist-get spec :views)))
+            (should (gethash "hub" views))
+            (should (gethash "detail" views)))
+
+          (jetpacs-shell-push "app:filesapp")
+          (should (= hub-builds 2))
+          (should (= detail-builds 3)))))))
+
+(ert-deftest jetpacs-chrome-cached-view-skips-its-redundant-private-gate ()
+  "An identical cached node reuses validation only under the same welcome."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--recording _recs
+      (let ((gates 0)
+            (original (symbol-function 'jetpacs-chrome--gate-view)))
+        (cl-letf (((symbol-function 'jetpacs-chrome--gate-view)
+                   (lambda (surface node &optional analysis)
+                     (cl-incf gates)
+                     (funcall original surface node analysis))))
+          (jetpacs-chrome-test--define "filesapp" "hub")
+          (jetpacs-chrome-push-screen
+           "filesapp" "detail"
+           (lambda (back)
+             (jetpacs-chrome-screen "Detail" (jetpacs-text "detail")
+                                    :back back)))
+          (should (= gates 2))
+
+          (let ((jetpacs-chrome--target-refresh-view "detail"))
+            (jetpacs-shell-push "app:filesapp"))
+          ;; The detail builder ran, but produced the exact prior immutable
+          ;; node, so both it and the cached lower view reuse their facts.  The
+          ;; complete snapshot still takes every final shell gate.
+          (should (= gates 2))
+
+          ;; A changed welcome signature invalidates the validation reuse.
+          (setf (ebp-client-granted client) ["theme" "extra"])
+          (let ((jetpacs-chrome--target-refresh-view "detail"))
+            (jetpacs-shell-push "app:filesapp"))
+          (should (= gates 4)))))))
 
 (ert-deftest jetpacs-chrome-push-screen-validates-before-wire ()
   (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
@@ -1065,11 +1136,11 @@ untouched by the adaptive seam."
             (should (equal (plist-get bar :t) "row"))
             (should (equal (plist-get bar :height) 80))
             (should (= 2 (length tabs)))
-            ;; The selected item wears the secondary_container active
-            ;; indicator; the unselected one must not.
-            (should (string-match-p "secondary_container"
+            ;; The selected item wears the renderer-derived secondary
+            ;; container indicator; the unselected one must not.
+            (should (string-match-p "secondary"
                                     (format "%S" (aref tabs 0))))
-            (should-not (string-match-p "secondary_container"
+            (should-not (string-match-p "secondary"
                                         (format "%S" (aref tabs 1))))
             ;; Gap #5's thread-through: the item's :badge rides the
             ;; bar tab's ICON node; an unbadged item carries none.
@@ -1373,7 +1444,7 @@ toggle wears the vocabulary's menu anchor, not the builder's `add'."
                                                      :views))
                                  :fab))
                  (items (append (plist-get fab :items) nil)))
-            (should (equal (plist-get fab :t) "fab_menu"))
+            (should (equal (plist-get fab :t) "material3.fab_menu"))
             (should (equal (plist-get fab :icon) "more_vert"))
             (should (equal (mapcar (lambda (i) (plist-get i :label)) items)
                            '("M-x" "Apps")))
@@ -1389,7 +1460,7 @@ toggle wears the vocabulary's menu anchor, not the builder's `add'."
                                                       "app:fabmenu")
                                                      :views))
                                  :fab)))
-            (should (equal (plist-get fab :t) "fab_menu"))
+            (should (equal (plist-get fab :t) "material3.fab_menu"))
             (should (= 1 (length (plist-get fab :items))))))
       (jetpacs-chrome-remove "app:fabmenu"))))
 
@@ -1405,7 +1476,7 @@ as long as it stayed set."
             (jetpacs-chrome-global-items-function
              (lambda (_s) (list jetpacs-chrome-test--mx-item))))
         ;; The fixture profile carries icon_button but no fab_menu.
-        (should-not (seq-contains-p jetpacs-chrome-test--types "fab_menu"))
+        (should-not (seq-contains-p jetpacs-chrome-test--types "material3.fab_menu"))
         (with-jetpacs-owner "fabgate"
           (jetpacs-chrome-define-root
            "fabgate" "root"

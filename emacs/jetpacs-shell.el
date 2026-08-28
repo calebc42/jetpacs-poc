@@ -73,6 +73,14 @@ exactly as it was — scrubbed per SPEC 23.3 — whatever a member does.
 The seam exists so a flight recorder (`jetpacs-devtools') can keep
 what `jetpacs-error-label' drops.")
 
+(defvar jetpacs-shell--analysis-capture nil
+  "Dynamically bound cell receiving (SPEC . ANALYSIS) from a builder.
+Chrome already analyzes each complete view to preserve its degrade-in-place
+contract.  Publishing the exact merged facts through this private build
+extent lets the final shell gates reuse them instead of walking the same
+complete multi-view document again.  Nil outside `jetpacs-shell-push' so a
+standalone builder cannot retain a large snapshot accidentally.")
+
 (defun jetpacs-shell--note-builder-error (context err)
   "Run the builder-error seam for CONTEXT and ERR; never signals.
 Called from inside a HANDLER-BIND handler while ERR is propagating —
@@ -150,15 +158,47 @@ session is still `syncing' and the READY guard must not apply.")
   "SPEC 4.5 fixed `max_children_per_node' (contract limits.fixed).")
 
 (defconst jetpacs-shell--stateful-types
-  '("text_input" "checkbox" "switch" "enum_list" "slider" "editor")
+  jetpacs-stateful-node-types
   "Node types `jetpacs-shell--strip-stateful' removes from a stale_spec.
-SPEC 13.5: no stateful node and no `editor' regardless of publish_state.")
+Conditional button state is checked by `jetpacs-stateful-node-p'.
+SPEC 13.5 additionally removes every `editor', regardless of publish_state.")
+
+(defconst jetpacs-shell--max-variants-per-host 8
+  "Fixed sender ceiling for alternatives in one `variant_host'.")
 
 ;;;; Surface naming (decision D1)
 
 (defun jetpacs-shell-surface-for (owner)
   "The D1 surface id for OWNER: `app:<owner>'."
   (concat "app:" owner))
+
+(defun jetpacs-shell-open-surface-action (surface)
+  "Build the best advertised action for selecting app SURFACE.
+New Companions expose receiver-local `surface.open'; the remote
+`jetpacs.launcher.open' fallback preserves compatibility with the pre-Nav3
+last-push-wins shell.  The builtin constructor validates SURFACE in both arms."
+  (let ((builtin (jetpacs-surface-open surface)))
+    (if (jetpacs-builtin-advertised-p "surface.open" :app)
+        builtin
+      (jetpacs-action "jetpacs.launcher.open" :args (list :surface surface)))))
+
+(defun jetpacs-shell-action-opening-surface (name surface &rest keys)
+  "Build remote action NAME whose same occurrence presents app SURFACE.
+KEYS are the keyword arguments accepted by `jetpacs-action'.  A Companion
+advertising `action.open_surface' performs the receiver-local Nav3 selection
+and still dispatches NAME to Emacs; an older Companion receives the original
+remote-only descriptor and retains its pre-Nav3 last-push-wins behavior.
+
+Use this only when NAME's accepted effect deliberately publishes a different
+app surface.  Ordinary same-surface refreshes remain plain remote actions."
+  ;; Validate even on an older Companion, where the feature gate below omits
+  ;; the member and `jetpacs-action' would otherwise never see SURFACE.
+  (jetpacs-surface-open surface)
+  (apply #'jetpacs-action name
+         :open-surface (and (jetpacs-feature-advertised-p
+                             "action.open_surface" :app)
+                            surface)
+         keys))
 
 (defun jetpacs-shell--resolve-surface (surface-or-owner)
   "Resolve SURFACE-OR-OWNER to a surface id.
@@ -485,14 +525,15 @@ call this to reach them."
 
 (defun jetpacs-shell--check-features (spec allowed what)
   "GATE 1c, SPEC 10.2: every constraining feature in SPEC is advertised.
-10.2 mandates gating nodes, builtins, AND features; the SPEC names
-exactly two constraining feature families — `image.https'/`image.data'
-\(17.2) and `toolbar.<identifier>' (17.7).  There is no feature registry
-to enumerate beyond them (see the audit's SPEC finding 9), so this
-gate is deliberately keyed to those two."
+10.2 mandates gating nodes, builtins, AND features.  This checks the image and
+toolbar constraining features plus the `action.open_surface' member gate."
   (jetpacs-shell--walk-plists
    spec
    (lambda (p)
+     (when (and (plist-member p :open_surface)
+                (not (member "action.open_surface" allowed)))
+       (error "jetpacs: remote open_surface needs the unadvertised feature %S for %s (SPEC 14.1)"
+              "action.open_surface" what))
      (pcase (plist-get p :t)
        ("image"
         (let* ((url (plist-get p :url))
@@ -513,6 +554,88 @@ feature %S for %s (SPEC 17.2)" need what))))
                 (error "jetpacs: editor toolbar %S needs the unadvertised \
 feature %S for %s (SPEC 17.7)" toolbar need what))))))))))
 
+(defun jetpacs-shell--check-extension-type (type extensions what)
+  "Signal when TYPE's owning renderer extension is absent for WHAT."
+  (when-let* ((extension (jetpacs-renderer-extension-for-node type)))
+    (unless (member extension extensions)
+      (error "jetpacs: node type %S requires unadvertised renderer extension %S for %s (SPEC 16.2.1)"
+             type extension what))))
+
+(defun jetpacs-shell--check-profile-uses
+    (spec types builtins features extensions what)
+  "Run GATE 1's type, builtin, feature, and extension checks in one SPEC walk.
+Validation remains ordered by category—types, then builtins, then features—so
+combining discovery does not change which sender MUST has precedence."
+  (let (used-types used-builtins constrained)
+    (jetpacs-shell--walk-plists
+     spec
+     (lambda (p)
+       (when (plist-member p :t)
+         (push (plist-get p :t) used-types))
+       (when-let* ((builtin (plist-get p :builtin)))
+         (push builtin used-builtins))
+       (when (or (member (plist-get p :t) '("image" "editor"))
+                 (plist-member p :open_surface))
+         (push p constrained))))
+    (dolist (type (delete-dups used-types))
+      (unless (member type types)
+        (error "jetpacs: node type %S is not advertised for %s (SPEC 16.2)"
+               type what))
+      (jetpacs-shell--check-extension-type type extensions what))
+    (dolist (builtin (delete-dups used-builtins))
+      (unless (member builtin builtins)
+        (error "jetpacs: builtin %S is not advertised for %s (SPEC 10.2)"
+               builtin what)))
+    (dolist (p constrained)
+      (when (and (plist-member p :open_surface)
+                 (not (member "action.open_surface" features)))
+        (error "jetpacs: remote open_surface needs the unadvertised feature %S for %s (SPEC 14.1)"
+               "action.open_surface" what))
+      (pcase (plist-get p :t)
+        ("image"
+         (let* ((url (plist-get p :url))
+                (need (and (stringp url)
+                           (if (string-prefix-p "data:" url)
+                               "image.data"
+                             "image.https"))))
+           (when (and need (not (member need features)))
+             (error "jetpacs: image URI form needs the unadvertised \
+feature %S for %s (SPEC 17.2)" need what))))
+        ("editor"
+         (when-let* ((toolbar (plist-get p :toolbar))
+                     ((stringp toolbar))
+                     (need (concat "toolbar." toolbar)))
+           (unless (member need features)
+                 (error "jetpacs: editor toolbar %S needs the unadvertised \
+feature %S for %s (SPEC 17.7)" toolbar need what))))))))
+
+(defun jetpacs-shell--check-profile-analysis
+    (analysis types builtins features extensions what)
+  "Validate ANALYSIS's discovered profile uses against the live profile.
+The category order matches `jetpacs-shell--check-profile-uses': node types,
+builtins, then constraining features.  Notification metadata contributes only
+builtins/features, matching the explicit SPEC 18.5 path in Gate 1."
+  (dolist (type (delete-dups (copy-sequence (plist-get analysis :types))))
+    (unless (member type types)
+      (error "jetpacs: node type %S is not advertised for %s (SPEC 16.2)"
+             type what))
+    (jetpacs-shell--check-extension-type type extensions what))
+  (dolist (builtin
+           (delete-dups (copy-sequence (plist-get analysis :builtins))))
+    (unless (member builtin builtins)
+      (error "jetpacs: builtin %S is not advertised for %s (SPEC 10.2)"
+             builtin what)))
+  (dolist (p (plist-get analysis :constrained))
+    (jetpacs-shell--check-features p features what))
+  (dolist (builtin
+           (delete-dups (copy-sequence
+                         (plist-get analysis :meta-builtins))))
+    (unless (member builtin builtins)
+      (error "jetpacs: builtin %S is not advertised for %s (SPEC 10.2)"
+             builtin what)))
+  (dolist (p (plist-get analysis :meta-constrained))
+    (jetpacs-shell--check-features p features what)))
+
 (defun jetpacs-shell--strip-stateful (value)
   "A copy of VALUE with every stateful node and editor removed (SPEC 13.5).
 Opaque members pass through untouched; a member whose node was stripped
@@ -529,7 +652,8 @@ is omitted; stripped children vanish from their sequences."
                value)
       h))
    ((and (consp value) (keywordp (car value)))
-    (if (member (plist-get value :t) jetpacs-shell--stateful-types)
+    (if (or (equal (plist-get value :t) "editor")
+            (jetpacs-stateful-node-p value))
         nil
       (let ((p value) out)
         (while p
@@ -575,7 +699,8 @@ after the 13.5 stateful strip (SPEC 13.4)"
 
 ;;;; The gates
 
-(defun jetpacs-shell--gate-spec (client surface spec stale-spec)
+(defun jetpacs-shell--gate-spec
+    (client surface spec stale-spec &optional spec-analysis stale-analysis)
   "GATE 1: SPEC 16.2 node types + SPEC 10.2 builtins, against the LIVE
 welcome profile — never `jetpacs-check-profile''s reference defconst.
 Signals; never sanitizes (a sender MUST is loud)."
@@ -589,15 +714,45 @@ Signals; never sanitizes (a sender MUST is loud)."
     ;; `member', so the coercion is mandatory.
     (let ((types (append (plist-get profile :node_types) nil))
           (builtins (append (plist-get profile :builtins) nil))
-          (features (append (plist-get profile :features) nil)))
-      (dolist (s (delq nil (list spec stale-spec)))
-        (jetpacs-check-node-types s types what)
-        (jetpacs-shell--check-builtins s builtins what)
-        (jetpacs-shell--check-features s features what)
-        ;; 18.5 notification actions are invisible to the generic walker.
-        (dolist (desc (jetpacs-shell--meta-descriptors s))
-          (jetpacs-shell--check-builtins desc builtins what)
-          (jetpacs-shell--check-features desc features what))))))
+          (features (append (plist-get profile :features) nil))
+          (extensions (append (plist-get profile :extensions) nil)))
+      (if spec-analysis
+          (dolist (analysis (delq nil (list spec-analysis stale-analysis)))
+            (jetpacs-shell--check-profile-analysis
+             analysis types builtins features extensions what))
+        (dolist (s (delq nil (list spec stale-spec)))
+          (jetpacs-shell--check-profile-uses
+           s types builtins features extensions what)
+          ;; 18.5 notification actions are invisible to the generic walker.
+          (dolist (desc (jetpacs-shell--meta-descriptors s))
+            (jetpacs-shell--check-builtins desc builtins what)
+            (jetpacs-shell--check-features desc features what)))))
+    ;; SPEC 16.5.1: profile/action discovery above already sees descriptors
+    ;; nested in Semantics. This second sender check owns the one document-wide
+    ;; semantic invariant: collection items bind to, and fit, their nearest
+    ;; authored collection ancestor.
+    (dolist (document (delq nil (list spec stale-spec)))
+      (jetpacs--check-semantics-document document))))
+
+(defun jetpacs-shell--gate-variants (spec &optional analysis)
+  "Enforce the fixed retained-variant sender rules in SPEC.
+The final generic gates still count every inactive branch and enforce global
+node IDs.  This gate adds the fixed eight-alternative ceiling and the
+read-only-content rule even for callers which bypass the widget constructors."
+  (when (or (null analysis)
+            (member "variant_host" (plist-get analysis :types)))
+    (jetpacs-shell--walk-plists
+     spec
+     (lambda (node)
+       (when (equal (plist-get node :t) "variant_host")
+         (let ((variants (plist-get node :variants)))
+           (unless (vectorp variants)
+             (error "jetpacs: variant_host variants must be an array"))
+           (when (> (length variants) jetpacs-shell--max-variants-per-host)
+             (error "jetpacs: variant_host has %d variants, over fixed maximum %d"
+                    (length variants) jetpacs-shell--max-variants-per-host))
+           (jetpacs-check-variant-host
+            (plist-get node :id) (plist-get node :value) variants)))))))
 
 (defconst jetpacs-shell--aggregate-limits
   '((:max_rich_spans "rich_text" . :spans)
@@ -606,6 +761,275 @@ Signals; never sanitizes (a sender MUST is loud)."
     (:max_canvas_ops "canvas" . :ops))
   "Welcome limit -> (NODE-TYPE . CHILD-MEMBER) for GATE 5's aggregate walk.
 SPEC 4.5: these are counts across ONE SurfaceSpec, not per node.")
+
+(defun jetpacs-shell--analyze-spec (spec)
+  "Collect all whole-SPEC gate facts in one structural walk.
+The returned plist is an internal, immutable build artifact consumed by Gates
+1, 4, 5, and 1d.  Discovery itself does not signal: the individual gates still
+validate in their normative order, preserving the sender's error precedence.
+Opaque application members remain opaque, exactly as in
+`jetpacs-shell--walk-plists'.  Notification metadata descriptors are analyzed
+separately because SPEC 18.5 places them under the otherwise opaque `:meta'."
+  (let ((deepest 0)
+        (nodes 0)
+        (max-children 0)
+        (rich-spans 0)
+        (table-cells 0)
+        (chart-points 0)
+        (canvas-ops 0)
+        (ids (make-hash-table :test #'equal))
+        identifiers
+        duplicate-id
+        duplicate-key
+        identity-error
+        (types-seen (make-hash-table :test #'equal))
+        (builtins-seen (make-hash-table :test #'equal))
+        (meta-builtins-seen (make-hash-table :test #'equal))
+        types builtins constrained amendments
+        meta-builtins meta-constrained meta-amendments
+        aggregate-error)
+    (cl-labels
+        ((member-count (value)
+           (condition-case err
+               (if (vectorp value) (length value)
+                 (length (append value nil)))
+             (error
+              (unless aggregate-error (setq aggregate-error err))
+              0)))
+         (members (value)
+           (condition-case err
+               (append value nil)
+             (error
+              (unless aggregate-error (setq aggregate-error err))
+              nil)))
+         (note-amendment (p meta)
+           ;; The policy helper only observes :when_offline, and the editor
+           ;; branch only observes synchronized editors.  Retaining just those
+           ;; plists avoids allocating one cons for every span and layout plist.
+           (when (or (plist-member p :when_offline)
+                     (and (equal (plist-get p :t) "editor")
+                          (plist-get p :document)))
+             (if meta (push p meta-amendments) (push p amendments))))
+         (note-profile (p meta)
+           (let ((type (plist-get p :t)))
+             (when (and (not meta) (plist-member p :t)
+                        (not (gethash type types-seen)))
+               (puthash type t types-seen)
+               (push type types))
+             (when-let* ((builtin (plist-get p :builtin)))
+               (let ((seen (if meta meta-builtins-seen builtins-seen)))
+                 (unless (gethash builtin seen)
+                   (puthash builtin t seen)
+                   (if meta
+                       (push builtin meta-builtins)
+                     (push builtin builtins)))))
+             (when (or (member type '("image" "editor"))
+                       (plist-member p :open_surface))
+               (if meta (push p meta-constrained) (push p constrained))))
+           (note-amendment p meta))
+         (walk-meta (value)
+           (cond
+            ((vectorp value)
+             (dotimes (i (length value)) (walk-meta (aref value i))))
+            ((hash-table-p value)
+             (maphash (lambda (_key child) (walk-meta child)) value))
+            ((and (consp value) (keywordp (car value)))
+             (note-profile value t)
+             (let ((p value))
+               (while p
+                 (let ((key (pop p)) (child (pop p)))
+                   (unless (memq key jetpacs--opaque-members)
+                     (walk-meta child))))))
+            ((consp value)
+             (walk-meta (car value))
+             (walk-meta (cdr value)))))
+         (walk (value depth sibling-keys)
+           (cond
+            ((vectorp value)
+             ;; A root block sequence is one sibling set. Nested vectors share
+             ;; the nearest enclosing Node's set supplied by their caller.
+             (let ((keys (or sibling-keys
+                             (make-hash-table :test #'equal))))
+               (dotimes (i (length value))
+                 (walk (aref value i) depth keys))))
+            ((hash-table-p value)
+             ;; An outer multi_view hash has no Node parent, so its roots stay
+             ;; separate; a schema object below a Node carries the shared set.
+             (maphash (lambda (_key child)
+                        (walk child depth sibling-keys))
+                      value))
+            ((and (consp value) (keywordp (car value)))
+             (let* ((type (plist-get value :t))
+                    (typed (stringp type))
+                    (child-depth (if typed (1+ depth) depth))
+                    (child-keys (if typed
+                                    (make-hash-table :test #'equal)
+                                  sibling-keys)))
+               (note-profile value nil)
+               (when typed
+                 (cl-incf nodes)
+                 (setq deepest (max deepest child-depth))
+                 ;; Universal identity members retain their identifier type
+                 ;; even on a node a target degrades. Direct plists may bypass
+                 ;; widget constructors, so the final sender gate backstops
+                 ;; both type/spelling and sibling uniqueness (SPEC 16.1).
+                 (dolist (member '(:key :id))
+                   (when (plist-member value member)
+                     (condition-case err
+                         (jetpacs-check-identifier
+                          (plist-get value member)
+                          (symbol-name member))
+                       (error
+                        (unless identity-error
+                          (setq identity-error
+                                (list member (plist-get value member) err)))))))
+                 (when-let* ((key (plist-get value :key))
+                             ((stringp key))
+                             ((hash-table-p sibling-keys)))
+                   (if (gethash key sibling-keys)
+                       (unless duplicate-key (setq duplicate-key key))
+                     (puthash key t sibling-keys)))
+                 (when-let* ((id (plist-get value :id))
+                             ((stringp id)))
+                   (if (gethash id ids)
+                       (unless duplicate-id (setq duplicate-id id))
+                     (puthash id t ids)
+                     (push id identifiers)))
+                 (let ((children (plist-get value :children)))
+                   (when (vectorp children)
+                     (setq max-children
+                           (max max-children (length children)))))
+                 (pcase type
+                   ("rich_text"
+                    (cl-incf rich-spans
+                             (member-count (plist-get value :spans))))
+                   ("table_row"
+                    (cl-incf table-cells
+                             (member-count (plist-get value :cells))))
+                   ("chart"
+                    (dolist (series (members (plist-get value :series)))
+                      (cl-incf chart-points
+                               (member-count (plist-get series :points)))))
+                   ("canvas"
+                    (cl-incf canvas-ops
+                             (member-count (plist-get value :ops))))))
+               (let ((p value))
+                 (while p
+                   (let ((key (pop p)) (child (pop p)))
+                     (unless (memq key jetpacs--opaque-members)
+                       (if (and typed
+                                (equal type "variant_host")
+                                (eq key :variants)
+                                (vectorp child))
+                           ;; Variant values are branch boundaries. Their
+                           ;; content roots are not siblings, and descendant
+                           ;; keys may intentionally repeat across alternatives.
+                           (dotimes (i (length child))
+                             (walk (plist-get (aref child i) :content)
+                                   child-depth nil))
+                         ;; Intermediate schema objects do not create a Node
+                         ;; parent; every first Node reached through them joins
+                         ;; this nearest parent's one sibling set.
+                         (walk child child-depth child-keys))))))))
+            ((consp value)
+             (walk (car value) depth sibling-keys)
+             (walk (cdr value) depth sibling-keys)))))
+      (walk spec 0 nil)
+      (dolist (descriptor (jetpacs-shell--meta-descriptors spec))
+        (walk-meta descriptor)))
+    (list :types (nreverse types)
+          :builtins (nreverse builtins)
+          :constrained constrained
+          :amendments (nreverse amendments)
+          :meta-builtins (nreverse meta-builtins)
+          :meta-constrained meta-constrained
+          :meta-amendments (nreverse meta-amendments)
+          :ids (nreverse identifiers)
+          :duplicate-id duplicate-id
+          :duplicate-key duplicate-key
+          :identity-error identity-error
+          :aggregate-error aggregate-error
+          :counts
+          (list :depth deepest :nodes nodes :max-children max-children
+                :max_rich_spans rich-spans :max_table_cells table-cells
+                :max_chart_points chart-points :max_canvas_ops canvas-ops))))
+
+(defun jetpacs-shell--merge-analyses (analyses)
+  "Merge exact disjoint ANALYSES into one whole-document gate artifact.
+This is valid for Chrome's multi-view wrapper because the wrapper is an
+untyped SurfaceSpec whose only structural children are the analyzed view
+roots.  Counts that are document aggregates are summed; depth and child fanout
+take their maxima; profile uses are unioned; ids are checked across views."
+  (let ((types-seen (make-hash-table :test #'equal))
+        (builtins-seen (make-hash-table :test #'equal))
+        (meta-builtins-seen (make-hash-table :test #'equal))
+        (ids-seen (make-hash-table :test #'equal))
+        types builtins constrained amendments
+        meta-builtins meta-constrained meta-amendments identifiers
+        duplicate-id duplicate-key identity-error aggregate-error
+        (depth 0) (nodes 0) (max-children 0)
+        (rich-spans 0) (table-cells 0) (chart-points 0) (canvas-ops 0))
+    (dolist (analysis analyses)
+      (dolist (type (plist-get analysis :types))
+        (unless (gethash type types-seen)
+          (puthash type t types-seen)
+          (push type types)))
+      (dolist (builtin (plist-get analysis :builtins))
+        (unless (gethash builtin builtins-seen)
+          (puthash builtin t builtins-seen)
+          (push builtin builtins)))
+      (dolist (builtin (plist-get analysis :meta-builtins))
+        (unless (gethash builtin meta-builtins-seen)
+          (puthash builtin t meta-builtins-seen)
+          (push builtin meta-builtins)))
+      (dolist (p (plist-get analysis :constrained)) (push p constrained))
+      (dolist (p (plist-get analysis :amendments)) (push p amendments))
+      (dolist (p (plist-get analysis :meta-constrained))
+        (push p meta-constrained))
+      (dolist (p (plist-get analysis :meta-amendments))
+        (push p meta-amendments))
+      (unless duplicate-id
+        (setq duplicate-id (plist-get analysis :duplicate-id)))
+      (unless duplicate-key
+        (setq duplicate-key (plist-get analysis :duplicate-key)))
+      (unless identity-error
+        (setq identity-error (plist-get analysis :identity-error)))
+      (dolist (id (plist-get analysis :ids))
+        (if (gethash id ids-seen)
+            (unless duplicate-id (setq duplicate-id id))
+          (puthash id t ids-seen)
+          (push id identifiers)))
+      (unless aggregate-error
+        (setq aggregate-error (plist-get analysis :aggregate-error)))
+      (let ((counts (plist-get analysis :counts)))
+        (setq depth (max depth (plist-get counts :depth))
+              nodes (+ nodes (plist-get counts :nodes))
+              max-children (max max-children
+                                (plist-get counts :max-children))
+              rich-spans (+ rich-spans
+                            (plist-get counts :max_rich_spans))
+              table-cells (+ table-cells
+                             (plist-get counts :max_table_cells))
+              chart-points (+ chart-points
+                              (plist-get counts :max_chart_points))
+              canvas-ops (+ canvas-ops
+                            (plist-get counts :max_canvas_ops)))))
+    (list :types (nreverse types)
+          :builtins (nreverse builtins)
+          :constrained (nreverse constrained)
+          :amendments (nreverse amendments)
+          :meta-builtins (nreverse meta-builtins)
+          :meta-constrained (nreverse meta-constrained)
+          :meta-amendments (nreverse meta-amendments)
+          :ids (nreverse identifiers)
+          :duplicate-id duplicate-id
+          :duplicate-key duplicate-key
+          :identity-error identity-error
+          :aggregate-error aggregate-error
+          :counts
+          (list :depth depth :nodes nodes :max-children max-children
+                :max_rich_spans rich-spans :max_table_cells table-cells
+                :max_chart_points chart-points :max_canvas_ops canvas-ops))))
 
 (defun jetpacs-shell--count-aggregates (spec)
   "Aggregate counts, node totals, and the deepest node path in SPEC.
@@ -616,11 +1040,17 @@ ANY non-opaque member is one level deeper than the node that carries it
 — `:children' has no special status (a scaffold's `top_bar', a card's
 content, a box in a box all nest), and non-node plists (descriptors,
 spans) add no depth."
-  (let ((counts (list :depth 0 :nodes 0 :max-children 0)))
+  (let ((deepest 0)
+        (nodes 0)
+        (max-children 0)
+        (rich-spans 0)
+        (table-cells 0)
+        (chart-points 0)
+        (canvas-ops 0))
     (cl-labels
-        ((bump (key n)
-           (setq counts (plist-put counts key
-                                   (+ n (or (plist-get counts key) 0)))))
+        ((member-count (value)
+           (if (vectorp value) (length value)
+             (length (append value nil))))
          (walk (value depth)
            (cond
             ((vectorp value)
@@ -632,33 +1062,27 @@ spans) add no depth."
                     (typed (stringp type))
                     (d (if typed (1+ depth) depth)))
                (when typed
-                 (bump :nodes 1)
-                 (when (> d (plist-get counts :depth))
-                   (setq counts (plist-put counts :depth d)))
+                 (cl-incf nodes)
+                 (setq deepest (max deepest d))
                  (let ((kids (plist-get value :children)))
-                   (when (and (vectorp kids)
-                              (> (length kids)
-                                 (plist-get counts :max-children)))
-                     (setq counts (plist-put counts :max-children
-                                             (length kids)))))
-                 (pcase-dolist (`(,limit ,want . ,member)
-                                jetpacs-shell--aggregate-limits)
-                   (when (equal type want)
-                     (bump limit
-                           (if (equal type "chart")
-                               ;; A chart's aggregate is POINTS, across
-                               ;; series.
-                               (apply #'+ 0
-                                      (mapcar
-                                       (lambda (se)
-                                         (length (append
-                                                  (plist-get se :points)
-                                                  nil)))
-                                       (append (plist-get value member)
-                                               nil)))
-                             (let ((v (plist-get value member)))
-                               (if (vectorp v) (length v)
-                                 (length (append v nil)))))))))
+                   (when (vectorp kids)
+                     (setq max-children (max max-children (length kids)))))
+                 ;; These four type-disjoint counters replace four plist
+                 ;; lookups/comparisons for every node in the hot push walk.
+                 (pcase type
+                   ("rich_text"
+                    (cl-incf rich-spans
+                             (member-count (plist-get value :spans))))
+                   ("table_row"
+                    (cl-incf table-cells
+                             (member-count (plist-get value :cells))))
+                   ("chart"
+                    (dolist (series (append (plist-get value :series) nil))
+                      (cl-incf chart-points
+                               (member-count (plist-get series :points)))))
+                   ("canvas"
+                    (cl-incf canvas-ops
+                             (member-count (plist-get value :ops))))))
                (let ((p value))
                  (while p
                    (let ((k (pop p)) (v (pop p)))
@@ -668,9 +1092,12 @@ spans) add no depth."
              (walk (car value) depth)
              (walk (cdr value) depth)))))
       (walk spec 0))
-    counts))
+    (list :depth deepest :nodes nodes :max-children max-children
+          :max_rich_spans rich-spans :max_table_cells table-cells
+          :max_chart_points chart-points :max_canvas_ops canvas-ops)))
 
-(defun jetpacs-shell--gate-size (client spec stale-spec)
+(defun jetpacs-shell--gate-size
+    (client spec stale-spec &optional spec-analysis stale-analysis)
   "GATE 5: SPEC 4.5 SIZE — the sender MUST respect the reported limits.
 `max_frame_bytes', the four aggregate counts, and the fixed 20-level
 `max_node_depth'.  Nothing else in the sender measured any of these: the
@@ -679,13 +1106,14 @@ other builder — a chrome stack, a skin, a third-party Tier-1 — reached
 the socket unmeasured.  Over-frame is worse than a 1201: SPEC 6.2 makes
 it a `1400 frame-too-large' and a CLOSED connection."
   (let ((limits (ebp-client-limits client)))
-    (dolist (s (delq nil (list spec stale-spec)))
-      (when-let* ((frame (plist-get limits :max_frame_bytes)))
-        (let ((bytes (string-bytes (jetpacs-node->canonical-json s))))
-          (when (> bytes (- frame jetpacs-shell--frame-headroom))
-            (error "jetpacs: spec is %d octets, over max_frame_bytes %d (SPEC 4.5)"
-                   bytes frame))))
-      (let ((counts (jetpacs-shell--count-aggregates s)))
+    (cl-loop for s in (list spec stale-spec)
+             for analysis in (list spec-analysis stale-analysis)
+             when s do
+      (when-let* ((err (and analysis
+                            (plist-get analysis :aggregate-error))))
+        (signal (car err) (cdr err)))
+      (let ((counts (or (and analysis (plist-get analysis :counts))
+                        (jetpacs-shell--count-aggregates s))))
         (when (> (plist-get counts :depth) jetpacs-shell--max-node-depth)
           (error "jetpacs: node depth %d exceeds max_node_depth %d (SPEC 4.5)"
                  (plist-get counts :depth) jetpacs-shell--max-node-depth))
@@ -703,10 +1131,21 @@ it a `1400 frame-too-large' and a CLOSED connection."
                       (n (plist-get counts limit)))
             (when (> n cap)
               (error "jetpacs: %d exceeds %s %d (SPEC 4.5 aggregate)"
-                     n (substring (symbol-name limit) 1) cap))))))))
+                     n (substring (symbol-name limit) 1) cap)))))
+      ;; Check structural limits before asking Emacs's native serializer to
+      ;; descend into the tree.  Its own nesting guard is intentionally
+      ;; tighter than arbitrary Lisp, but Jetpacs owes the peer the named
+      ;; SPEC max_node_depth diagnosis for an over-deep node document.
+      (when-let* ((frame (plist-get limits :max_frame_bytes)))
+        (let ((bytes (jetpacs-node-wire-bytes s)))
+          (when (> bytes (- frame jetpacs-shell--frame-headroom))
+            (error "jetpacs: spec is %d octets, over max_frame_bytes %d (SPEC 4.5)"
+                   bytes frame)))))))
 
-(defun jetpacs-shell--gate-ids (spec stale-spec)
-  "GATE 1d: SPEC 16.1 — no duplicate node id within one document.
+(defun jetpacs-shell--gate-ids
+    (spec stale-spec &optional spec-analysis stale-analysis)
+  "GATE 1d: SPEC 16.1 — valid identity attrs, globally unique ids,
+and sibling-unique keys within one document.
 SPEC and STALE-SPEC are checked SEPARATELY: the Companion validates
 each with its own id set.  The claim table makes MINTED ids unique by
 construction; this catches the literal authored duplicate (two screens
@@ -715,13 +1154,19 @@ chrome degrades its screens first, so for a chrome document this is the
 backstop, and for a plain root it is the only floor.  A duplicate is a
 1201 for the ENTIRE update, and 13.2 then retains the old snapshot: the
 sender MUST is loud."
-  (dolist (s (delq nil (list spec stale-spec)))
-    (let ((ids (jetpacs-collect-node-ids s nil))
-          (seen (make-hash-table :test #'equal)))
-      (dolist (id ids)
-        (when (gethash id seen)
-          (signal 'jetpacs-duplicate-node-id (list id)))
-        (puthash id t seen)))))
+  (let ((analyses
+         (if spec-analysis
+             (delq nil (list spec-analysis stale-analysis))
+           (mapcar #'jetpacs-shell--analyze-spec
+                   (delq nil (list spec stale-spec))))))
+    (dolist (analysis analyses)
+      (when-let* ((bad (plist-get analysis :identity-error)))
+        (error "jetpacs: node %s %S is not an identifier (SPEC 16.1)"
+               (car bad) (cadr bad)))
+      (when-let* ((key (plist-get analysis :duplicate-key)))
+        (signal 'jetpacs-duplicate-node-key (list key)))
+      (when-let* ((id (plist-get analysis :duplicate-id)))
+        (signal 'jetpacs-duplicate-node-id (list id))))))
 
 (defun jetpacs-shell--gate-capability (client surface)
   "GATE 3: a non-app namespace needs its granted surface capability."
@@ -734,7 +1179,7 @@ sender MUST is loud."
       (error "jetpacs: %s push requires the ungranted %S capability"
              surface need))))
 
-(defun jetpacs-shell--gate-amendments (client spec)
+(defun jetpacs-shell--gate-amendments (client spec &optional analysis)
   "GATE 4: the ratified sender gates.
 Amendment #85: a `wake' descriptor without this session's
 `offline.wake' grant is 1201 content-invalid and voids the surface —
@@ -773,12 +1218,16 @@ ungranted `editor.sync' capability (SPEC 19)" (plist-get p :id)))
                               max-bytes))
                   (error "jetpacs: editor %S document exceeds \
 max_editor_bytes (SPEC 19, amendment #84)" eid)))))))
-    (jetpacs-shell--walk-plists spec check)
-    ;; 18.5 notification action descriptors are opaque to the walker, and
-    ;; they are the ONLY place 18.5 puts a descriptor — i.e. exactly where
-    ;; the #85 wake gate matters most.
-    (dolist (desc (jetpacs-shell--meta-descriptors spec))
-      (jetpacs-shell--walk-plists desc check))))
+    (if analysis
+        (progn
+          (dolist (p (plist-get analysis :amendments)) (funcall check p))
+          (dolist (p (plist-get analysis :meta-amendments)) (funcall check p)))
+      (jetpacs-shell--walk-plists spec check)
+      ;; 18.5 notification action descriptors are opaque to the walker, and
+      ;; they are the ONLY place 18.5 puts a descriptor — i.e. exactly where
+      ;; the #85 wake gate matters most.
+      (dolist (desc (jetpacs-shell--meta-descriptors spec))
+        (jetpacs-shell--walk-plists desc check)))))
 
 ;;;; The push
 
@@ -854,6 +1303,7 @@ a queued `jetpacs-shell-notify' snackbar is requeued for the next push."
       nil)
      (t
       (let ((client (jetpacs-client-or-error))
+            (jetpacs-shell--analysis-capture (list nil))
             (snack (prog1 (gethash surface jetpacs-shell--snackbars)
                      (remhash surface jetpacs-shell--snackbars)))
             ;; Whether the injection above found a scaffold slot; the drain
@@ -904,14 +1354,31 @@ as spec (SPEC 13.4/13.5)"))
                   (unless (gethash current-view (plist-get spec :views))
                     (error "jetpacs: current_view %S names no view in this \
 spec (SPEC 13.4)" current-view)))
-                ;; GATE 1, GATE 3, GATE 4.
-                (jetpacs-shell--gate-spec client surface spec stale-spec)
-                (jetpacs-shell--gate-capability client surface)
-                (jetpacs-shell--gate-amendments client spec)
-                (jetpacs-shell--gate-size client spec stale-spec)
-                (jetpacs-shell--gate-ids spec stale-spec)
-                (when stale-spec
-                  (jetpacs-shell--gate-amendments client stale-spec)))
+                ;; Build one immutable fact set per complete document.  The
+                ;; following gates still run and signal in the same order; they
+                ;; simply stop rediscovering the same plists four times.
+                (let ((spec-analysis
+                       (or (and-let* ((built
+                                      (car jetpacs-shell--analysis-capture))
+                                     ((eq (car built) spec)))
+                             (cdr built))
+                           (jetpacs-shell--analyze-spec spec)))
+                      (stale-analysis (and stale-spec
+                                           (jetpacs-shell--analyze-spec
+                                            stale-spec))))
+                  ;; GATE 1, GATE 3, GATE 4.
+                  (jetpacs-shell--gate-spec
+                   client surface spec stale-spec spec-analysis stale-analysis)
+                  (jetpacs-shell--gate-variants spec spec-analysis)
+                  (jetpacs-shell--gate-capability client surface)
+                  (jetpacs-shell--gate-amendments client spec spec-analysis)
+                  (jetpacs-shell--gate-size
+                   client spec stale-spec spec-analysis stale-analysis)
+                  (jetpacs-shell--gate-ids
+                   spec stale-spec spec-analysis stale-analysis)
+                  (when stale-spec
+                    (jetpacs-shell--gate-amendments
+                     client stale-spec stale-analysis))))
               ;; Snackbar rides the scaffold slot when the root is one —
               ;; injected only after every gate passed, and drained only
               ;; after the send, so a refused push keeps the feedback.

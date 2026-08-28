@@ -12,8 +12,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
 /** SPEC 17.1: the advertised node_types for a target from surface_profiles, or
- * null when the profile is absent (allow all — the reference always advertises
- * them; null keeps unit tests and the golden corpus ungated).
+ * null when the profile is absent. [CompanionEngine] rejects such live
+ * configuration; null remains useful to storage-level tests and golden
+ * validators that intentionally operate without a session profile.
  *
  * C3: a non-string entry is now SKIPPED rather than stringified. org.json's
  * `optString(i)` coerced (the number 5 advertised the type "5") and turned a
@@ -26,10 +27,24 @@ fun nodeTypesFromProfiles(profiles: JsonObject, target: String): Set<String>? {
 }
 
 /** SPEC 14.2 (LD-17): the advertised builtins for a target from
- * surface_profiles, or null when the profile is absent (allow all — the
- * counterpart of [nodeTypesFromProfiles] for the builtin-context gate). */
+ * surface_profiles, or null outside a validated live engine—the counterpart
+ * of [nodeTypesFromProfiles] for the builtin-context gate. */
 fun builtinsFromProfiles(profiles: JsonObject, target: String): Set<String>? {
     val arr = profiles.objOrNull(target)?.arrOrNull("builtins") ?: return null
+    return buildSet { for (e in arr) e.asStringOrNull()?.let(::add) }
+}
+
+/** SPEC 22.4: the advertised constraining/member-gating features for a target,
+ * or null when the profile is absent (the same test/golden convention as the
+ * node and builtin helpers above). */
+fun featuresFromProfiles(profiles: JsonObject, target: String): Set<String>? {
+    val arr = profiles.objOrNull(target)?.arrOrNull("features") ?: return null
+    return buildSet { for (e in arr) e.asStringOrNull()?.let(::add) }
+}
+
+/** EBP 3 §16.2.1 renderer extensions advertised for one target profile. */
+fun extensionsFromProfiles(profiles: JsonObject, target: String): Set<String>? {
+    val arr = profiles.objOrNull(target)?.arrOrNull("extensions") ?: return null
     return buildSet { for (e in arr) e.asStringOrNull()?.let(::add) }
 }
 

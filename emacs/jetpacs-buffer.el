@@ -18,7 +18,7 @@
 ;;
 ;; Rung JC-1 of docs/PLAN-jetpacs-consumers.md, ported from poc-v1 with the
 ;; format-6 span drift applied (`:bold t' -> `:font-weight "bold"'; `:code'
-;; folded into `:mono'; `:strike' and `baseline' dropped — format 6 has
+;; folded into `:mono'; `:strike' and `baseline' dropped — the contract has
 ;; neither) and two structural changes:
 ;;
 ;; - Emission is bounded by the LIVE welcome budgets, not just the line
@@ -87,6 +87,17 @@ vim's hybrid style)."
 `jetpacs-shell' sets this to `jetpacs-shell-push'; kept as a seam so
 this module never depends on a specific UI layer.")
 
+(defvar jetpacs-buffer-view-refresh-function nil
+  "Optional function called with SURFACE for a view-local refresh.
+The chrome host installs a targeted deferred refresh that may reuse
+unchanged lower stack views.  Without that host, view-local refreshes
+fall back to `jetpacs-buffer-defer-refresh'.")
+
+(defvar jetpacs-buffer-after-fold-hook nil
+  "Normal hook run in the folded buffer after a fold command succeeds.
+Mode adapters use this to invalidate retained global presentations before
+the view-local refresh is deferred.")
+
 (defvar jetpacs-buffer-span-action-function nil
   "When non-nil, a function (POS BUFFER-NAME) -> ActionDescriptor or nil.
 Consulted at the start of every span run before the generic actionable
@@ -103,6 +114,29 @@ runs before byte accounting and exposure recording, so the node that is
 budgeted and authorized is exactly the node shipped.  Returning a
 non-node or signalling leaves the original NODE intact.")
 
+(defvar jetpacs-buffer-node-key-function nil
+  "Optional function mapping (NODE BOL EOL BUFFER-NAME) to a stable key.
+A mode skin binds this when source-backed rows need presentation identity
+across complete snapshot replacements.  The key is attached after the line
+transform and before byte accounting/exposure recording, so the exact keyed
+node is budgeted, authorized, and shipped.  An existing authored `:key' wins;
+a nil, invalid, or signalling result leaves NODE unchanged.")
+
+(defun jetpacs-buffer--key-node (node bol eol buffer-name)
+  "Attach this render's optional source key to NODE.
+BOL, EOL, and BUFFER-NAME describe NODE's source extent.  Preserve a more
+specific authored key and degrade safely if the mode hook fails."
+  (if (or (null jetpacs-buffer-node-key-function)
+          (plist-member node :key))
+      node
+    (let ((key (condition-case nil
+                   (funcall jetpacs-buffer-node-key-function
+                            node bol eol buffer-name)
+                 (error nil))))
+      (if (jetpacs-identifier-p key)
+          (jetpacs-with-attrs node :key key)
+        node))))
+
 (defvar jetpacs-buffer-scroll-position nil
   "Dynamically bound buffer position to mark as the scroll target.
 Tier-1 renderers and navigation hosts bind this while delegating to the
@@ -113,6 +147,12 @@ generic renderer.  Nil preserves the ordinary top-of-document view.")
 
 (defvar jetpacs-buffer--default-bg-hex nil
   "Hex of the default face background, bound for the duration of a render.")
+
+(defvar jetpacs-buffer--style-cache nil
+  "Per-render equal-keyed cache of resolved face properties.")
+
+(defconst jetpacs-buffer--style-cache-miss (make-symbol "style-cache-miss")
+  "Private sentinel distinguishing an uncached face from a cached nil style.")
 
 ;; --- Face resolution --------------------------------------------------------
 
@@ -180,7 +220,7 @@ named here explicitly.  Format 6 has no separate `code' span chrome; the
 faithful mapping is `:mono'."
   :type '(repeat face) :group 'jetpacs)
 
-(defun jetpacs-buffer--span-style (face)
+(defun jetpacs-buffer--compute-span-style (face)
   "Return a span-style plist for FACE, or nil for an unstyled run.
 Format-6 members only: `:font-weight' \"bold\", `:italic', `:underline',
 `:mono' (inline-code faces), `:color', `:bg'.  COLOR/:bg are included
@@ -212,6 +252,18 @@ foreground/background, so ordinary text carries neither."
          (when (and bghex (not (equal bghex jetpacs-buffer--default-bg-hex)))
            (list :bg bghex))))
     (error nil)))
+
+(defun jetpacs-buffer--span-style (face)
+  "Return FACE's span style, memoized for the current render when possible."
+  (if (not jetpacs-buffer--style-cache)
+      (jetpacs-buffer--compute-span-style face)
+    (let ((cached (gethash face jetpacs-buffer--style-cache
+                           jetpacs-buffer--style-cache-miss)))
+      (if (not (eq cached jetpacs-buffer--style-cache-miss))
+          cached
+        (let ((style (jetpacs-buffer--compute-span-style face)))
+          (puthash face style jetpacs-buffer--style-cache)
+          style)))))
 
 ;; --- Interactivity ----------------------------------------------------------
 
@@ -282,6 +334,17 @@ by `jetpacs-buffer-with-budget', which already delimits exactly one
 SurfaceSpec; the first clear per buffer in a document wins and the rest
 accumulate.")
 
+(defvar jetpacs-buffer--exposure-capture nil
+  "Optional one-cell list collecting exact exposure operations for a view.
+Chrome binds this while building a reusable screen.  Recording at the public
+exposure seams avoids having to rediscover buffer authority by recursively
+walking a cached node tree on every view-local refresh.")
+
+(defconst jetpacs-buffer--whole-buffer-key :whole-buffer
+  "Sentinel position key for whole-buffer exposure records.
+A keyword can never collide with a real buffer position, and the inner
+table's `eql' test compares keywords by identity.")
+
 (defun jetpacs-buffer-expose (buffer-name pos &optional action)
   "Record that POS in BUFFER-NAME was emitted as a target for ACTION.
 ACTION defaults to \"emacs.buffer.act\"; pass the action name a skin
@@ -298,6 +361,9 @@ supersedes the previous set."
                     (puthash buffer-name (make-hash-table :test #'eql)
                              jetpacs-buffer-exposed)))
            (verbs (gethash pos tbl)))
+      (when (consp jetpacs-buffer--exposure-capture)
+        (push (list buffer-name pos action)
+              (car jetpacs-buffer--exposure-capture)))
       (unless (member action verbs)
         (puthash pos (cons action verbs) tbl)))))
 
@@ -319,23 +385,46 @@ an ellipsis is absent from this final tree and stays unauthorized."
          (walk (current)
            (when (jetpacs-node-p current)
              (expose (plist-get current :on_tap))
+             (expose (plist-get current :on_long_tap))
              (mapc (lambda (span) (expose (plist-get span :on_tap)))
-                   (append (plist-get current :spans) nil))
-             (cl-loop for (_key value) on current by #'cddr
+                   (plist-get current :spans))
+             ;; :on_tap, :on_long_tap and :spans were handled above; action args are opaque.
+             ;; Skipping them prevents a rich-text line from walking every
+             ;; span a second time merely to prove spans are not child nodes.
+             (cl-loop for (key value) on current by #'cddr
+                      unless (memq key '(:on_tap :on_long_tap :spans :args :meta :value))
                       do (cond
                           ((jetpacs-node-p value) (walk value))
                           ((vectorp value)
                            (mapc (lambda (child)
                                    (when (jetpacs-node-p child)
                                      (walk child)))
-                                 (append value nil)))
-                          ((and (proper-list-p value)
-                                (seq-some #'jetpacs-node-p value))
-                           (mapc (lambda (child)
-                                   (when (jetpacs-node-p child)
-                                     (walk child)))
-                                 value)))))))
+                                 value))
+                          ((proper-list-p value)
+                           (dolist (child value)
+                             (when (jetpacs-node-p child)
+                               (walk child)))))))))
       (walk node))))
+
+(defun jetpacs-buffer-restore-exposures (exposures &optional recapture)
+  "Restore cached EXPOSURES into the current document authority scope.
+Each member is (BUFFER POSITION ACTION); POSITION may be
+`jetpacs-buffer--whole-buffer-key'.  This is the exact operation stream
+captured while the view was built, not an inference from arbitrary action
+arguments.  When RECAPTURE is non-nil, also append the restored operations to
+the surrounding capture.  A nested render cache uses that form so Chrome can
+cache the complete screen containing it; Chrome's own screen reuse leaves it
+nil because it carries the old capture forward directly."
+  (let ((started (make-hash-table :test #'equal)))
+    (let ((jetpacs-buffer--exposure-capture
+           (and recapture jetpacs-buffer--exposure-capture)))
+      (pcase-dolist (`(,buffer-name ,pos ,action) exposures)
+        (unless (gethash buffer-name started)
+          (puthash buffer-name t started)
+          (jetpacs-buffer-forget-exposed buffer-name))
+        (if (eq pos jetpacs-buffer--whole-buffer-key)
+            (jetpacs-buffer-expose-buffer buffer-name action)
+          (jetpacs-buffer-expose buffer-name pos action))))))
 
 (defun jetpacs-buffer-exposed-p (buffer-name pos &optional action)
   "Non-nil when POS in BUFFER-NAME was emitted for ACTION by the last render.
@@ -364,11 +453,6 @@ unconditional reset — it is the teardown/test verb, never a render step."
       (puthash buffer-name t jetpacs-buffer--exposure-document))
     (remhash buffer-name jetpacs-buffer-exposed))))
 
-(defconst jetpacs-buffer--whole-buffer-key :whole-buffer
-  "Sentinel position key for whole-buffer exposure records.
-A keyword can never collide with a real buffer position, and the inner
-table's `eql' test compares keywords by identity.")
-
 (defun jetpacs-buffer-expose-buffer (buffer-name action)
   "Record that BUFFER-NAME as a whole was presented with ACTION affordances.
 The whole-buffer twin of `jetpacs-buffer-expose', for actions that
@@ -380,6 +464,9 @@ SPEC 23.1 still wants the gate: \"did this Emacs present this buffer
 with this affordance to this Companion\", not merely \"does such a
 buffer exist\".  Cleared by `jetpacs-buffer-forget-exposed' like any
 position record, so each render supersedes the last."
+  (when (consp jetpacs-buffer--exposure-capture)
+    (push (list buffer-name jetpacs-buffer--whole-buffer-key action)
+          (car jetpacs-buffer--exposure-capture)))
   (let ((tbl (or (gethash buffer-name jetpacs-buffer-exposed)
                  (puthash buffer-name (make-hash-table :test #'eql)
                           jetpacs-buffer-exposed))))
@@ -407,7 +494,9 @@ So a skin builds its spans inside this macro and then exposes exactly
 the verbs it really emitted (SPEC 23.1: one record authorizes one verb).
 Records written by BODY are discarded wholesale on exit."
   (declare (indent 0) (debug t))
-  `(let ((jetpacs-buffer-exposed (make-hash-table :test #'equal)))
+  `(let ((jetpacs-buffer-exposed (make-hash-table :test #'equal))
+         ;; Scratch authority must not enter a reusable view's exact capture.
+         (jetpacs-buffer--exposure-capture nil))
      ,@body))
 
 (defun jetpacs-buffer-line-spans (bol eol buffer-name)
@@ -754,8 +843,45 @@ span rather than being appended past the budget."
    (t (append (seq-take spans (1- max-spans)) (list (jetpacs-span "…"))))))
 
 (defun jetpacs-buffer-node-bytes (node)
-  "The canonical serialized size of NODE in octets."
-  (string-bytes (jetpacs-node->canonical-json node)))
+  "The live compact serialized size of NODE in octets."
+  (jetpacs-node-wire-bytes node))
+
+(defconst jetpacs-buffer--byte-budget-batch-size 128
+  "Number of rendered lines measured by one byte-budget serialization.
+The old one-node-at-a-time check serialized a long Org document hundreds of
+times and made JSON garbage collection dominate a fold.  A batch remains an
+exact compact-wire measurement; only the frequency of measurement changes.")
+
+(defun jetpacs-buffer--nodes-wire-bytes (nodes)
+  "Return the compact wire bytes of NODES as one JSON array.
+Counting the array delimiters and commas is slightly more conservative than
+the old sum of individually serialized nodes, which is appropriate for a
+sender-side frame budget."
+  (if nodes
+      (jetpacs-node-wire-bytes (vconcat nodes))
+    0))
+
+(defun jetpacs-buffer--fitting-node-prefix (nodes bytes-left)
+  "Return (PREFIX . BYTES) for the longest prefix of NODES within BYTES-LEFT.
+The caller has already established that the complete batch is too large.
+Binary search keeps the overflow path logarithmic while every accepted prefix
+is still measured from the exact compact JSON representation."
+  (let ((low 0)
+        (high (length nodes))
+        (best 0)
+        (best-bytes 0))
+    (while (<= low high)
+      (let* ((mid (/ (+ low high) 2))
+             (size (if (= mid 0)
+                       0
+                     (jetpacs-buffer--nodes-wire-bytes
+                      (seq-take nodes mid)))))
+        (if (<= size bytes-left)
+            (setq best mid
+                  best-bytes size
+                  low (1+ mid))
+          (setq high (1- mid)))))
+    (cons (seq-take nodes best) best-bytes)))
 
 (defun jetpacs-buffer-spend-spans (spans)
   "Cap SPANS against the shared SPEC 4.5 span budget and spend it down.
@@ -817,6 +943,9 @@ containing that position as the scroll target (`:scroll_here')."
          (jetpacs-buffer--default-bg-hex
           (jetpacs-buffer--color-hex
            (face-attribute 'default :background nil t)))
+         (jetpacs-buffer--style-cache
+          (or jetpacs-buffer--style-cache
+              (make-hash-table :test #'equal)))
          ;; A shared budget (see `jetpacs-buffer-with-budget') carries
          ;; across regions; otherwise this render gets its own allowance.
          (budgets (or jetpacs-buffer-budget (jetpacs-buffer-budgets)))
@@ -831,15 +960,44 @@ containing that position as the scroll target (`:scroll_here')."
          (ln (and jetpacs-line-numbers (line-number-at-pos beg)))
          (count 0)
          (truncated nil)
+         pending
+         (pending-count 0)
          nodes)
     ;; This render supersedes the last one for this buffer: only offsets
     ;; emitted below stay tappable (SPEC 23.1).
     (jetpacs-buffer-forget-exposed buffer-name)
     (ignore-errors (font-lock-ensure beg end))
-    (save-excursion
-      (goto-char beg)
-      (cl-block walk
-        (while (and (< (point) end) (< count jetpacs-buffer-max-lines))
+    (cl-labels
+        ((commit (batch)
+           ;; SPEC 23.1 authority is granted only after the exact batch has
+           ;; survived the byte budget.  NODES stays reverse-built so the
+           ;; existing final `nreverse' preserves source order.
+           (dolist (candidate batch)
+             (jetpacs-buffer--expose-node-taps candidate buffer-name)
+             (push candidate nodes)))
+         (flush ()
+           ;; Return non-nil when every pending node fits.  On overflow,
+           ;; commit only the exact measured prefix and leave TRUNCATED set.
+           (when pending
+             (let* ((batch (nreverse pending))
+                    (size (jetpacs-buffer--nodes-wire-bytes batch)))
+               (setq pending nil pending-count 0)
+               (if (<= size bytes-left)
+                   (progn
+                     (setq bytes-left (- bytes-left size))
+                     (commit batch)
+                     t)
+                 (pcase-let* ((`(,prefix . ,used)
+                                (jetpacs-buffer--fitting-node-prefix
+                                 batch bytes-left)))
+                   (setq bytes-left (- bytes-left used)
+                         truncated t)
+                   (commit prefix)
+                   nil))))))
+      (save-excursion
+        (goto-char beg)
+        (cl-block walk
+          (while (and (< (point) end) (< count jetpacs-buffer-max-lines))
           (let* ((bol (line-beginning-position))
                  (eol (min end (line-end-position)))
                  ;; SPEC 23.1: build without recording.  The exposures are
@@ -913,33 +1071,48 @@ containing that position as the scroll target (`:scroll_here')."
                          (error nil))))
                   (when (jetpacs-node-p transformed)
                     (setq node transformed))))
-              ;; The byte budget stops the walk BEFORE over-emitting.
-              (when bytes-left
-                (let ((size (jetpacs-buffer-node-bytes node)))
-                  (when (> size bytes-left)
-                    (setq truncated t)
-                    (cl-return-from walk))
-                  (setq bytes-left (- bytes-left size))))
-              ;; The node is committed: NOW authorize exactly the taps it
-              ;; ships (SPEC 23.1).  Above this point a `cl-return-from'
-              ;; discards the node, and its bindings stay unarmed.
-              (jetpacs-buffer--expose-node-taps node buffer-name)
-              (push node nodes)
+              (setq node (jetpacs-buffer--key-node
+                          node bol eol buffer-name))
               (setq count (1+ count))
+              ;; Exact wire sizing remains mandatory, but serialize a bounded
+              ;; array rather than every line independently.  Long Org files
+              ;; now allocate O(lines / batch-size) temporary JSON strings in
+              ;; the common path instead of O(lines).
+              (if bytes-left
+                  (progn
+                    (push node pending)
+                    (setq pending-count (1+ pending-count))
+                    (when (>= pending-count
+                              jetpacs-buffer--byte-budget-batch-size)
+                      (unless (flush) (cl-return-from walk))
+                      ;; An exactly spent budget with more source remaining is
+                      ;; also a truncation; stop before building a doomed batch.
+                      (when (and (<= bytes-left 0)
+                                 (< (line-end-position) end))
+                        (setq truncated t)
+                        (cl-return-from walk))))
+                (commit (list node)))
               ;; The aggregate span budget is spent: stop here.
               (when (or exhausted (and spans-left (<= spans-left 0)))
+                (when bytes-left (flush))
                 (setq truncated t)
                 (cl-return-from walk))))
-          (when ln (setq ln (1+ ln)))
-          (forward-line 1))))
+            (when ln (setq ln (1+ ln)))
+            (forward-line 1))
+          ;; Commit the final short batch at EOF or the line cap.  A failed
+          ;; flush already retained only the fitting prefix and marks the
+          ;; visible truncation below.
+          (when (and bytes-left pending) (flush)))))
     ;; Hand what is left back to a shared budget, so the next region in
     ;; this spec starts where this one stopped.
     (when jetpacs-buffer-budget
       (setcar jetpacs-buffer-budget spans-left)
       (setcdr jetpacs-buffer-budget bytes-left))
     (when truncated
-      (push (jetpacs-text "… output truncated (surface budget)"
-                          :style "caption")
+      (push (jetpacs-buffer--key-node
+             (jetpacs-text "… output truncated (surface budget)"
+                           :style "caption")
+             end end buffer-name)
             nodes))
     (nreverse nodes)))
 
@@ -1190,9 +1363,18 @@ bounded local work, so the effect runs synchronously and only the push
 — which needs the mutated buffer — is deferred."
   (run-at-time 0 nil (lambda () (jetpacs-buffer--refresh surface))))
 
+(defun jetpacs-buffer-defer-view-refresh (surface)
+  "Defer a refresh whose completed effect changed only the visible view.
+When chrome supplies `jetpacs-buffer-view-refresh-function', it can reuse
+unchanged lower stack views while still sending one complete SurfaceSpec.
+Other hosts retain the ordinary full-refresh behavior."
+  (if (functionp jetpacs-buffer-view-refresh-function)
+      (funcall jetpacs-buffer-view-refresh-function surface)
+    (jetpacs-buffer-defer-refresh surface)))
+
 ;; --- The two Tier-0 actions (registered through the JC-0 shim) --------------
 
-(defun jetpacs-buffer--tap-status (args params effect)
+(defun jetpacs-buffer--tap-status (args params effect &optional view-local)
   "Validate a tap and run EFFECT, returning its SPEC 14.4 status.
 Three gates, in the order 14.1/14.5/23.1 require:
 - unresolvable arguments are permanently invalid -> `rejected' (14.1);
@@ -1215,7 +1397,10 @@ for this action")
       'rejected)
      (t
       (funcall effect buffer pos)
-      (jetpacs-buffer-defer-refresh (plist-get params :surface))
+      (funcall (if view-local
+                   #'jetpacs-buffer-defer-view-refresh
+                 #'jetpacs-buffer-defer-refresh)
+               (plist-get params :surface))
       'accepted))))
 
 (jetpacs-defaction "emacs.buffer.act"
@@ -1225,7 +1410,7 @@ for this action")
 (jetpacs-defaction "jetpacs.buffer.fold"
   (lambda (args params)
     (jetpacs-buffer--tap-status args params
-                                #'jetpacs-buffer-toggle-fold-at)))
+                                #'jetpacs-buffer-toggle-fold-at t)))
 
 ;; --- Fold dispatch ------------------------------------------------------------
 
@@ -1254,7 +1439,9 @@ right section.  Runs from a tap continuation (decision D2)."
     (when (and buf (numberp pos))
       (with-current-buffer buf
         (goto-char (min (max (point-min) (truncate pos)) (point-max)))
-        (jetpacs-buffer--run-fold-toggle)))))
+        (when (jetpacs-buffer--run-fold-toggle)
+          (run-hooks 'jetpacs-buffer-after-fold-hook)
+          t)))))
 
 (provide 'jetpacs-buffer)
 ;;; jetpacs-buffer.el ends here

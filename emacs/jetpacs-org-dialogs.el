@@ -46,6 +46,7 @@
 (require 'jetpacs-shell)
 (require 'jetpacs-dialog)
 (require 'jetpacs-navigate)
+(require 'jetpacs-org-settings)         ; file-property tag candidates
 (require 'ebp)
 
 (defconst jetpacs-org-dialogs-owner "jetpacs.org"
@@ -281,86 +282,110 @@ the buffer's live state."
                 (list :request-id request-id :token token
                       :params params))))))))
 
+
 (defun jetpacs-org-dialogs--sheet-dispatch (ref buf value params)
   "Run the sheet item VALUE for REF; every arm ends in a refresh.
 Bounded mutations run here (a dialog callback is bounded local work
 under D2); the prompting arm (Refile) re-enters through
-`jetpacs-flow-begin'.  VALUE is re-validated against a freshly built
-candidate list first (23.2)."
-  (if (not (assoc value (jetpacs-org-dialogs--sheet-candidates ref buf)))
-      (jetpacs-org-dialogs--refresh params)
-    (condition-case err
-        (pcase value
-          ("todo"
-           (ebp-org-toggle-todo ref 'org nil)
-           (jetpacs-org-dialogs--maybe-log-note ref params)
-           (jetpacs-org-dialogs--refresh params))
-          ((or "schedule" "deadline")
-           ;; An explicit map, never string surgery: (upcase "schedule")
-           ;; is "SCHEDULE", which no engine entry point accepts — the
-           ;; arm shipped unable to write (AUDIT-ja5 P1).
-           (let ((which (if (equal value "schedule") "SCHEDULED"
-                          "DEADLINE")))
-             (run-at-time 0 nil
-                          (lambda ()
-                            (jetpacs-org-dialogs--ts-open
-                             (list :kind 'planning :ref ref :which which)
-                             (condition-case nil
-                                 (let ((m (ebp-org-resolve-ref ref)))
-                                   (unwind-protect
-                                       (with-current-buffer (marker-buffer m)
-                                         (org-with-wide-buffer
-                                          (org-entry-get m which)))
-                                     (set-marker m nil)))
-                               (error nil))
-                             params)))))
-          ("set-todo"
-           (run-at-time 0 nil (lambda ()
-                                (jetpacs-org-dialogs--show-set-todo
-                                 ref buf params))))
-          ("priority"
-           (run-at-time 0 nil (lambda ()
-                                (jetpacs-org-dialogs--show-priority
-                                 ref buf params))))
-          ("tags"
-           (run-at-time 0 nil (lambda ()
-                                (jetpacs-org-dialogs--show-tags
-                                 ref buf params))))
-          ("refile"
-           (jetpacs-flow-begin (plist-get params :surface)
-                               (lambda ()
-                                 (jetpacs-org-dialogs--refile ref params))))
-          ("narrow"
-           ;; The poc's lesson kept: never inside `org-with-wide-buffer'
-           ;; — it would restore the restriction and undo the narrow.
-           (let ((m (ebp-org-resolve-ref ref)))
-             (unwind-protect
-                 (with-current-buffer (marker-buffer m)
-                   (widen)
-                   (goto-char m)
-                   (org-narrow-to-subtree))
-               (set-marker m nil)))
-           (jetpacs-org-dialogs--refresh params))
-          ("widen"
-           (with-current-buffer buf (widen))
-           (jetpacs-org-dialogs--refresh params))
-          ("duplicate"
-           (ebp-org-with-mutation ref 'org
-             (org-back-to-heading t)
-             (let* ((beg (point))
-                    (end (progn (org-end-of-subtree t t) (point)))
-                    (text (buffer-substring-no-properties beg end)))
-               (goto-char end)
-               (unless (bolp) (insert "\n"))
-               (let ((ins (point)))
-                 (insert text)
-                 (unless (bolp) (insert "\n"))
-                 ;; The copy must not share org-id identity.
-                 (save-restriction
-                   (narrow-to-region ins (point))
-                   (org-map-entries
-                    (lambda () (org-entry-delete (point) "ID")))))))
-           (jetpacs-org-dialogs--refresh params)))
+`jetpacs-flow-begin'."
+  (condition-case err
+      (pcase value
+        ("todo"
+         (ebp-org-toggle-todo ref 'org nil)
+         (jetpacs-org-dialogs--maybe-log-note ref params)
+         (jetpacs-org-dialogs--refresh params))
+        ((or "schedule" "deadline")
+         (let ((which (if (equal value "schedule") "SCHEDULED"
+                        "DEADLINE")))
+           (run-at-time 0 nil
+                        (lambda ()
+                          (jetpacs-org-dialogs--ts-open
+                           (list :kind 'planning :ref ref :which which)
+                           (condition-case nil
+                               (let ((m (ebp-org-resolve-ref ref)))
+                                 (unwind-protect
+                                     (with-current-buffer (marker-buffer m)
+                                       (org-with-wide-buffer
+                                        (org-entry-get m which)))
+                                   (set-marker m nil)))
+                             (error nil))
+                           params)))))
+        ("set-todo"
+         (run-at-time 0 nil (lambda ()
+                              (jetpacs-org-dialogs--show-set-todo
+                               ref buf params))))
+        ("priority"
+         (run-at-time 0 nil (lambda ()
+                              (jetpacs-org-dialogs--show-priority
+                               ref buf params))))
+        ("tags"
+         (run-at-time 0 nil (lambda ()
+                              (jetpacs-org-dialogs--show-tags
+                               ref buf params))))
+
+        ("refile"
+         (jetpacs-flow-begin (plist-get params :surface)
+                             (lambda ()
+                               (jetpacs-org-dialogs--refile ref params))))
+        ("narrow"
+         (let ((m (ebp-org-resolve-ref ref)))
+           (unwind-protect
+               (with-current-buffer (marker-buffer m)
+                 (widen)
+                 (goto-char m)
+                 (org-narrow-to-subtree))
+             (set-marker m nil)))
+         (jetpacs-org-dialogs--refresh params))
+        ("widen"
+         (with-current-buffer buf (widen))
+         (jetpacs-org-dialogs--refresh params))
+        ("duplicate"
+         (ebp-org-with-mutation ref 'org
+           (org-back-to-heading t)
+           (let* ((beg (point))
+                  (end (progn (org-end-of-subtree t t) (point)))
+                  (text (buffer-substring-no-properties beg end)))
+             (goto-char end)
+             (unless (bolp) (insert "
+"))
+             (let ((ins (point)))
+               (insert text)
+               (unless (bolp) (insert "
+"))
+               (save-restriction
+                 (narrow-to-region ins (point))
+                 (org-map-entries
+                  (lambda () (org-entry-delete (point) "ID")))))))
+         (jetpacs-org-dialogs--refresh params))
+        ("encrypt"
+         (ebp-org-with-mutation ref 'org
+           (require 'org-crypt)
+           (org-back-to-heading t)
+           (let ((tags (org-get-tags)))
+             (unless (member "crypt" tags)
+               (org-set-tags (cons "crypt" tags))))
+           (org-encrypt-entry))
+         (jetpacs-org-dialogs--notify "Encrypted" params)
+         (jetpacs-org-dialogs--refresh params))
+        ("decrypt"
+         (ebp-org-with-mutation ref 'org
+           (require 'org-crypt)
+           (org-back-to-heading t)
+           (org-decrypt-entry))
+         (jetpacs-org-dialogs--notify "Decrypted" params)
+         (jetpacs-org-dialogs--refresh params))
+        ("archive"
+         (ebp-org-with-mutation ref 'org
+           (let ((org-archive-subtree-save-file-p t))
+             (org-archive-subtree)))
+         (jetpacs-org-dialogs--notify "Archived" params)
+         (jetpacs-org-dialogs--refresh params))
+        ("delete"
+         (ebp-org-with-mutation ref 'org
+           (org-back-to-heading t)
+           (delete-region (point) (progn (org-end-of-subtree t t) (point))))
+         (jetpacs-org-dialogs--notify "Deleted" params)
+         (jetpacs-org-dialogs--refresh params)))
       (ebp-org-unresolved
        (jetpacs-org-dialogs--notify "That heading is gone" params)
        (jetpacs-org-dialogs--refresh params))
@@ -368,7 +393,7 @@ candidate list first (23.2)."
        (message "jetpacs-org-dialogs: %s failed: %s"
                 value (jetpacs-error-label err))
        (jetpacs-org-dialogs--notify "That did not work" params)
-       (jetpacs-org-dialogs--refresh params)))))
+       (jetpacs-org-dialogs--refresh params))))
 
 ;;;; Chained mini-dialogs
 
@@ -513,6 +538,187 @@ rest — and org's fast tag selection cannot bridge)."
                       (jetpacs-org-dialogs--notify "That did not work"
                                                    params)))
              (jetpacs-org-dialogs--refresh params))))))))
+
+
+;;;; The file-properties dialog
+
+(defconst jetpacs-org-dialogs--file-prop-fields
+  '("file-prop-title" "file-prop-category" "file-prop-tags"
+    "file-prop-todo-active" "file-prop-todo-finished"
+    "file-prop-author" "file-prop-email" "file-prop-date"
+    "file-prop-startup" "file-prop-archive")
+  "The captured field ids of the file-properties dialog, in save order.")
+
+(defun jetpacs-org-dialogs--show-file-properties (file params)
+  "The whole-file keyword editor."
+  (when-let* ((client (jetpacs-client)))
+    (condition-case err
+        (let* ((buf (or (get-file-buffer file) (find-file-noselect file t)))
+               (kwds (with-current-buffer buf
+                       (org-collect-keywords
+                        '("TITLE" "CATEGORY" "FILETAGS" "TODO" "SEQ_TODO"
+                          "TYP_TODO" "STARTUP" "AUTHOR" "EMAIL" "DATE"
+                          "ARCHIVE"))))
+               (get (lambda (k) (car (alist-get k kwds nil nil #'equal))))
+               (filetags-str (funcall get "FILETAGS"))
+               (filetags (when filetags-str
+                           (split-string filetags-str ":" t "[ 	
+
+]+")))
+               (available (cl-remove-duplicates
+                           (append filetags (jetpacs-org-settings-tag-options))
+                           :test #'equal :from-end t))
+               (todo-str (or (funcall get "TODO")
+                             (funcall get "SEQ_TODO")
+                             (funcall get "TYP_TODO")))
+               (todo-parts (and todo-str (split-string todo-str "|")))
+               (todo-active (if todo-parts
+                                (string-join (split-string (car todo-parts)
+                                                           "[ 	]+" t)
+                                             ", ")
+                              ""))
+               (todo-finished (if (and todo-parts (cadr todo-parts))
+                                  (string-join (split-string (cadr todo-parts)
+                                                             "[ 	]+" t)
+                                               ", ")
+                                "")))
+          (ebp-client-dialog-show
+           client
+           (jetpacs-org-dialogs--id "file-props" buf 0)
+           (apply #'jetpacs-column
+                  (jetpacs-text "File properties" :style "title")
+                  (jetpacs-text (file-name-nondirectory file) :style "caption")
+                  (jetpacs-text-input "file-prop-title" :label "Title"
+                                      :value (or (funcall get "TITLE") "")
+                                      :single-line t)
+                  (jetpacs-text-input "file-prop-category" :label "Category"
+                                      :value (or (funcall get "CATEGORY") "")
+                                      :single-line t)
+                  (jetpacs-text "File tags" :style "caption")
+                  (jetpacs-enum-list "file-prop-tags"
+                                     (mapcar (lambda (tg) (jetpacs-enum-option tg tg))
+                                             available)
+                                     :value (cl-remove-duplicates filetags
+                                                                  :test #'equal)
+                                     :multi-select t :allow-add t)
+                  (jetpacs-text "TODO sequence" :style "caption")
+                  (jetpacs-text-input "file-prop-todo-active" :label "Active states"
+                                      :value todo-active :single-line t)
+                  (jetpacs-text-input "file-prop-todo-finished"
+                                      :label "Finished states"
+                                      :value todo-finished :single-line t)
+                  (jetpacs-text "Metadata" :style "caption")
+                  (jetpacs-text-input "file-prop-author" :label "Author"
+                                      :value (or (funcall get "AUTHOR") "")
+                                      :single-line t)
+                  (jetpacs-text-input "file-prop-email" :label "Email"
+                                      :value (or (funcall get "EMAIL") "")
+                                      :single-line t)
+                  (jetpacs-text-input "file-prop-date" :label "Date"
+                                      :value (or (funcall get "DATE") "")
+                                      :single-line t)
+                  (jetpacs-text "Options" :style "caption")
+                  (jetpacs-text-input "file-prop-startup" :label "Startup"
+                                      :value (or (funcall get "STARTUP") "")
+                                      :single-line t)
+                  (jetpacs-text-input "file-prop-archive" :label "Archive"
+                                      :value (or (funcall get "ARCHIVE") "")
+                                      :single-line t)
+                  (jetpacs-row
+                   (jetpacs-spacer :weight 1)
+                   (jetpacs-button "Cancel" (jetpacs-dialog-dismiss) :variant "text")
+                   (jetpacs-spacer :width 8)
+                   (jetpacs-button "Save"
+                                   (jetpacs-dialog-submit
+                                    :value "save" :capture-fields
+                                    jetpacs-org-dialogs--file-prop-fields)))
+                  (list :spacing 8))
+           :callback
+           (lambda (status result _error)
+             (when (and (equal status "submitted")
+                        (equal (plist-get result :value) "save"))
+               (let ((fields (plist-get result :fields)))
+                 (condition-case err
+                     (let* ((fget (lambda (k) (let ((v (plist-get fields k)))
+                                                (and (stringp v) v))))
+                            (tags-val (plist-get fields :file-prop-tags))
+                            (tags (cl-remove-if-not
+                                   #'stringp
+                                   (cond ((vectorp tags-val) (append tags-val nil))
+                                         ((proper-list-p tags-val) tags-val))))
+                            (join-states
+                             (lambda (s)
+                               (when (stringp s)
+                                 (let ((words (split-string s "[ 	]*,[ 	]*" t)))
+                                   (when words (string-join words " "))))))
+                            (active (funcall join-states
+                                             (funcall fget :file-prop-todo-active)))
+                            (finished (funcall join-states
+                                               (funcall fget :file-prop-todo-finished)))
+                            (todo-str (if (and active finished)
+                                          (concat active " | " finished)
+                                        (or active finished))))
+                       (with-current-buffer buf
+                         (org-with-wide-buffer
+                          (jetpacs-org-dialogs--update-keyword
+                           "TITLE" (funcall fget :file-prop-title))
+                          (jetpacs-org-dialogs--update-keyword
+                           "FILETAGS" (when tags
+                                        (concat ":" (string-join tags ":") ":")))
+                          (jetpacs-org-dialogs--update-keyword
+                           "CATEGORY" (funcall fget :file-prop-category))
+                          (jetpacs-org-dialogs--update-keyword "TODO" todo-str)
+                          (jetpacs-org-dialogs--update-keyword
+                           "STARTUP" (funcall fget :file-prop-startup))
+                          (jetpacs-org-dialogs--update-keyword
+                           "AUTHOR" (funcall fget :file-prop-author))
+                          (jetpacs-org-dialogs--update-keyword
+                           "EMAIL" (funcall fget :file-prop-email))
+                          (jetpacs-org-dialogs--update-keyword
+                           "DATE" (funcall fget :file-prop-date))
+                          (jetpacs-org-dialogs--update-keyword
+                           "ARCHIVE" (funcall fget :file-prop-archive))
+                          (goto-char (point-min))
+                          (when (re-search-forward "^[ 	]*#\+CATEGORY:" nil t)
+                            (ignore-errors (org-element-at-point)))))
+                       (ebp-org-cache-invalidate)
+                       (when buffer-file-name (with-current-buffer buf (ebp-org-defer-save)))
+                       (jetpacs-shell-notify "File properties saved"
+                                             (plist-get params :surface))
+                       (jetpacs-org-dialogs--refresh params))
+                   (error (jetpacs-org-dialogs--notify
+                           (jetpacs-error-label err) params))))))))
+      (error (jetpacs-org-dialogs--notify
+              (jetpacs-error-label err) params)))))
+
+(defun jetpacs-org-dialogs--update-keyword (kwd val)
+  "Set, replace, or (VAL empty/nil) remove #+KWD in the current buffer."
+  (goto-char (point-min))
+  (if (re-search-forward (format "^[ 	]*#\+%s:[ 	]*\(.*\)$"
+                                 (regexp-quote kwd))
+                         nil t)
+      (if (and val (not (string-empty-p val)))
+          (replace-match val t t nil 1)
+        (delete-region (line-beginning-position)
+                       (min (1+ (line-end-position)) (point-max))))
+    (when (and val (not (string-empty-p val)))
+      (goto-char (point-min))
+      (unless (equal kwd "TITLE")
+        (when (re-search-forward "^[ 	]*#\+TITLE:.*$" nil t)
+          (forward-line 1)))
+      (insert (format "#+%s: %s
+" kwd val)))))
+
+(defun jetpacs-org-dialogs--on-file-properties-show (args params)
+  "Open the file-properties editor dialog."
+  (let ((path (plist-get args :path)))
+    (cond
+     ((not (and (stringp path) (ebp-org-file-allowed-p path))) 'rejected)
+     ((null (jetpacs-client)) 'rejected)
+     (t
+      (jetpacs-flow-continue
+       (lambda () (jetpacs-org-dialogs--show-file-properties path params)))
+      'accepted))))
 
 ;;;; The timestamp editor (poc 2031-2266 rebuilt: one-shot dialogs, sessions)
 ;;
@@ -1056,9 +1262,61 @@ and newline-flattened — a multi-line title would smuggle structure."
   (jetpacs-org-dialogs--dialog-tap
    "jetpacs.org.footnote" #'jetpacs-org-dialogs--show-footnote args params))
 
+
+(defun jetpacs-org-dialogs--heading-menu (buf pos)
+  "Return the heading `jetpacs-menu` for POS in BUF."
+  (let ((buffer-name (buffer-name buf))
+        (narrowed (with-current-buffer buf (buffer-narrowed-p))))
+    (jetpacs-menu
+     (delq nil
+           (mapcar
+            (lambda (c)
+              (let ((value (nth 0 c))
+                    (label (nth 1 c))
+                    (icon  (nth 2 c))
+                    (action (jetpacs-action "jetpacs.org.heading"
+                                            :args (list :buffer buffer-name
+                                                        :pos pos
+                                                        :value (nth 0 c)))))
+                (when (equal value "archive")
+                  (setq action (append action (list :confirm "Archive this subtree?"))))
+                (when (equal value "delete")
+                  (setq action (append action (list :confirm "Delete this heading and its subtree?"))))
+                (jetpacs-menu-item label action :icon icon)))
+            (append
+             '(("schedule"   "Schedule…"   "schedule")
+               ("deadline"   "Deadline…"   "event_busy")
+               ("priority"   "Priority…"   "priority_high")
+               ("tags"       "Set tags…"   "label")
+               
+               ("refile"     "Refile…"     "drive_file_move"))
+             (if narrowed
+                 '(("widen" "Widen" "open_in_full"))
+               '(("narrow" "Open" "open_in_new")))
+             '(("duplicate" "Duplicate" "content_copy")
+               ("encrypt" "Encrypt" "lock")
+               ("decrypt" "Decrypt" "lock_open")
+               ("archive" "Archive" "archive")))))
+     :icon "more_vert")))
 (defun jetpacs-org-dialogs--heading-action (args params)
-  (jetpacs-org-dialogs--dialog-tap
-   "jetpacs.org.heading" #'jetpacs-org-dialogs--show-sheet args params))
+  "Dispatch the heading action.
+If `:value` is present, handle the inline menu tap directly.
+Otherwise, fall back to the sheet (deprecated)."
+  (let ((value (plist-get args :value)))
+    (if value
+        (let* ((name (plist-get args :buffer))
+               (pos (plist-get args :pos))
+               (buf (and (stringp name) (get-buffer name))))
+          (if (not buf) 'rejected
+            (if (jetpacs-event-stale-p params) 'stale
+              (let ((ref (jetpacs-org-dialogs--ref-at buf pos)))
+                (if ref
+                    (jetpacs-org-dialogs--sheet-dispatch ref buf value params)
+                  (jetpacs-org-dialogs--notify "No heading there" params)
+                  (jetpacs-org-dialogs--refresh params)
+                  'stale)))))
+      (jetpacs-org-dialogs--dialog-tap
+       "jetpacs.org.heading" #'jetpacs-org-dialogs--show-sheet args params))))
 
 (defun jetpacs-org-dialogs--stamp-at (buf pos)
   "The (STAMP-STRING . BRACKET) beginning exactly at POS in BUF, or nil."
@@ -1148,7 +1406,10 @@ completed archive — and the spent sheet is abandoned."
 ;; Ownerless, the render skin's precedent: an org buffer renders on
 ;; whatever surface drilled into it, and the sheet/archive must answer
 ;; there.  Tokens carry their own owner scope.
-(jetpacs-defaction "jetpacs.org.footnote"
+(jetpacs-defaction "jetpacs.org.file-properties.show"
+                     #'jetpacs-org-dialogs--on-file-properties-show
+                     :doc "Open the file-properties dialog")
+  (jetpacs-defaction "jetpacs.org.footnote"
                    #'jetpacs-org-dialogs--footnote-action)
 (jetpacs-defaction "jetpacs.org.heading"
                    #'jetpacs-org-dialogs--heading-action)
@@ -1186,6 +1447,7 @@ completed archive — and the spent sheet is abandoned."
                #'jetpacs-org-dialogs--on-teardown)
   (remove-hook 'jetpacs-reset-functions #'jetpacs-org-dialogs-reset)
   (jetpacs-undefaction "jetpacs.org.footnote")
+  (jetpacs-undefaction "jetpacs.org.file-properties.show")
   (jetpacs-undefaction "jetpacs.org.heading")
   (jetpacs-undefaction "jetpacs.org.archive")
   (jetpacs-undefaction "jetpacs.org.timestamp")

@@ -3,7 +3,7 @@
 // the multi-view surface locally and (while READY) reports view.switched with
 // when_offline-drop semantics; an unknown view or single-view surface is a
 // safe no-op; trigger.fire routes to the manual-trigger pipeline; the host
-// builtins (clipboard/share/settings) reach the host listener.
+// builtins (surface/clipboard/share/settings) reach the host listener.
 package com.calebc42.ebp.wire
 
 import kotlinx.serialization.json.JsonArray
@@ -27,9 +27,11 @@ class BuiltinTest {
                 putJsonObject("app") {
                     put("node_types", JsonArray(listOf("text", "button").map(::JsonPrimitive)))
                     put("builtins", JsonArray(listOf(
-                        "view.switch", "companion.settings.open", "clipboard.copy")
+                        "view.switch", "surface.open", "companion.settings.open",
+                        "clipboard.copy")
                         .map(::JsonPrimitive)))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits(), nonceSource = { katSn })) { bytes ->
@@ -115,15 +117,43 @@ class BuiltinTest {
         })))
         val seen = mutableListOf<Pair<String, String>>()
         engine.hostBuiltinListener = { name, d ->
-            seen.add(name to d.stringOr("text"))
+            seen.add(name to (d.stringOrNull("surface") ?: d.stringOr("text")))
         }
+        engine.dispatchAction("app:main",
+            buildJsonObject {
+                put("builtin", "surface.open")
+                put("surface", "app:jetpacs.app-store")
+            }, null)
         engine.dispatchAction("app:main",
             buildJsonObject { put("builtin", "clipboard.copy"); put("text", "hello") }, null)
         engine.dispatchAction("app:main",
             buildJsonObject { put("builtin", "companion.settings.open") }, null)
-        assertEquals(listOf("clipboard.copy" to "hello",
+        assertEquals(listOf("surface.open" to "app:jetpacs.app-store",
+            "clipboard.copy" to "hello",
             "companion.settings.open" to ""), seen)
         // Builtins never create event.action frames of their own.
         assertTrue(out.events().isEmpty())
+    }
+
+    @Test
+    fun remoteOpenSurfacePresentsLocallyAndStillDispatchesRemotely() {
+        val out = mutableListOf<JsonObject>()
+        val engine = readyEngine(out)
+        engine.feed(frame(request("s1", "surface.update", buildJsonObject {
+            put("surface", "app:store"); put("revision", 1)
+            put("spec", buildJsonObject { put("t", "text"); put("text", "Apps") })
+        })))
+        val opened = mutableListOf<String>()
+        engine.hostBuiltinListener = { name, descriptor ->
+            if (name == "surface.open") opened.add(descriptor.stringOr("surface"))
+        }
+        engine.dispatchAction("app:store", buildJsonObject {
+            put("action", "app.open")
+            put("args", buildJsonObject { put("app", "org-mode") })
+            put("open_surface", "app:org-mode")
+        }, null)
+        assertEquals(listOf("app:org-mode"), opened)
+        assertEquals(1, out.events().size)
+        assertEquals("app.open", out.events().single().reqObj("params").stringOr("action"))
     }
 }

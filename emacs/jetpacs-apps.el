@@ -47,7 +47,7 @@ APP-PRIMARY app; chrome itself ignores that metadata.")
 (defvar jetpacs-apps--registry nil
   "Ordered alist of APP-ID -> plist
 \(:label :icon :surfaces :dock :destinations :home-route :fab :chrome :dock-core
- :drawer-core :order).
+ :drawer-core :requires-extensions :order).
 :dock is a list of dock item plists or a function (SURFACE) -> items;
 :destinations is the S1 route registry; :home-route optionally names the
 destination represented by the app's root surface; :fab is the app-default
@@ -64,6 +64,12 @@ Written by `app.open', `jetpacs-apps-seed-current', and
 navigation, cleared by a plain/reset open — so the app-primary
 navigation-bar entries can indicate the selected place (the M3
 navigation-bar contract).")
+
+(defvar jetpacs-apps--unavailable nil
+  "The last unavailable app selection as (APP-ID . MISSING-EXTENSIONS).
+The Apps surface consumes this to explain why it refused to render an app
+instead of letting its builders emit extension nodes into an incompatible
+receiver profile.")
 
 ;;;; App-surface refresh
 
@@ -92,8 +98,10 @@ Each destination is a plist with string `:key' (a §4.4 identifier — it
 rides `app.open''s wire args), string `:label', a DOTTED namespaced
 `:verb' (the `jetpacs-action' rule: a dotless verb can never have a
 registered handler, so every tap would silently degrade to the home
-push), optional string `:icon'/`:subtitle'; keys distinct within the
-app.  `proper-list-p' first: the reader trusts this checker to make a
+push), optional string `:icon'/`:subtitle'/`:open-surface'; the latter is
+the app Surface the receiver must present when the destination deliberately
+publishes outside the app's home Surface.  Keys are distinct within the app.
+`proper-list-p' first: the reader trusts this checker to make a
 resolved value safe to MAP, and a function or circular cell is not."
   (unless (proper-list-p dests)
     (error "jetpacs-defapp: :destinations must be a proper list, got %S"
@@ -112,6 +120,10 @@ resolved value safe to MAP, and a function or circular cell is not."
         (jetpacs-check-identifier icon "destination :icon"))
       (when-let* ((sub (plist-get d :subtitle)))
         (jetpacs-require-string sub "destination :subtitle"))
+      (when-let* ((surface (plist-get d :open-surface)))
+        ;; Reuse the wire constructor as the single app-Surface validator.
+        ;; It returns a node that is intentionally discarded here.
+        (jetpacs-surface-open surface))
       (when (plist-member d :badge)
         (let ((badge (plist-get d :badge)))
           (unless (or (null badge) (stringp badge) (functionp badge))
@@ -167,9 +179,27 @@ returned by `jetpacs-apps-core-dock-items'."
       (push key seen)))
   keys)
 
+(defun jetpacs-apps--check-required-extensions (extensions)
+  "Validate and return app renderer EXTENSIONS.
+The value is a proper list of distinct, namespaced §4.4 identifiers."
+  (unless (proper-list-p extensions)
+    (error "jetpacs-defapp: :requires-extensions must be a proper list, got %S"
+           extensions))
+  (let (seen)
+    (dolist (extension extensions)
+      (jetpacs-check-identifier extension ":requires-extensions entry")
+      (unless (string-search "." extension)
+        (error "jetpacs-defapp: renderer extension %S must be namespaced"
+               extension))
+      (when (member extension seen)
+        (error "jetpacs-defapp: duplicate renderer extension %S" extension))
+      (push extension seen)))
+  extensions)
+
 (cl-defun jetpacs-defapp (id &key label icon surfaces dock destinations
                              home-route fab
-                             chrome (dock-core t) drawer-core (order 100))
+                             chrome (dock-core t) drawer-core
+                             requires-extensions (order 100))
   "Register (or replace) app ID.
 LABEL and ICON draw its Apps-grid card; SURFACES is the list of surface
 names it claims (the first is its home); DOCK is its destinations —
@@ -177,7 +207,9 @@ item plists in the chrome seam's shape, or a function of the surface.
 
 DESTINATIONS is the S1 route registry (CHROME-VOCABULARY v4, the
 build-within pole; poc-1's `:views' restored onto chrome screens): a
-list of plists (:key :label :verb [:icon :subtitle :badge :bar]) — or
+list of plists
+  (:key :label :verb [:icon :subtitle :badge :bar :open-surface])
+— or
 a function of no arguments returning one — naming the screens the app
 offers the HOST.  A destination's optional BADGE is a string or a
 nullary function returning a string/nil; it is resolved when the bar
@@ -211,7 +243,13 @@ for the `primary' pole, and DRAWER-CORE is meaningful only when
 DOCK-CORE is nil.  Apps always remains in the drawer;
 `standalone' withdraws the core dock items and the global-actions
 injection for the app's OWN surfaces and keeps the app's items off
-foreign ones — the app authors its chrome whole.  Returns ID."
+foreign ones — the app authors its chrome whole.
+
+REQUIRES-EXTENSIONS is a list of namespaced renderer-extension identifiers.
+A live Companion must advertise every requirement in its app profile before
+Jetpacs will enter or build the app; otherwise the Apps surface explains the
+missing renderer contract.  Offline builders retain the richer-form behavior.
+Returns ID."
   (unless (and (stringp id) (not (string-empty-p id)))
     (error "jetpacs-defapp: id must be a non-empty string"))
   (unless (memq chrome '(nil standalone primary))
@@ -221,6 +259,7 @@ foreign ones — the app authors its chrome whole.  Returns ID."
     (error "jetpacs-defapp: :dock-core must be t or nil, got %S"
            dock-core))
   (jetpacs-apps--check-drawer-core drawer-core)
+  (jetpacs-apps--check-required-extensions requires-extensions)
   (when (and (null dock-core) (not (eq chrome 'primary)))
     (error "jetpacs-defapp: :dock-core nil requires :chrome 'primary"))
   (when (and drawer-core
@@ -237,12 +276,32 @@ foreign ones — the app authors its chrome whole.  Returns ID."
               :surfaces surfaces :dock dock
               :destinations destinations :home-route home-route :fab fab
               :chrome chrome :dock-core dock-core
-              :drawer-core drawer-core :order order))
+              :drawer-core drawer-core
+              :requires-extensions requires-extensions :order order))
   (setq jetpacs-apps--registry
         (sort jetpacs-apps--registry
               (lambda (a b) (< (plist-get (cdr a) :order)
                                (plist-get (cdr b) :order)))))
   id)
+
+(defun jetpacs-apps-required-extensions (id)
+  "Return app ID's declared renderer-extension requirements.
+The returned list is a copy so callers cannot mutate the registry."
+  (copy-sequence
+   (plist-get (cdr (assoc id jetpacs-apps--registry))
+              :requires-extensions)))
+
+(defun jetpacs-apps-missing-extensions (id &optional target)
+  "Return app ID's renderer extensions absent from TARGET's live profile.
+TARGET defaults to `:app'.  With no attached client the ordinary offline
+richer-form convention makes the result nil."
+  (cl-remove-if (lambda (extension)
+                  (jetpacs-extension-advertised-p extension target))
+                (jetpacs-apps-required-extensions id)))
+
+(defun jetpacs-apps-available-p (id &optional target)
+  "Non-nil when app ID's renderer requirements are available for TARGET."
+  (null (jetpacs-apps-missing-extensions id target)))
 
 (defun jetpacs-apps-destinations (id)
   "App ID's destination list, resolved and isolated.
@@ -353,6 +412,52 @@ caller can bound any presentation refresh it schedules."
 (defun jetpacs-apps--home-surface (entry)
   (car (plist-get (cdr entry) :surfaces)))
 
+(defun jetpacs-apps--home-surface-id (entry)
+  "Return ENTRY's home as a fully-qualified app Surface ID."
+  (when-let* ((home (jetpacs-apps--home-surface entry)))
+    (if (string-search ":" home) home
+      (jetpacs-shell-surface-for home))))
+
+(defun jetpacs-apps--app-open-action (id &optional route)
+  "Build the global app-open action for ID and optional ROUTE.
+On a Companion advertising `action.open_surface', the same explicit gesture
+also presents the destination's declared `:open-surface', or the app's cached
+home by default, through the receiver-local Nav3 shell.  The remote action
+still updates Emacs app/route state and refreshes content."
+  (let* ((entry (assoc id jetpacs-apps--registry))
+         (home (and entry (jetpacs-apps--home-surface-id entry)))
+         (destination
+          (and route entry
+               (cl-find route (jetpacs-apps-destinations id)
+                        :key (lambda (dest) (plist-get dest :key))
+                        :test #'equal)))
+         (target (or (plist-get destination :open-surface) home)))
+    (jetpacs-action
+     "app.open"
+     :args (append (list :app id) (and route (list :route route)))
+     :open-surface (and target
+                        (jetpacs-feature-advertised-p
+                         "action.open_surface" :app)
+                        target)
+     :when-offline "drop")))
+
+(defun jetpacs-apps--with-home-open (item home)
+  "Copy ITEM and attach HOME navigation to its remote tap when supported.
+An app-authored `:open_surface' is left intact; builtin taps remain local and
+unchanged.  This is the generic seam that makes an app's contributed dock work
+even while its rail is being rendered on the Apps or another host surface."
+  (let ((tap (plist-get item :on-tap)))
+    (if (and home
+             (consp tap)
+             (plist-member tap :action)
+             (not (plist-member tap :open_surface))
+             (jetpacs-feature-advertised-p "action.open_surface" :app))
+        (let ((copy (copy-sequence item))
+              (tap-copy (copy-sequence tap)))
+          (setq tap-copy (plist-put tap-copy :open_surface home))
+          (plist-put copy :on-tap tap-copy))
+      item)))
+
 (defun jetpacs-apps--entry-owns-surface-p (entry surface)
   "Non-nil when SURFACE (a full id) is one of ENTRY's claimed surfaces.
 Colon-aware on both sides, mirroring the flow resolver."
@@ -435,11 +540,14 @@ never the rest of the app navigation."
 malformed result costs this app's items only."
   (condition-case nil
       (let* ((dock (plist-get (cdr entry) :dock))
-             (items (if (functionp dock) (funcall dock surface) dock)))
+             (items (if (functionp dock) (funcall dock surface) dock))
+             (home (jetpacs-apps--home-surface-id entry)))
         (and (listp items)
              (cl-every (lambda (i) (and (listp i) (plist-get i :label)))
                        items)
-             items))
+             (mapcar (lambda (item)
+                       (jetpacs-apps--with-home-open item home))
+                     items)))
     (error nil)))
 
 (defun jetpacs-apps--destination-bar-items (entry &optional limit)
@@ -460,11 +568,8 @@ budget; `:selected' follows the route this verb last opened."
                                                 badge)))
                                    (and (stringp value) value))
                                (error nil)))
-                    :on-tap (jetpacs-action
-                             "app.open"
-                             :args (list :app id
-                                         :route (plist-get d :key))
-                             :when-offline "drop")
+                    :on-tap (jetpacs-apps--app-open-action
+                             id (plist-get d :key))
                     :selected (and (equal id jetpacs-apps--current)
                                    (equal (plist-get d :key)
                                           jetpacs-apps--current-route))))
@@ -616,16 +721,40 @@ authors its chrome, drawer included (CHROME-VOCABULARY v4)."
 
 (defun jetpacs-apps--card (entry)
   (pcase-let ((`(,id . ,plist) entry))
-    (jetpacs-chrome-row (plist-get plist :label)
-                        :subtitle (jetpacs-apps--home-surface entry)
-                        :icon (plist-get plist :icon)
-                        :trailing (if (equal id (car (jetpacs-apps-current)))
-                                      (jetpacs-icon "check_circle"
-                                                    :color "primary")
-                                    (jetpacs-icon "chevron_right"))
-                        :on-tap (jetpacs-action "app.open" :args `(:app ,id)
-                                                :when-offline "drop")
-                        :key (jetpacs-wire-id "ap" id))))
+    (let ((missing (jetpacs-apps-missing-extensions id :app)))
+      (jetpacs-chrome-row
+       (plist-get plist :label)
+       :subtitle (if missing
+                     (format "Unavailable: requires %s"
+                             (string-join missing ", "))
+                   (jetpacs-apps--home-surface entry))
+       :icon (plist-get plist :icon)
+       :trailing (cond
+                  (missing (jetpacs-icon "warning" :color "warning"))
+                  ((equal id (car (jetpacs-apps-current)))
+                   (jetpacs-icon "check_circle" :color "primary"))
+                  (t (jetpacs-icon "chevron_right")))
+       :on-tap (jetpacs-apps--app-open-action id)
+       :key (jetpacs-wire-id "ap" id)))))
+
+(defun jetpacs-apps-unavailable-view ()
+  "Return an explanatory screen for `jetpacs-apps--unavailable', or nil."
+  (when jetpacs-apps--unavailable
+    (pcase-let* ((`(,id . ,missing) jetpacs-apps--unavailable)
+                 (entry (assoc id jetpacs-apps--registry))
+                 (label (or (plist-get (cdr entry) :label) id)))
+      (jetpacs-chrome-screen
+       "App unavailable"
+       (jetpacs-column
+        (jetpacs-empty-state
+         :icon "warning"
+         :title (format "%s cannot run on this renderer" label)
+         :caption (format "Missing renderer extension%s: %s"
+                          (if (= (length missing) 1) "" "s")
+                          (string-join missing ", ")))
+        (jetpacs-button
+         "Back to Apps"
+         (jetpacs-action "app.unavailable.dismiss")))))))
 
 (defun jetpacs-apps--view ()
   (jetpacs-chrome-screen
@@ -648,9 +777,8 @@ listed there."
   (jetpacs-chrome-row "Apps"
                       :subtitle "Install, manage, and launch"
                       :icon "apps"
-                      :on-tap (jetpacs-action
-                               "jetpacs.launcher.open"
-                               :args '(:surface "app:jetpacs.app-store"))
+                      :on-tap (jetpacs-shell-open-surface-action
+                               "app:jetpacs.app-store")
                       :key "drawer-apps"))
 
 (defun jetpacs-apps--destination-row (id dest)
@@ -661,11 +789,8 @@ the host surface (the S1 point)."
   (jetpacs-chrome-row (plist-get dest :label)
                       :subtitle (plist-get dest :subtitle)
                       :icon (or (plist-get dest :icon) "chevron_right")
-                      :on-tap (jetpacs-action
-                               "app.open"
-                               :args (list :app id
-                                           :route (plist-get dest :key))
-                               :when-offline "drop")
+                      :on-tap (jetpacs-apps--app-open-action
+                               id (plist-get dest :key))
                       :key (jetpacs-wire-id
                             "apd" (concat id "/" (plist-get dest :key)))))
 
@@ -705,9 +830,17 @@ broken destination list costs that app's nest alone
 (defun jetpacs-apps--action-grid (_args _params)
   ;; The drawer's Apps row lands on the combined Apps view (the
   ;; app-store surface) — the old grid folded into it (pass 2).
+  (setq jetpacs-apps--unavailable nil)
   (jetpacs-flow-continue
    (lambda ()
      (ignore-errors (jetpacs-shell-push "jetpacs.app-store"))))
+  'accepted)
+
+(defun jetpacs-apps--action-dismiss-unavailable (_args _params)
+  "Clear the extension refusal and return to the ordinary Apps view."
+  (setq jetpacs-apps--unavailable nil)
+  (jetpacs-flow-continue
+   (lambda () (ignore-errors (jetpacs-shell-push "jetpacs.app-store"))))
   'accepted)
 
 (defun jetpacs-apps--action-open (args _params)
@@ -727,6 +860,13 @@ dead deep link must never strand an obsolete host screen."
     (cond
      ((null entry) 'rejected)
      ((and route (not (stringp route))) 'rejected)
+     ((when-let* ((missing (jetpacs-apps-missing-extensions id :app)))
+        (setq jetpacs-apps--unavailable (cons id missing))
+        (jetpacs-flow-continue
+         (lambda ()
+           (ignore-errors (jetpacs-shell-push "jetpacs.app-store"))))
+        t)
+      'accepted)
      (t
       (let* ((destinations (jetpacs-apps-destinations id))
              (dest (and route
@@ -809,6 +949,8 @@ dead deep link must never strand an obsolete host screen."
 ;; view on the app-store surface; `jetpacs-apps--card' renders there.
 (jetpacs-defaction "app.grid" #'jetpacs-apps--action-grid)
 (jetpacs-defaction "app.open" #'jetpacs-apps--action-open)
+(jetpacs-defaction "app.unavailable.dismiss"
+                   #'jetpacs-apps--action-dismiss-unavailable)
 
 ;; Install on the chrome seam.  The host seeds
 ;; `jetpacs-apps-core-dock-items' with what it used to put here

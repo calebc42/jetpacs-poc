@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// EBP 2 session lifecycle, Companion view. Implements ebp/SPEC.md 10.1.
+// EBP 3 session lifecycle, Companion view. Implements ebp/SPEC.md 10.1.
 // Pure: transport wiring and the welcome arrive at rung W3.
 package com.calebc42.ebp.wire
 

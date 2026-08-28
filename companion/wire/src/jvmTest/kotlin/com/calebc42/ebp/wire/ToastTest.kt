@@ -27,6 +27,7 @@ class ToastTest {
                     put("node_types", JsonArray(listOf("text").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_rich_spans" to 4096, "max_table_cells" to 4096),
@@ -55,6 +56,7 @@ class ToastTest {
                     put("node_types", JsonArray(listOf("text").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_rich_spans" to 4096, "max_table_cells" to 4096),
@@ -104,9 +106,11 @@ class ToastTest {
             supportedCapabilities = setOf("presentation.toast"),
             surfaceProfiles = buildJsonObject {
                 putJsonObject("app") {
-                    put("node_types", JsonArray(NODE_SCHEMA.keys.map(::JsonPrimitive)))
+                    put("node_types", JsonArray(
+                        (NODE_SCHEMA.keys - "variant_host").map(::JsonPrimitive)))
                     put("builtins", JsonArray(emptyList()))
                     put("features", JsonArray(emptyList()))
+                    put("extensions", JsonArray(emptyList()))
                 }
             },
             limits = testLimits("max_rich_spans" to 4096, "max_table_cells" to 4096),

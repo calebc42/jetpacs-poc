@@ -79,21 +79,20 @@ is upstream\\='s `items.forEachIndexed { index, item -> ... }' with its
   "The icon of destination SPEC in its SELECTED or unselected form.
 DESCRIBE non-nil gives the icon the destination label as its content
 description, which NavigationBarSample passes and the two
-ShortNavigationBar samples leave null.  The colors are
-NavigationBarItemDefaults: `on_secondary_container' against the active
-indicator, `on_surface_variant' outside it."
+ShortNavigationBar samples leave null.  The colors use the nearest neutral
+EBP roles: `on_secondary' against the active indicator and `on_surface'
+outside it."
   (jetpacs-icon (if selected (nth 1 spec) (nth 2 spec))
-                :color (if selected "on_secondary_container"
-                         "on_surface_variant")
+                :color (if selected "on_secondary"
+                         "on_surface")
                 :content-description (and describe (nth 0 spec))))
 
 (defun jetpacs-m3-navigation-bar--label (spec selected)
   "The label of destination SPEC, colored for its SELECTED state.
-NavigationBarItemDefaults gives the selected label `on_surface' and the
-unselected one `on_surface_variant'; the M3 item label is labelMedium,
-which is the `label' text style."
+Both states use the neutral `on_surface' role; the M3 item label is
+labelMedium, which is the `label' text style."
   (jetpacs-text (nth 0 spec) :style "label"
-                :color (if selected "on_surface" "on_surface_variant")))
+                :color (if selected "on_surface" "on_surface")))
 
 (defun jetpacs-m3-navigation-bar--item (spec selected describe)
   "Destination SPEC as a vertical item: the icon above the label.
@@ -107,7 +106,7 @@ ShortNavigationBarArrangement.EqualWeight, the default of both bars."
       (jetpacs-box (jetpacs-m3-navigation-bar--glyph spec selected describe)
                    :alignment "center")
       :width 64 :height 32 :corner 16
-      :bg (and selected "secondary_container"))
+      :bg (and selected "secondary"))
      (jetpacs-m3-navigation-bar--label spec selected)
      :spacing 4 :align "center")
     :alignment "center"
@@ -126,7 +125,7 @@ and the item sizes to its content rather than taking a weight."
                  (jetpacs-m3-navigation-bar--label spec selected)
                  :spacing 8 :align "center")
     :pad (list :horizontal 16 :vertical 8) :corner 20
-    :bg (and selected "secondary_container"))
+    :bg (and selected "secondary"))
    :alignment "center"
    :on-tap (jetpacs-m3-demo (nth 0 spec))))
 

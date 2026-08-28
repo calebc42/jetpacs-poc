@@ -49,6 +49,7 @@ class EnvelopeIdTest {
             put("node_types", JsonArray(types.map(::JsonPrimitive)))
             put("builtins", JsonArray(emptyList()))
             put("features", JsonArray(emptyList()))
+            put("extensions", JsonArray(emptyList()))
         }
     }
 

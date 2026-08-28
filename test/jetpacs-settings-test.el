@@ -30,6 +30,14 @@
   "A number fixture."
   :type 'integer :group 'jetpacs-settings-test)
 
+(ert-deftest jetpacs-settings-cold-drawer-targets-are-required ()
+  "All Settings and Customize exist before local surface.open taps."
+  (dolist (surface '("app:jetpacs.settings" "app:jetpacs.customize"))
+    (should
+     (plist-get
+      (alist-get surface jetpacs-shell--roots nil nil #'equal)
+      :required))))
+
 (defmacro jetpacs-settings-test--env (&rest body)
   "Stub persistence/refresh/toast; reset fixture values afterwards."
   (declare (indent 0))
@@ -171,28 +179,35 @@ do not require callers to mutate the foundation registry themselves."
       (should (eq (jetpacs-customize--action-browse '(:group "no-such") nil)
                   'rejected)))))
 
-(ert-deftest jetpacs-settings-drawer-entry-nests-the-satellites ()
-  "Pass 2: Settings hoisted, Customize/Theme/Packages nested under it."
-  (let ((entry (jetpacs-settings-drawer-entry))
-        (labels nil) (actions nil))
-    (should (equal (plist-get entry :t) "collapsible"))
-    (should (eq (plist-get entry :collapsed) t))
-    (cl-labels ((walk (n)
-                  (when (equal (plist-get n :t) "text")
-                    (push (plist-get n :text) labels))
-                  (when-let* ((tap (plist-get n :on_tap)))
-                    (push (plist-get tap :action) actions))
-                  (dolist (slot '(:children :header :trailing))
-                    (let ((v (plist-get n slot)))
-                      (cond ((vectorp v) (mapc #'walk (append v nil)))
-                            ((and v (listp v) (keywordp (car v))) (walk v))
-                            ((listp v) (mapc #'walk v)))))))
-      (walk entry))
-    (dolist (l '("Settings" "All settings" "Customize" "Theme" "Packages"))
-      (should (member l labels)))
-    (dolist (a '("jetpacs.launcher.open" "customize.show"
-                 "jetpacs.theme.modus-toggle" "packages.show"))
-      (should (member a actions)))))
+(ert-deftest jetpacs-settings-drawer-entry-opens-the-required-hub ()
+  "The drawer has one local target; the hub owns category enumeration."
+  (let* ((entry (jetpacs-settings-drawer-entry))
+         (tap (plist-get entry :on_tap))
+         (json (jetpacs-node->canonical-json entry)))
+    (should (equal (plist-get entry :t) "card"))
+    (should (string-match-p "Settings" json))
+    (should (equal (plist-get tap :builtin) "surface.open"))
+    (should (equal (plist-get tap :surface) "app:jetpacs.settings"))))
+
+(ert-deftest jetpacs-settings-hub-enumerates-its-owned-categories ()
+  "Jetpacs, Emacs, and Theme are reachable from the one drawer target."
+  (let ((json (jetpacs-node->canonical-json (jetpacs-settings--view))))
+    (dolist (label '("Jetpacs Settings" "Emacs Settings" "Theme"))
+      (should (string-match-p (regexp-quote label) json)))
+    (dolist (action '("settings.emacs" "modus.show" "settings.refresh"))
+      (should (string-match-p (regexp-quote action) json)))
+    (should (string-match-p "companion:settings" json))))
+
+(ert-deftest jetpacs-settings-actions-declare-their-public-contract ()
+  "Every settings verb exposes readable docs and its consumed arguments."
+  (dolist (name '("settings.set" "settings.reset"
+                  "settings.emacs" "settings.refresh"))
+    (let ((doc (plist-get (jetpacs-action-schema name) :doc)))
+      (should (and (stringp doc) (not (string-empty-p doc))))))
+  (should (equal (mapcar (lambda (arg) (plist-get arg :name))
+                         (plist-get (jetpacs-action-schema "settings.set")
+                                    :args))
+                 '(name value))))
 
 ;;;; The one-live-dialog slot (§3 step 2)
 

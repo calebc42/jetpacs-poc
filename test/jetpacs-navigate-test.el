@@ -80,6 +80,31 @@
     (should (= (length rec) 1))
     (should (equal (nth 0 (car rec)) "app:demo"))))
 
+(ert-deftest jetpacs-navigate-thunk-presenter-reuses-existing-host ()
+  "A destination presenter can consume a captured target before drilling."
+  (let ((buffer (get-buffer-create "*nav-presented*"))
+        presented)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (erase-buffer)
+            (insert "first\nsecond\n"))
+          (jetpacs-navigate-test--with-drill rec
+            (should
+             (equal
+              (jetpacs-navigate-thunk
+               (lambda ()
+                 (set-buffer buffer)
+                 (goto-char 7))
+               "app:demo" "Presented"
+               (lambda (destination position surface)
+                 (setq presented (list destination position surface))
+                 t))
+              "app:demo"))
+            (should (equal presented (list buffer 7 "app:demo")))
+            (should-not rec)))
+      (kill-buffer buffer))))
+
 (ert-deftest jetpacs-navigate-thunk-defers-in-handler ()
   "The D2 gate: inside a dispatch the thunk defers via flow-continue,
 carrying the eagerly-captured D1 surface; the flow marker rides."

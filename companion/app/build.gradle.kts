@@ -8,14 +8,15 @@ plugins {
 
 android {
     namespace = "com.calebc42.ebp.companion"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.calebc42.ebp.companion"
         minSdk = 36
-        targetSdk = 36
+        targetSdk = 37
         versionCode = 1
         versionName = "0.1.0-w4"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -134,11 +135,15 @@ androidComponents {
 
 dependencies {
     implementation(projects.wire)
+    implementation(projects.renderer.material3)
+    implementation(projects.core.navigation)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.foundation)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.navigation3.ui)
@@ -146,5 +151,17 @@ dependencies {
     implementation(libs.androidx.adaptive)
     implementation(libs.androidx.adaptive.layout)
     implementation(libs.androidx.adaptive.navigation)
+    implementation(libs.androidx.adaptive.navigation3)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    // Compose UI Test 1.12 still requests Espresso 3.5.0 transitively. Pin the
+    // matching AndroidX Test 1.7 line so instrumentation also runs on API 37.
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }

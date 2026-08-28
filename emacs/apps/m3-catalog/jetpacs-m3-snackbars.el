@@ -42,8 +42,8 @@
 ;; snapshot re-authors both the message and the face, odd raises styled
 ;; as errors exactly like upstream's isError.  Two seams stated on the
 ;; builder: the error action's errorContainer FILL is not carried
-;; (color recolors content only), and the face replaces M3's Snackbar
-;; container, so the recreation draws its own inverse_surface pill.
+;; (color recolors content only), and EBP's neutral palette has no
+;; Material inverse roles, so the recreation uses surface/on_surface.
 ;;
 ;; The coroutines sample rides the channel it was waiting for:
 ;; `snackbar.show' (SPEC 18.2.1) is a REQUEST whose reply carries how
@@ -79,12 +79,12 @@ state, so the alternating error styling is Emacs re-authoring the face."
 (defun jetpacs-m3-snackbars--custom-scaffold ()
   "The custom sample's LIVE scaffold: message + authored snackbar face.
 Nothing before the first tap; after it, the bordered face upstream draws
-in its SnackbarHost lambda -- the 2dp secondary border, 12dp gap, the
-inverse_surface pill, and the text action colored error on odd raises
-(upstream's isError) or inverse_primary otherwise.  Seams: the error
-action's errorContainer FILL is not carried (button color recolors
-content only), and the authored face replaces M3's Snackbar chrome, so
-the pill here is its own surface."
+in its SnackbarHost lambda -- the 2dp secondary border and 12dp gap --
+is preserved.  EBP deliberately exposes only toolkit-neutral roles, so
+the inverse Material pill is approximated with surface/on_surface and
+the text action is error on odd raises (upstream's isError) or secondary
+otherwise.  The error action's errorContainer FILL is also not carried:
+button color recolors content only."
   (let ((n jetpacs-m3-snackbars--custom-count))
     (when (> n 0)
       (let* ((error-p (= 1 (% n 2)))
@@ -97,14 +97,14 @@ the pill here is its own surface."
            (jetpacs-with-attrs
             (jetpacs-row
              (jetpacs-with-attrs
-              (jetpacs-text msg :color "inverse_on_surface")
+              (jetpacs-text msg :color "on_surface")
               :weight 1)
              (jetpacs-button "Action" (jetpacs-m3-demo "Action")
                              :variant "text"
-                             :color (if error-p "error" "inverse_primary"))
+                             :color (if error-p "error" "secondary"))
              :align "center" :spacing 8)
             :padding 12)
-           :color "inverse_surface" :shape "rounded_small")
+           :color "surface" :shape "rounded_small")
           :border (list :width 2 :color "secondary") :pad 12))))))
 
 (defvar jetpacs-m3-snackbars--coroutines-count 0

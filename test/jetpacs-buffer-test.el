@@ -78,6 +78,30 @@ color, underline), TAB expansion, a blank line, and a tappable button."
            (vconcat (jetpacs-buffer-render (jetpacs-buffer-test--fixture)))
            'app)))
 
+(ert-deftest jetpacs-buffer-exposure-capture-restores-exact-authority ()
+  "Cached views replay the exposure seam, excluding scratch-only records."
+  (let ((jetpacs-buffer-exposed (make-hash-table :test #'equal))
+        (capture (list nil)))
+    (let ((jetpacs-buffer--exposure-capture capture))
+      (jetpacs-buffer-expose "*capture*" 7 "emacs.buffer.act")
+      (jetpacs-buffer-expose-buffer "*capture*" "emacs.buffer.view")
+      (jetpacs-buffer-with-scratch-exposure
+        (jetpacs-buffer-expose "*capture*" 99 "scratch.only")))
+    (let ((operations (nreverse (car capture))))
+      (should (equal operations
+                     '(("*capture*" 7 "emacs.buffer.act")
+                       ("*capture*" :whole-buffer "emacs.buffer.view"))))
+      (jetpacs-buffer-forget-exposed)
+      (let ((jetpacs-buffer--exposure-document
+             (make-hash-table :test #'equal)))
+        (jetpacs-buffer-restore-exposures operations))
+      (should (jetpacs-buffer-exposed-p
+               "*capture*" 7 "emacs.buffer.act"))
+      (should (jetpacs-buffer-exposed-buffer-p
+               "*capture*" "emacs.buffer.view"))
+      (should-not (jetpacs-buffer-exposed-p
+                   "*capture*" 99 "scratch.only")))))
+
 (defun jetpacs-buffer-test--count-spans (nodes)
   "Total spans across every rich_text node in NODES."
   (apply #'+ (mapcar (lambda (n) (length (append (plist-get n :spans) nil)))
@@ -142,6 +166,27 @@ appends a visible truncation note instead of over-emitting."
         (should (equal (plist-get last-node :t) "text"))
         (should (string-match-p "truncated" (plist-get last-node :text)))
         (should (<= total 1052))))))
+
+(ert-deftest jetpacs-buffer-byte-budget-serializes-in-batches ()
+  "A normal long document does not allocate one JSON string per rendered row.
+This is a structural performance assertion rather than a timing threshold: it
+would have counted 600 calls before byte-budget batching."
+  (jetpacs-buffer-test--with-client '(:max_frame_bytes 4194304)
+    (with-current-buffer (get-buffer-create "*jc1-byte-batches*")
+      (fundamental-mode)
+      (erase-buffer)
+      (dotimes (i 600) (insert (format "line %03d\n" i)))
+      (let ((jetpacs-buffer-max-lines 700)
+            (calls 0)
+            (original (symbol-function 'jetpacs-node-wire-bytes)))
+        (cl-letf (((symbol-function 'jetpacs-node-wire-bytes)
+                   (lambda (value)
+                     (setq calls (1+ calls))
+                     (funcall original value))))
+          (let ((nodes (jetpacs-buffer-render (current-buffer))))
+            (should (= 600 (length nodes)))
+            (should (> calls 0))
+            (should (< calls 10))))))))
 
 (ert-deftest jetpacs-buffer-degrades-without-rich-text ()
   "SPEC 16.2: `rich_text' is OPTIONAL, not Core.  Against a Companion

@@ -190,7 +190,7 @@ the more_vert menu — each folded item's label becoming its menu row."
    (jetpacs-with-attrs
     (jetpacs-text "Simple TopAppBar" :style "title" :max-lines 1)
     :weight 1)
-   (jetpacs-app-bar-row
+   (jetpacs-material3-app-bar-row
     (list (jetpacs-app-bar-item "Attachment" "attachment"
                                 (jetpacs-m3-demo "Attachment"))
           (jetpacs-app-bar-item "Edit" "edit" (jetpacs-m3-demo "Edit"))
@@ -263,7 +263,7 @@ string swap upstream demonstrates, as two authored nodes."
     (jetpacs-column
      (jetpacs-text "Collapsed TopAppBar" :style "title" :max-lines 1)
      (jetpacs-text "Collapsed Subtitle" :style "caption"
-                   :color "on_surface_variant"))
+                   :color "on_surface"))
     :weight 1)
    :align "center" :spacing 4 :fill t))
 
@@ -272,7 +272,7 @@ string swap upstream demonstrates, as two authored nodes."
    (jetpacs-text "Expanded TopAppBar" :style "title" :max-lines 1)
    (jetpacs-with-attrs
     (jetpacs-text "Expanded Subtitle" :style "caption"
-                  :color "on_surface_variant")
+                  :color "on_surface")
     :pad (list :bottom 24)))
   "CustomTwoRowsTopAppBar\='s EXPANDED rows: upstream\='s title lambda over
 its subtitle lambda, the 24dp bottom padding included.  No way back here
@@ -280,7 +280,7 @@ is deliberate -- the collapsed node carries it, and folding the bar is
 one scroll away.")
 
 (jetpacs-m3-defcomponent "top-app-bar"
-  :builders (list #'jetpacs-scaffold #'jetpacs-app-bar-row
+  :builders (list #'jetpacs-scaffold #'jetpacs-material3-app-bar-row
               #'jetpacs-app-bar-item)
   :name "Top app bar"
   :description

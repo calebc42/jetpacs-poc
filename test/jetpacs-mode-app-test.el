@@ -19,6 +19,25 @@
          (kill-buffer buffer))
        (delete-file ,binding))))
 
+(defmacro jetpacs-mode-app-test--with-variant-client (binding &rest body)
+  "Attach a READY client advertising retained app variants during BODY."
+  (declare (indent 1) (debug (symbolp body)))
+  `(let* ((receipt (make-temp-file "jetpacs-mode-app-receipts-"))
+          (,binding (ebp-client-create :receipt-file receipt)))
+     (setf (ebp-client-state ,binding) 'ready
+           (ebp-client-profiles ,binding)
+           (list :app
+                 (list :node_types (vconcat jetpacs-app-node-types)
+                       :builtins ["variant.switch"] :features []))
+           (ebp-client-limits ,binding)
+           '(:max_frame_bytes 4194304 :max_rich_spans 10000
+             :max_table_cells 10000 :max_canvas_ops 10000))
+     (unwind-protect
+         (progn (jetpacs-attach ,binding) ,@body)
+       (jetpacs-reader-org-reset-cache)
+       (jetpacs-detach)
+       (ignore-errors (delete-file receipt)))))
+
 (defun jetpacs-mode-app-test--toolbar-commands (items)
   "Return every command string nested one level below toolbar ITEMS."
   (cl-loop for item in items
@@ -40,6 +59,17 @@
             (when-let* ((menu (plist-get item :menu)))
               (jetpacs-mode-app-test--toolbar-snippets
                (append menu nil))))))
+
+(defun jetpacs-mode-app-test--exposed-position (buffer action)
+  "Return one exposed BUFFER position for ACTION, or nil."
+  (let ((table (gethash (buffer-name buffer) jetpacs-buffer-exposed))
+        found)
+    (when table
+      (maphash (lambda (position actions)
+                 (when (and (null found) (member action actions))
+                   (setq found position)))
+               table))
+    found))
 
 (ert-deftest jetpacs-reader-org-path-p-includes-native-archives ()
   "Org's sibling archive convention selects the same native adapter."
@@ -92,7 +122,71 @@
       (should (eq (jetpacs-reader-adapter-actions adapter)
                   #'jetpacs-reader-org--actions))
       (should (eq (jetpacs-reader-adapter-transition adapter)
-                  #'jetpacs-reader-org--transition)))))
+                  #'jetpacs-reader-org--transition))
+      (should (eq jetpacs-org-render-follow-destination-function
+                  #'jetpacs-reader-org--present-followed-destination)))))
+
+(ert-deftest jetpacs-reader-org-link-reuses-current-files-edit-screen ()
+  "An internal Org link retargets Files without replacing its screen chrome."
+  (jetpacs-mode-app-test--with-org-file
+      file "* Target\nDestination body.\n\n[[*Target][Jump]]\n"
+    (let* ((true (file-truename file))
+           (buffer (jetpacs-reader-org--buffer true))
+           (surface "app:org-link-files-test")
+           (builder (lambda (_back) (jetpacs-text "edit")))
+           (stack (list (cons "edit" builder)))
+           (jetpacs-chrome--stacks (make-hash-table :test #'equal))
+           (jetpacs-files--edit
+            (list :path true :seed "seed" :mtime "stamp"
+                  :mark-pos nil :document "doc:test.org"
+                  :editor-id "body" :buffer buffer))
+           (jetpacs-org-render-follow-destination-function
+            #'jetpacs-reader-org--present-followed-destination)
+           refreshed
+           drilled)
+      (puthash surface stack jetpacs-chrome--stacks)
+      (jetpacs-org-render buffer)
+      (let ((position (jetpacs-mode-app-test--exposed-position
+                       buffer "jetpacs.org.follow"))
+            (jetpacs-navigate-drill-function
+             (lambda (&rest args) (setq drilled args) t)))
+        (should (integerp position))
+        (cl-letf (((symbol-function 'jetpacs-buffer-defer-view-refresh)
+                   (lambda (target) (setq refreshed target))))
+          (should
+           (eq (jetpacs-org-render--follow
+                (list :buffer (buffer-name buffer) :pos position)
+                (list :surface surface))
+               'accepted)))
+        (should-not drilled)
+        (should (equal refreshed surface))
+        (should (eq (gethash surface jetpacs-chrome--stacks) stack))
+        (should (equal (plist-get jetpacs-files--edit :document)
+                       "doc:test.org"))
+        (should (equal (plist-get jetpacs-files--edit :editor-id) "body"))
+        (with-current-buffer buffer
+          (save-excursion
+            (goto-char (plist-get jetpacs-files--edit :mark-pos))
+            (should (looking-at-p "\\* Target"))))))))
+
+(ert-deftest jetpacs-reader-org-linked-file-routes-through-files-policy ()
+  "A different linked file stays in Files, including after a refusal."
+  (jetpacs-mode-app-test--with-org-file source-file "[[file:other.org]]\n"
+    (jetpacs-mode-app-test--with-org-file destination-file "* Other\n"
+      (let* ((source (jetpacs-reader-org--buffer source-file))
+             (destination (jetpacs-reader-org--buffer destination-file))
+             (jetpacs-files--edit (list :path (file-truename source-file)))
+             opened)
+        (cl-letf (((symbol-function 'jetpacs-files-open-path)
+                   (lambda (path surface &optional mark-pos &rest _)
+                     (setq opened (list path surface mark-pos))
+                     'rejected)))
+          (should
+           (jetpacs-reader-org--present-followed-destination
+            source destination 2 "app:jetpacs.files"))
+          (should
+           (equal opened
+                  (list destination-file "app:jetpacs.files" 2))))))))
 
 (ert-deftest jetpacs-reader-org-rents-built-in-search-and-visibility ()
   "Plain/regexp search uses org-occur; sparse filters use Org's matcher."
@@ -111,10 +205,342 @@
                       (jetpacs-reader-state-set file :org-search-mode 'regexp)
                       (jetpacs-reader-org--apply-search file "["))
                     :type 'user-error)
+      (jetpacs-reader-state-set file :org-query "+work")
       (jetpacs-reader-state-set file :org-visibility 'contents)
       (jetpacs-reader-org--clear-search-in-buffer
        file (jetpacs-reader-org--buffer file))
       (should (eq (jetpacs-reader-org--visibility file) 'contents)))))
+
+(ert-deftest jetpacs-reader-org-visibility-skips-search-reset-when-idle ()
+  "An ordinary visibility cycle does not unfold solely to clear no search."
+  (jetpacs-mode-app-test--with-org-file file "* One\nBody\n"
+    (let ((jetpacs-reader--state (make-hash-table :test #'equal))
+          (buffer (jetpacs-reader-org--buffer file))
+          (show-all 0)
+          (contents 0))
+      (jetpacs-reader-state-set file :org-visibility 'contents)
+      (cl-letf (((symbol-function 'org-remove-occur-highlights) #'ignore)
+                ((symbol-function 'org-fold-show-all)
+                 (lambda (&rest _) (cl-incf show-all)))
+                ((symbol-function 'org-cycle-content)
+                 (lambda (&rest _) (cl-incf contents))))
+        (jetpacs-reader-org--clear-search-in-buffer
+         file buffer)
+        (should (= show-all 0))
+        (should (= contents 1))
+
+        (jetpacs-reader-state-set file :org-query "Body")
+        (jetpacs-reader-org--clear-search-in-buffer
+         file buffer)
+        (should (= show-all 1))
+        (should (= contents 2))))))
+
+(ert-deftest jetpacs-reader-org-reuses-only-deterministic-visibility-snapshots ()
+  "Global visibility cycles reuse Emacs output; live changes invalidate it."
+  (jetpacs-mode-app-test--with-org-file file "* One\nBody\n"
+    (let ((jetpacs-reader--state (make-hash-table :test #'equal))
+          (jetpacs-reader-org--visibility-cache nil)
+          (jetpacs-org-render--cache-generation 0)
+          (renders 0))
+      (cl-letf (((symbol-function 'jetpacs-client) (lambda () nil))
+                ((symbol-function 'jetpacs-reader-org--apply-visibility)
+                 #'ignore)
+                ((symbol-function 'jetpacs-reader-org--apply-reader-mode)
+                 #'ignore)
+                ((symbol-function 'jetpacs-org-render)
+                 (lambda (_buffer)
+                   (cl-incf renders)
+                   (list (jetpacs-text (format "render-%d" renders))))))
+        ;; The deterministic first overview is retained.
+        (let ((overview (jetpacs-reader-org--render file)))
+          (should (= renders 1))
+
+          ;; Populate the other two canonical global states.
+          (dolist (visibility '(contents all))
+            (jetpacs-reader-state-set file :org-visibility visibility)
+            (jetpacs-reader-state-set
+             file :org-visibility-cache-request t)
+            (jetpacs-reader-org--render file))
+          (should (= renders 3))
+
+          ;; Cycling back consumes the exact Emacs-authored overview tree.
+          (jetpacs-reader-state-set file :org-visibility 'overview)
+          (jetpacs-reader-state-set file :org-visibility-cache-request t)
+          (should (eq overview (jetpacs-reader-org--render file)))
+          (should (= renders 3))
+
+          ;; An ordinary refresh may reflect a local heading fold, so it builds
+          ;; live but neither consumes nor overwrites canonical snapshots.
+          (jetpacs-reader-org--render file)
+          (should (= renders 4))
+          (jetpacs-reader-state-set file :org-visibility-cache-request t)
+          (should (eq overview (jetpacs-reader-org--render file)))
+          (should (= renders 4))
+
+          ;; The same state remains reusable until presentation input changes.
+          (cl-incf jetpacs-org-render--cache-generation)
+          (jetpacs-reader-state-set file :org-visibility-cache-request t)
+          (jetpacs-reader-org--render file)
+          (should (= renders 5))
+          (with-current-buffer (get-file-buffer file)
+            (goto-char (point-max))
+            (insert "Changed\n"))
+          (jetpacs-reader-state-set file :org-visibility-cache-request t)
+          (jetpacs-reader-org--render file)
+          (should (= renders 6)))))))
+
+(ert-deftest jetpacs-reader-org-prewarms-next-visibility-off-interaction-path ()
+  "The next canonical state is cached during idle and live Org is restored."
+  (jetpacs-mode-app-test--with-org-file file "* One\nBody\n"
+    (let ((jetpacs-reader--state (make-hash-table :test #'equal))
+          (jetpacs-reader-org--visibility-cache nil)
+          (jetpacs-reader-org--prewarm-timer nil)
+          (jetpacs-org-render--cache-generation 0)
+          (jetpacs-reader-org-prewarm-idle-seconds 0)
+          scheduled
+          (renders 0)
+          applied)
+      (unwind-protect
+          (cl-letf (((symbol-function 'jetpacs-client) (lambda () nil))
+                    ((symbol-function 'jetpacs-reader-org--apply-visibility)
+                     (lambda (path _buffer)
+                       (push (jetpacs-reader-org--visibility path) applied)))
+                    ((symbol-function 'jetpacs-org-render)
+                     (lambda (_buffer)
+                       (cl-incf renders)
+                       (list (jetpacs-text (format "render-%d" renders)))))
+                    ((symbol-function 'run-with-idle-timer)
+                     (lambda (_seconds _repeat function &rest args)
+                       (setq scheduled (cons function args))
+                       'fake-timer))
+                    ((symbol-function 'timerp)
+                     (lambda (value) (eq value 'fake-timer)))
+                    ((symbol-function 'cancel-timer) #'ignore))
+            (let ((overview (jetpacs-reader-org--render file)))
+              (should (= renders 1))
+              (should scheduled)
+              (apply (car scheduled) (cdr scheduled))
+              (should (= renders 2))
+              ;; Idle work temporarily authored contents, then put the live
+              ;; Emacs buffer back into the overview the user still sees.
+              (should (equal (seq-take applied 2) '(overview contents)))
+              (should (eq (jetpacs-reader-org--visibility file) 'overview))
+
+              ;; The first user transition now consumes the prepared tree.
+              (jetpacs-reader-state-set file :org-visibility 'contents)
+              (jetpacs-reader-state-set
+               file :org-visibility-cache-request t)
+              (let ((contents (jetpacs-reader-org--render file)))
+                (should (= renders 2))
+                (should-not (eq contents overview)))))
+        (jetpacs-reader-org--cancel-prewarm)))))
+
+(ert-deftest jetpacs-reader-org-retains-authoritative-global-variants ()
+  "All branches are Org-authored once; local selection performs no refresh."
+  (jetpacs-mode-app-test--with-org-file
+      file "* One\nBody\n** Two\nMore\n"
+    (jetpacs-mode-app-test--with-variant-client client
+      (let* ((jetpacs-reader--state (make-hash-table :test #'equal))
+             (jetpacs-reader-org--visibility-cache nil)
+             (jetpacs-reader-org--retained nil)
+             (jetpacs-reader-org-prewarm-idle-seconds nil)
+             (jetpacs-files--edit (list :path file))
+             (jetpacs-buffer-budget (cons 10000 4000000))
+             (jetpacs-buffer-extra-budget
+              '((:max_table_cells . 10000) (:max_canvas_ops . 10000)))
+             (jetpacs-node-id-claims (make-hash-table :test #'equal))
+             (jetpacs-buffer--exposure-document
+              (make-hash-table :test #'equal))
+             (base-id (jetpacs-reader-org--variant-id-base file))
+             (real-apply
+              (symbol-function 'jetpacs-reader-org--apply-visibility))
+             (renders 0)
+             applied
+             (refreshes 0))
+        ;; Force a document-global collision so the test pins exact emitted-ID
+        ;; propagation into both the toolbar and state subscription.
+        (puthash base-id 1 jetpacs-node-id-claims)
+        (cl-letf (((symbol-function 'jetpacs-reader-org--apply-visibility)
+                   (lambda (path buffer)
+                     (push (jetpacs-reader-org--visibility path) applied)
+                     (funcall real-apply path buffer)))
+                  ((symbol-function 'jetpacs-org-render)
+                   (lambda (_buffer)
+                     (cl-incf renders)
+                     (list (jetpacs-text
+                            (symbol-name
+                             (jetpacs-reader-org--visibility file))))))
+                  ((symbol-function 'jetpacs-buffer-defer-view-refresh)
+                   (lambda (&rest _) (cl-incf refreshes))))
+          (let* ((host (jetpacs-reader-org--render file))
+                 (entries (append (plist-get host :variants) nil))
+                 (id (plist-get host :id))
+                 (visibility-button
+                  (nth 1 (jetpacs-reader-org--actions file)))
+                 (budget-after (copy-tree jetpacs-buffer-budget))
+                 (extra-after (copy-tree jetpacs-buffer-extra-budget))
+                 (claims-after
+                  (jetpacs-reader-org--hash-snapshot
+                   jetpacs-node-id-claims))
+                 (exposure-after
+                  (jetpacs-reader-org--hash-snapshot
+                   jetpacs-buffer--exposure-document)))
+            (should (equal (plist-get host :t) "variant_host"))
+            (should (equal id (concat base-id "-1")))
+            (should (equal (mapcar (lambda (entry)
+                                    (plist-get entry :value))
+                                  entries)
+                           '("overview" "contents" "all")))
+            (should (= renders 3))
+            (should (eq (jetpacs-reader-org--visibility file) 'overview))
+            (should (equal (plist-get visibility-button :on_tap)
+                           (jetpacs-variant-switch id)))
+            (should (gethash (cons (jetpacs-reader-org--surface) id)
+                             jetpacs--state-handlers))
+
+            ;; Receiver-local selection updates Emacs through its real Org
+            ;; operation, without scheduling any surface replacement.
+            (jetpacs--on-state-changed
+             client (jetpacs-reader-org--surface) 1 id "contents")
+            (should (eq (jetpacs-reader-org--visibility file) 'contents))
+            (should (= refreshes 0))
+            (should (eq (plist-get jetpacs-reader-org--retained :value)
+                        'contents))
+
+            ;; Model the same starting Chrome document context on a later
+            ;; build.  The atomic cache restores every combined side effect;
+            ;; no branch is re-rendered and authored value follows state.
+            (setq jetpacs-buffer-budget (cons 10000 4000000)
+                  jetpacs-buffer-extra-budget
+                  '((:max_table_cells . 10000) (:max_canvas_ops . 10000)))
+            (clrhash jetpacs-node-id-claims)
+            (puthash base-id 1 jetpacs-node-id-claims)
+            (clrhash jetpacs-buffer--exposure-document)
+            (let ((cached (jetpacs-reader-org--render file)))
+              (should (= renders 3))
+              (should (equal (plist-get cached :id) id))
+              (should (equal (plist-get cached :value) "contents"))
+              (should (equal jetpacs-buffer-budget budget-after))
+              (should (equal jetpacs-buffer-extra-budget extra-after))
+              (should (equal (jetpacs-reader-org--hash-snapshot
+                              jetpacs-node-id-claims)
+                             claims-after))
+              (should (equal (jetpacs-reader-org--hash-snapshot
+                              jetpacs-buffer--exposure-document)
+                             exposure-after)))))))))
+
+(ert-deftest jetpacs-reader-org-retained-fallbacks-clear-local-routing ()
+  "Custom folds/search/narrowing and old profiles keep the remote action."
+  (jetpacs-mode-app-test--with-org-file file "* One\nBody\n** Two\nMore\n"
+    (jetpacs-mode-app-test--with-variant-client _client
+      (let ((jetpacs-reader--state (make-hash-table :test #'equal))
+            (jetpacs-reader-org--visibility-cache nil)
+            (jetpacs-reader-org--retained nil)
+            (jetpacs-reader-org-prewarm-idle-seconds nil)
+            (jetpacs-files--edit (list :path file)))
+        (cl-letf (((symbol-function 'jetpacs-org-render)
+                   (lambda (_buffer) (list (jetpacs-text "body"))))
+                  ((symbol-function 'jetpacs-reader-refresh) #'ignore))
+          (let* ((host (jetpacs-reader-org--render file))
+                 (id (plist-get host :id))
+                 (surface (jetpacs-reader-org--surface)))
+            (should (equal (plist-get host :t) "variant_host"))
+            (with-current-buffer (jetpacs-reader-org--buffer file)
+              (jetpacs-reader-org--after-local-fold))
+            (should-not jetpacs-reader-org--retained)
+            (should-not (gethash (cons surface id) jetpacs--state-handlers))
+            (should (equal (plist-get (jetpacs-reader-org--render file) :t)
+                           "lazy_column"))
+            (should (equal
+                     (plist-get (nth 1 (jetpacs-reader-org--actions file))
+                                :on_tap)
+                     (jetpacs-action "jetpacs.reader.org.visibility"
+                                     :args (list :path file))))
+
+            ;; A fresh canonical state can retain again, but opening search
+            ;; drops its subscription immediately, before the deferred push.
+            (jetpacs-reader-org--apply-visibility
+             file (jetpacs-reader-org--buffer file))
+            (setq host (jetpacs-reader-org--render file)
+                  id (plist-get host :id))
+            (should (equal (plist-get host :t) "variant_host"))
+            (should (eq (jetpacs-reader-org--search-toggle-action
+                         (list :path file) (list :surface surface))
+                        'accepted))
+            (should-not jetpacs-reader-org--retained)
+            (should-not (gethash (cons surface id) jetpacs--state-handlers))
+            (should (equal (plist-get (jetpacs-reader-org--render file) :t)
+                           "lazy_column"))
+
+            ;; Whole-document canonicality is necessary independently of
+            ;; search state.
+            (jetpacs-reader-state-set file :org-search-open nil)
+            (jetpacs-reader-org--apply-visibility
+             file (jetpacs-reader-org--buffer file))
+            (with-current-buffer (jetpacs-reader-org--buffer file)
+              (save-restriction
+                (narrow-to-region (point-min) (max (point-min) (1- (point-max))))
+                (should (equal
+                         (plist-get (jetpacs-reader-org--render file) :t)
+                         "lazy_column"))))
+
+            (setq host (jetpacs-reader-org--render file))
+            (should (equal (plist-get host :t) "variant_host"))
+            (jetpacs-reader-org--transition file 'editor)
+            (should-not jetpacs-reader-org--retained)
+
+            ;; Missing either advertisement is the compatibility path.
+            (jetpacs-reader-org--apply-visibility
+             file (jetpacs-reader-org--buffer file))
+            (cl-letf (((symbol-function 'jetpacs-builtin-advertised-p)
+                       (lambda (&rest _) nil)))
+              (should (equal
+                       (plist-get (jetpacs-reader-org--render file) :t)
+                       "lazy_column")))))))))
+
+(ert-deftest jetpacs-reader-org-retained-edit-revokes-before-refresh ()
+  "A reader-side Org mutation cannot leave stale local variants selectable."
+  (jetpacs-mode-app-test--with-org-file file "* One\n- [ ] Task\n"
+    (jetpacs-mode-app-test--with-variant-client _client
+      (let ((jetpacs-reader--state (make-hash-table :test #'equal))
+            (jetpacs-reader-org--visibility-cache nil)
+            (jetpacs-reader-org--retained nil)
+            (jetpacs-reader-org-prewarm-idle-seconds nil)
+            (jetpacs-files--edit (list :path file)))
+        (cl-letf (((symbol-function 'jetpacs-org-render)
+                   (lambda (_buffer) (list (jetpacs-text "body")))))
+          (let* ((host (jetpacs-reader-org--render file))
+                 (id (plist-get host :id))
+                 (surface (jetpacs-reader-org--surface))
+                 (buffer (jetpacs-reader-org--buffer file)))
+            (should (equal (plist-get host :t) "variant_host"))
+            (with-current-buffer buffer
+              (goto-char (point-max))
+              (insert "Edited\n"))
+            (should-not jetpacs-reader-org--retained)
+            (should-not (gethash (cons surface id) jetpacs--state-handlers))
+            (should (equal (plist-get (jetpacs-reader-org--render file) :t)
+                           "lazy_column"))))))))
+
+(ert-deftest jetpacs-reader-org-retained-reconnect-adopts-input-state ()
+  "A durable receiver selection is applied before the retained host is sent."
+  (jetpacs-mode-app-test--with-org-file file "* One\nBody\n"
+    (jetpacs-mode-app-test--with-variant-client client
+      (let* ((jetpacs-reader--state (make-hash-table :test #'equal))
+             (jetpacs-reader-org--visibility-cache nil)
+             (jetpacs-reader-org--retained nil)
+             (jetpacs-reader-org-prewarm-idle-seconds nil)
+             (jetpacs-files--edit (list :path file))
+             (id (jetpacs-reader-org--variant-id-base file)))
+        (puthash (cons (jetpacs-reader-org--surface) id) "all"
+                 (ebp-client-input-values client))
+        (cl-letf (((symbol-function 'jetpacs-org-render)
+                   (lambda (_buffer) (list (jetpacs-text "body")))))
+          (let ((host (jetpacs-reader-org--render file)))
+            (should (equal (plist-get host :value) "all"))
+            (should (eq (jetpacs-reader-org--visibility file) 'all))
+            (should (jetpacs-reader-org--canonical-p
+                     file (jetpacs-reader-org--buffer file)))))))))
 
 (ert-deftest jetpacs-reader-org-reader-mode-is-buffer-local ()
   "Reader mode hides markup and prettifies entities without global mutation."
@@ -128,6 +554,26 @@
           (should org-pretty-entities)
           (should org-hide-leading-stars))
         (should (eq (default-value 'org-hide-emphasis-markers) global-hide))))))
+
+(ert-deftest jetpacs-reader-org-render-honors-files-mark-position ()
+  "The Org reader turns Files' whole-buffer mark into a scroll target."
+  (jetpacs-mode-app-test--with-org-file
+      file "Intro.\n\n* Destination\nBody.\n"
+    (let* ((jetpacs-reader--state (make-hash-table :test #'equal))
+           (buffer (jetpacs-reader-org--buffer file))
+           (mark-pos
+            (with-current-buffer buffer
+              (goto-char (point-min))
+              (search-forward "* Destination")
+              (line-beginning-position)))
+           (jetpacs-files-editor-context
+            (list :path (file-truename file) :mark-pos mark-pos))
+           (root (jetpacs-reader-org--render file))
+           (children (append (plist-get root :children) nil)))
+      (should (equal (plist-get root :t) "lazy_column"))
+      (should (= 1 (seq-count (lambda (node)
+                               (plist-get node :scroll_here))
+                             children))))))
 
 (ert-deftest jetpacs-reader-org-render-scrolls-with-orgro-typography ()
   "The reader scrolls and reflows headings without prescribing a font."
@@ -145,7 +591,9 @@
                (string-match-p needle
                                (jetpacs-node->canonical-json node)))))
            (heading (and heading-index (nth heading-index children)))
-           (heading-children (append (plist-get heading :children) nil))
+           (heading-row (car (append (plist-get heading :children) nil)))
+           (heading-children
+            (append (plist-get heading-row :children) nil))
            (headline (car heading-children))
            (overflow (cadr heading-children))
            (spans (append (plist-get headline :spans) nil))
@@ -158,10 +606,16 @@
              spans)))
       (should (equal (plist-get root :t) "lazy_column"))
       (should heading-index)
-      (should (equal (plist-get heading :t) "row"))
+      (should (equal (plist-get heading :t) "box"))
+      (should (equal (plist-get heading-row :t) "row"))
       (should (equal (plist-get overflow :icon) "more_vert"))
-      (should (equal (plist-get (plist-get overflow :on_tap) :action)
-                     "jetpacs.org.heading"))
+      (should (equal (plist-get overflow :t) "menu"))
+      (should
+       (seq-some
+        (lambda (item)
+          (equal (plist-get (plist-get item :on_tap) :action)
+                 "jetpacs.org.heading"))
+        (append (plist-get overflow :items) nil)))
       (should (= (plist-get body-span :font_weight) 800))
       (should (string-match-p "Attachments :ATTACH:" text))
       (should-not (string-match-p "Attachments  +:ATTACH:" text))
@@ -399,6 +853,23 @@
       (when-let* ((buffer (get-file-buffer file)))
         (kill-buffer buffer))
       (delete-file file))))
+
+(ert-deftest jetpacs-org-mode-seed-actions-cross-the-nav3-boundary ()
+  "Seed rows select Files locally while Emacs performs the remote handoff."
+  (cl-letf (((symbol-function 'jetpacs-feature-advertised-p)
+             (lambda (feature &optional target)
+               (and (equal feature "action.open_surface")
+                    (eq target :app)))))
+    (let ((tap (jetpacs-org-mode--open-seed-action "manual")))
+      (should (equal (plist-get tap :action) "org-mode.open-seed"))
+      (should (equal (plist-get (plist-get tap :args) :document) "manual"))
+      (should (equal (plist-get tap :open_surface) "app:jetpacs.files"))))
+  ;; Strict older receivers must never see the new optional member.
+  (cl-letf (((symbol-function 'jetpacs-feature-advertised-p)
+             (lambda (&rest _) nil)))
+    (should-not
+     (plist-member (jetpacs-org-mode--open-seed-action "inbox")
+                   :open_surface))))
 
 (ert-deftest jetpacs-org-mode-is-a-real-composed-app ()
   "The app claims home, Files, and Habits and installs both Org adapters."
