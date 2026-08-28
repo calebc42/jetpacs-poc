@@ -2,9 +2,9 @@
 
 EBP 3 separates Jetpacs' Compose-shaped foundation from design-system
 implementations. The protocol remains toolkit-neutral and does not register a
-downstream renderer. The reference Android Companion selects Glasspane's
-Material 3 implementation, while Glasspane and its Material 3 Catalog declare
-that selection as an app requirement.
+downstream renderer. The reference Android Companion composes Glasspane's
+Material 3 implementation with Jetpacs' emerging Foundation-only component
+implementation; each catalog declares its own selection as an app requirement.
 
 ## Compatibility boundary
 
@@ -34,9 +34,14 @@ These names and schemas live in
 contract, generated vocabulary, or goldens. EBP transports the identifiers as
 opaque negotiated data.
 
+The same rule governs the additive `jetpacs.components` extension. Its first
+app-only nodes are `jetpacs.action`, `jetpacs.choice`, and `jetpacs.panel`,
+projected from `renderer-extensions/jetpacs-components.json`. Existing EBP core
+or Glasspane Material traffic does not acquire or imply that extension.
+
 ## Android ownership
 
-The receiver is split into three seams:
+The receiver is split into composable seams:
 
 - `:renderer:model` combines installed renderer contributions into exact EBP
   profiles and contains no Compose or design-system dependency.
@@ -46,13 +51,18 @@ The receiver is split into three seams:
   the rich reference renderer. Its generated extension vocabulary, Material
   dependencies, experimental Styles opt-in, screenshots, and component
   semantics tests live here.
+- `:renderer:jetpacs` implements `jetpacs.components` using Compose Foundation,
+  private Jetpacs tokens, and experimental Styles. It has no Material import or
+  dependency.
 
-The app is the composition root that selects `:renderer:material3`; that
-selection is not inherited by protocol, storage, model, or Foundation modules.
-Advertised profiles are derived from the installed contributions. The
-composition root injects their schemas and ownership into the generic wire
-validator; receiver configuration rejects an extension node whose owner is
-missing without the wire module naming that renderer.
+The app is the sole composition root. It selects both modules for app surfaces,
+keeps `jetpacs.components` out of dialog and notification profiles, and installs
+the matching Compose node dispatcher. Those selections are not inherited by
+protocol, storage, model, or Foundation modules. Advertised profiles are
+derived from the installed contributions. The composition root injects their
+schemas and ownership into the generic wire validator; receiver configuration
+rejects an extension node whose owner is missing without the wire module naming
+that renderer.
 
 ## Elisp ownership
 
@@ -63,8 +73,10 @@ shell gate repeats it over the complete document. `jetpacs-defapp` accepts
 screen without invoking the app's builders.
 
 The Glasspane Material 3 Catalog and both Glasspane registration branches
-require `glasspane.material3`. Other apps can remain on the core/general
-vocabulary and need not acquire that dependency.
+require `glasspane.material3`. The separate Jetpacs Components catalog requires
+`jetpacs.components` and uses the public builders in
+`emacs/apps/jetpacs-components/`. Other apps can remain on the core/general
+vocabulary and need not acquire either dependency.
 
 ## Projection generation
 
@@ -81,6 +93,16 @@ For another renderer, pass its manifest plus explicit `--kotlin-output` and
 `--elisp-output` paths; `--kotlin-package` selects the receiving package. The
 Kotlin constant prefix and Elisp feature prefix are derived from the manifest's
 extension identifier, so endpoints cannot acquire separately authored names.
+The checked-in Jetpacs projection is reproduced with:
+
+```sh
+python3 tools/gen-renderer-extension-vocabulary.py \
+  renderer-extensions/jetpacs-components.json \
+  --kotlin-output companion/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsVocabulary.kt \
+  --kotlin-package com.calebc42.jetpacs.renderer.jetpacs \
+  --elisp-output emacs/apps/jetpacs-components/jetpacs-components-vocabulary.el \
+  --check
+```
 
 ## Theme migration
 
@@ -97,7 +119,7 @@ rather than silently interpreted as EBP 3 roles.
 ## Verification
 
 Run the protocol validator first, then the generated-vocabulary drift tests,
-Elisp sender/app gates, renderer registry tests, Material screenshot matrix,
-and device semantics flow. The exact commands are maintained in
+Elisp sender/app gates, renderer registry tests, both design-renderer screenshot
+matrices, and device semantics flows. The exact commands are maintained in
 [`../companion/TESTING.md`](../companion/TESTING.md) and the repository
 implementation guide.

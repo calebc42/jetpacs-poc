@@ -136,6 +136,7 @@ androidComponents {
 dependencies {
     implementation(projects.wire)
     implementation(projects.renderer.material3)
+    implementation(projects.renderer.jetpacs)
     implementation(projects.core.navigation)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

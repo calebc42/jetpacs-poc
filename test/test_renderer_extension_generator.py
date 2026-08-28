@@ -104,6 +104,20 @@ class RendererExtensionGeneratorTest(unittest.TestCase):
             self.assertEqual(2, result.returncode)
             self.assertIn("--kotlin-output is required", result.stderr)
 
+    def test_checked_in_jetpacs_projection_is_current(self) -> None:
+        result = self.run_generator(
+            ROOT / "renderer-extensions" / "jetpacs-components.json",
+            "--kotlin-output",
+            ROOT
+            / "companion/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsVocabulary.kt",
+            "--kotlin-package",
+            "com.calebc42.jetpacs.renderer.jetpacs",
+            "--elisp-output",
+            ROOT / "emacs/apps/jetpacs-components/jetpacs-components-vocabulary.el",
+            "--check",
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+
     def test_rejects_an_ambiguous_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             temp = Path(directory)

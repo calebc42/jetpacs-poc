@@ -80,17 +80,17 @@ object CompanionStores {
                 maxChartPoints = 4096, maxCanvasOps = 4096,
                 // SPEC 17.1: gate each target to exactly what it advertises, so
                 // an app-only type in a dialog/notification degrades (§16.2).
-                appNodeTypes = com.calebc42.ebp.companion.render.NodeSupport.APP_NODE_TYPES,
+                appNodeTypes = CompanionRenderer.APP_NODE_TYPES,
                 notificationNodeTypes =
-                    com.calebc42.ebp.companion.render.NodeSupport.NOTIFICATION_NODE_TYPES,
-                appBuiltins = com.calebc42.ebp.companion.render.NodeSupport.APP_BUILTINS,
+                    CompanionRenderer.NOTIFICATION_NODE_TYPES,
+                appBuiltins = CompanionRenderer.APP_BUILTINS,
                 notificationBuiltins =
-                    com.calebc42.ebp.companion.render.NodeSupport.NOTIFICATION_BUILTINS,
-                appFeatures = com.calebc42.ebp.companion.render.NodeSupport.APP_FEATURES,
+                    CompanionRenderer.NOTIFICATION_BUILTINS,
+                appFeatures = CompanionRenderer.APP_FEATURES,
                 notificationFeatures =
-                    com.calebc42.ebp.companion.render.NodeSupport.NOTIFICATION_FEATURES,
+                    CompanionRenderer.NOTIFICATION_FEATURES,
                 nodeVocabulary =
-                    com.calebc42.ebp.companion.render.NodeSupport.NODE_VOCABULARY,
+                    CompanionRenderer.NODE_VOCABULARY,
                 backing = FileSurfaceBacking(File(ctx.filesDir, "ebp-surfaces.json"))
             ).also { surfacesInstance = it }
         }

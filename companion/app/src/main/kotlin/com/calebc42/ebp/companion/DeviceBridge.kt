@@ -255,8 +255,8 @@ class DeviceBridge(
         // SPEC 10.2: what this build's renderer actually honors — derived from
         // the render/NodeSupport registry (the pin test holds the renderer's
         // dispatch to the same sets), never hand-kept here.
-        surfaceProfiles = com.calebc42.ebp.companion.render.NodeSupport.surfaceProfiles(),
-        nodeVocabulary = com.calebc42.ebp.companion.render.NodeSupport.NODE_VOCABULARY,
+        surfaceProfiles = CompanionRenderer.surfaceProfiles(),
+        nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
         // C6: every value below stays INTEGER-spelled. The engine's constructor
         // reads the limits with reqLong, so a `.0` spelling would not merely
         // widen a bound — it would throw at engine construction.

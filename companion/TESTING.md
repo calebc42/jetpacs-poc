@@ -9,6 +9,10 @@ references when the explicit update task is used.
 ```sh
 ./gradlew :renderer:model:testDebugUnitTest
 ./gradlew :wire:jvmTest --tests '*SemanticsTest'
+./gradlew :renderer:compose:testDebugUnitTest
+./gradlew :renderer:jetpacs:testDebugUnitTest
+./gradlew :renderer:jetpacs:compileDebugAndroidTestKotlin
+./gradlew :renderer:jetpacs:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:material3:compileDebugAndroidTestKotlin
 ./gradlew :renderer:material3:compileDebugScreenshotTestKotlin
 ```
@@ -19,16 +23,25 @@ renderer model, and the Foundation renderer. `SemanticsTest` consumes the
 shared EBP semantic golden witnesses and proves builtin, feature, capture, and
 unknown-member admission behavior. The Material renderer's Android tests cover
 the shared Compose projection as well as receiver-owned component roles and
-single-click-target behavior. Experimental Compose Styles opt-in exists only
-in `:renderer:material3`.
+single-click-target behavior. The Jetpacs module pins generated extension
+admission, private theme derivation, singular Compose dispatch, state-before-
+action ordering, and the no-Material dependency boundary. Experimental Compose
+Styles opt-in exists only in the two downstream design renderer modules, never
+in EBP, `:renderer:model`, or `:renderer:compose`.
 
 ## Screenshot references
 
 ```sh
+./gradlew :renderer:jetpacs:validateDebugScreenshotTest
 ./gradlew :renderer:material3:validateDebugScreenshotTest
 ```
 
-The deterministic gallery covers a 3×3 window matrix (400/610/900 dp by
+The Jetpacs first-slice gallery covers compact and expanded widths, dark mode,
+1.5× font scale, focus/hover, disabled controls, selected state, and nested
+content in five references under
+`renderer/jetpacs/src/screenshotTestDebug/reference/`.
+
+The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp by
 400/500/1000 dp), a dark 610×500 configuration, and 1.5× font scale at
 400×500. Its 11 references live under
 `renderer/material3/src/screenshotTestDebug/reference/`. The gallery uses
@@ -38,6 +51,7 @@ session.
 Update references only after reviewing the rendered change:
 
 ```sh
+./gradlew :renderer:jetpacs:updateDebugScreenshotTest
 ./gradlew :renderer:material3:updateDebugScreenshotTest
 ```
 
@@ -49,6 +63,9 @@ make a validation failure disappear.
 With one authorized device connected:
 
 ```sh
+./gradlew :renderer:jetpacs:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsSemanticsTest
+
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.companion.ui.JetpacsComponentsSemanticsTest
 
@@ -56,8 +73,11 @@ With one authorized device connected:
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.compose.EbpSemanticsTest
 ```
 
-The first class checks receiver-owned catalog and single-choice components. A
-third case mounts a Material `OutlinedTextField` beside the custom Styles host;
+The Jetpacs class checks Action, Choice, and Panel roles, enabled/checked state,
+one-control/one-target behavior, descendant preservation, and exact ordinary
+action dispatch after `state.changed`. The first Material class checks its
+receiver-owned catalog and single-choice components. A third case mounts a
+Material `OutlinedTextField` beside the custom Styles host;
 that is the device regression for keeping Material3's binary ABI compatible
 with the Compose 1.12 Styles API. The EBP class asserts heading, pane title,
 live region, error, state description, collection/item, traversal, determinate
@@ -80,9 +100,12 @@ transitive Espresso cannot initialize on Android 17/API 37.
 ```sh
 ./gradlew :wire:jvmTest \
   :renderer:model:testDebugUnitTest \
+  :renderer:compose:testDebugUnitTest \
+  :renderer:jetpacs:testDebugUnitTest \
   :renderer:material3:testDebugUnitTest \
   :app:testDebugUnitTest \
   :app:assembleDebug \
+  :renderer:jetpacs:validateDebugScreenshotTest \
   :renderer:material3:validateDebugScreenshotTest
 ```
 

@@ -16,6 +16,11 @@ and Compose Foundation; the catalog declares its Material requirement through
 `jetpacs-defapp`, and Jetpacs refuses to enter or build it when a live app
 profile lacks that extension.
 
+Jetpacs' own emerging design language is documented in the separate
+**Jetpacs Components** app under `emacs/apps/jetpacs-component-catalog/`. New
+Jetpacs-owned controls do not enter this Material inventory, and the stable
+`jetpacs-m3-*` library remains the implementation Glasspane consumes.
+
 ```
 emacs/jetpacs-m3-catalog.el          entry point: requires everything, registers the app
 emacs/apps/m3-catalog/

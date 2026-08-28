@@ -48,15 +48,17 @@ renderer. Design-system-specific semantics live in positively negotiated
 renderer extensions, so a different design system can implement the same core
 without importing Material or emulating Material-only controls.
 
-The reference Companion installs `:renderer:material3` as Glasspane's
-selectable implementation. Glasspane and its Material 3 Catalog explicitly
-require the `glasspane.material3` extension. The schema and golden witnesses
-live in `renderer-extensions/`, outside EBP. EBP 3 carries only positive target
+The reference Companion composes two downstream design implementations:
+`:renderer:material3` for Glasspane and `:renderer:jetpacs` for Jetpacs'
+emerging component language. Glasspane and its Material 3 Catalog explicitly
+require `glasspane.material3`; the separate Jetpacs Components catalog requires
+`jetpacs.components`. Their schemas and golden witnesses live in
+`renderer-extensions/`, outside EBP. EBP 3 carries only positive target
 profiles; Jetpacs dual-gates each extension node on its advertised node name
 and the app's declared extension requirement. A receiver never implies support
 from a prefix, and an unavailable app remains outside its builders and gets an
 explanatory Apps screen. This keeps Jetpacs' Compose-shaped foundation reusable
-while letting Glasspane be deliberately and faithfully Material 3.
+while letting Glasspane remain deliberately and faithfully Material 3.
 
 The Material renderer's version is pinned by
 `companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
@@ -94,9 +96,10 @@ UI toolkit, or product dependency.
 | `:renderer:model` | Toolkit-neutral renderer contribution/profile registry, shared raw-EBP JSON readers, and the authored/derived semantic projection | `:wire`, serialization; no Compose or design-system dependency |
 | `:renderer:compose` | Foundation-only reference renderer for the eight EBP core nodes and the one Compose mapping of generic EBP semantics | `:renderer:model`, Compose Foundation/UI; no Material or Styles |
 | `:renderer:material3` | Glasspane Material 3 extension, rich app renderer, theme projection, custom Styles components, and visual/accessibility tests | `:renderer:compose`, Material 3, adaptive Compose, experimental Foundation Styles |
+| `:renderer:jetpacs` | Jetpacs-owned Foundation components, private theme tokens, Styles, generated `jetpacs.components` vocabulary, and visual/accessibility tests | `:renderer:compose`, Compose Foundation/UI, experimental Foundation Styles; no Material |
 | `:renderer:glance` (later) | Restricted widget renderer/profile | `:renderer:model`, Glance |
 | `:feature:pairing`, `:feature:surface`, `:feature:settings` | ViewModels, entry providers, and Jetpacs feature UI | Jetpacs `:core:*` modules |
-| `:app` | Single Android composition root, transport/platform adapters, shell/navigation, and selection of the installed renderer implementation | `:wire`, `:renderer:material3`, Jetpacs core/feature modules |
+| `:app` | Single Android composition root, transport/platform adapters, shell/navigation, and exact composition of installed renderer implementations | `:wire`, `:renderer:material3`, `:renderer:jetpacs`, Jetpacs core/feature modules |
 
 The present split is intentional: `:wire` consumes `:ebp-kmp` for portable
 durability behavior, while `:core:ebp-store` supplies Jetpacs' Room-backed
@@ -203,7 +206,8 @@ port one durable vertical slice at a time. The final data path is:
         -> screen ViewModel StateFlow
         -> registry-derived target profile
         -> Compose Foundation core renderer
-        -> selected design renderer (`:renderer:material3` here)
+        -> app-composed design renderers (`:renderer:material3` and
+           `:renderer:jetpacs` here)
 ```
 
 The former typed post-accept cache callback is not a persistence seam. A
@@ -217,18 +221,25 @@ cutover gates live in `PLAN-room3-rebuild.md`.
 
 ### Receiver component styling and accessibility
 
-The Compose Styles API is confined to `:renderer:material3`; it is neither a
-new EBP styling language nor a dependency of the Foundation renderer.
-`EbpTheme` resolves the system or authored EBP palette, derives private
-Material color roles from the 13 neutral wire roles, installs `MaterialTheme`,
-and projects the same colors and shapes through
-`ProvideJetpacsStyleTokens`. Only custom, receiver-owned components consume
-`JetpacsComponentStyles`; Material components continue to use their supported
-parameters and Material tokens.
+The experimental Compose Styles API is confined to downstream design-renderer
+modules; it is neither a new EBP styling language nor a dependency of
+`:renderer:compose`. In `:renderer:material3`, `EbpTheme` resolves the system or
+authored EBP palette, derives private Material color roles from the 13 neutral
+wire roles, installs `MaterialTheme`, and projects the same colors and shapes
+through `ProvideJetpacsStyleTokens`. Only custom, receiver-owned components
+consume its `JetpacsComponentStyles`; Material components continue to use
+their supported parameters and Material tokens.
 
-Styles own appearance and animated interaction states. Ordinary modifiers own
-click/select behavior, enabled state, focus, and semantics. The first two
-components deliberately exercise different contracts:
+`:renderer:jetpacs` has an independent private theme derived from the same
+neutral EBP roles and never reads or provides `MaterialTheme`. Its public
+`JetpacsAction`, `JetpacsChoice`, and `JetpacsPanel` composables accept
+`style: Style = Style`; Styles own visuals and animated interaction states,
+while ordinary modifiers own layout, click/toggle behavior, enabled state,
+focus, and semantics. The Action and Choice each expose one full-row target,
+and Panel labels are headings without merging their child tree.
+
+The existing Material gallery components deliberately exercise separate
+contracts:
 
 - `JetpacsCatalogAction` is one full-row button target used by the native app
   catalog.
@@ -255,7 +266,7 @@ not after a remote completion. Chrome places its existing screen title in
 `pane_title`; this changes announcements only and has no layout or styling
 effect.
 
-The Material renderer's component gallery and its screenshot and
+Both design renderers' component galleries and their screenshot and
 device-semantics envelopes are recorded in
 [`companion/TESTING.md`](../companion/TESTING.md). Screenshot references are
 deterministic renderer fixtures; real-device tests remain required for focus,

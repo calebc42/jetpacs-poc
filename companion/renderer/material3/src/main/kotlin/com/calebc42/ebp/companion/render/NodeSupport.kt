@@ -6,6 +6,7 @@ import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
 import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.ebp.wire.NodeVocabulary
 import com.calebc42.jetpacs.renderer.compose.CoreComposeContribution
+import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.model.RendererContribution
 import com.calebc42.jetpacs.renderer.model.RendererProfile
 import com.calebc42.jetpacs.renderer.model.RendererRegistry
@@ -25,7 +26,8 @@ object NodeSupport {
     private val imageFeatures = setOf("image.https", "image.data")
     private val editorFeatures = setOf("editor.candidate_kind")
 
-    private val materialApp = RendererContribution(
+    /** Material presentation installed for ordinary app surfaces. */
+    val MATERIAL_APP_CONTRIBUTION = RendererContribution(
         id = "material3.app",
         nodeTypes = (NODE_SCHEMA.keys - CORE_NODE_SET) +
             GLASSPANE_MATERIAL3_TARGET_NODE_TYPES.getValue("app"),
@@ -42,7 +44,8 @@ object NodeSupport {
         extensions = setOf(GLASSPANE_MATERIAL3_EXTENSION),
     )
 
-    private val materialDialog = RendererContribution(
+    /** Material presentation installed for bounded dialog documents. */
+    val MATERIAL_DIALOG_CONTRIBUTION = RendererContribution(
         id = "material3.dialog",
         nodeTypes = setOf(
             "rich_text", "icon", "badge", "image", "section_header",
@@ -57,13 +60,19 @@ object NodeSupport {
         extensions = setOf(GLASSPANE_MATERIAL3_EXTENSION),
     )
 
-    private val notification = RendererContribution(
+    /** Foundation subset used by platform notifications. */
+    val NOTIFICATION_CONTRIBUTION = RendererContribution(
         id = "compose.notification",
         nodeTypes = setOf("text", "row", "column", "box", "spacer", "divider"),
     )
 
     private val registry = RendererRegistry(
-        listOf(CoreComposeContribution, materialApp, materialDialog, notification),
+        listOf(
+            CoreComposeContribution,
+            MATERIAL_APP_CONTRIBUTION,
+            MATERIAL_DIALOG_CONTRIBUTION,
+            NOTIFICATION_CONTRIBUTION,
+        ),
         extensionOwners = mapOf(
             GLASSPANE_MATERIAL3_EXTENSION to GLASSPANE_MATERIAL3_NODE_SCHEMA.keys,
         ),
@@ -81,11 +90,11 @@ object NodeSupport {
     )
 
     private val appProfile: RendererProfile =
-        registry.profile(CoreComposeContribution.id, materialApp.id)
+        registry.profile(CoreComposeContribution.id, MATERIAL_APP_CONTRIBUTION.id)
     private val dialogProfile: RendererProfile =
-        registry.profile(CoreComposeContribution.id, materialDialog.id)
+        registry.profile(CoreComposeContribution.id, MATERIAL_DIALOG_CONTRIBUTION.id)
     private val notificationProfile: RendererProfile =
-        registry.profile(notification.id)
+        registry.profile(NOTIFICATION_CONTRIBUTION.id)
 
     val APP_NODE_TYPES: Set<String> get() = appProfile.nodeTypes
     val DIALOG_NODE_TYPES: Set<String> get() = dialogProfile.nodeTypes
@@ -99,6 +108,12 @@ object NodeSupport {
     val APP_EXTENSIONS: Set<String> get() = appProfile.extensions
     val DIALOG_EXTENSIONS: Set<String> get() = dialogProfile.extensions
     val NOTIFICATION_EXTENSIONS: Set<String> get() = notificationProfile.extensions
+
+    /** Default standalone Material dispatch; the app may install more slices. */
+    val COMPOSE_CONFIGURATION = ComposeRendererConfiguration(
+        appNodeTypes = appProfile.nodeTypes,
+        dialogNodeTypes = dialogProfile.nodeTypes,
+    )
 
     /** EBP 3 §10.2 profiles, including renderer-extension negotiation. */
     fun surfaceProfiles(): JsonObject = buildJsonObject {

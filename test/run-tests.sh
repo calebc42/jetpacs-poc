@@ -21,6 +21,12 @@ emacs() {
 # current without rewriting the worktree.
 python3 test/test_renderer_extension_generator.py
 python3 tools/gen-renderer-extension-vocabulary.py --check
+python3 tools/gen-renderer-extension-vocabulary.py \
+  renderer-extensions/jetpacs-components.json \
+  --kotlin-output companion/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsVocabulary.kt \
+  --kotlin-package com.calebc42.jetpacs.renderer.jetpacs \
+  --elisp-output emacs/apps/jetpacs-components/jetpacs-components-vocabulary.el \
+  --check
 
 # The startup-layout contract: one selected HOME, one marked early-init
 # redirect, one marked normal-init seam, and every managed artifact below
@@ -111,7 +117,10 @@ emacs -Q --batch -L emacs \
 # living one level down.
 for f in emacs/*.el emacs/apps/*/*.el; do
   emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
-    -L emacs/apps/glasspane-material3 -L ../glasspane \
+    -L emacs/apps/glasspane-material3 \
+    -L emacs/apps/jetpacs-components \
+    -L emacs/apps/jetpacs-component-catalog \
+    -L ../glasspane \
     -L emacs/apps/ef-themes \
     --eval "(progn
                (setq load-prefer-newer t)
@@ -386,6 +395,14 @@ emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
 emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
   --eval '(setq load-prefer-newer t)' \
   -l test/jetpacs-m3-catalog-test.el \
+  -f ert-run-tests-batch-and-exit
+
+# Jetpacs' Foundation-only design extension and its separate catalog: public
+# builders, JSON false, canonical IR, app gating, screen builds, and the real
+# action/state loop.
+emacs -Q --batch -L emacs -L emacs/apps/jetpacs-components \
+  -L emacs/apps/jetpacs-component-catalog \
+  -l test/jetpacs-component-catalog-test.el \
   -f ert-run-tests-batch-and-exit
 
 # The shared Elisp REPL loop (jetpacs-repl.el): the loop the device

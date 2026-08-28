@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.companion.render.EbpTheme
 import com.calebc42.ebp.companion.render.RenderDialogRoot
 import com.calebc42.ebp.companion.render.RenderPieMenu
+import com.calebc42.jetpacs.renderer.jetpacs.ProvideJetpacsTheme
 import kotlinx.serialization.json.JsonObject
 
 class MainActivity : ComponentActivity() {
@@ -62,31 +63,33 @@ class MainActivity : ComponentActivity() {
                 bridge.windowChanged(config.screenWidthDp, config.screenHeightDp)
             }
             EbpTheme(themePayload) {
-                val context = androidx.compose.ui.platform.LocalContext.current
-                var onboardingRequired by androidx.compose.runtime.remember {
-                    androidx.compose.runtime.mutableStateOf(
-                        !isCurrentOnboardingComplete(context),
-                    )
-                }
-                Surface(Modifier.fillMaxSize()) {
-                    androidx.compose.foundation.layout.Box {
-                    // Nav3 owns receiver destinations; EBP view.switch remains
-                    // inside the selected Surface entry. Each process-owned
-                    // overlay still reads its own flow in a separate scope, so
-                    // opening one cannot recompose a large surface document.
-                    JetpacsNavHost(
-                        app,
-                        bridge,
-                        onboardingRequired = onboardingRequired,
-                        onOnboardingComplete = {
-                            markCurrentOnboardingComplete(this@MainActivity)
-                            onboardingRequired = false
-                        },
-                        onExit = { finish() },
-                    )
-                    PieMenuHost(app.currentPieMenu, bridge)
-                    DialogHost(app.currentDialog, bridge)
-                    ConfirmHost(bridge)
+                ProvideJetpacsTheme(themePayload) {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    var onboardingRequired by androidx.compose.runtime.remember {
+                        androidx.compose.runtime.mutableStateOf(
+                            !isCurrentOnboardingComplete(context),
+                        )
+                    }
+                    Surface(Modifier.fillMaxSize()) {
+                        androidx.compose.foundation.layout.Box {
+                            // Nav3 owns receiver destinations; EBP view.switch remains
+                            // inside the selected Surface entry. Each process-owned
+                            // overlay still reads its own flow in a separate scope, so
+                            // opening one cannot recompose a large surface document.
+                            JetpacsNavHost(
+                                app,
+                                bridge,
+                                onboardingRequired = onboardingRequired,
+                                onOnboardingComplete = {
+                                    markCurrentOnboardingComplete(this@MainActivity)
+                                    onboardingRequired = false
+                                },
+                                onExit = { finish() },
+                            )
+                            PieMenuHost(app.currentPieMenu, bridge)
+                            DialogHost(app.currentDialog, bridge)
+                            ConfirmHost(bridge)
+                        }
                     }
                 }
             }
@@ -173,7 +176,13 @@ private fun DialogHost(
                         .heightIn(max = maxDialogHeight)
                         .verticalScroll(rememberScrollState())
                         .padding(24.dp)) {
-                    RenderDialogRoot(id, dspec, bridge, epoch)
+                    RenderDialogRoot(
+                        id,
+                        dspec,
+                        bridge,
+                        epoch,
+                        CompanionRenderer.composeConfiguration,
+                    )
                 }
             }
         }

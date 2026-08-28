@@ -13,10 +13,12 @@ implementation references.
 
 The Android UI boundary is split deliberately. `:renderer:compose` implements
 only EBP's eight core nodes with Compose Foundation; it has no Material or
-Styles dependency. `:renderer:material3` is an optional design implementation
-selected by this Companion. Apps such as Glasspane declare
-`glasspane.material3`, and EBP 3 advertises that opaque extension identifier independently from its
-namespaced node types.
+Styles dependency. `:renderer:material3` is Glasspane's optional Material
+implementation, while the Material-free `:renderer:jetpacs` starts Jetpacs' own
+component language. This Companion composes both for app surfaces. Glasspane
+apps declare `glasspane.material3`, the separate Jetpacs Components catalog
+declares `jetpacs.components`, and EBP 3 advertises each opaque extension
+identifier independently from its namespaced node types.
 
 EBP 3.1's optional `semantics` envelope follows the same boundary. Its schema,
 accessible-name order, node roles/state defaults, and eight-action limit are
@@ -69,6 +71,9 @@ accessibility contract. Jetpacs authors the envelope with
 | `companion/renderer/model/` | Toolkit-neutral renderer registry and EBP JSON readers |
 | `companion/renderer/compose/` | Compose Foundation renderer for the EBP Core Node Set |
 | `companion/renderer/material3/` | Optional Material 3 implementation, Styles integration, screenshots, and semantics tests |
+| `companion/renderer/jetpacs/` | Material-free Jetpacs components, private theme/Styles, generated extension vocabulary, and tests |
+| `renderer-extensions/` | Downstream renderer manifests and semantic golden witnesses projected into Kotlin and Elisp |
+| `emacs/apps/jetpacs-component-catalog/` | Separate Elisp-authored reference for Jetpacs-owned components |
 | `test/` | ERT suites; every wire test is driven by `ebp/goldens/` |
 | `docs/PLAN-poc3-rebuild.md` | Cross-platform execution phases and exit gates |
 | `docs/PLATFORM-RENTAL-REGISTER.md` | Built-ins/libraries that POC 3 must rent instead of reimplementing |

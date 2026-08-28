@@ -97,6 +97,8 @@ import com.calebc42.ebp.companion.MaterialRendererBridge
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.InputDisplay
+import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
@@ -186,6 +188,8 @@ data class RenderCtx(
     /** T3/LD-2: what each of this surface's stateful nodes should display,
      * and the generation that value belongs to. */
     val displays: Map<Pair<String, String>, InputDisplay> = emptyMap(),
+    /** The app-selected target profile and downstream renderer installation. */
+    val configuration: ComposeRendererConfiguration = NodeSupport.COMPOSE_CONFIGURATION,
 ) {
     fun child(node: JsonObject?, index: Int): RenderCtx =
         copy(path = identityPath(path, node, index))
@@ -301,18 +305,23 @@ data class RenderCtx(
 /** Root entry for a surface (MainActivity). */
 @Composable
 fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererBridge,
-               dialog: DialogContext? = null) {
+               dialog: DialogContext? = null,
+               configuration: ComposeRendererConfiguration =
+                   NodeSupport.COMPOSE_CONFIGURATION) {
     // T3/LD-2: collected once at the root and carried down the tree, so a
     // stateful widget reads its generation and its seed without each one
     // subscribing.
     val displays by bridge.inputDisplays.collectAsState()
-    RenderNode(node, RenderCtx(surface, bridge, dialog, displays = displays))
+    RenderNode(node, RenderCtx(surface, bridge, dialog, displays = displays,
+        configuration = configuration))
 }
 
 /** Root of a dialog's node tree: owns the local field map (SPEC 18.1). */
 @Composable
 fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendererBridge,
-                     epoch: Long = 0L) {
+                     epoch: Long = 0L,
+                     configuration: ComposeRendererConfiguration =
+                         NodeSupport.COMPOSE_CONFIGURATION) {
     // D-3(d): keyed on the show EPOCH, not the id alone — a same-id dialog
     // shown while its predecessor is still composed (replace-in-place,
     // SPEC 18.1) mints a FRESH engine-side dialog but inherited the old
@@ -329,7 +338,29 @@ fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendere
     // disagree about which nodes are stateful.
     val defaults = remember(dialogId, epoch) { bridge.dialogDefaults(dialogId) }
     RenderNode(spec, RenderCtx("dialog:$dialogId", bridge,
-        DialogContext(dialogId, fields, bridge, defaults)))
+        DialogContext(dialogId, fields, bridge, defaults),
+        configuration = configuration))
+}
+
+/** Adapter that keeps downstream rendering behind the ordinary host paths. */
+private class MaterialExtensionRenderContext(
+    private val context: RenderCtx,
+) : ComposeExtensionRenderContext {
+    override val surface: String get() = context.surface
+    override val path: String get() = context.path
+    override val inDialog: Boolean get() = context.inDialog
+
+    override fun action(descriptor: JsonObject?, value: JsonElement?) =
+        context.action(descriptor, value)
+
+    override fun state(id: String, value: JsonElement?) = context.state(id, value)
+    override fun storeValue(id: String): JsonElement? = context.storeValue(id)
+    override fun epochOf(id: String): Long = context.epochOf(id)
+
+    @Composable
+    override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) {
+        RenderNode(child, context.child(child, index), modifier)
+    }
 }
 
 @Composable
@@ -365,7 +396,11 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
     // SPEC 17.1/16.2: a type not advertised for THIS target (a dialog advertises
     // fewer than the app profile) is unsupported — degrade to its children as a
     // neutral column, never render its semantics or dispatch its actions.
-    val advertised = if (ctx.inDialog) NodeSupport.DIALOG_NODE_TYPES else NodeSupport.APP_NODE_TYPES
+    val advertised = if (ctx.inDialog) {
+        ctx.configuration.dialogNodeTypes
+    } else {
+        ctx.configuration.appNodeTypes
+    }
     if (type !in advertised) {
         node.arrOrNull("children")?.let { kids ->
             Column(modifier) { RenderChildren(kids, ctx) }
@@ -384,6 +419,11 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
             node = node,
             onAction = { ctx.action(it) },
         )
+    }
+    val extension = ctx.configuration.extensions.rendererFor(type)
+    if (extension != null) {
+        extension.render(node, MaterialExtensionRenderContext(ctx), m)
+        return
     }
     when (type) {
         "text" -> RenderText(node, m)

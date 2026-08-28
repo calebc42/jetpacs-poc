@@ -375,7 +375,12 @@ private fun SurfaceDocumentHost(
             ) {
                 back?.let { bridge.action(surfaceId, it) }
             }
-            RenderNode(spec, surfaceId, bridge)
+            RenderNode(
+                spec,
+                surfaceId,
+                bridge,
+                configuration = CompanionRenderer.composeConfiguration,
+            )
         }
     }
 }

@@ -175,6 +175,10 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; into every dock.
 ;; Reach it there, from the Apps button, or M-x jetpacs-m3-catalog.
 (require 'jetpacs-m3-catalog)
+;; Jetpacs Components is a separate reference for the emerging Foundation-only
+;; Jetpacs design language.  Its app is visible only when the connected
+;; Companion positively advertises `jetpacs.components'.
+(require 'jetpacs-component-catalog)
 ;; The live editor loop (parity P1), and the `ebp-' half of the stack:
 ;; wire and Emacs only, no node vocabulary.  Buffer sync with its
 ;; riders, then the capf completion server answering `edit.complete' —
