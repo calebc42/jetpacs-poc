@@ -18,6 +18,8 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -114,8 +116,13 @@ class JetpacsComponentsSemanticsTest {
         val states = mutableListOf<Pair<String, JsonElement?>>()
         val actions = mutableListOf<Pair<JsonObject?, JsonElement?>>()
 
-        override fun action(descriptor: JsonObject?, value: JsonElement?) {
+        override fun action(
+            descriptor: JsonObject?,
+            value: JsonElement?,
+            onOutcome: (RendererActionOutcome) -> Unit,
+        ): ActionHandoff {
             actions += descriptor to value
+            return ActionHandoff.HandedOff
         }
 
         override fun state(id: String, value: JsonElement?) {

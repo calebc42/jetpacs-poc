@@ -3,6 +3,8 @@
     <application>
         <activity
             android:name="com.calebc42.jetpacs.renderer.jetpacs.SemanticsHostActivity"
-            android:exported="false" />
+            android:exported="true"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true" />
     </application>
 </manifest>
