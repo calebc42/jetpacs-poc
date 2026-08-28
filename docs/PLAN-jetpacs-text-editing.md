@@ -1,0 +1,358 @@
+# Jetpacs text-editing plan
+
+Status: Phase 0 complete; Phase 1 is next
+Date: 2026-08-27
+
+## Outcome and ownership
+
+Deliver a Jetpacs-owned Foundation text-field and editor family that is
+visually distinct from Glasspane's Material presentation while retaining the
+existing EBP `text_input` and `editor` semantics, synchronization protocol,
+durability rules, and Emacs ownership.
+
+The owning tree is `llm-poc-3`. Toolkit-neutral models and behavior belong in
+`:renderer:model` and `:renderer:compose`; Jetpacs presentation belongs in
+`:renderer:jetpacs`; authenticated action, state, and editor traffic remains
+owned by `:wire` and the application bridge. Elisp continues to author
+declarative EBP rather than executable UI behavior.
+
+## Invariants
+
+- EBP remains implementation- and Jetpacs-neutral.
+- The canonical wire nodes remain `text_input` and `editor`; no
+  `jetpacs.text_input` or `jetpacs.editor` aliases are introduced.
+- Emacs owns application state and application decisions.
+- The Companion owns accepted presentation state, native editing state,
+  durability, and synchronized-editor delivery records.
+- Glasspane remains Material by default and its existing screenshots remain
+  pixel-identical.
+- Jetpacs editing has no Material dependency.
+- A visual renderer never reimplements action admission, input reconciliation,
+  editor session policy, or password persistence policy.
+- Generated vocabulary is projected from its owning contract or extension
+  manifest and is never edited as authority.
+
+## Recommended architecture
+
+Canonical EBP nodes feed shared editing controllers, then select a downstream
+presentation:
+
+```text
+Canonical EBP text_input / editor
+                 |
+       shared editing controllers
+  (:renderer:model + :renderer:compose)
+                 |
+       +---------+---------+
+       |                   |
+Glasspane Material 3   Jetpacs Foundation
+outside Jetpacs scope  inside jetpacs.scope
+```
+
+Add an invisible downstream extension node named `jetpacs.scope`. It contains
+ordinary EBP children and selects Jetpacs overrides for canonical nodes below
+it. The scope carries no application state or accessibility semantics, never
+merges or hides descendants, and degrades to its children on a receiver that
+does not implement the extension. The nearest scope wins if scopes are nested.
+The first implementation overrides only `text_input` and `editor`.
+
+This keeps Glasspane's current renderer selected outside the scope and avoids
+coupling design selection to `jetpacs.panel`, which would make standalone
+fields and editors awkward.
+
+## Phase 0: reconcile the governing contract
+
+The normative `ebp/SPEC.md` defines a smaller `text_input` schema than
+`ebp/contract.json`. The projection, generated vocabulary, public Elisp
+builder, validator, and Material renderer currently also recognize these
+members that are absent from the normative prose:
+
+- `variant`
+- `is_error`
+- `supporting_text`
+- `prefix` and `suffix`
+- `leading_icon` and `trailing_icon`
+- `max_length`
+- `selection`
+- `hide_keyboard_on_submit`
+- `content_padding`
+- `mask`
+- `filter`
+
+Phase 0 must:
+
+1. Audit every use, validation rule, test, example, and retained-document risk
+   for each member.
+2. Classify each member as toolkit-neutral behavior/semantic content,
+   Glasspane presentation, or obsolete draft residue.
+3. Specify every retained neutral member normatively, including types,
+   defaults, validation, reconciliation, Unicode units, byte accounting,
+   password interactions, and action ordering.
+4. Move renderer-specific members behind the Glasspane extension, with an
+   explicit compatibility transition if existing documents use them.
+5. Regenerate Kotlin and Elisp vocabulary from the corrected authority.
+6. Keep protocol major 3; advance draft or contract metadata only when the EBP
+   amendment policy requires it.
+7. Add accepted and rejected goldens and run the EBP validator plus every
+   affected cross-language conformance test.
+
+Jetpacs will implement only fields that emerge from this process as normative
+neutral behavior. Contract projection is not authority merely because current
+source consumes it.
+
+### Phase 0 outcome
+
+The audit classified all thirteen members as toolkit-neutral editing
+semantics, field structure, or presentation intent; none required migration to
+a Glasspane-only extension. EBP amendment #180 now defines their exact
+validation, reconciliation, Unicode-scalar, transformation-order, error, and
+accessibility behavior. Contract format advanced from 8 to 9 while protocol
+major remains 3.
+
+The corrected authority is projected into generated Kotlin and Elisp
+vocabulary. A shared 27-case golden is replayed by the Python reference
+validator and Kotlin receiver tests, while Elisp authoring tests cover the
+same accepted and rejected shapes. Glasspane's renderer now uses the common
+scalar-safe input and mask rules, composes selection with content padding, and
+projects maximum length and error precedence without changing pixels.
+
+Phase 1 still owns the action-host extraction and typed one-shot action
+outcome required for contract-correct `clear_on_submit`; Phase 0 deliberately
+does not infer action admission from the current `Unit` callback.
+
+## Phase 1: extract a neutral editing host
+
+Split the Material-owned renderer bridge into:
+
+- a toolkit-neutral action/state host;
+- a toolkit-neutral editor host; and
+- a small Material-only host for Material-specific facilities.
+
+Move neutral input displays, draft epochs, editor mirrors, completion offers,
+candidate documents, raw annotation ranges, and scalar/UTF-16 conversion
+models out of `:renderer:material3`. Keep palette, typography, diagnostic
+decoration, and popup presentation in each design renderer.
+
+Add shared `TextInputController` and `EditorController` implementations to
+`:renderer:compose`. They own state seeding, reconciliation, normalization,
+host dispatch, remote mirror adoption, and lifecycle. Material and Jetpacs
+become alternate views over the same behavior.
+
+Action dispatch must expose a typed one-shot outcome. The current `Unit` seam
+cannot implement `clear_on_submit` correctly because the value may clear only
+after the engine reports the outcome that the EBP contract considers safe.
+The renderer must not infer that conclusion from connectivity or remote timing.
+
+This phase has no intentional visual change. Existing Glasspane screenshot
+references are an acceptance gate.
+
+## Phase 2: add scoped core-renderer overrides
+
+Extend the Compose renderer registry with scoped overrides that are separate
+from extension-node ownership:
+
+- Extension-node ownership remains singular.
+- Core overrides are keyed by an admitted design scope.
+- An override does not change validation or advertise a second core node.
+- It activates only inside `jetpacs.scope`.
+- Core nodes outside the scope continue through Glasspane Material.
+- Duplicate overrides for one scope and core node fail when the composition
+  root is assembled.
+- Scope activation cannot cross a surface or dialog boundary.
+
+Add `jetpacs.scope` to the `jetpacs.components` extension manifest and
+regenerate its Kotlin and Elisp vocabulary. Implement app surfaces first;
+advertise dialog support only after secure-field and dialog-lifecycle tests
+pass.
+
+## Phase 3: implement `JetpacsTextField`
+
+Create a public Foundation component in `:renderer:jetpacs`, backed by the
+shared text-input controller. Prefer Compose's state-based text APIs:
+`TextFieldState` retains text, selection, and composition, while
+`InputTransformation` applies restrictions atomically to keyboard, paste,
+drop, autofill, and IME changes.
+
+References:
+
+- <https://developer.android.com/develop/ui/compose/text/user-input>
+- <https://developer.android.com/develop/ui/compose/text/migrate-state-based>
+
+Required behavior:
+
+- authored, empty, locally dirty, acknowledged, reset, and restored states;
+- single- and multi-line operation;
+- exact U+000A removal for single-line input;
+- minimum and maximum line bounds;
+- keyboard type and IME action;
+- label and hint behavior;
+- enabled and disabled behavior;
+- `state.changed` before the corresponding `on_change` action;
+- `on_submit` value injection;
+- clear only after the engine-authorized result;
+- autofocus only for a new presentation identity; and
+- any selection, mask, filter, maximum-length, supporting-text, or error
+  behavior retained by Phase 0.
+
+Normal text is restored through the accepted draft store, not Compose state
+alone.
+
+Use Foundation `BasicSecureTextField` for a separate password path. A password
+is never seeded from authored JSON, saved, retained, logged, screenshotted, or
+sent through `state.changed`. It is captured only by the owning submit
+occurrence and erased on every contract-required terminal lifecycle event.
+`max_field_bytes` applies while it exists in volatile memory.
+
+The visual direction is compact and structural: a restrained work surface,
+crisp focus boundary, explicit label and supporting/error line, and Jetpacs
+typography and spacing rather than a recreation of a Material field.
+
+## Phase 4: implement the local `JetpacsEditor`
+
+Support the complete local-editor tier before synchronized editing:
+
+- multi-line editing and selection;
+- `single_line`, `min_lines`, and `max_lines`;
+- independent `read_only` and `enabled` states;
+- `on_save` and software-IME `on_enter`;
+- `publish_state` and local draft reconciliation;
+- monospace and syntax presentation;
+- a shared-scroll line-number gutter;
+- chromeless mode;
+- toolbar items and snippets;
+- autofocus by presentation identity; and
+- preservation across compatible snapshots.
+
+Run an early prototype proving that active IME composition, syntax styling,
+diagnostic decoration, caret layout, and remote text adoption can coexist with
+the selected Foundation state API. If a current experimental API cannot
+represent annotation styling safely, isolate a narrow adapter rather than
+falling back to a Material component.
+
+Line numbers are presentation-only and do not become separate accessibility
+nodes.
+
+## Phase 5: add synchronized editing
+
+Connect the Jetpacs editor to the existing `editor.sync` module:
+
+- fresh session opening when a synchronized editor becomes present in
+  `READY`;
+- immediate read-only transition outside `READY`;
+- no offline drafts, deltas, saves, completion, or commands;
+- lossless Unicode-scalar/UTF-16 conversion;
+- monotonic sequence handling;
+- exactly-once local delta emission;
+- remote apply without a local echo;
+- composition-atomic remote adoption;
+- stale detection and explicit resynchronization;
+- caret and selection throttling;
+- closure on removal, tombstone, document change, identity change, and
+  disconnect; and
+- session-count and editor-byte limits.
+
+Model opening, ready, composing, awaiting reconciliation, stale,
+offline-read-only, and closed as explicit testable states.
+
+## Phase 6: completion, annotations, and tooling
+
+After synchronization is correct, add:
+
+- bounded completion candidates;
+- selection dispatch exactly once;
+- lazy candidate documentation;
+- fontification using fixed contract role names;
+- diagnostics with severity, message, and accessible error descriptions;
+- eldoc/status presentation;
+- toolbar editor commands; and
+- a client-side syntax fallback while authoritative annotations are pending.
+
+Transport models remain neutral. Jetpacs and Glasspane resolve the same role
+names through their independent palettes.
+
+## Styles and theming boundary
+
+Compose Styles is experimental and stays entirely in `:renderer:jetpacs`:
+
+- Public components accept `style: Style = Style`.
+- Styles own background, border, padding, color, focus, hover, error,
+  disabled, and read-only visuals.
+- Modifiers and controllers own semantics, focus, input, gestures, and
+  behavior.
+- Jetpacs supplies `LocalTextSelectionColors` rather than relying on
+  `MaterialTheme`.
+- Caret, selection, text layout, and diagnostic positions do not animate.
+- Compilation and screenshots pin the repository's selected Compose version.
+
+Styles never become part of EBP or the shared editing controller contract.
+
+## Elisp and catalog work
+
+Keep `jetpacs-text-input` and `jetpacs-editor` as the sole semantic builders.
+Add a downstream `jetpacs-component-scope` helper that wraps canonical children
+in `jetpacs.scope`; do not create a second set of text semantics.
+
+Add a **Text editing** catalog category with **Text Field** and **Editor**
+pages. Cover purpose, anatomy, empty/filled/focused/error/disabled/secure
+states, local and synchronized editors, line numbers, syntax, diagnostics,
+completion, toolbar, offline read-only behavior, canonical Elisp/EBP source,
+and a live action/state readout.
+
+## Accessibility requirements
+
+- One editable semantics node per field or editor.
+- Universal EBP semantics attach to the interaction-owning bounds.
+- The label supplies the accessible name without duplicating hint/supporting
+  text announcements.
+- Error, disabled, read-only, and password state is exposed correctly.
+- Completion candidates and toolbar items are individually labeled.
+- Completion and toolbar descendants are not merged into the editor node.
+- Default hardware text-editing commands remain available unless EBP
+  explicitly defines an override.
+- TalkBack and Switch Access can edit, submit, inspect an error, choose a
+  completion, and leave the editor.
+
+## Verification sequence
+
+1. `cd ebp && python3 validate.py` and affected golden/conformance tests.
+2. Focused Elisp constructor, profile, canonicalization, byte-budget,
+   password, and editor-session ERT.
+3. Warning-as-error Elisp byte compilation.
+4. `test/run-tests.sh`.
+5. Shared controller, renderer registry, and no-Material-boundary unit tests.
+6. Existing wire editor, lifecycle, action, persistence, and reconciliation
+   suites.
+7. Jetpacs unit and instrumented tests.
+8. All 11 existing Material screenshot validations without reference updates.
+9. New Jetpacs references for compact/expanded, dark, 1.5x text, focus,
+   error, disabled, read-only, secure, line numbers, diagnostics, completion,
+   and RTL.
+10. The broad Companion gate documented in `companion/TESTING.md`.
+11. Tablet deployment through `tools/onboard-tablet.sh`, which refreshes both
+    the APK and Elisp installation.
+12. Connected and manual IME, paste, selection, rotation, restore, reconnect,
+    offline, accessibility, hardware-keyboard, mouse, and touch checks.
+
+## Definition of done
+
+- `:renderer:jetpacs` has no Material dependency or import.
+- Jetpacs and Glasspane share editing behavior but not presentation.
+- Glasspane remains Material by default with pixel-identical references.
+- No duplicate EBP node or editor synchronization protocol exists.
+- State precedes its action and every occurrence dispatches once.
+- Input clearing follows the engine-authorized outcome.
+- Remote applies never echo.
+- Unicode scalar offsets and active IME composition remain lossless.
+- Synchronized editors are read-only outside `READY`.
+- Passwords are never persisted, published, or logged.
+- Accessibility exposes one correct editable control.
+- Both components are exercised in the tablet catalog.
+
+## Deferred work
+
+- CRDT or collaborative multi-writer editing
+- remote cursors and presence
+- huge-document virtualization
+- rich embedded content
+- generalized command/keymap models
+- cross-platform focus routing

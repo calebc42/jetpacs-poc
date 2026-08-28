@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // The SPEC 11 method registry: sender, class, and legal states per method.
-// Mirrors ebp/contract.json (format 8); WireConformanceTest pins the two
+// Mirrors ebp/contract.json (format 9); WireConformanceTest pins the two
 // together so registry drift is a test failure, not a runtime surprise.
 package com.calebc42.ebp.wire
 

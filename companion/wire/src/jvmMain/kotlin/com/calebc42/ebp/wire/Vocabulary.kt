@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// GENERATED from ebp/contract.json (format 8,
+// GENERATED from ebp/contract.json (format 9,
 // spec 3.1.0-draft) by tools/gen-vocabulary.py — DO NOT EDIT.
 // VocabularyDriftTest re-reads the contract and fails on any disagreement.
 package com.calebc42.ebp.wire
@@ -40,7 +40,60 @@ data class DefaultSemanticRow(
     val customActionsFrom: List<String> = emptyList(),
 )
 
-const val CONTRACT_FORMAT = 8
+/** Contract-projected authored selection seed for a text input. */
+data class TextInputSelectionContract(
+    val type: String,
+    val unit: String,
+    val minimum: Long,
+    val order: String,
+    val upperBound: String,
+    val lifecycle: String,
+    val whenRetainedDraftWins: String,
+)
+
+/** Contract-projected maximum-length rule for a text input. */
+data class TextInputMaxLengthContract(
+    val type: String,
+    val unit: String,
+    val behavior: String,
+    val authoredValueMustFit: Boolean,
+    val retainedDraftMustFit: Boolean,
+)
+
+/** Contract-projected mask grammar for a text input. */
+data class TextInputMaskContract(
+    val slot: String,
+    val minimumSlots: Int,
+    val unit: String,
+    val overflow: String,
+    val incompatibleWith: Set<String>,
+)
+
+/** Contract-projected interior-padding rule for a text input. */
+data class TextInputPaddingContract(
+    val type: String,
+    val appliesTo: String,
+)
+
+/** Complete generated §17.4 constraint envelope for `text_input`. */
+data class TextInputContract(
+    val selection: TextInputSelectionContract,
+    val maxLength: TextInputMaxLengthContract,
+    val transformOrder: List<String>,
+    val filterCharacterSets: Map<String, String>,
+    val filterUnknown: String,
+    val filterAuthoredValueMustMatch: Boolean,
+    val filterRetainedDraftMustMatch: Boolean,
+    val mask: TextInputMaskContract,
+    val contentPadding: TextInputPaddingContract,
+    val variantDefault: String,
+    val variantUnknown: String,
+    val hideKeyboardOnSubmitRequires: String,
+    val errorDescriptionPrecedence: List<String>,
+    val logicalValueExcludes: List<String>,
+)
+
+const val CONTRACT_FORMAT = 9
 const val PROTOCOL_VERSION = 3
 const val SPEC_VERSION = "3.1.0-draft"
 
@@ -90,6 +143,113 @@ val DEFAULT_NODE_SEMANTICS: Map<String, DefaultSemanticRow> = mapOf(
     "slider" to DefaultSemanticRow(role = "slider", enabledMember = "enabled", progressValueMember = "value", progressMinMember = "min", progressMaxMember = "max", progressValueDefaultsToMin = true, progressMin = 0.0, progressMax = 1.0),
     "card" to DefaultSemanticRow(role = "button", roleConditionMember = "on_tap", customActionsFrom = listOf("swipe_start", "swipe_end")),
     "collapsible" to DefaultSemanticRow(expandedMember = "collapsed", expandedInverted = true, customActionsFrom = listOf("swipe_start", "swipe_end")),
+)
+
+/** Contract-projected enum vocabulary; senders reject unknown authored values. */
+val ENUMS: Map<String, Set<String>> = mapOf(
+    "text.style" to setOf("body", "title", "headline", "caption", "label", "mono"),
+    "rich_text.style" to setOf("body", "title", "headline", "caption", "label", "mono"),
+    "progress.variant" to setOf("circular", "linear", "linear_wavy", "circular_wavy", "loading", "contained_loading"),
+    "button.variant" to setOf("filled", "tonal", "elevated", "outlined", "text"),
+    "image.content_scale" to setOf("fit", "crop", "fill"),
+    "row.align" to setOf("top", "center", "bottom", "baseline"),
+    "column.align" to setOf("start", "center", "end"),
+    "flow_row.align" to setOf("top", "center", "bottom"),
+    "arrange" to setOf("start", "center", "end", "space_between", "space_around", "space_evenly"),
+    "box.alignment" to setOf("top_start", "top_center", "top_end", "center_start", "center", "center_end", "bottom_start", "bottom_center", "bottom_end"),
+    "surface.shape" to setOf("rounded", "rounded_small", "circle", "square", "slanted", "arch", "fan", "arrow", "semi_circle", "oval", "pill", "triangle", "diamond", "clam_shell", "pentagon", "gem", "sunny", "very_sunny", "cookie_4_sided", "cookie_6_sided", "cookie_7_sided", "cookie_9_sided", "cookie_12_sided", "ghostish", "clover_4_leaf", "clover_8_leaf", "burst", "soft_burst", "boom", "soft_boom", "flower", "puffy", "puffy_diamond", "pixel_circle", "pixel_triangle", "bun", "heart"),
+    "chart.kind" to setOf("line", "bar", "area", "sparkline"),
+    "canvas.op" to setOf("line", "rect", "circle", "path", "text"),
+    "text_input.keyboard" to setOf("text", "number", "decimal", "email", "phone", "uri"),
+    "align_self" to setOf("start", "center", "end", "stretch"),
+    "dialog.style" to setOf("dialog", "sheet", "sheet_full"),
+    "notification.priority" to setOf("min", "low", "default", "high", "max"),
+    "diagnostic.severity" to setOf("error", "warning", "info", "hint"),
+    "toolbar.placement" to setOf("cursor", "line-start", "block"),
+    "button.size" to setOf("xsmall", "small", "medium", "large", "xlarge"),
+    "button.shape" to setOf("round", "square"),
+    "icon_button.variant" to setOf("filled", "tonal", "outlined"),
+    "card.variant" to setOf("filled", "elevated", "outlined"),
+    "chip.variant" to setOf("flat", "elevated", "input"),
+    "assist_chip.variant" to setOf("flat", "elevated", "suggestion", "elevated_suggestion"),
+    "text_input.variant" to setOf("outlined", "filled"),
+    "slider.track" to setOf("default", "centered"),
+    "slider.orientation" to setOf("horizontal", "vertical"),
+    "checkbox.state" to setOf("off", "on", "indeterminate"),
+    "text_input.filter" to setOf("digits", "alnum"),
+    "menu.initial_scroll" to setOf("start", "end"),
+    "date_button.mode" to setOf("calendar", "input"),
+    "time_button.display_mode" to setOf("picker", "input", "switchable"),
+    "tooltip.position" to setOf("above", "below", "left", "right", "start", "end"),
+    "icon_button.size" to setOf("xsmall", "small", "medium", "large"),
+    "icon_button.shape" to setOf("round", "square"),
+    "icon_button.width_mode" to setOf("narrow", "uniform", "wide"),
+    "split_button.variant" to setOf("filled", "tonal", "elevated", "outlined"),
+    "split_button.size" to setOf("xsmall", "small", "medium", "large", "xlarge"),
+    "scaffold.top_bar_style" to setOf("small", "center", "medium", "large", "medium_flexible", "large_flexible", "two_rows"),
+    "scaffold.scroll_behavior" to setOf("pinned", "enter_always", "exit_until_collapsed"),
+    "scaffold.refresh_indicator" to setOf("default", "loading", "none"),
+    "scaffold.snackbar_duration" to setOf("short", "long", "indefinite"),
+    "enum_list.variant" to setOf("chips", "radio"),
+    "scaffold.sheet_state" to setOf("hidden", "partial", "expanded"),
+    "tabs.style" to setOf("primary", "secondary"),
+    "tab_item.icon_position" to setOf("above", "leading"),
+    "scaffold.floating_toolbar_orientation" to setOf("horizontal", "vertical"),
+    "scaffold.floating_toolbar_placement" to setOf("bottom_center", "bottom_start", "bottom_end", "center_start", "center_end"),
+    "scaffold.floating_toolbar_exit_direction" to setOf("bottom", "top", "start", "end"),
+    "pane_scaffold.variant" to setOf("list_detail", "supporting"),
+    "navigation_rail.variant" to setOf("standard", "wide", "modal"),
+    "scaffold.drawer_variant" to setOf("modal", "dismissible", "permanent"),
+    "scaffold.bottom_bar_behavior" to setOf("pinned", "exit_always"),
+    "scaffold.fab_position" to setOf("end", "end_overlay", "center"),
+    "button.checked_shape" to setOf("round", "square"),
+    "navigation_rail.arrangement" to setOf("top", "center", "bottom"),
+    "carousel.strategy" to setOf("multi_browse", "uncontained", "centered_hero"),
+    "search_bar.variant" to setOf("full_screen", "docked"),
+    "button.shape_role" to setOf("leading", "middle", "trailing", "top", "bottom"),
+    "theme.layout_direction" to setOf("ltr", "rtl"),
+    "window.size_class" to setOf("compact", "medium", "expanded"),
+    "snackbar.result" to setOf("dismissed", "action"),
+)
+
+val TEXT_INPUT_CONTRACT = TextInputContract(
+    selection = TextInputSelectionContract(
+        type = "two-number-array",
+        unit = "unicode-scalar",
+        minimum = 0L,
+        order = "start<=end",
+        upperBound = "authored-value",
+        lifecycle = "new-presentation-seed",
+        whenRetainedDraftWins = "ignore",
+    ),
+    maxLength = TextInputMaxLengthContract(
+        type = "positive-integer",
+        unit = "unicode-scalar",
+        behavior = "truncate-before-commit",
+        authoredValueMustFit = true,
+        retainedDraftMustFit = true,
+    ),
+    transformOrder = listOf("single_line", "filter", "max_length"),
+    filterCharacterSets = mapOf("digits" to "ascii-digit", "alnum" to "ascii-alphanumeric"),
+    filterUnknown = "none",
+    filterAuthoredValueMustMatch = true,
+    filterRetainedDraftMustMatch = true,
+    mask = TextInputMaskContract(
+        slot = "#",
+        minimumSlots = 1,
+        unit = "unicode-scalar",
+        overflow = "unformatted",
+        incompatibleWith = setOf("password", "syntax"),
+    ),
+    contentPadding = TextInputPaddingContract(
+        type = "non-negative-dp",
+        appliesTo = "all-interior-sides",
+    ),
+    variantDefault = "outlined",
+    variantUnknown = "outlined",
+    hideKeyboardOnSubmitRequires = "on_submit",
+    errorDescriptionPrecedence = listOf("semantics.error", "supporting_text"),
+    logicalValueExcludes = listOf("prefix", "suffix", "mask-literals"),
 )
 
 /** SPEC 14.6: node types whose id/value participate in input state. */
@@ -360,6 +520,7 @@ val FIELD_TYPES: Map<String, String> = mapOf(
     "value_end" to "number",
     "value_label" to "boolean",
     "values" to "number-array",
+    "variant" to "string",
     "variants" to "variant-array",
     "width" to "number",
     "width_mode" to "string",

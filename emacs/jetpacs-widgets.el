@@ -2114,9 +2114,38 @@ item list is longer than the screen."
                  :footer footer :icon icon
                  :initial_scroll initial-scroll :enabled enabled))
 
-(defconst jetpacs--text-input-variants '("outlined" "filled"))
+(defconst jetpacs--text-input-variants
+  (cdr (assoc "text_input.variant" jetpacs-contract-enums))
+  "Contract-projected `text_input.variant' values accepted by authors.")
 
-(defconst jetpacs--text-input-filters '("digits" "alnum"))
+(defconst jetpacs--text-input-filters
+  (cdr (assoc "text_input.filter" jetpacs-contract-enums))
+  "Contract-projected `text_input.filter' values accepted by authors.")
+
+(defun jetpacs--text-input-filter-matches-p (value filter)
+  "Return non-nil when VALUE satisfies the contract-projected FILTER.
+Unknown filters have the receiver fallback of no filtering; public authoring
+helpers reject them before calling this function."
+  (let* ((sets (plist-get jetpacs-text-input-contract
+                          :filter_character_sets))
+         (kind (and filter
+                    (plist-get sets (intern (concat ":" filter))))))
+    (pcase kind
+      ("ascii-digit" (string-match-p "\\`[0-9]*\\'" value))
+      ("ascii-alphanumeric" (string-match-p "\\`[A-Za-z0-9]*\\'" value))
+      (_ t))))
+
+(defun jetpacs--text-input-mask-slot-count (mask)
+  "Count contract-projected slot spellings in MASK."
+  (let* ((spec (plist-get jetpacs-text-input-contract :mask))
+         (slot (plist-get spec :slot))
+         (regexp (regexp-quote slot))
+         (from 0)
+         (count 0))
+    (while (string-match regexp mask from)
+      (setq count (1+ count)
+            from (match-end 0)))
+    count))
 
 (cl-defun jetpacs-text-input (id &key value hint label on-change on-submit
                                  single-line min-lines max-lines monospace syntax
@@ -2130,15 +2159,17 @@ Booleans (SINGLE-LINE, MONOSPACE, PASSWORD, AUTOFOCUS, CLEAR-ON-SUBMIT,
 ENABLED) take t or :json-false.  Enforces the §17.4 line-count, single-line
 no-newline, and password constraints at build time.
 
-SELECTION is (START END), non-negative character offsets into VALUE with
+SELECTION is (START END), non-negative Unicode-scalar offsets into VALUE with
 START <= END <= its length — it seeds the initial cursor/selection only.
 HIDE-KEYBOARD-ON-SUBMIT dismisses the IME after ON-SUBMIT (Compose's
 default hide-on-Done is suppressed the moment a submit handler exists).
 CONTENT-PADDING is the field's INTERIOR padding in dp — the dense form —
 distinct from the universal padding, which is margin.  MASK is a display
-template over the stored value (every `#' consumes one stored character,
+template over the stored value (every `#' consumes one Unicode scalar,
 everything else is literal filler that never enters the value); FILTER
-reverts characters outside digits/alnum at the keystroke, locally."
+reverts characters outside deterministic ASCII digits/alnum at the keystroke,
+locally.  MAX-LENGTH is a hard Unicode-scalar bound on authored and local
+values."
   (jetpacs-check-identifier id ":id")
   (when value (jetpacs-require-string value ":value"))
   (when hint (jetpacs-require-string hint ":hint"))
@@ -2166,6 +2197,8 @@ reverts characters outside digits/alnum at the keystroke, locally."
   (when leading-icon (jetpacs-check-identifier leading-icon ":leading_icon"))
   (when trailing-icon (jetpacs-check-identifier trailing-icon ":trailing_icon"))
   (when max-length (jetpacs-check-integer max-length ":max_length" 1 nil))
+  (when (and max-length (> (length (or value "")) max-length))
+    (error "jetpacs-text-input: :value exceeds :max-length (SPEC 17.4)"))
   (when selection
     (unless (and (listp selection) (= 2 (length selection)))
       (error "jetpacs-text-input: :selection must be (START END) (SPEC 17.4)"))
@@ -2178,18 +2211,31 @@ reverts characters outside digits/alnum at the keystroke, locally."
     (setq selection (vconcat selection)))
   (when hide-keyboard-on-submit
     (jetpacs-check-bool hide-keyboard-on-submit ":hide-keyboard-on-submit")
-    (unless on-submit
+    (when (and (eq hide-keyboard-on-submit t) (not on-submit))
       (error "jetpacs-text-input: :hide-keyboard-on-submit needs :on-submit (SPEC 17.4)")))
   (when content-padding
     (jetpacs--check-number content-padding ":content-padding" 0 nil))
   (when mask
     (jetpacs-require-string mask ":mask")
-    (unless (string-search "#" mask)
-      (error "jetpacs-text-input: :mask needs at least one `#' slot (SPEC 17.4)"))
-    (when (or (eq password t) syntax)
-      (error "jetpacs-text-input: :mask is invalid with :password or :syntax (SPEC 17.4)")))
+    (let* ((mask-spec (plist-get jetpacs-text-input-contract :mask))
+           (minimum (plist-get mask-spec :minimum_slots)))
+      (when (< (jetpacs--text-input-mask-slot-count mask) minimum)
+        (error "jetpacs-text-input: :mask needs at least one `#' slot (SPEC 17.4)")))
+    (dolist (member (plist-get (plist-get jetpacs-text-input-contract :mask)
+                               :incompatible_with))
+      (let ((present
+             (pcase member
+               ("password" (eq password t))
+               ("syntax" syntax)
+               (_ (error "jetpacs-text-input: unsupported mask incompatibility %S"
+                         member)))))
+        (when present
+          (error "jetpacs-text-input: :mask is invalid with :%s (SPEC 17.4)"
+                 member)))))
   (when filter
-    (setq filter (jetpacs-check-enum filter jetpacs--text-input-filters ":filter")))
+    (setq filter (jetpacs-check-enum filter jetpacs--text-input-filters ":filter"))
+    (unless (jetpacs--text-input-filter-matches-p (or value "") filter)
+      (error "jetpacs-text-input: :value violates :filter (SPEC 17.4)")))
   (when (eq single-line t)
     (when (and min-lines (/= min-lines 1))
       (error "jetpacs-text-input: single_line requires :min-lines 1 (SPEC 17.4)"))

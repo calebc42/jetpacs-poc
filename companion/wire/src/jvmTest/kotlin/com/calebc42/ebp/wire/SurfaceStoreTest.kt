@@ -35,7 +35,12 @@ class SurfaceStoreTest {
         }
     }
 
-    private fun inputSpec(value: String = "draft", singleLine: Boolean = false): JsonObject =
+    private fun inputSpec(
+        value: String = "draft",
+        singleLine: Boolean = false,
+        maxLength: Int? = null,
+        filter: String? = null,
+    ): JsonObject =
         buildJsonObject {
             put("t", "column")
             putJsonArray("children") {
@@ -46,6 +51,8 @@ class SurfaceStoreTest {
                         put("single_line", true)
                         put("min_lines", 1); put("max_lines", 1)
                     }
+                    maxLength?.let { put("max_length", it) }
+                    filter?.let { put("filter", it) }
                 })
             }
         }
@@ -320,6 +327,22 @@ class SurfaceStoreTest {
         s.putDraft("app:d", "title", JsonPrimitive("doomed"))
         s.remove("app:d", 10)
         assertFalse(s.hasDraft("app:d", "title"))
+    }
+
+    @Test
+    fun textInputDraftsMustStillFitNewLengthAndFilterConstraints() {
+        val s = store()
+        update(s, "app:constraints", 1, inputSpec(""))
+        s.putDraft("app:constraints", "title", JsonPrimitive("😀a"))
+        update(s, "app:constraints", 2, inputSpec("", maxLength = 2))
+        assertEquals(JsonPrimitive("😀a"), s.draft("app:constraints", "title"))
+
+        update(s, "app:constraints", 3, inputSpec("", maxLength = 1))
+        assertFalse(s.hasDraft("app:constraints", "title"))
+
+        s.putDraft("app:constraints", "title", JsonPrimitive("12a"))
+        update(s, "app:constraints", 4, inputSpec("12", filter = "digits"))
+        assertFalse(s.hasDraft("app:constraints", "title"))
     }
 
     @Test
@@ -936,6 +959,71 @@ class VocabularyDriftTest {
             )
             assertEquals("$name semantic defaults", expected, generated)
         }
+        val enums = contract.reqObj("enums")
+        assertEquals(enums.keys, ENUMS.keys)
+        for ((name, generated) in ENUMS) {
+            assertEquals(
+                "$name enum",
+                enums.reqArr(name).mapNotNull(JsonElement::asStringOrNull).toSet(),
+                generated,
+            )
+        }
+        val textInput = contract.reqObj("text_input_schema")
+        val selection = textInput.reqObj("selection")
+        val maximum = textInput.reqObj("max_length")
+        val filterSets = textInput.reqObj("filter_character_sets")
+            .mapValues { (_, value) -> value.asStringOrNull()!! }
+        val mask = textInput.reqObj("mask")
+        val padding = textInput.reqObj("content_padding")
+        assertEquals(
+            TextInputContract(
+                selection = TextInputSelectionContract(
+                    type = selection.reqString("type"),
+                    unit = selection.reqString("unit"),
+                    minimum = integralLongOrNull(selection["minimum"])!!,
+                    order = selection.reqString("order"),
+                    upperBound = selection.reqString("upper_bound"),
+                    lifecycle = selection.reqString("lifecycle"),
+                    whenRetainedDraftWins = selection.reqString("when_retained_draft_wins"),
+                ),
+                maxLength = TextInputMaxLengthContract(
+                    type = maximum.reqString("type"),
+                    unit = maximum.reqString("unit"),
+                    behavior = maximum.reqString("behavior"),
+                    authoredValueMustFit = maximum.boolOr("authored_value_must_fit"),
+                    retainedDraftMustFit = maximum.boolOr("retained_draft_must_fit"),
+                ),
+                transformOrder = textInput.reqArr("transform_order")
+                    .mapNotNull(JsonElement::asStringOrNull),
+                filterCharacterSets = filterSets,
+                filterUnknown = textInput.reqString("filter_unknown"),
+                filterAuthoredValueMustMatch =
+                    textInput.boolOr("filter_authored_value_must_match"),
+                filterRetainedDraftMustMatch =
+                    textInput.boolOr("filter_retained_draft_must_match"),
+                mask = TextInputMaskContract(
+                    slot = mask.reqString("slot"),
+                    minimumSlots = integralLongOrNull(mask["minimum_slots"])!!.toInt(),
+                    unit = mask.reqString("unit"),
+                    overflow = mask.reqString("overflow"),
+                    incompatibleWith = mask.reqArr("incompatible_with")
+                        .mapNotNull(JsonElement::asStringOrNull).toSet(),
+                ),
+                contentPadding = TextInputPaddingContract(
+                    type = padding.reqString("type"),
+                    appliesTo = padding.reqString("applies_to"),
+                ),
+                variantDefault = textInput.reqString("variant_default"),
+                variantUnknown = textInput.reqString("variant_unknown"),
+                hideKeyboardOnSubmitRequires =
+                    textInput.reqString("hide_keyboard_on_submit_requires"),
+                errorDescriptionPrecedence = textInput.reqArr("error_description_precedence")
+                    .mapNotNull(JsonElement::asStringOrNull),
+                logicalValueExcludes = textInput.reqArr("logical_value_excludes")
+                    .mapNotNull(JsonElement::asStringOrNull),
+            ),
+            TEXT_INPUT_CONTRACT,
+        )
         val actions = contract.reqObj("actions").reqObj("schema")
         assertEquals(actions.keys, ACTION_SCHEMA.keys)
         // LD-10: the projected field types match the contract exactly.

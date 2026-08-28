@@ -837,6 +837,104 @@ object SpecValidator {
         }
     }
 
+    /** Enforce the generated §17.4 `text_input` constraint envelope.
+     *
+     * Compose indexes strings in UTF-16 code units, but the wire contract
+     * deliberately does not: authored selection and length members count
+     * Unicode scalar values. Keeping this conversion at admission prevents a
+     * renderer from accepting an apparently in-range offset that bisects an
+     * astral-plane character. */
+    private fun validateTextInput(node: JsonObject, path: String, text: String?) {
+        val authored = text ?: ""
+        val scalarLength = textInputScalarLength(authored).toLong()
+
+        if ("selection" in node) {
+            val selection = node.arrOrNull("selection")
+                ?: throw ContentInvalid(
+                    "$path.selection",
+                    "selection must be a two-integer array",
+                )
+            if (selection.size != 2)
+                throw ContentInvalid(
+                    "$path.selection",
+                    "selection must be a two-integer array",
+                )
+            val start = integralLongOrNull(selection[0])
+            val end = integralLongOrNull(selection[1])
+            if (start == null || end == null ||
+                start > EbpJson.MAX_SAFE_INTEGER || end > EbpJson.MAX_SAFE_INTEGER)
+                throw ContentInvalid(
+                    "$path.selection",
+                    "selection must be a two-integer array",
+                )
+            if (start < TEXT_INPUT_CONTRACT.selection.minimum ||
+                end < TEXT_INPUT_CONTRACT.selection.minimum)
+                throw ContentInvalid(
+                    "$path.selection",
+                    "selection offsets must be non-negative",
+                )
+            if (start > end)
+                throw ContentInvalid(
+                    "$path.selection",
+                    "selection start must not exceed end",
+                )
+            if (end > scalarLength)
+                throw ContentInvalid(
+                    "$path.selection",
+                    "selection exceeds authored value",
+                )
+        }
+
+        val maxLength = integralLongOrNull(node["max_length"])
+        if (maxLength != null && maxLength > EbpJson.MAX_SAFE_INTEGER)
+            throw ContentInvalid(
+                "$path.max_length",
+                "max_length must be a positive integer",
+            )
+        if (maxLength != null && scalarLength > maxLength)
+            throw ContentInvalid("$path.value", "value exceeds max_length")
+
+        if (!textInputFilterMatches(authored, node.stringOrNull("filter")))
+            throw ContentInvalid("$path.value", "value violates filter")
+
+        val submitRequirement = TEXT_INPUT_CONTRACT.hideKeyboardOnSubmitRequires
+        if (node.boolOr("hide_keyboard_on_submit") && submitRequirement !in node)
+            throw ContentInvalid(
+                "$path.hide_keyboard_on_submit",
+                "hide_keyboard_on_submit requires $submitRequirement",
+            )
+
+        node["content_padding"]?.asDoubleOrNull()?.let { padding ->
+            if (padding < 0.0)
+                throw ContentInvalid(
+                    "$path.content_padding",
+                    "content_padding must be non-negative",
+                )
+        }
+
+        node.stringOrNull("mask")?.let { mask ->
+            val slot = TEXT_INPUT_CONTRACT.mask.slot
+            if (textInputScalarLength(mask) == 0 ||
+                textInputMaskSlotCount(mask) < TEXT_INPUT_CONTRACT.mask.minimumSlots)
+                throw ContentInvalid(
+                    "$path.mask",
+                    "mask must contain at least one $slot slot",
+                )
+            for (member in TEXT_INPUT_CONTRACT.mask.incompatibleWith) {
+                val present = when (member) {
+                    "password" -> node.boolOr(member)
+                    "syntax" -> member in node
+                    else -> error("unsupported generated mask incompatibility $member")
+                }
+                if (present)
+                    throw ContentInvalid(
+                        "$path.mask",
+                        "mask is incompatible with $member",
+                    )
+            }
+        }
+    }
+
     private fun validateNode(node: JsonObject, path: String, ctx: Ctx) {
         val t = node.stringOrNull("t")
             ?: throw ContentInvalid(path, "node discriminator t must be a string")
@@ -904,6 +1002,7 @@ object SpecValidator {
                     (text != null && text.isNotEmpty() || "on_change" in node))
                     throw ContentInvalid(path, "password nodes cannot seed values or publish state")
                 validateLineCounts(node, path)
+                validateTextInput(node, path, text)
             }
             "slider" -> {
                 val values = node.arrOrNull("values")

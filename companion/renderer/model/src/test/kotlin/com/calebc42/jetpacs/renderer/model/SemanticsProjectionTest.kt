@@ -121,6 +121,39 @@ class SemanticsProjectionTest {
     }
 
     @Test
+    fun textInputErrorAndMaximumFollowTheNormativePrecedence() {
+        val supporting = projectNodeSemantics(buildJsonObject {
+            put("t", "text_input")
+            put("id", "field")
+            put("is_error", true)
+            put("supporting_text", "Use six digits")
+            put("max_length", 6)
+        })
+        assertEquals("Use six digits", supporting.error)
+        assertEquals(6, supporting.state.maxTextLength)
+
+        val explicit = projectNodeSemantics(buildJsonObject {
+            put("t", "text_input")
+            put("id", "field")
+            put("is_error", true)
+            put("supporting_text", "Supporting")
+            put("semantics", buildJsonObject { put("error", "Explicit") })
+        })
+        assertEquals("Explicit", explicit.error)
+
+        assertEquals("Invalid input", projectNodeSemantics(buildJsonObject {
+            put("t", "text_input")
+            put("id", "field")
+            put("is_error", true)
+        }).error)
+        assertNull(projectNodeSemantics(buildJsonObject {
+            put("t", "text_input")
+            put("id", "field")
+            put("supporting_text", "Ordinary help")
+        }).error)
+    }
+
+    @Test
     fun progressAndSliderRangesAreDerivedFromTheNode() {
         val indeterminate = projectNodeSemantics(buildJsonObject { put("t", "progress") })
         assertNull(indeterminate.state.progress!!.current)

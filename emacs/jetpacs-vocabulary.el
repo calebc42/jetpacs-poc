@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 
-;; GENERATED from ebp/contract.json (format 8, spec
+;; GENERATED from ebp/contract.json (format 9, spec
 ;; 3.1.0-draft) by tools/gen-jetpacs-vocabulary.py -- DO NOT EDIT.
 ;; `jetpacs-widgets/catalog-node-schema' re-reads the contract and fails on
 ;; any disagreement, exactly as the other `catalog-*' mirrors do.
@@ -23,7 +23,7 @@
 
 ;;; Code:
 
-(defconst jetpacs-contract-format 8
+(defconst jetpacs-contract-format 9
   "The `contract_format' this vocabulary was generated from.")
 
 (defconst jetpacs-protocol-version 3
@@ -93,6 +93,77 @@
     ("card" . (:role "button" :role_condition_member "on_tap" :custom_actions_from ("swipe_start" "swipe_end")))
     ("collapsible" . (:expanded_member "collapsed" :expanded_inverted t :custom_actions_from ("swipe_start" "swipe_end"))))
   "Contract-projected roles and state derivations keyed by Node type.")
+
+(defconst jetpacs-contract-enums
+  '(
+    ("text.style" . ("body" "title" "headline" "caption" "label" "mono"))
+    ("rich_text.style" . ("body" "title" "headline" "caption" "label" "mono"))
+    ("progress.variant" . ("circular" "linear" "linear_wavy" "circular_wavy" "loading" "contained_loading"))
+    ("button.variant" . ("filled" "tonal" "elevated" "outlined" "text"))
+    ("image.content_scale" . ("fit" "crop" "fill"))
+    ("row.align" . ("top" "center" "bottom" "baseline"))
+    ("column.align" . ("start" "center" "end"))
+    ("flow_row.align" . ("top" "center" "bottom"))
+    ("arrange" . ("start" "center" "end" "space_between" "space_around" "space_evenly"))
+    ("box.alignment" . ("top_start" "top_center" "top_end" "center_start" "center" "center_end" "bottom_start" "bottom_center" "bottom_end"))
+    ("surface.shape" . ("rounded" "rounded_small" "circle" "square" "slanted" "arch" "fan" "arrow" "semi_circle" "oval" "pill" "triangle" "diamond" "clam_shell" "pentagon" "gem" "sunny" "very_sunny" "cookie_4_sided" "cookie_6_sided" "cookie_7_sided" "cookie_9_sided" "cookie_12_sided" "ghostish" "clover_4_leaf" "clover_8_leaf" "burst" "soft_burst" "boom" "soft_boom" "flower" "puffy" "puffy_diamond" "pixel_circle" "pixel_triangle" "bun" "heart"))
+    ("chart.kind" . ("line" "bar" "area" "sparkline"))
+    ("canvas.op" . ("line" "rect" "circle" "path" "text"))
+    ("text_input.keyboard" . ("text" "number" "decimal" "email" "phone" "uri"))
+    ("align_self" . ("start" "center" "end" "stretch"))
+    ("dialog.style" . ("dialog" "sheet" "sheet_full"))
+    ("notification.priority" . ("min" "low" "default" "high" "max"))
+    ("diagnostic.severity" . ("error" "warning" "info" "hint"))
+    ("toolbar.placement" . ("cursor" "line-start" "block"))
+    ("button.size" . ("xsmall" "small" "medium" "large" "xlarge"))
+    ("button.shape" . ("round" "square"))
+    ("icon_button.variant" . ("filled" "tonal" "outlined"))
+    ("card.variant" . ("filled" "elevated" "outlined"))
+    ("chip.variant" . ("flat" "elevated" "input"))
+    ("assist_chip.variant" . ("flat" "elevated" "suggestion" "elevated_suggestion"))
+    ("text_input.variant" . ("outlined" "filled"))
+    ("slider.track" . ("default" "centered"))
+    ("slider.orientation" . ("horizontal" "vertical"))
+    ("checkbox.state" . ("off" "on" "indeterminate"))
+    ("text_input.filter" . ("digits" "alnum"))
+    ("menu.initial_scroll" . ("start" "end"))
+    ("date_button.mode" . ("calendar" "input"))
+    ("time_button.display_mode" . ("picker" "input" "switchable"))
+    ("tooltip.position" . ("above" "below" "left" "right" "start" "end"))
+    ("icon_button.size" . ("xsmall" "small" "medium" "large"))
+    ("icon_button.shape" . ("round" "square"))
+    ("icon_button.width_mode" . ("narrow" "uniform" "wide"))
+    ("split_button.variant" . ("filled" "tonal" "elevated" "outlined"))
+    ("split_button.size" . ("xsmall" "small" "medium" "large" "xlarge"))
+    ("scaffold.top_bar_style" . ("small" "center" "medium" "large" "medium_flexible" "large_flexible" "two_rows"))
+    ("scaffold.scroll_behavior" . ("pinned" "enter_always" "exit_until_collapsed"))
+    ("scaffold.refresh_indicator" . ("default" "loading" "none"))
+    ("scaffold.snackbar_duration" . ("short" "long" "indefinite"))
+    ("enum_list.variant" . ("chips" "radio"))
+    ("scaffold.sheet_state" . ("hidden" "partial" "expanded"))
+    ("tabs.style" . ("primary" "secondary"))
+    ("tab_item.icon_position" . ("above" "leading"))
+    ("scaffold.floating_toolbar_orientation" . ("horizontal" "vertical"))
+    ("scaffold.floating_toolbar_placement" . ("bottom_center" "bottom_start" "bottom_end" "center_start" "center_end"))
+    ("scaffold.floating_toolbar_exit_direction" . ("bottom" "top" "start" "end"))
+    ("pane_scaffold.variant" . ("list_detail" "supporting"))
+    ("navigation_rail.variant" . ("standard" "wide" "modal"))
+    ("scaffold.drawer_variant" . ("modal" "dismissible" "permanent"))
+    ("scaffold.bottom_bar_behavior" . ("pinned" "exit_always"))
+    ("scaffold.fab_position" . ("end" "end_overlay" "center"))
+    ("button.checked_shape" . ("round" "square"))
+    ("navigation_rail.arrangement" . ("top" "center" "bottom"))
+    ("carousel.strategy" . ("multi_browse" "uncontained" "centered_hero"))
+    ("search_bar.variant" . ("full_screen" "docked"))
+    ("button.shape_role" . ("leading" "middle" "trailing" "top" "bottom"))
+    ("theme.layout_direction" . ("ltr" "rtl"))
+    ("window.size_class" . ("compact" "medium" "expanded"))
+    ("snackbar.result" . ("dismissed" "action")))
+  "Contract-projected enum values keyed by their qualified field name.")
+
+(defconst jetpacs-text-input-contract
+  '(:selection (:type "two-number-array" :unit "unicode-scalar" :minimum 0 :order "start<=end" :upper_bound "authored-value" :lifecycle "new-presentation-seed" :when_retained_draft_wins "ignore") :max_length (:type "positive-integer" :unit "unicode-scalar" :behavior "truncate-before-commit" :authored_value_must_fit t :retained_draft_must_fit t) :transform_order ("single_line" "filter" "max_length") :filter_character_sets (:digits "ascii-digit" :alnum "ascii-alphanumeric") :filter_unknown "none" :filter_authored_value_must_match t :filter_retained_draft_must_match t :mask (:slot "#" :minimum_slots 1 :unit "unicode-scalar" :overflow "unformatted" :incompatible_with ("password" "syntax")) :content_padding (:type "non-negative-dp" :applies_to "all-interior-sides") :variant_default "outlined" :variant_unknown "outlined" :hide_keyboard_on_submit_requires "on_submit" :error_description_precedence ("semantics.error" "supporting_text") :logical_value_excludes ("prefix" "suffix" "mask-literals"))
+  "Contract-projected §17.4 text-input constraint envelope.")
 
 (defconst jetpacs-node-schema
   '(

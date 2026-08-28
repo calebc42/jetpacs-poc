@@ -161,6 +161,13 @@ class EbpSemanticsTest {
             put("t", "collapsible")
             put("collapsed", false)
         }
+        val textInput = buildJsonObject {
+            put("t", "text_input")
+            put("id", "code")
+            put("is_error", true)
+            put("supporting_text", "Use six digits")
+            put("max_length", 6)
+        }
 
         compose.setContent {
             Column {
@@ -168,6 +175,7 @@ class EbpSemanticsTest {
                 Box(Modifier.testTag("progress").ebpSemantics(progress) { })
                 Box(Modifier.testTag("indeterminate").ebpSemantics(indeterminate) { })
                 Box(Modifier.testTag("expanded").ebpSemantics(collapsible) { })
+                Box(Modifier.testTag("text-input").ebpSemantics(textInput) { })
             }
         }
 
@@ -181,6 +189,15 @@ class EbpSemanticsTest {
             .assert(SemanticsMatcher.expectValue(
                 SemanticsProperties.StateDescription,
                 "Expanded",
+            ))
+        compose.onNodeWithTag("text-input")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.Error,
+                "Use six digits",
+            ))
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.MaxTextLength,
+                6,
             ))
     }
 

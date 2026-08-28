@@ -3,7 +3,7 @@
 // the same ebp corpus (SPEC 24.5-24.6): the 9.3 known-answer vector, every
 // goldens/wire fixture at whole/1-octet/7-octet chunkings against the
 // manifest's expected outcome, encoder byte syntax, and handshake params
-// checked against contract.json (format 8).
+// checked against contract.json (format 9).
 package com.calebc42.ebp.wire
 
 import java.io.File

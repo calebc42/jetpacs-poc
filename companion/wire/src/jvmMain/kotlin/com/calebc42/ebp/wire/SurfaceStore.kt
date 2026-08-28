@@ -646,7 +646,11 @@ class SurfaceStore(
         when (node.reqString("t")) {
             "text_input" -> value is JsonPrimitive && value.isString &&
                 !node.boolOr("password") &&
-                (!node.boolOr("single_line") || '\n' !in value.content)
+                (!node.boolOr("single_line") || '\n' !in value.content) &&
+                integralLongOrNull(node["max_length"])?.let { maximum ->
+                    textInputScalarLength(value.content) <= maximum
+                } != false &&
+                textInputFilterMatches(value.content, node.stringOrNull("filter"))
             // §13.6: `state` present makes the value schema the enum STRING,
             // not a boolean — a retained boolean draft is incompatible and is
             // erased, which is why tri-state is a distinct member rather than

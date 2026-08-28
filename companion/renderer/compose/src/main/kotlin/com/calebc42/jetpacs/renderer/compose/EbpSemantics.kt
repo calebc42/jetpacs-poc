@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.isEditable
 import androidx.compose.ui.semantics.isTraversalGroup
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.maxTextLength
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.role
@@ -95,6 +96,7 @@ fun Modifier.ebpSemantics(
         if (projected.role == "text_input" || projected.state.readOnly != null) {
             isEditable = projected.state.readOnly != true
         }
+        projected.state.maxTextLength?.let { maxTextLength = it }
         projected.state.toggleState?.let {
             toggleableState = when (it) {
                 SemanticToggleState.OFF -> ToggleableState.Off

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 8).
+"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 9).
 
 The sibling of tools/gen-vocabulary.py, which does the same for the
 Companion's Vocabulary.kt.  Same W0 rule: wire vocabulary is generated from
@@ -12,7 +12,10 @@ node-derived semantics.  These values must not acquire handwritten twins in
 the authoring layer.  Run from the llm-poc-3 root:
 
     python3 tools/gen-jetpacs-vocabulary.py
+
+Use ``--check`` in verification to fail without rewriting a stale projection.
 """
+import argparse
 import json
 from pathlib import Path
 
@@ -20,6 +23,14 @@ ROOT = Path(__file__).resolve().parent.parent
 contract = json.loads((ROOT / "ebp" / "contract.json").read_text(encoding="utf-8"))
 
 OUT = ROOT / "emacs" / "jetpacs-vocabulary.el"
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--check",
+    action="store_true",
+    help="fail instead of writing when the committed projection is stale",
+)
+options = parser.parse_args()
 
 
 def el_strings(values):
@@ -39,6 +50,8 @@ def el_value(value):
         return json.dumps(value)
     if isinstance(value, list):
         return f'({" ".join(el_value(v) for v in value)})'
+    if isinstance(value, dict):
+        return el_plist(value)
     return str(value)
 
 
@@ -76,6 +89,10 @@ semantic_types = " ".join(
 default_semantic_rows = [
     f'    ("{name}" . {el_plist(row)})'
     for name, row in semantics["default_node_semantics"].items()
+]
+enum_rows = [
+    f'    ("{name}" . ({el_strings(values)}))'
+    for name, values in contract["enums"].items()
 ]
 
 body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-binding: t; -*-
@@ -152,6 +169,15 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
 {chr(10).join(default_semantic_rows)})
   "Contract-projected roles and state derivations keyed by Node type.")
 
+(defconst jetpacs-contract-enums
+  '(
+{chr(10).join(enum_rows)})
+  "Contract-projected enum values keyed by their qualified field name.")
+
+(defconst jetpacs-text-input-contract
+  '{el_plist(contract["text_input_schema"])}
+  "Contract-projected §17.4 text-input constraint envelope.")
+
 (defconst jetpacs-node-schema
   '(
 {chr(10).join(rows)})
@@ -164,5 +190,10 @@ for `content_padding'); `jetpacs--wire-name' is the map between them.")
 ;;; jetpacs-vocabulary.el ends here
 '''
 
-OUT.write_text(body, encoding="utf-8")
-print(f"wrote {OUT.relative_to(ROOT)}: {len(rows)} node types")
+if options.check:
+    if not OUT.exists() or OUT.read_text(encoding="utf-8") != body:
+        raise SystemExit(f"stale generated vocabulary: {OUT.relative_to(ROOT)}")
+    print(f"checked {OUT.relative_to(ROOT)}: {len(rows)} node types")
+else:
+    OUT.write_text(body, encoding="utf-8")
+    print(f"wrote {OUT.relative_to(ROOT)}: {len(rows)} node types")

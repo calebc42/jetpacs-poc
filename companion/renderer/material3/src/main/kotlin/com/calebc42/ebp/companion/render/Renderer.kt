@@ -96,7 +96,11 @@ import com.calebc42.ebp.companion.CompletionCandidate
 import com.calebc42.ebp.companion.MaterialRendererBridge
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.EditorSession
+import com.calebc42.ebp.wire.ENUMS
 import com.calebc42.ebp.wire.InputDisplay
+import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
+import com.calebc42.ebp.wire.normalizeTextInput
+import com.calebc42.ebp.wire.textInputScalarToUtf16
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
@@ -668,20 +672,15 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val suffixSlot: (@Composable () -> Unit)? =
         suffixText.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
     val onValueChange: (String) -> Unit = { raw ->
-        // SPEC 17.4: single_line strips every U+000A from entered text.
-        var next = if (singleLine) raw.replace("\n", "") else raw
-        // `filter` reverts characters outside the class at the keystroke,
-        // locally — the companion half of `mask`, so a phone field never
-        // round-trips an alphabetic keypress to Emacs and back.
-        next = when (node.stringOr("filter")) {
-            "digits" -> next.filter { it.isDigit() }
-            "alnum" -> next.filter { it.isLetterOrDigit() }
-            else -> next
-        }
-        // `max_length` refuses committed text past N — paste and IME included,
-        // the same discipline as the single_line newline rule.
-        val cap = node.doubleOr("max_length", 0.0).toInt()
-        if (cap > 0 && next.length > cap) next = next.take(cap)
+        // §17.4 fixes the local order and Unicode unit. This shared helper
+        // keeps Material from silently broadening ASCII filters or splitting
+        // an astral-plane character at max_length.
+        val next = normalizeTextInput(
+            raw,
+            singleLine,
+            node.stringOrNull("filter"),
+            node["max_length"]?.numOrNull()?.toLong(),
+        )
         value = next
         if (!password) {
             ctx.state(id, JsonPrimitive(next))
@@ -705,31 +704,55 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // DecorationBox overload owns — the universal `padding` lands outside the
     // widget as margin and `min_height` cannot shrink the ~56dp interior.
     val innerPad = node["content_padding"]?.numOrNull()
-    if (innerPad != null && !password) {
-        RenderDenseTextInput(node, value, onValueChange, transform,
-            keyboardOptions, keyboardActions, enabled, singleLine, isError,
-            innerPad.toFloat(), labelSlot, placeholderSlot, supportingSlot,
-            leadingSlot, trailingSlot, prefixSlot, suffixSlot, m)
-        return
-    }
     // §17.4 `selection`: seeds the initial TextRange only — re-seeded on an
     // input-reset epoch exactly like `value` — so the field composes through
     // the TextFieldValue overload while the draft store still carries the
     // bare string.
     val selSpec = node.arrOrNull("selection")
     if (selSpec != null && !password) {
-        var sel by remember(ctx.surface, id, ctx.epochOf(id)) {
-            val a = selSpec.mapNotNull { it.numOrNull()?.toInt() }
-            val start = (a.getOrNull(0) ?: 0).coerceIn(0, value.length)
-            val end = (a.getOrNull(1) ?: start).coerceIn(start, value.length)
-            mutableStateOf(androidx.compose.ui.text.TextRange(start, end))
+        val authoredValue = node.stringOr("value")
+        val retainedDraftWins = ctx.storeValue(id)?.strOrNull()?.let {
+            it != authoredValue
+        } ?: false
+        var sel by remember(ctx.surface, id, ctx.path, ctx.epochOf(id)) {
+            if (retainedDraftWins) {
+                // §13.6/17.4: authored offsets belong to authored text. A
+                // retained dirty draft keeps its own presentation state; if
+                // this widget is newly composed, use a collapsed safe caret
+                // rather than apply those offsets to different text.
+                mutableStateOf(androidx.compose.ui.text.TextRange(value.length))
+            } else {
+                val a = selSpec.mapNotNull { it.numOrNull()?.toInt() }
+                val start = textInputScalarToUtf16(value, a.getOrNull(0) ?: 0)
+                val end = textInputScalarToUtf16(
+                    value,
+                    a.getOrNull(1) ?: a.getOrNull(0) ?: 0,
+                )
+                mutableStateOf(androidx.compose.ui.text.TextRange(start, end))
+            }
         }
         val tfv = androidx.compose.ui.text.input.TextFieldValue(value, sel)
         val onTfv: (androidx.compose.ui.text.input.TextFieldValue) -> Unit = {
-            sel = it.selection
             onValueChange(it.text)
+            // Local transforms may shorten the proposed value. Compose uses
+            // UTF-16 offsets, so keep both ends inside the committed text.
+            sel = androidx.compose.ui.text.TextRange(
+                it.selection.start.coerceIn(0, value.length),
+                it.selection.end.coerceIn(0, value.length),
+            )
         }
-        if (node.stringOr("variant") == "filled")
+        if (innerPad != null) {
+            RenderDenseTextInput(
+                node, value, onValueChange, transform,
+                keyboardOptions, keyboardActions, enabled, singleLine, isError,
+                innerPad.toFloat(), labelSlot, placeholderSlot, supportingSlot,
+                leadingSlot, trailingSlot, prefixSlot, suffixSlot, m,
+                textFieldValue = tfv,
+                onTextFieldValueChange = onTfv,
+            )
+            return
+        }
+        if (textInputVariant(node) == "filled")
             TextField(
                 value = tfv, enabled = enabled, visualTransformation = transform,
                 onValueChange = onTfv, label = labelSlot,
@@ -750,7 +773,14 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             modifier = m)
         return
     }
-    if (node.stringOr("variant") == "filled") {
+    if (innerPad != null) {
+        RenderDenseTextInput(node, value, onValueChange, transform,
+            keyboardOptions, keyboardActions, enabled, singleLine, isError,
+            innerPad.toFloat(), labelSlot, placeholderSlot, supportingSlot,
+            leadingSlot, trailingSlot, prefixSlot, suffixSlot, m)
+        return
+    }
+    if (textInputVariant(node) == "filled") {
         TextField(
             value = value, enabled = enabled, visualTransformation = transform,
             onValueChange = onValueChange, label = labelSlot,
@@ -809,26 +839,15 @@ private fun RenderDenseTextInput(
     prefixSlot: (@Composable () -> Unit)?,
     suffixSlot: (@Composable () -> Unit)?,
     m: Modifier,
+    textFieldValue: TextFieldValue? = null,
+    onTextFieldValueChange: ((TextFieldValue) -> Unit)? = null,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val padding = PaddingValues(innerPadDp.dp)
-    val filled = node.stringOr("variant") == "filled"
+    val filled = textInputVariant(node) == "filled"
     val textStyle = MaterialTheme.typography.bodyLarge.copy(
         color = MaterialTheme.colorScheme.onSurface)
-    androidx.compose.foundation.text.BasicTextField(
-        value = value,
-        onValueChange = onValueChange,
-        enabled = enabled,
-        singleLine = singleLine,
-        textStyle = textStyle,
-        cursorBrush = androidx.compose.ui.graphics.SolidColor(
-            MaterialTheme.colorScheme.primary),
-        visualTransformation = transform,
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
-        interactionSource = interaction,
-        modifier = m,
-    ) { inner ->
+    val decoration: @Composable (@Composable () -> Unit) -> Unit = { inner ->
         if (filled)
             TextFieldDefaults.DecorationBox(
                 value = value, innerTextField = inner, enabled = enabled,
@@ -853,6 +872,49 @@ private fun RenderDenseTextInput(
                     enabled = enabled, isError = isError,
                     interactionSource = interaction)
             })
+    }
+    if (textFieldValue != null && onTextFieldValueChange != null) {
+        androidx.compose.foundation.text.BasicTextField(
+            value = textFieldValue,
+            onValueChange = onTextFieldValueChange,
+            enabled = enabled,
+            singleLine = singleLine,
+            textStyle = textStyle,
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                MaterialTheme.colorScheme.primary),
+            visualTransformation = transform,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            interactionSource = interaction,
+            modifier = m,
+            decorationBox = decoration,
+        )
+    } else {
+        androidx.compose.foundation.text.BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            enabled = enabled,
+            singleLine = singleLine,
+            textStyle = textStyle,
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(
+                MaterialTheme.colorScheme.primary),
+            visualTransformation = transform,
+            keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
+            interactionSource = interaction,
+            modifier = m,
+            decorationBox = decoration,
+        )
+    }
+}
+
+/** Resolve the generated enum default/fallback before choosing presentation. */
+private fun textInputVariant(node: JsonObject): String {
+    val authored = node.stringOrNull("variant")
+        ?: return TEXT_INPUT_CONTRACT.variantDefault
+    return when (authored) {
+        in ENUMS.getValue("text_input.variant") -> authored
+        else -> TEXT_INPUT_CONTRACT.variantUnknown
     }
 }
 

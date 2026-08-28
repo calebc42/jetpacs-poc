@@ -392,6 +392,32 @@
         "Help" :icon "info" :on-tap (jetpacs-action "demo.tap")))
       (gethash "00" goldens)))))
 
+(ert-deftest jetpacs-widgets/text-input-contract-golden ()
+  "The full accepted format-9 text-input witness serializes canonically."
+  (let* ((goldens (jetpacs-test--golden-map "text-input"))
+         (case (json-parse-string
+                (gethash "00" goldens)
+                :object-type 'plist :array-type 'array
+                :null-object nil :false-object :json-false))
+         (expected (jetpacs-node->canonical-json (plist-get case :node)))
+         (actual
+          (jetpacs-node->canonical-json
+           (jetpacs-text-input
+            "profile" :value "abc123" :variant 'filled :is-error t
+            :supporting-text "Check this value" :prefix "@"
+            :suffix ".example" :leading-icon "person"
+            :trailing-icon "edit" :max-length 6 :selection '(0 6)
+            :hide-keyboard-on-submit t
+            :on-submit (jetpacs-action "profile.submit")
+            :content-padding 0 :filter 'alnum))))
+    (should (equal expected actual)))
+  ;; JSON false remains an authored boolean; only literal true requires the
+  ;; dependent submit hook.
+  (should (equal :json-false
+                 (plist-get (jetpacs-text-input
+                             "false" :hide-keyboard-on-submit :json-false)
+                            :hide_keyboard_on_submit))))
+
 (ert-deftest jetpacs-widgets/input-validation ()
   "Input constructors enforce their §17.4 rules."
   (should-error (jetpacs-button "x" "not-a-descriptor"))       ; on_tap descriptor
@@ -404,6 +430,20 @@
   (should-error (jetpacs-text-input "i" :password t :value "secret"))
   (should-error (jetpacs-text-input "i" :password t :on-change (jetpacs-action "a.b")))
   (should-error (jetpacs-text-input "i" :keyboard 'braille))
+  ;; text_input's format-9 constraint envelope uses Unicode scalar positions
+  ;; and deterministic ASCII filters, not UTF-8 bytes or Unicode categories.
+  (should (jetpacs-text-input "i" :value "1😀2" :max-length 3
+                              :selection '(1 2) :mask "##-#"))
+  (should-error (jetpacs-text-input "i" :value "1😀2" :max-length 2))
+  (should-error (jetpacs-text-input "i" :value "😀" :selection '(0 2)))
+  (should (jetpacs-text-input "i" :value "Az09" :filter 'alnum))
+  (should-error (jetpacs-text-input "i" :value "café" :filter 'alnum))
+  (should-error (jetpacs-text-input "i" :value "12a" :filter 'digits))
+  (should-error (jetpacs-text-input "i" :hide-keyboard-on-submit t))
+  (should-error (jetpacs-text-input "i" :content-padding -1))
+  (should-error (jetpacs-text-input "i" :mask "literal"))
+  (should-error (jetpacs-text-input "i" :password t :mask "####"))
+  (should-error (jetpacs-text-input "i" :syntax "elisp" :mask "####"))
   ;; enum_list distinct + value-in-options
   (should-error (jetpacs-enum-list "e" (list (jetpacs-enum-option "A" "x")
                                              (jetpacs-enum-option "B" "x"))))

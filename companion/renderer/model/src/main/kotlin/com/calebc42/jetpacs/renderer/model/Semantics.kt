@@ -7,6 +7,7 @@ import com.calebc42.ebp.companion.render.numOrNull
 import com.calebc42.ebp.companion.render.objOrNull
 import com.calebc42.ebp.companion.render.stringOrNull
 import com.calebc42.ebp.wire.DEFAULT_NODE_SEMANTICS
+import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -56,6 +57,7 @@ data class NodeSemanticState(
     val selection: JsonElement? = null,
     val expanded: Boolean? = null,
     val progress: SemanticProgress? = null,
+    val maxTextLength: Int? = null,
 )
 
 /** Live renderer state that legitimately supersedes an authored default. */
@@ -189,13 +191,27 @@ fun projectNodeSemantics(
     val exposesName = authoredName != null || explicitLegacyName != null ||
         explicitLabel != null || explicitIcon != null || role != null ||
         actionsByLabel.isNotEmpty()
+    val explicitError = authored?.nonBlankString("error")
+    val projectedError = explicitError ?: if (
+        type == "text_input" && node.boolOrNull("is_error") == true
+    ) {
+        TEXT_INPUT_CONTRACT.errorDescriptionPrecedence.firstNotNullOfOrNull { source ->
+            when (source) {
+                "semantics.error" -> explicitError
+                "supporting_text" -> node.nonBlankString("supporting_text")
+                else -> error("unsupported generated error-description source $source")
+            }
+        } ?: "Invalid input"
+    } else {
+        null
+    }
 
     return NodeSemantics(
         accessibleName = resolveAccessibleName(node),
         exposesAccessibleName = exposesName,
         description = authored?.nonBlankString("description"),
         stateDescription = authored?.nonBlankString("state_description"),
-        error = authored?.nonBlankString("error"),
+        error = projectedError,
         paneTitle = authored?.nonBlankString("pane_title"),
         headingLevel = authored?.integerOrNull("heading_level")
             ?: defaults?.headingLevel,
@@ -231,6 +247,12 @@ fun projectNodeSemantics(
             selection = selection,
             expanded = expanded,
             progress = progress,
+            maxTextLength = if (type == "text_input") {
+                node["max_length"]?.numOrNull()?.toLong()
+                    ?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt()
+            } else {
+                null
+            },
         ),
         actions = actionsByLabel.values.toList(),
     )

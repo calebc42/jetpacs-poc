@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Generate companion/wire Vocabulary.kt from ebp/contract.json (format 8).
+"""Generate companion/wire Vocabulary.kt from ebp/contract.json (format 9).
 
 The W0 pattern: wire vocabulary is generated from the authored contract,
 never hand-maintained; a drift test re-reads contract.json and fails if the
 committed generated file disagrees. Run from the llm-poc-3 root:
 
     python3 tools/gen-vocabulary.py
+
+Use ``--check`` in verification to fail without rewriting a stale projection.
 """
+import argparse
 import json
 from pathlib import Path
 
@@ -14,6 +17,14 @@ ROOT = Path(__file__).resolve().parent.parent
 contract = json.loads((ROOT / "ebp" / "contract.json").read_text(encoding="utf-8"))
 
 OUT = ROOT / "companion/wire/src/jvmMain/kotlin/com/calebc42/ebp/wire/Vocabulary.kt"
+
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument(
+    "--check",
+    action="store_true",
+    help="fail instead of writing when the committed projection is stale",
+)
+options = parser.parse_args()
 
 
 def kt_set(values):
@@ -59,6 +70,11 @@ for name, row in contract["actions"]["schema"].items():
 field_type_rows = [
     f"    \"{name}\" to \"{t}\","
     for name, t in sorted(contract["field_types"].items())
+]
+
+enum_rows = [
+    f'    "{name}" to {kt_set(values)},'
+    for name, values in contract["enums"].items()
 ]
 
 semantics = contract["semantics_schema"]
@@ -179,6 +195,59 @@ data class DefaultSemanticRow(
     val customActionsFrom: List<String> = emptyList(),
 )
 
+/** Contract-projected authored selection seed for a text input. */
+data class TextInputSelectionContract(
+    val type: String,
+    val unit: String,
+    val minimum: Long,
+    val order: String,
+    val upperBound: String,
+    val lifecycle: String,
+    val whenRetainedDraftWins: String,
+)
+
+/** Contract-projected maximum-length rule for a text input. */
+data class TextInputMaxLengthContract(
+    val type: String,
+    val unit: String,
+    val behavior: String,
+    val authoredValueMustFit: Boolean,
+    val retainedDraftMustFit: Boolean,
+)
+
+/** Contract-projected mask grammar for a text input. */
+data class TextInputMaskContract(
+    val slot: String,
+    val minimumSlots: Int,
+    val unit: String,
+    val overflow: String,
+    val incompatibleWith: Set<String>,
+)
+
+/** Contract-projected interior-padding rule for a text input. */
+data class TextInputPaddingContract(
+    val type: String,
+    val appliesTo: String,
+)
+
+/** Complete generated §17.4 constraint envelope for `text_input`. */
+data class TextInputContract(
+    val selection: TextInputSelectionContract,
+    val maxLength: TextInputMaxLengthContract,
+    val transformOrder: List<String>,
+    val filterCharacterSets: Map<String, String>,
+    val filterUnknown: String,
+    val filterAuthoredValueMustMatch: Boolean,
+    val filterRetainedDraftMustMatch: Boolean,
+    val mask: TextInputMaskContract,
+    val contentPadding: TextInputPaddingContract,
+    val variantDefault: String,
+    val variantUnknown: String,
+    val hideKeyboardOnSubmitRequires: String,
+    val errorDescriptionPrecedence: List<String>,
+    val logicalValueExcludes: List<String>,
+)
+
 const val CONTRACT_FORMAT = {contract["contract_format"]}
 const val PROTOCOL_VERSION = {contract["protocol_version"]}
 const val SPEC_VERSION = "{contract["spec_version"]}"
@@ -207,6 +276,51 @@ val ACCESSIBLE_NAME_PRECEDENCE: List<String> = listOf(
 
 val DEFAULT_NODE_SEMANTICS: Map<String, DefaultSemanticRow> = mapOf(
 {chr(10).join(default_rows)}
+)
+
+/** Contract-projected enum vocabulary; senders reject unknown authored values. */
+val ENUMS: Map<String, Set<String>> = mapOf(
+{chr(10).join(enum_rows)}
+)
+
+val TEXT_INPUT_CONTRACT = TextInputContract(
+    selection = TextInputSelectionContract(
+        type = "{contract["text_input_schema"]["selection"]["type"]}",
+        unit = "{contract["text_input_schema"]["selection"]["unit"]}",
+        minimum = {contract["text_input_schema"]["selection"]["minimum"]}L,
+        order = "{contract["text_input_schema"]["selection"]["order"]}",
+        upperBound = "{contract["text_input_schema"]["selection"]["upper_bound"]}",
+        lifecycle = "{contract["text_input_schema"]["selection"]["lifecycle"]}",
+        whenRetainedDraftWins = "{contract["text_input_schema"]["selection"]["when_retained_draft_wins"]}",
+    ),
+    maxLength = TextInputMaxLengthContract(
+        type = "{contract["text_input_schema"]["max_length"]["type"]}",
+        unit = "{contract["text_input_schema"]["max_length"]["unit"]}",
+        behavior = "{contract["text_input_schema"]["max_length"]["behavior"]}",
+        authoredValueMustFit = {str(contract["text_input_schema"]["max_length"]["authored_value_must_fit"]).lower()},
+        retainedDraftMustFit = {str(contract["text_input_schema"]["max_length"]["retained_draft_must_fit"]).lower()},
+    ),
+    transformOrder = {kt_list(contract["text_input_schema"]["transform_order"])},
+    filterCharacterSets = {kt_map(contract["text_input_schema"]["filter_character_sets"])},
+    filterUnknown = "{contract["text_input_schema"]["filter_unknown"]}",
+    filterAuthoredValueMustMatch = {str(contract["text_input_schema"]["filter_authored_value_must_match"]).lower()},
+    filterRetainedDraftMustMatch = {str(contract["text_input_schema"]["filter_retained_draft_must_match"]).lower()},
+    mask = TextInputMaskContract(
+        slot = "{contract["text_input_schema"]["mask"]["slot"]}",
+        minimumSlots = {contract["text_input_schema"]["mask"]["minimum_slots"]},
+        unit = "{contract["text_input_schema"]["mask"]["unit"]}",
+        overflow = "{contract["text_input_schema"]["mask"]["overflow"]}",
+        incompatibleWith = {kt_set(contract["text_input_schema"]["mask"]["incompatible_with"])},
+    ),
+    contentPadding = TextInputPaddingContract(
+        type = "{contract["text_input_schema"]["content_padding"]["type"]}",
+        appliesTo = "{contract["text_input_schema"]["content_padding"]["applies_to"]}",
+    ),
+    variantDefault = "{contract["text_input_schema"]["variant_default"]}",
+    variantUnknown = "{contract["text_input_schema"]["variant_unknown"]}",
+    hideKeyboardOnSubmitRequires = "{contract["text_input_schema"]["hide_keyboard_on_submit_requires"]}",
+    errorDescriptionPrecedence = {kt_list(contract["text_input_schema"]["error_description_precedence"])},
+    logicalValueExcludes = {kt_list(contract["text_input_schema"]["logical_value_excludes"])},
 )
 
 /** SPEC 14.6: node types whose id/value participate in input state. */
@@ -238,5 +352,12 @@ val FIELD_TYPES: Map<String, String> = mapOf(
 )
 """
 
-OUT.write_text(body, encoding="utf-8")
-print(f"wrote {OUT.relative_to(ROOT)}: {len(rows)} nodes, {len(action_rows)} action rows")
+if options.check:
+    if not OUT.exists() or OUT.read_text(encoding="utf-8") != body:
+        raise SystemExit(f"stale generated vocabulary: {OUT.relative_to(ROOT)}")
+    print(f"checked {OUT.relative_to(ROOT)}: {len(rows)} nodes, "
+          f"{len(action_rows)} action rows")
+else:
+    OUT.write_text(body, encoding="utf-8")
+    print(f"wrote {OUT.relative_to(ROOT)}: {len(rows)} nodes, "
+          f"{len(action_rows)} action rows")

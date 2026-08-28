@@ -19,6 +19,8 @@ emacs() {
 # projections still have one manifest authority.  Exercise the generic CLI on
 # a synthetic extension, then prove the installed Glasspane projections are
 # current without rewriting the worktree.
+python3 tools/gen-vocabulary.py --check
+python3 tools/gen-jetpacs-vocabulary.py --check
 python3 test/test_renderer_extension_generator.py
 python3 tools/gen-renderer-extension-vocabulary.py --check
 python3 tools/gen-renderer-extension-vocabulary.py \
