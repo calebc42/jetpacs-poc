@@ -969,6 +969,9 @@ class VocabularyDriftTest {
             )
         }
         val textInput = contract.reqObj("text_input_schema")
+        val lineCounts = textInput.reqObj("line_counts")
+        val password = textInput.reqObj("password")
+        val clearOnSubmit = textInput.reqObj("clear_on_submit")
         val selection = textInput.reqObj("selection")
         val maximum = textInput.reqObj("max_length")
         val filterSets = textInput.reqObj("filter_character_sets")
@@ -977,6 +980,36 @@ class VocabularyDriftTest {
         val padding = textInput.reqObj("content_padding")
         assertEquals(
             TextInputContract(
+                lineCounts = TextInputLineCountsContract(
+                    type = lineCounts.reqString("type"),
+                    order = lineCounts.reqString("order"),
+                    textInputDefaultMin =
+                        integralLongOrNull(lineCounts["text_input_default_min"])!!.toInt(),
+                    textInputDefaultMax = lineCounts.reqString("text_input_default_max"),
+                    singleLineValue =
+                        integralLongOrNull(lineCounts["single_line_value"])!!.toInt(),
+                    singleLineForbids = lineCounts.reqString("single_line_forbids"),
+                ),
+                password = TextInputPasswordContract(
+                    authoredValue = password.reqString("authored_value"),
+                    onChange = password.reqString("on_change"),
+                    clearOnSubmit = password.reqString("clear_on_submit"),
+                    submitCapture = password.reqString("submit_capture"),
+                    captureAllowedFrom = password.reqArr("capture_allowed_from")
+                        .mapNotNull(JsonElement::asStringOrNull).toSet(),
+                    remotePolicy = password.reqString("remote_policy"),
+                    forbiddenDescriptorMembers =
+                        password.reqArr("forbidden_descriptor_members")
+                            .mapNotNull(JsonElement::asStringOrNull).toSet(),
+                    requiresSessionState = password.reqString("requires_session_state"),
+                    storage = password.reqString("storage"),
+                    deadlineMillis = integralLongOrNull(password["deadline_ms"])!!,
+                ),
+                clearOnSubmit = TextInputClearOnSubmitContract(
+                    requires = clearOnSubmit.reqString("requires"),
+                    forbiddenWhenOnSubmit =
+                        clearOnSubmit.reqString("forbidden_when_on_submit"),
+                ),
                 selection = TextInputSelectionContract(
                     type = selection.reqString("type"),
                     unit = selection.reqString("unit"),

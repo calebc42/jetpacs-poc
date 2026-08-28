@@ -2169,7 +2169,9 @@ template over the stored value (every `#' consumes one Unicode scalar,
 everything else is literal filler that never enters the value); FILTER
 reverts characters outside deterministic ASCII digits/alnum at the keystroke,
 locally.  MAX-LENGTH is a hard Unicode-scalar bound on authored and local
-values."
+values.  A PASSWORD submission must explicitly capture ID, uses only the drop
+policy, and cannot request CLEAR-ON-SUBMIT; ordinary clearing requires a remote
+ON-SUBMIT descriptor."
   (jetpacs-check-identifier id ":id")
   (when value (jetpacs-require-string value ":value"))
   (when hint (jetpacs-require-string hint ":hint"))
@@ -2249,9 +2251,23 @@ values."
     (when on-change
       (error "jetpacs-text-input: password :on-change must be absent (SPEC 17.4)"))
     (when (eq clear-on-submit t)
-      (error "jetpacs-text-input: password :clear-on-submit must be absent or false (SPEC 17.4)")))
-  (when (and (eq clear-on-submit t) on-submit (plist-member on-submit :builtin))
-    (error "jetpacs-text-input: :clear-on-submit is invalid when :on-submit is a builtin (SPEC 17.4)"))
+      (error "jetpacs-text-input: password :clear-on-submit must be absent or false (SPEC 17.4)"))
+    (when on-submit
+      (let* ((password-spec (plist-get jetpacs-text-input-contract :password))
+             (capture (plist-get on-submit :capture_fields))
+             (policy (or (plist-get on-submit :when_offline) "drop")))
+        (unless (member id (append capture nil))
+          (error "jetpacs-text-input: password :on-submit must capture its own ID (SPEC 14.6)"))
+        (when (and (plist-member on-submit :action)
+                   (not (equal policy (plist-get password-spec :remote_policy))))
+          (error "jetpacs-text-input: password :on-submit must use the drop policy (SPEC 14.6)"))
+        (dolist (member (plist-get password-spec :forbidden_descriptor_members))
+          (when (plist-member on-submit (intern (concat ":" member)))
+            (error "jetpacs-text-input: password :on-submit forbids :%s (SPEC 14.6)"
+                   member))))))
+  (when (and (eq clear-on-submit t)
+             (not (and on-submit (plist-member on-submit :action))))
+    (error "jetpacs-text-input: :clear-on-submit requires a remote :on-submit (SPEC 17.4)"))
   (jetpacs-make-node "text_input"
                  :id id :value value :hint hint :label label
                  :on_change on-change :on_submit on-submit

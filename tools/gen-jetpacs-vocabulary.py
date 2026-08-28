@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 9).
+"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 10).
 
 The sibling of tools/gen-vocabulary.py, which does the same for the
 Companion's Vocabulary.kt.  Same W0 rule: wire vocabulary is generated from

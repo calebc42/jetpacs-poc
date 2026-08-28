@@ -84,6 +84,14 @@ private val CONFIRM_MEMBERS =
 private val OPAQUE_NODE_WALK_MEMBERS = setOf("args", "meta", "value")
 
 object SpecValidator {
+    private data class CaptureRef(
+        val path: String,
+        val names: List<String>,
+        val descriptor: JsonObject,
+        val hook: String,
+        val ownerId: String?,
+    )
+
     private data class SemanticCollectionBounds(
         val rows: Long,
         val columns: Long,
@@ -118,7 +126,7 @@ object SpecValidator {
     ) {
         val ids = mutableSetOf<String>()
         val statefuls = mutableMapOf<String, JsonObject>()
-        val captureRefs = mutableListOf<Pair<String, List<String>>>()
+        val captureRefs = mutableListOf<CaptureRef>()
         // variant.switch descriptors may precede their host in the tree
         // (a scaffold top bar normally precedes its body), so resolve them
         // only after the complete atomic document has been walked.
@@ -178,11 +186,37 @@ object SpecValidator {
         // SPEC 14.1: each capture name resolves to exactly one stateful node
         // in the document. IDs are unique across the document (SPEC 16.1),
         // so membership in `statefuls` is the exact resolution test.
-        for ((refPath, names) in ctx.captureRefs)
-            for ((i, name) in names.withIndex())
-                if (!ctx.statefuls.containsKey(name))
-                    throw ContentInvalid("$refPath.capture_fields[$i]",
+        for (ref in ctx.captureRefs) {
+            for ((i, name) in ref.names.withIndex()) {
+                val captured = ctx.statefuls[name]
+                    ?: throw ContentInvalid("${ref.path}.capture_fields[$i]",
                         "must name a stateful node in the document")
+                if (captured.stringOrNull("t") == "text_input" &&
+                    captured.boolOr("password")) {
+                    val ownSubmit = ref.hook == "on_submit" && ref.ownerId == name &&
+                        "own-on_submit" in TEXT_INPUT_CONTRACT.password.captureAllowedFrom
+                    val dialogSubmit = ref.descriptor.stringOrNull("builtin") ==
+                        "dialog.submit" &&
+                        "dialog.submit" in TEXT_INPUT_CONTRACT.password.captureAllowedFrom
+                    if (!ownSubmit && !dialogSubmit)
+                        throw ContentInvalid("${ref.path}.capture_fields[$i]",
+                            "password may be captured only by its own on_submit or dialog.submit")
+                    if ("action" in ref.descriptor) {
+                        val policy = if ("when_offline" in ref.descriptor)
+                            ref.descriptor.stringOrNull("when_offline") else OFFLINE_DEFAULT
+                        if (policy != TEXT_INPUT_CONTRACT.password.remotePolicy)
+                            throw ContentInvalid("${ref.path}.when_offline",
+                                "password capture must use drop")
+                        for (member in
+                            TEXT_INPUT_CONTRACT.password.forbiddenDescriptorMembers) {
+                            if (member in ref.descriptor)
+                                throw ContentInvalid("${ref.path}.$member",
+                                    "invalid for a password capture")
+                        }
+                    }
+                }
+            }
+        }
         for ((refPath, id, requested) in ctx.variantRefs) {
             val host = ctx.statefuls[id]
             if (host?.stringOrNull("t") != "variant_host")
@@ -518,7 +552,8 @@ object SpecValidator {
                                     "$path.$key",
                                     "action descriptor must be an object",
                                 )
-                            validateAction(child, "$path.$key", key, ctx)
+                            validateAction(child, "$path.$key", key, ctx,
+                                ownerId = node.stringOrNull("id"))
                         }
                         known && (key == "swipe_start" || key == "swipe_end") -> {
                             if (child !is JsonObject)
@@ -737,6 +772,7 @@ object SpecValidator {
                     "$actionPath.on_action",
                     "semantics.on_action",
                     ctx,
+                    ownerId = node.stringOrNull("id"),
                 )
             }
         }
@@ -847,6 +883,41 @@ object SpecValidator {
     private fun validateTextInput(node: JsonObject, path: String, text: String?) {
         val authored = text ?: ""
         val scalarLength = textInputScalarLength(authored).toLong()
+
+        if (node.boolOr("password")) {
+            if (node.boolOr("clear_on_submit"))
+                throw ContentInvalid(
+                    "$path.clear_on_submit",
+                    "password clear_on_submit must be absent or false",
+                )
+            node.objOrNull("on_submit")?.let { submit ->
+                val capture = submit.arrOrNull("capture_fields")
+                val id = node.stringOrNull("id")
+                if (id == null || capture?.any { it.asStringOrNull() == id } != true)
+                    throw ContentInvalid(
+                        "$path.on_submit.capture_fields",
+                        "password submit must capture its own id",
+                    )
+                if ("action" in submit) {
+                    val policy = if ("when_offline" in submit)
+                        submit.stringOrNull("when_offline") else OFFLINE_DEFAULT
+                    if (policy != TEXT_INPUT_CONTRACT.password.remotePolicy)
+                        throw ContentInvalid(
+                            "$path.on_submit.when_offline",
+                            "password submit must use drop",
+                        )
+                }
+            }
+        }
+
+        if (node.boolOr("clear_on_submit")) {
+            val submit = node.objOrNull("on_submit")
+            if (submit == null || "action" !in submit)
+                throw ContentInvalid(
+                    "$path.clear_on_submit",
+                    "requires ${TEXT_INPUT_CONTRACT.clearOnSubmit.requires}",
+                )
+        }
 
         if ("selection" in node) {
             val selection = node.arrOrNull("selection")
@@ -997,10 +1068,15 @@ object SpecValidator {
                     throw ContentInvalid("$path.value", "text_input value must be a string")
                 val text = value?.asStringOrNull()
                 validateSingleLineValue(node, path)
-                // SPEC 17.4: a snapshot must not seed a password.
-                if (node.boolOr("password") &&
-                    (text != null && text.isNotEmpty() || "on_change" in node))
-                    throw ContentInvalid(path, "password nodes cannot seed values or publish state")
+                // SPEC 17.4: a snapshot must neither seed nor publish a
+                // password. Keep the two diagnostics distinct so all
+                // language validators witness the same failed rule.
+                if (node.boolOr("password") && text != null && text.isNotEmpty())
+                    throw ContentInvalid("$path.value",
+                        "password value must be absent or empty")
+                if (node.boolOr("password") && "on_change" in node)
+                    throw ContentInvalid("$path.on_change",
+                        "password on_change must be absent")
                 validateLineCounts(node, path)
                 validateTextInput(node, path, text)
             }
@@ -1334,13 +1410,16 @@ object SpecValidator {
         val authoredMax = integralLongOrNull(node["max_lines"])
         val singleLine = node.boolOr("single_line")
         val editor = node.reqString("t") == "editor"
-        val min = authoredMin ?: if (editor && !singleLine) 3L else 1L
+        val textInputDefaultMin =
+            TEXT_INPUT_CONTRACT.lineCounts.textInputDefaultMin.toLong()
+        val min = authoredMin ?: if (editor && !singleLine) 3L else textInputDefaultMin
         val max = authoredMax ?: when {
-            singleLine -> 1L
+            singleLine -> TEXT_INPUT_CONTRACT.lineCounts.singleLineValue.toLong()
             editor -> Long.MAX_VALUE
             else -> min
         }
-        if (singleLine && (min != 1L || max != 1L))
+        val singleLineValue = TEXT_INPUT_CONTRACT.lineCounts.singleLineValue.toLong()
+        if (singleLine && (min != singleLineValue || max != singleLineValue))
             throw ContentInvalid(path, "single_line requires line counts of 1")
         if (min > max)
             throw ContentInvalid(path, "min_lines must not exceed max_lines")
@@ -1677,7 +1756,13 @@ object SpecValidator {
     }
 
     /** SPEC 14.1-14.3: the discriminated ActionDescriptor schema. */
-    private fun validateAction(obj: JsonObject, path: String, hook: String, ctx: Ctx) {
+    private fun validateAction(
+        obj: JsonObject,
+        path: String,
+        hook: String,
+        ctx: Ctx,
+        ownerId: String? = null,
+    ) {
         val hasAction = "action" in obj
         val hasBuiltin = "builtin" in obj
         if (hasAction == hasBuiltin)
@@ -1791,7 +1876,7 @@ object SpecValidator {
                     throw ContentInvalid("$path.capture_fields[$i]", "duplicate capture field")
                 names.add(nm)
             }
-            ctx.captureRefs.add(path to names)
+            ctx.captureRefs.add(CaptureRef(path, names, obj, hook, ownerId))
         }
         for (req in row.required)
             if (req != "builtin" && req !in obj)

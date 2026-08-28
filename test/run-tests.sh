@@ -30,6 +30,11 @@ python3 tools/gen-renderer-extension-vocabulary.py \
   --elisp-output emacs/apps/jetpacs-components/jetpacs-components-vocabulary.el \
   --check
 
+# Amendment #181: one deterministic 10,000-case corpus must agree across the
+# Python reference receiver, Kotlin receiver (the wire suite), and public
+# Elisp author.  This runner covers the first and third against identical rows.
+sh test/run-text-input-corpus.sh
+
 # The startup-layout contract: one selected HOME, one marked early-init
 # redirect, one marked normal-init seam, and every managed artifact below
 # ~/.emacs.d/jetpacs. This is a hermetic fake-device run of the exact Termux

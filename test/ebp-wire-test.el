@@ -222,7 +222,7 @@ safe integers; null and fractional numbers never."
   (should-not (ebp-valid-request-id-p 7.0))
   (should-not (ebp-valid-request-id-p nil)))
 
-;;;; Handshake params against contract.json (format 9)
+;;;; Handshake params against contract.json (format 10)
 
 (ert-deftest ebp-test-handshake-params-match-contract ()
   "Builder output carries exactly the contract's required params."

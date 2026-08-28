@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 
-;; GENERATED from ebp/contract.json (format 9, spec
+;; GENERATED from ebp/contract.json (format 10, spec
 ;; 3.1.0-draft) by tools/gen-jetpacs-vocabulary.py -- DO NOT EDIT.
 ;; `jetpacs-widgets/catalog-node-schema' re-reads the contract and fails on
 ;; any disagreement, exactly as the other `catalog-*' mirrors do.
@@ -23,7 +23,7 @@
 
 ;;; Code:
 
-(defconst jetpacs-contract-format 9
+(defconst jetpacs-contract-format 10
   "The `contract_format' this vocabulary was generated from.")
 
 (defconst jetpacs-protocol-version 3
@@ -162,7 +162,7 @@
   "Contract-projected enum values keyed by their qualified field name.")
 
 (defconst jetpacs-text-input-contract
-  '(:selection (:type "two-number-array" :unit "unicode-scalar" :minimum 0 :order "start<=end" :upper_bound "authored-value" :lifecycle "new-presentation-seed" :when_retained_draft_wins "ignore") :max_length (:type "positive-integer" :unit "unicode-scalar" :behavior "truncate-before-commit" :authored_value_must_fit t :retained_draft_must_fit t) :transform_order ("single_line" "filter" "max_length") :filter_character_sets (:digits "ascii-digit" :alnum "ascii-alphanumeric") :filter_unknown "none" :filter_authored_value_must_match t :filter_retained_draft_must_match t :mask (:slot "#" :minimum_slots 1 :unit "unicode-scalar" :overflow "unformatted" :incompatible_with ("password" "syntax")) :content_padding (:type "non-negative-dp" :applies_to "all-interior-sides") :variant_default "outlined" :variant_unknown "outlined" :hide_keyboard_on_submit_requires "on_submit" :error_description_precedence ("semantics.error" "supporting_text") :logical_value_excludes ("prefix" "suffix" "mask-literals"))
+  '(:line_counts (:type "positive-integer" :order "min<=max" :text_input_default_min 1 :text_input_default_max "min_lines" :single_line_value 1 :single_line_forbids "U+000A") :password (:authored_value "absent-or-empty" :on_change "absent" :clear_on_submit "absent-or-false" :submit_capture "self" :capture_allowed_from ("own-on_submit" "dialog.submit") :remote_policy "drop" :forbidden_descriptor_members ("dedupe" "ttl_s") :requires_session_state "READY" :storage "volatile" :deadline_ms 30000) :clear_on_submit (:requires "remote-on_submit" :forbidden_when_on_submit "builtin") :selection (:type "two-number-array" :unit "unicode-scalar" :minimum 0 :order "start<=end" :upper_bound "authored-value" :lifecycle "new-presentation-seed" :when_retained_draft_wins "ignore") :max_length (:type "positive-integer" :unit "unicode-scalar" :behavior "truncate-before-commit" :authored_value_must_fit t :retained_draft_must_fit t) :transform_order ("single_line" "filter" "max_length") :filter_character_sets (:digits "ascii-digit" :alnum "ascii-alphanumeric") :filter_unknown "none" :filter_authored_value_must_match t :filter_retained_draft_must_match t :mask (:slot "#" :minimum_slots 1 :unit "unicode-scalar" :overflow "unformatted" :incompatible_with ("password" "syntax")) :content_padding (:type "non-negative-dp" :applies_to "all-interior-sides") :variant_default "outlined" :variant_unknown "outlined" :hide_keyboard_on_submit_requires "on_submit" :error_description_precedence ("semantics.error" "supporting_text") :logical_value_excludes ("prefix" "suffix" "mask-literals"))
   "Contract-projected §17.4 text-input constraint envelope.")
 
 (defconst jetpacs-node-schema

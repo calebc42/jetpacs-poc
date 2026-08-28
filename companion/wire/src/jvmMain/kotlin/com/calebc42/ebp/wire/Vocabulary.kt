@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// GENERATED from ebp/contract.json (format 9,
+// GENERATED from ebp/contract.json (format 10,
 // spec 3.1.0-draft) by tools/gen-vocabulary.py — DO NOT EDIT.
 // VocabularyDriftTest re-reads the contract and fails on any disagreement.
 package com.calebc42.ebp.wire
@@ -51,6 +51,36 @@ data class TextInputSelectionContract(
     val whenRetainedDraftWins: String,
 )
 
+/** Contract-projected line-count envelope shared by text input validators. */
+data class TextInputLineCountsContract(
+    val type: String,
+    val order: String,
+    val textInputDefaultMin: Int,
+    val textInputDefaultMax: String,
+    val singleLineValue: Int,
+    val singleLineForbids: String,
+)
+
+/** Contract-projected password submission and lifetime boundary. */
+data class TextInputPasswordContract(
+    val authoredValue: String,
+    val onChange: String,
+    val clearOnSubmit: String,
+    val submitCapture: String,
+    val captureAllowedFrom: Set<String>,
+    val remotePolicy: String,
+    val forbiddenDescriptorMembers: Set<String>,
+    val requiresSessionState: String,
+    val storage: String,
+    val deadlineMillis: Long,
+)
+
+/** Contract-projected precondition for clearing an ordinary submitted value. */
+data class TextInputClearOnSubmitContract(
+    val requires: String,
+    val forbiddenWhenOnSubmit: String,
+)
+
 /** Contract-projected maximum-length rule for a text input. */
 data class TextInputMaxLengthContract(
     val type: String,
@@ -77,6 +107,9 @@ data class TextInputPaddingContract(
 
 /** Complete generated §17.4 constraint envelope for `text_input`. */
 data class TextInputContract(
+    val lineCounts: TextInputLineCountsContract,
+    val password: TextInputPasswordContract,
+    val clearOnSubmit: TextInputClearOnSubmitContract,
     val selection: TextInputSelectionContract,
     val maxLength: TextInputMaxLengthContract,
     val transformOrder: List<String>,
@@ -93,7 +126,7 @@ data class TextInputContract(
     val logicalValueExcludes: List<String>,
 )
 
-const val CONTRACT_FORMAT = 9
+const val CONTRACT_FORMAT = 10
 const val PROTOCOL_VERSION = 3
 const val SPEC_VERSION = "3.1.0-draft"
 
@@ -213,6 +246,30 @@ val ENUMS: Map<String, Set<String>> = mapOf(
 )
 
 val TEXT_INPUT_CONTRACT = TextInputContract(
+    lineCounts = TextInputLineCountsContract(
+        type = "positive-integer",
+        order = "min<=max",
+        textInputDefaultMin = 1,
+        textInputDefaultMax = "min_lines",
+        singleLineValue = 1,
+        singleLineForbids = "U+000A",
+    ),
+    password = TextInputPasswordContract(
+        authoredValue = "absent-or-empty",
+        onChange = "absent",
+        clearOnSubmit = "absent-or-false",
+        submitCapture = "self",
+        captureAllowedFrom = setOf("own-on_submit", "dialog.submit"),
+        remotePolicy = "drop",
+        forbiddenDescriptorMembers = setOf("dedupe", "ttl_s"),
+        requiresSessionState = "READY",
+        storage = "volatile",
+        deadlineMillis = 30000L,
+    ),
+    clearOnSubmit = TextInputClearOnSubmitContract(
+        requires = "remote-on_submit",
+        forbiddenWhenOnSubmit = "builtin",
+    ),
     selection = TextInputSelectionContract(
         type = "two-number-array",
         unit = "unicode-scalar",

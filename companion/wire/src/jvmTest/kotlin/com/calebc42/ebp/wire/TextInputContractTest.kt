@@ -10,7 +10,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Test
 
-/** Cross-language conformance witnesses for the format-9 §17.4 envelope. */
+/** Cross-language conformance witnesses for the format-10 §17.4 envelope. */
 class TextInputContractTest {
     private val ebpDir = File(
         System.getProperty("ebp.dir") ?: error("ebp.dir system property not set"),

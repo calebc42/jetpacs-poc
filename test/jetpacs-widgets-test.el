@@ -393,7 +393,7 @@
       (gethash "00" goldens)))))
 
 (ert-deftest jetpacs-widgets/text-input-contract-golden ()
-  "The full accepted format-9 text-input witness serializes canonically."
+  "The full accepted format-10 text-input witness serializes canonically."
   (let* ((goldens (jetpacs-test--golden-map "text-input"))
          (case (json-parse-string
                 (gethash "00" goldens)
@@ -429,8 +429,23 @@
   (should-error (jetpacs-text-input "i" :single-line t :value "a\nb"))
   (should-error (jetpacs-text-input "i" :password t :value "secret"))
   (should-error (jetpacs-text-input "i" :password t :on-change (jetpacs-action "a.b")))
+  (should-error (jetpacs-text-input "i" :password t
+                                    :on-submit (jetpacs-action "a.b")))
+  (should
+   (jetpacs-text-input
+    "i" :password t
+    :on-submit (jetpacs-action "a.b" :capture-fields '("i"))))
+  (should-error
+   (jetpacs-text-input
+    "i" :password t
+    :on-submit (jetpacs-action "a.b" :capture-fields '("i")
+                               :when-offline 'queue :ttl-s 60)))
+  (should-error (jetpacs-text-input "i" :clear-on-submit t))
+  (should-error (jetpacs-text-input
+                 "i" :clear-on-submit t
+                 :on-submit (jetpacs-dialog-submit)))
   (should-error (jetpacs-text-input "i" :keyboard 'braille))
-  ;; text_input's format-9 constraint envelope uses Unicode scalar positions
+  ;; text_input's format-10 constraint envelope uses Unicode scalar positions
   ;; and deterministic ASCII filters, not UTF-8 bytes or Unicode categories.
   (should (jetpacs-text-input "i" :value "1😀2" :max-length 3
                               :selection '(1 2) :mask "##-#"))

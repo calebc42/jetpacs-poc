@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate companion/wire Vocabulary.kt from ebp/contract.json (format 9).
+"""Generate companion/wire Vocabulary.kt from ebp/contract.json (format 10).
 
 The W0 pattern: wire vocabulary is generated from the authored contract,
 never hand-maintained; a drift test re-reads contract.json and fails if the
@@ -206,6 +206,36 @@ data class TextInputSelectionContract(
     val whenRetainedDraftWins: String,
 )
 
+/** Contract-projected line-count envelope shared by text input validators. */
+data class TextInputLineCountsContract(
+    val type: String,
+    val order: String,
+    val textInputDefaultMin: Int,
+    val textInputDefaultMax: String,
+    val singleLineValue: Int,
+    val singleLineForbids: String,
+)
+
+/** Contract-projected password submission and lifetime boundary. */
+data class TextInputPasswordContract(
+    val authoredValue: String,
+    val onChange: String,
+    val clearOnSubmit: String,
+    val submitCapture: String,
+    val captureAllowedFrom: Set<String>,
+    val remotePolicy: String,
+    val forbiddenDescriptorMembers: Set<String>,
+    val requiresSessionState: String,
+    val storage: String,
+    val deadlineMillis: Long,
+)
+
+/** Contract-projected precondition for clearing an ordinary submitted value. */
+data class TextInputClearOnSubmitContract(
+    val requires: String,
+    val forbiddenWhenOnSubmit: String,
+)
+
 /** Contract-projected maximum-length rule for a text input. */
 data class TextInputMaxLengthContract(
     val type: String,
@@ -232,6 +262,9 @@ data class TextInputPaddingContract(
 
 /** Complete generated §17.4 constraint envelope for `text_input`. */
 data class TextInputContract(
+    val lineCounts: TextInputLineCountsContract,
+    val password: TextInputPasswordContract,
+    val clearOnSubmit: TextInputClearOnSubmitContract,
     val selection: TextInputSelectionContract,
     val maxLength: TextInputMaxLengthContract,
     val transformOrder: List<String>,
@@ -284,6 +317,30 @@ val ENUMS: Map<String, Set<String>> = mapOf(
 )
 
 val TEXT_INPUT_CONTRACT = TextInputContract(
+    lineCounts = TextInputLineCountsContract(
+        type = "{contract["text_input_schema"]["line_counts"]["type"]}",
+        order = "{contract["text_input_schema"]["line_counts"]["order"]}",
+        textInputDefaultMin = {contract["text_input_schema"]["line_counts"]["text_input_default_min"]},
+        textInputDefaultMax = "{contract["text_input_schema"]["line_counts"]["text_input_default_max"]}",
+        singleLineValue = {contract["text_input_schema"]["line_counts"]["single_line_value"]},
+        singleLineForbids = "{contract["text_input_schema"]["line_counts"]["single_line_forbids"]}",
+    ),
+    password = TextInputPasswordContract(
+        authoredValue = "{contract["text_input_schema"]["password"]["authored_value"]}",
+        onChange = "{contract["text_input_schema"]["password"]["on_change"]}",
+        clearOnSubmit = "{contract["text_input_schema"]["password"]["clear_on_submit"]}",
+        submitCapture = "{contract["text_input_schema"]["password"]["submit_capture"]}",
+        captureAllowedFrom = {kt_set(contract["text_input_schema"]["password"]["capture_allowed_from"])},
+        remotePolicy = "{contract["text_input_schema"]["password"]["remote_policy"]}",
+        forbiddenDescriptorMembers = {kt_set(contract["text_input_schema"]["password"]["forbidden_descriptor_members"])},
+        requiresSessionState = "{contract["text_input_schema"]["password"]["requires_session_state"]}",
+        storage = "{contract["text_input_schema"]["password"]["storage"]}",
+        deadlineMillis = {contract["text_input_schema"]["password"]["deadline_ms"]}L,
+    ),
+    clearOnSubmit = TextInputClearOnSubmitContract(
+        requires = "{contract["text_input_schema"]["clear_on_submit"]["requires"]}",
+        forbiddenWhenOnSubmit = "{contract["text_input_schema"]["clear_on_submit"]["forbidden_when_on_submit"]}",
+    ),
     selection = TextInputSelectionContract(
         type = "{contract["text_input_schema"]["selection"]["type"]}",
         unit = "{contract["text_input_schema"]["selection"]["unit"]}",
