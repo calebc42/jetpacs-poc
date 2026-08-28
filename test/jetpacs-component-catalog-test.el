@@ -112,7 +112,8 @@
           (list (jetpacs-component-catalog--home-screen nil)
                 (jetpacs-component-catalog--action-screen nil)
                 (jetpacs-component-catalog--choice-screen nil)
-                (jetpacs-component-catalog--panel-screen nil)))
+                (jetpacs-component-catalog--panel-screen nil)
+                (jetpacs-component-catalog--text-field-screen nil)))
          (json (mapconcat #'jetpacs-node->canonical-json screens "\n")))
     (dolist (screen screens)
       (should (jetpacs-root-node-p screen))
@@ -120,7 +121,7 @@
                (regexp-quote "\"t\":\"jetpacs.scope\"")
                (jetpacs-node->canonical-json screen))))
     (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
-                    "jetpacs.scope"))
+                    "jetpacs.scope" "text_input"))
       (should (string-match-p (regexp-quote type) json)))))
 
 (ert-deftest jetpacs-component-catalog-action-dispatches-exactly-once ()
@@ -149,6 +150,67 @@
       (should (eq (jetpacs-component-catalog--on-choice
                    '(:value "false") nil)
                   'rejected)))))
+
+(ert-deftest jetpacs-component-catalog-text-actions-separate-drafts-and-submits ()
+  "Text changes stay IME-safe while submit commits only non-secret state."
+  (let ((jetpacs-component-catalog--text-change-count 0)
+        (jetpacs-component-catalog--text-submit-count 0)
+        (jetpacs-component-catalog--last-text-submit nil)
+        refreshed)
+    (cl-letf (((symbol-function 'jetpacs-app-defer-refresh)
+               (lambda (params) (setq refreshed params))))
+      (should (eq (jetpacs-component-catalog--on-text-change nil nil)
+                  'accepted))
+      (should (= jetpacs-component-catalog--text-change-count 1))
+      (should-not refreshed)
+      (should (eq (jetpacs-component-catalog--on-text-submit
+                   '(:value "accepted draft") '(:surface "app:jpcatalog"))
+                  'accepted))
+      (should (= jetpacs-component-catalog--text-submit-count 1))
+      (should (equal jetpacs-component-catalog--last-text-submit
+                     "accepted draft"))
+      (should (equal refreshed '(:surface "app:jpcatalog")))
+      (should (eq (jetpacs-component-catalog--on-text-submit
+                   '(:value 42) nil)
+                  'rejected)))))
+
+(ert-deftest jetpacs-component-catalog-secure-submit-retains-only-length ()
+  "The secure demonstration destroys its volatile field string in place."
+  (let* ((secret (copy-sequence "swordfish"))
+         (jetpacs-component-catalog--secure-submit-count 0)
+         (jetpacs-component-catalog--last-secret-length nil)
+         refreshed)
+    (cl-letf (((symbol-function 'jetpacs-app-defer-refresh)
+               (lambda (params) (setq refreshed params))))
+      (should (eq (jetpacs-component-catalog--on-secure-submit
+                   nil (list :surface "app:jpcatalog"
+                             :fields (list :jpcatalog-password secret)))
+                  'accepted))
+      (should (= jetpacs-component-catalog--secure-submit-count 1))
+      (should (= jetpacs-component-catalog--last-secret-length 9))
+      (should (equal secret (make-string 9 0)))
+      (should (equal (plist-get refreshed :surface) "app:jpcatalog"))
+      (should (equal (plist-get (plist-get refreshed :fields)
+                                :jpcatalog-password)
+                     (make-string 9 0)))
+      (should (eq (jetpacs-component-catalog--on-secure-submit
+                   nil '(:fields (:jpcatalog-password 42)))
+                  'rejected)))))
+
+(ert-deftest jetpacs-component-catalog-secure-field-authors-no-secret-value ()
+  "The catalog's secure field uses canonical capture without an authored value."
+  (let* ((screen (jetpacs-component-catalog--text-field-screen nil))
+         (json (jetpacs-node->canonical-json screen)))
+    (should (string-match-p
+             (regexp-quote
+              "\"capture_fields\":[\"jpcatalog-password\"]")
+             json))
+    (should (string-match-p
+             (regexp-quote "\"id\":\"jpcatalog-password\"")
+             json))
+    (should-not (string-match-p
+                 "\"id\":\"jpcatalog-password\"[^}]*\"value\""
+                 json))))
 
 (ert-deftest jetpacs-component-catalog-actions-have-public-metadata ()
   "Every wire-visible catalog verb documents the behavior it owns."
