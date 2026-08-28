@@ -22,7 +22,10 @@ The first public builders are:
   node's JSON array without hiding or merging descendants.
 - `jetpacs-component-scope` is an app-only, invisible renderer-selection
   boundary. It has no layout or accessibility bounds of its own; universal
-  presentation attributes are therefore nonsensical on it.
+  presentation attributes are therefore nonsensical on it. The installed
+  Phase 3 receiver selects Jetpacs' Foundation presentation for canonical
+  `text_input` descendants. Authors continue to use `jetpacs-text-input` from
+  the foundational API; there is no duplicate Jetpacs text node or builder.
 - Choice publishes `state.changed` before dispatching `ON-CHANGE`, with the
   same next boolean supplied through the ordinary action value path.
 

@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import android.content.res.Configuration
@@ -8,9 +10,14 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.input.TextFieldLineLimits
+import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.android.tools.screenshot.PreviewTest
 
@@ -59,6 +66,92 @@ private fun JetpacsComponentsFocusAndHover() {
     }
 }
 
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 760)
+@Preview(name = "expanded", widthDp = 900, heightDp = 760)
+@Composable
+private fun JetpacsTextFieldsAcrossWidths() {
+    JetpacsTextFieldGallery()
+}
+
+@PreviewTest
+@Preview(
+    name = "dark",
+    widthDp = 400,
+    heightDp = 760,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun JetpacsTextFieldsDark() {
+    JetpacsTextFieldGallery()
+}
+
+@PreviewTest
+@Preview(name = "large-text", widthDp = 400, heightDp = 960, fontScale = 1.5f)
+@Composable
+private fun JetpacsTextFieldsLargeText() {
+    JetpacsTextFieldGallery()
+}
+
+@PreviewTest
+@Preview(name = "focus-secure", widthDp = 400, heightDp = 300)
+@Composable
+private fun JetpacsTextFieldsFocusAndSecure() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            JetpacsTextFieldFocusFixture(
+                state = rememberTextFieldState("Active edit"),
+                label = "Keyboard focus",
+            )
+            JetpacsTextField(
+                state = rememberTextFieldState(),
+                secure = true,
+                label = "One-time secret",
+                placeholder = "Never retained",
+                leadingDecoration = { JetpacsFieldGlyph("lock") },
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "rtl", widthDp = 400, heightDp = 420)
+@Composable
+private fun JetpacsTextFieldsRtl() {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        ProvideJetpacsTheme(null) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(JetpacsTheme.colors.background)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                JetpacsTextField(
+                    state = rememberTextFieldState("١٢٣"),
+                    label = "المبلغ",
+                    prefix = "$",
+                    suffix = ".00",
+                    leadingDecoration = { JetpacsFieldGlyph("search") },
+                    trailingDecoration = { JetpacsFieldGlyph("clear") },
+                )
+                JetpacsTextField(
+                    state = rememberTextFieldState("قيمة غير صالحة"),
+                    label = "اسم مساحة العمل",
+                    supportingText = "هذا الاسم مستخدم بالفعل",
+                    isError = true,
+                )
+            }
+        }
+    }
+}
+
 /** Deterministic first-slice gallery shared by all baseline configurations. */
 @Composable
 private fun JetpacsComponentsGallery() {
@@ -78,6 +171,63 @@ private fun JetpacsComponentsGallery() {
                 BasicText("Ready", style = JetpacsTheme.typography.choice)
                 JetpacsAction("Nested action", onClick = {})
             }
+        }
+    }
+}
+
+/** Text-field states that are safe to retain as checked-in visual evidence. */
+@Composable
+private fun JetpacsTextFieldGallery() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            JetpacsTextField(
+                state = rememberTextFieldState(),
+                label = "Command text",
+                placeholder = "Type a command",
+            )
+            JetpacsTextField(
+                state = rememberTextFieldState("42"),
+                variant = JetpacsTextFieldVariant.Filled,
+                label = "Amount",
+                prefix = "$",
+                suffix = ".00",
+                leadingDecoration = { JetpacsFieldGlyph("search") },
+                trailingDecoration = { JetpacsFieldGlyph("clear") },
+            )
+            JetpacsTextField(
+                state = rememberTextFieldState("taken"),
+                label = "Workspace name",
+                supportingText = "That name is already in use",
+                isError = true,
+            )
+            JetpacsTextField(
+                state = rememberTextFieldState("Read from Emacs"),
+                label = "Managed value",
+                enabled = false,
+            )
+            JetpacsTextField(
+                state = rememberTextFieldState("(message \"Jetpacs\")"),
+                label = "Elisp",
+                monospace = true,
+                outputTransformation = JetpacsSyntaxOutputTransformation(
+                    "elisp",
+                    JetpacsTheme.syntax,
+                ),
+                lineLimits = TextFieldLineLimits.MultiLine(2, 3),
+            )
+            JetpacsTextField(
+                state = rememberTextFieldState(),
+                secure = true,
+                label = "One-time secret",
+                placeholder = "Never retained",
+                leadingDecoration = { JetpacsFieldGlyph("lock") },
+            )
         }
     }
 }

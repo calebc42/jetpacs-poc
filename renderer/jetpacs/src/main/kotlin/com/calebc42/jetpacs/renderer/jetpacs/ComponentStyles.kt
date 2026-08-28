@@ -3,6 +3,8 @@ package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.style.Style
 import androidx.compose.foundation.style.StyleScope
+import androidx.compose.foundation.style.MutableStyleState
+import androidx.compose.foundation.style.StyleStateKey
 import androidx.compose.foundation.style.animate
 import androidx.compose.foundation.style.border
 import androidx.compose.foundation.style.contentPadding
@@ -12,11 +14,22 @@ import androidx.compose.foundation.style.focused
 import androidx.compose.foundation.style.hovered
 import androidx.compose.foundation.style.pressed
 import androidx.compose.foundation.style.selected
+import androidx.compose.foundation.style.state
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.unit.dp
 
 private val StyleScope.tokens: JetpacsThemeValue
     get() = LocalJetpacsTheme.currentValue
+
+private val textFieldErrorKey = StyleStateKey(false)
+
+internal var MutableStyleState.isTextFieldError: Boolean
+    get() = this[textFieldErrorKey]
+    set(value) { this[textFieldErrorKey] = value }
+
+private fun StyleScope.textFieldError(block: () -> Unit) {
+    state(textFieldErrorKey, block) { key, current -> current[key] }
+}
 
 /** Theme-wide visual definitions for Jetpacs-owned components. */
 @Stable
@@ -65,5 +78,41 @@ object JetpacsComponentStyles {
         background(tokens.colors.surface)
         border(1.dp, tokens.colors.outline)
         contentPadding(tokens.spacing.panel)
+    }
+
+    val textFieldOutlined = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        textFieldError {
+            border(1.dp, tokens.colors.error)
+            focused { border(2.dp, tokens.colors.error) }
+        }
+        disabled { alpha(0.38f) }
+    }
+
+    val textFieldFilled = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.raisedSurface)
+        border(1.dp, androidx.compose.ui.graphics.Color.Transparent)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        hovered { background(tokens.colors.selectedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        textFieldError {
+            border(1.dp, tokens.colors.error)
+            focused { border(2.dp, tokens.colors.error) }
+        }
+        disabled { alpha(0.38f) }
     }
 }
