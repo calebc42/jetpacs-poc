@@ -2,16 +2,21 @@
 
 Date: 2026-08-28
 
-Status: **BLOCKED — Phase 4 must not begin**
+Status: **CODE REMEDIATION VERIFIED — Phase 4 remains blocked on the physical
+accessibility acceptance gate**
 
 Reviewed superproject range: 2255493..4e0e3a1
 
 Reviewed EBP range: b926827..0b47c8c
 
+Remediation superproject range: 4e0e3a1..46ea511
+
+Remediation EBP range: 0b47c8c..65a0b12
+
 ## Decision
 
-The Phase 0–3 baseline is not safe to advance. Two independently reproduced
-findings meet the blocking rule:
+The original Phase 0–3 baseline was correctly blocked. Two independently
+reproduced findings met the blocking rule:
 
 - **Critical:** a password-bearing occurrence can be accepted with a durable
   queue policy and the renderer-supplied secret is written into the real
@@ -20,16 +25,28 @@ findings meet the blocking rule:
   pending and keeps the native field's secret reachable after the normative
   hard 30-second deadline.
 
-Two Medium findings also require an explicit fix/defer decision before Phase 4:
-the Python/Kotlin/Elisp validation envelopes disagree, and mask projection is
-strongly superlinear at the 16–64 KiB sizes required by the gate.
+Two Medium findings also required an explicit fix/defer decision before Phase
+4: the Python/Kotlin/Elisp validation envelopes disagreed, and mask projection
+was strongly superlinear at the 16–64 KiB sizes required by the gate.
 
-This commit contains only this report. No protocol, generated vocabulary,
-production source, dependency, screenshot reference, or permanent test changed.
-The detached diagnostic worktree was kept separate from the reviewed baseline.
-Because the gate is blocked, docs/PLAN-jetpacs-text-editing.md remains at
-“Phase 3 complete; Phase 4 is next” rather than recording a false review
-completion.
+Separate remediation commits now close F-01 through F-04 and the one-shot test
+gap. Focused device review then found and independently reproduced F-05, a
+Critical plaintext password disclosure through Android's accessibility tree;
+b18c4a5 fixes that shared presentation seam and its deliberate bypass mutation
+is caught by connected tests. A subsequent forced-GC heap inspection found
+F-06, a second Critical disclosure: Compose undo staging kept the submitted
+password reachable from the currently served view after terminal erasure.
+46ea511 purges that undo history, its deliberate purge-removal mutation is
+caught by a connected test, and the post-fix forced-GC heap contains zero
+copies of the canary. No confirmed Critical, High, or Medium code finding
+remains open on 46ea511.
+
+Phase 4 still must not begin. The required physical human TalkBack, Switch
+Access, hardware-keyboard, pointer, and touch acceptance was not available.
+That is an uncompleted exit criterion, not a confirmed product defect. The
+focused remediation evidence and the exact remaining gate are recorded below.
+docs/PLAN-jetpacs-text-editing.md therefore is not advanced to “adversarial
+review complete; Phase 4 next.”
 
 ## Scope, authority, and method
 
@@ -649,9 +666,9 @@ tasks with class selectors for EditingControllersInstrumentedTest,
 JetpacsComponentsSemanticsTest, EbpSemanticsTest, Material compatibility, and
 ScopedCoreOverrideDispatchTest. The temporary lifecycle class was run alone.
 
-## Remediation gate
+## Original remediation gate
 
-Phase 4 remains blocked until:
+At discovery, Phase 4 was blocked until:
 
 1. F-01 receives a separate EBP/projection correction and production
    remediation commit, with permanent Python/Kotlin/Elisp and real durable-store
@@ -667,15 +684,300 @@ Phase 4 remains blocked until:
    they now fail closed without merely teaching the diagnostics a new expected
    answer.
 
-Only after those conditions are satisfied should
-docs/PLAN-jetpacs-text-editing.md be changed to “adversarial review complete;
-Phase 4 next.”
+Those code conditions were necessary but not sufficient. The review plan also
+requires the physical human accessibility/input acceptance described in the
+current gate decision below. docs/PLAN-jetpacs-text-editing.md must not advance
+until both sets of conditions are satisfied.
+
+## Remediation and focused skeptic re-review
+
+The remediation was kept separate from the discovery report and from this
+report-only update:
+
+| Repository | Commit | Responsibility |
+|---|---|---|
+| ebp | 65a0b12 | Make password submission constraints normative and project them into the contract, Golden, and validator |
+| llm-poc-3 | 18bc51b | Regenerate the mirrors, align Python/Kotlin/Elisp validation, add the deterministic corpus, and add durable-store refusal coverage |
+| llm-poc-3 | b123006 | Introduce a typed volatile-secret handoff, one-shot conclusion gate, monotonic 30-second deadline, transport abort, and disposal tests |
+| llm-poc-3 | e0354a8 | Replace superlinear mask projection with the shared linear implementation and permanent scaling tests |
+| llm-poc-3 | b18c4a5 | Obfuscate password accessibility values at the shared presentation seam and cover both canonical and scoped presentations |
+| llm-poc-3 | 46ea511 | Purge Compose password undo history at terminal erasure and cover real user-input history on-device |
+
+Android Credential Manager was deliberately not added. It could provide a
+credential-provider or autofill user experience, but it does not enforce EBP
+offline policy, durable admission, callback conclusion, transport deadlines,
+or Compose accessibility semantics. Adding it would also have crossed the
+review's dependency and public-behavior freeze without fixing any confirmed
+finding.
+
+### Finding dispositions
+
+| Finding | Focused result | Disposition |
+|---|---|---|
+| F-01 Critical — password can enter the durable queue | The corrected authority requires drop-only volatile delivery; generated validators agree; real queue-store tests reject the occurrence; the typed secret never becomes a durable action payload | **Resolved** by 65a0b12, 18bc51b, and b123006 |
+| F-02 High — hard password deadline absent | A fake monotonic clock proves pending at 29,999 ms, timeout/transport abort/erasure at 30,000 ms, and exactly one terminal outcome despite a late callback | **Resolved** by b123006 |
+| F-03 Medium — cross-language envelopes disagree | Forty published witnesses and 10,000 generated cases, seed 20260828, agree in Python, Kotlin, and Elisp | **Resolved** by 65a0b12 and 18bc51b |
+| F-04 Medium — mask projection exceeds the scaling gate | Post-warmup 64 KiB median is below 1 ms with approximately linear allocation; every 4× step remains below the 8× threshold | **Resolved** by e0354a8 |
+| DeviceBridge one-shot test gap | RendererOutcomeGate and SecretActionAttempt tests exercise duplicate ordinary callbacks, timeout followed by callback, and repeated erasure | **Resolved** by b123006 |
+| F-05 Critical — password plaintext in Android accessibility text | Reproduced in raw UIAutomator on the remediated pre-fix build; shared semantics now publish scalar-count bullets for InputText and EditableText | **Resolved** by b18c4a5 |
+| F-06 Critical — submitted password remains reachable through Compose undo staging | A pre-fix forced-GC heap rooted two exact canary arrays through TextUndoOperation.preText; the final forced-GC heap contains no Latin-1 or UTF-16 copy | **Resolved** by 46ea511 |
+
+### F-05 — Critical — pre-fix accessibility tree disclosed password text
+
+Authority: ebp/SPEC.md:1870-1874, 2089-2114, and 2795-2839 require password
+content to remain volatile and password presentation to expose password state
+without creating another secret publication path. The shared-presentation
+ownership rule is in docs/ARCHITECTURE-POC3.md:250-252 and 300-310.
+
+Deterministic reproduction on the Pixel Tablet, against e0354a8 before the
+F-05 fix:
+
+1. Open Apps → Jetpacs Components → Text Field and enter a unique 19-scalar
+   value in One-time secret using individual KEYCODE events.
+2. Before submitting, run
+   `/usr/bin/adb -s 192.168.1.181:36307 exec-out uiautomator dump /dev/tty`.
+3. Inspect the password EditText node.
+
+Expected: `password="true"` and an accessibility value containing only 19
+obfuscation bullets. Observed: `password="true"` with the 19-character
+plaintext in `text`. Compose Foundation 1.12 visually obfuscated the secure
+field but also published the raw value as InputText, which Android selected for
+AccessibilityNodeInfo.text. An enabled accessibility service or UI automation
+consumer could therefore read the secret before submission. This is a secret
+disclosure under the review severity rubric.
+
+b18c4a5 centralizes the correction in
+companion/renderer/compose/src/main/kotlin/com/calebc42/jetpacs/renderer/compose/TextInputPresentation.kt:88-138.
+Password fields override InputText and EditableText with one U+2022 bullet per
+Unicode scalar, convert the UTF-16 selection to scalar offsets, retain the
+password property, and leave native editing/autofill actions on the underlying
+field. Both Jetpacs and canonical Material presentation call this same
+fieldModifier seam.
+
+Permanent connected regressions are in
+companion/renderer/jetpacs/src/androidTest/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsSemanticsTest.kt:269-328
+and
+companion/renderer/material3/src/androidTest/kotlin/com/calebc42/ebp/companion/render/ScopedCoreOverrideDispatchTest.kt:156-183.
+The Jetpacs witness uses `a` + one astral scalar + `b`: the action capture sees
+the exact secret, while InputText/EditableText contain three bullets and the
+selection is scalar offset 3.
+
+Test honesty was checked by temporarily bypassing the shared password
+sanitizer. The focused connected test then failed on raw InputText, raw
+EditableText, and the UTF-16 selection offset 4 instead of scalar offset 3. The
+mutation was restored immediately; the same test passed, and the clean full
+connected classes passed afterward.
+
+### F-06 — Critical — Compose undo staging retained the submitted password
+
+Authority: ebp/SPEC.md:2089-2114 requires terminal password handling to erase
+native text, composition, captured fields, encoded buffers, and correlation
+state. The review gate additionally treats immutable or still-reachable
+product-owned copies as findings; an empty visible field is not sufficient
+evidence of erasure.
+
+Deterministic reproduction against b18c4a5:
+
+1. Enter a unique 19-byte ASCII canary in the catalog's One-time secret field
+   using individual KEYCODE events and submit it exactly once.
+2. Verify that the visible field and accessibility node are empty.
+3. Force garbage collection while the Text Field presentation remains live:
+
+       /usr/bin/adb -s 192.168.1.181:36307 shell \
+         am dumpheap -g com.calebc42.ebp.companion \
+         /data/local/tmp/jetpacs-b18c4a5-final-gc.hprof
+
+4. Pull the HPROF, locate exact primitive-array copies of the canary, and walk
+   incoming references to a GC root.
+
+Expected: no still-reachable product-owned copy after the terminal outcome.
+Observed: the 47,631,483-byte post-GC heap contained two exact `byte[19]`
+copies. One was rooted through this live path:
+
+    ROOT_JNI_GLOBAL
+      RemoteInputConnectionImpl.mParentInputMethodManager
+      InputMethodManager.mNextServedView
+      AndroidComposeView.layoutNodes
+      LayoutNode._modifier
+      TextFieldTextLayoutModifier.textFieldState
+      TransformedTextFieldState.textFieldState
+      TextFieldState.textUndoManager
+      TextUndoManager.stagingUndo
+      TextUndoOperation.preText
+      String.value
+      byte[19] canary
+
+The terminal callback cleared `TextFieldState.text`, but Compose Foundation
+1.12 separately retained the pre-clear user edit in its undo manager. This is
+a heap-extractable secret disclosure from the currently served presentation
+and therefore Critical under the review rubric.
+
+46ea511 fixes the owning shared-controller seam at
+companion/renderer/compose/src/main/kotlin/com/calebc42/jetpacs/renderer/compose/EditingControllers.kt:230-242.
+`eraseVolatileState()` now calls `TextFieldState.undoState.clearHistory()`
+before and after clearing the text. The first purge removes user-edit staging
+that owns the password; the second prevents the clear transaction from leaving
+undo/redo state. The permanent
+`passwordErasureClearsTextAndComposeUndoHistory` connected test at
+companion/renderer/compose/src/androidTest/kotlin/com/calebc42/jetpacs/renderer/compose/EditingControllersInstrumentedTest.kt:79-120
+enters text through a real `BasicTextField`, proves undo exists before erasure,
+then asserts empty text and no undo or redo history.
+
+Test honesty was checked by temporarily removing both history purges. The
+focused connected test failed at the post-erasure `canUndo == false`
+assertion. The mutation was restored immediately, the same test passed, and
+all three connected renderer suites passed afterward.
+
+The exact 46ea511 tree was then deployed. A fresh 19-character canary was
+entered with individual KEYCODE events, appeared only as 19 accessibility
+bullets, and was submitted once. An explicit-GC heap dump taken while the
+presentation remained live was 48,574,183 bytes. Complete byte searches found
+zero copies in compact Latin-1, UTF-16BE, or UTF-16LE representation. The
+canary was also absent from all four Android log buffers in the bounded window
+(2,290 lines / 334,603 bytes), every Companion private file archived through
+`run-as` (128,512 bytes), and Emacs Jetpacs durable state (102,400-byte archive;
+only `receipts.sqlite` changed after the boundary). Process recreation left
+the secure field empty and restored only submit count and length. All temporary
+HPROF, hierarchy, and screenshot files were deleted after verification.
+
+### Clean verification on the remediated commits
+
+The final clean source gate passed:
+
+- `cd ebp && python3 validate.py` — pass: 40 text-input witnesses plus all
+  other EBP fixtures.
+- `./test/run-tests.sh` — pass, including warning-as-error byte compilation and
+  the 10,000-case cross-language corpus with seed 20260828.
+- Forced broad Android gate — pass, 208/208 tasks executed: wire, model,
+  Compose, Jetpacs, Material, and app unit tests; Android-test compilation; APK
+  assembly; and both screenshot validators.
+- Shared-controller connected suite — 3/3.
+- Jetpacs semantics connected suite — 10/10.
+- Material compatibility, EBP semantics, and scoped-dispatch connected suites
+  — 9/9 total.
+- Both screenshot validators used existing references. No screenshot update
+  task ran.
+
+The forced Android command was:
+
+    cd companion
+    ./gradlew --console=plain --rerun-tasks \
+      :wire:jvmTest \
+      :renderer:model:testDebugUnitTest \
+      :renderer:compose:testDebugUnitTest \
+      :renderer:compose:compileDebugAndroidTestKotlin \
+      :renderer:jetpacs:testDebugUnitTest \
+      :renderer:jetpacs:compileDebugAndroidTestKotlin \
+      :renderer:material3:testDebugUnitTest \
+      :renderer:material3:compileDebugAndroidTestKotlin \
+      :app:testDebugUnitTest \
+      :app:assembleDebug \
+      :renderer:jetpacs:validateDebugScreenshotTest \
+      :renderer:material3:validateDebugScreenshotTest
+
+Post-warmup mask medians recorded by the permanent performance test were:
+
+| Input | Time (ns) | Allocated bytes |
+|---:|---:|---:|
+| 1 KiB | 82,677 | 21,776 |
+| 4 KiB | 112,696 | 86,288 |
+| 16 KiB | 235,589 | 344,336 |
+| 64 KiB | 952,313 | 1,376,528 |
+
+For comparison, the diagnostic pre-fix 64 KiB run was approximately
+301,674,671 ns and 113,629,256 bytes. The fixed 64 KiB run is far below the
+two-second ceiling and no 4× input step produced a greater-than-8× time rise.
+
+### Remediated device and secret gate
+
+The exact b18c4a5 tree was first deployed with the normal onboarding script for
+the F-05 focused pass. The user-supplied
+`/home/calebc42/.local/share/android/platform-tools/adb` path was
+not present; `/usr/bin/adb` (the installed platform-tools binary) was used.
+APK data was preserved, 115 `.el` files were synchronized, and source-tree
+`.elc` files were excluded.
+
+The first post-fix 19-character acceptance canary was entered only as
+individual KEYCODE events and submitted exactly once. Its literal was never an
+adb, SSH, grep, or process-command argument. Before submission:
+
+- Android CLI layout exposed exactly 19 bullets and the password state.
+- Raw UIAutomator exposed an EditText with `password="true"` and exactly 19
+  bullets, with no plaintext.
+
+After submission, the field was empty and the catalog reported only
+`Secure submits: 1 · last length: 19`. The post-submit screenshot contained an
+empty field and length-only state. Companion process death and relaunch again
+showed an empty secure field and retained only count/length.
+
+The acceptance canary was absent from every Companion private file, including
+the durable queue, accepted surfaces, drafts, theme, and preferences. An SSH
+mtime sweep of the Emacs private HOME showed that the only post-boundary file
+was `.emacs.d/jetpacs/var/receipts.sqlite`; its complete 91,136-byte content
+contained no canary. This closes the earlier device harness limitation without
+requiring Emacs to be debuggable through Android run-as.
+
+The busy main log buffer wrapped the earliest part of that first canary's
+window after later lifecycle/UI inspection. The retained portion was scanned
+completely and was clean, but it was not misreported as a complete all-log
+proof. A second, distinct 19-character diagnostic canary was therefore entered
+with individual KEYCODE events and submitted exactly once, then scanned
+immediately. Over device timestamps 1787946185.806128396 through
+1787946221.763238277, complete bounded in-memory scans found no canary in:
+
+- main: two overlapping chunks, 424 timestamped entries scanned;
+- system: one chunk, 86 entries;
+- crash: empty for the window;
+- kernel: empty for the window.
+
+The second canary was also absent from every complete Companion private file
+and from the only post-boundary Emacs file, `receipts.sqlite`. Searches were
+performed in the orchestrator's memory after fetching bounded content; neither
+canary literal was placed in an adb/SSH/search command line.
+
+The offline admission check used a non-secret draft. With Emacs force-stopped,
+the Companion showed its offline state; submitting preserved the field text,
+left the submit count unchanged, and left `ebp-queue.json` byte-for-byte
+unchanged with no records. After reconnect, the catalog republished its home
+document as specified, and the final device state had both processes running
+with the Text Field page visible.
+
+Final settings matched the saved state: automatic rotation 1, user rotation 0,
+accessibility disabled with no enabled service, Gboard as the default IME,
+Wi-Fi 1, and airplane mode 0. The post-fix pass used touch injection and
+hardware-key events. The earlier pass also covered selection, copy, delete,
+paste, actual rotation/recreation, and ordinary one-shot submit.
+
+This evidence proves disposal of the product-owned typed holders, deadline
+correlation, durable records, visible/accessibility state, and the inspected
+endpoint stores. The final 46ea511 forced-GC heap additionally proves that the
+exact canary is absent from the live Companion heap in all relevant string
+encodings. It does not claim impossible erasure of every historical
+kernel/socket or remote-runtime copy. No still-reachable Companion-owned copy
+was found after the terminal paths, and the permanent fake-clock, disposal,
+and real-input undo tests exercise the controllable holders directly.
+
+### Current gate decision
+
+Original remediation-gate items 1 through 6 are satisfied on 65a0b12 and
+46ea511, and the subsequently discovered F-05 and F-06 findings are resolved
+and focused-review clean. There is no surviving confirmed or unverified
+potentially Critical/High code candidate.
+
+Phase 4 nevertheless remains blocked because the requested physical human
+TalkBack and Switch Access pass, together with human touch, pointer, and
+hardware-keyboard acceptance, was not available. Automation and semantics
+tests are evidence, but they cannot prove announcement order or switch-scanning
+usability. Once that physical acceptance is performed and no defect is found,
+the remaining gate can close and docs/PLAN-jetpacs-text-editing.md can advance.
 
 ## Artifact hygiene
 
-- No generated vocabulary was edited.
+- Generated vocabulary mirrors changed only through the documented generators
+  in 18bc51b after the contract projection changed; no mirror was hand-edited.
 - No screenshot reference was updated.
-- No dependency or production source was changed.
+- No dependency was added. Production and permanent tests changed only in the
+  named remediation commits; this final audit update changes only this report.
 - No new testing/profiling framework was added.
 - Pre-existing source-tree .elc files were preserved and excluded from
   onboarding; none was treated as authority.
