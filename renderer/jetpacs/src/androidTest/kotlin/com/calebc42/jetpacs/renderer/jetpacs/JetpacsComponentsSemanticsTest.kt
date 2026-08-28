@@ -30,6 +30,7 @@ import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
+import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -262,7 +263,8 @@ class JetpacsComponentsSemanticsTest {
             assertEquals(emptyList<Pair<String, JsonElement?>>(), context.states)
             assertEquals(1, context.actions.size)
             assertEquals(null, context.actions.single().second)
-            assertEquals("swordfish", context.fields.single()?.get("secret")?.let {
+            assertEquals("swordfish", context.secrets.single()?.fieldsOrNull()
+                ?.get("secret")?.let {
                 (it as JsonPrimitive).content
             })
         }
@@ -306,7 +308,7 @@ class JetpacsComponentsSemanticsTest {
         val states = mutableListOf<Pair<String, JsonElement?>>()
         val actions = mutableListOf<Pair<JsonObject?, JsonElement?>>()
         val actionNames = mutableListOf<String>()
-        val fields = mutableListOf<JsonObject?>()
+        val secrets = mutableListOf<RendererVolatileSecret?>()
         val outcomes = mutableListOf<(RendererActionOutcome) -> Unit>()
         val events = mutableListOf<String>()
         val scopedChildren = mutableListOf<Pair<JsonObject, Int>>()
@@ -314,19 +316,23 @@ class JetpacsComponentsSemanticsTest {
         override fun dispatchAction(
             descriptor: JsonObject?,
             value: JsonElement?,
-            fields: JsonObject?,
+            secret: RendererVolatileSecret?,
             sourceId: String?,
             onOutcome: (RendererActionOutcome) -> Unit,
         ): ActionHandoff {
             actions += descriptor to value
             actionNames += (descriptor?.get("action") as? JsonPrimitive)?.content.orEmpty()
-            this.fields += fields
+            secrets += secret
             outcomes += onOutcome
             events += "action:${actionNames.last()}"
             return ActionHandoff.HandedOff
         }
 
-        override fun state(id: String, value: JsonElement?) {
+        override fun state(
+            id: String,
+            value: JsonElement?,
+            volatileSecret: Boolean,
+        ) {
             states += id to value
             events += "state:${(value as? JsonPrimitive)?.content.orEmpty()}"
         }
