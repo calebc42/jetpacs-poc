@@ -7,7 +7,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.calebc42.jetpacs.renderer.compose.ComposeCoreNodeOverride
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
@@ -57,7 +56,7 @@ object JetpacsTextInputRenderer : ComposeCoreNodeOverride {
                 value = adapter.value,
                 onValueChange = adapter::onValueChange,
                 visualTransformation = transformation,
-                modifier = modifier.focusRequester(binding.focusRequester),
+                modifier = binding.fieldModifier(modifier),
                 enabled = binding.enabled,
                 variant = variant,
                 label = presentation.label,
@@ -84,7 +83,7 @@ object JetpacsTextInputRenderer : ComposeCoreNodeOverride {
         }
         JetpacsTextField(
             state = binding.controller.state,
-            modifier = modifier.focusRequester(binding.focusRequester),
+            modifier = binding.fieldModifier(modifier),
             enabled = binding.enabled,
             secure = presentation.password,
             variant = variant,

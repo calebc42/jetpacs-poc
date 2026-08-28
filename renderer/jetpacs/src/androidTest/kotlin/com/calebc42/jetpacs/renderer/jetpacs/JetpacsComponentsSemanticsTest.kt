@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -290,13 +291,28 @@ class JetpacsComponentsSemanticsTest {
         val field = compose.onNode(
             SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "secret"),
         )
-        field.performTextInput("swordfish")
+        val secret = "a\uD83D\uDE00b"
+        val obfuscated = AnnotatedString("\u2022\u2022\u2022")
+        field.performTextInput(secret)
+        field
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.InputText,
+                obfuscated,
+            ))
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.EditableText,
+                obfuscated,
+            ))
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.TextSelectionRange,
+                androidx.compose.ui.text.TextRange(3),
+            ))
         field.performImeAction()
         compose.runOnIdle {
             assertEquals(emptyList<Pair<String, JsonElement?>>(), context.states)
             assertEquals(1, context.actions.size)
             assertEquals(null, context.actions.single().second)
-            assertEquals("swordfish", context.secrets.single()?.fieldsOrNull()
+            assertEquals(secret, context.secrets.single()?.fieldsOrNull()
                 ?.get("secret")?.let {
                 (it as JsonPrimitive).content
             })
