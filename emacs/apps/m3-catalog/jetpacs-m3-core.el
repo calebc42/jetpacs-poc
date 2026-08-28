@@ -5,8 +5,8 @@
 
 ;;; Commentary:
 
-;; The Tier-1 skeleton of the Material 3 Compose Catalog -- the Jetpacs
-;; component vocabulary -- recreated in Elisp: the component registry,
+;; The Tier-1 skeleton of the Glasspane Material 3 Catalog -- the reusable
+;; Jetpacs M3 component vocabulary -- recreated in Elisp: the registry,
 ;; the three screens, and the verbs.  Component content lives in the sibling
 ;; `jetpacs-m3-<slug>.el' modules, one per catalog component, each
 ;; calling `jetpacs-m3-defcomponent'.
@@ -55,14 +55,14 @@
 Not under `jetpacs-reserved-owner-prefix': the catalog is a Tier-1
 application, not base chrome.")
 
-(defconst jetpacs-m3-label "Components"
-  "The short app, dock, and drawer label for Jetpacs Components.")
+(defconst jetpacs-m3-label "Material 3"
+  "The short app, dock, and drawer label for the Material 3 catalog.")
 
-(defconst jetpacs-m3-title "Jetpacs Components"
-  "The Home top-bar title for the Jetpacs component reference.")
+(defconst jetpacs-m3-title "Material 3 Catalog"
+  "The Home top-bar title for the Glasspane Material 3 catalog.")
 
 (defconst jetpacs-m3-identity
-  "Jetpacs Components — the Material 3 vocabulary, authored in Elisp"
+  "Glasspane Material 3 Catalog — authored in Elisp"
   "The component reference's full identity.
 This app is the reference client of the optional `glasspane.material3'
 renderer extension, not the definition of Jetpacs' Compose foundation

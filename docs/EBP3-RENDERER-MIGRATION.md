@@ -3,8 +3,8 @@
 EBP 3 separates Jetpacs' Compose-shaped foundation from design-system
 implementations. The protocol remains toolkit-neutral and does not register a
 downstream renderer. The reference Android Companion selects Glasspane's
-Material 3 implementation, while Glasspane and Jetpacs Components declare that
-selection as an app requirement.
+Material 3 implementation, while Glasspane and its Material 3 Catalog declare
+that selection as an app requirement.
 
 ## Compatibility boundary
 
@@ -62,9 +62,25 @@ shell gate repeats it over the complete document. `jetpacs-defapp` accepts
 `:requires-extensions`; a missing live requirement opens an explanatory Apps
 screen without invoking the app's builders.
 
-Jetpacs Components and both Glasspane registration branches require
-`glasspane.material3`. Other apps can remain on the core/general vocabulary and
-need not acquire that dependency.
+The Glasspane Material 3 Catalog and both Glasspane registration branches
+require `glasspane.material3`. Other apps can remain on the core/general
+vocabulary and need not acquire that dependency.
+
+## Projection generation
+
+`tools/gen-renderer-extension-vocabulary.py` projects a renderer-owned
+manifest into Kotlin and Elisp without adding its vocabulary to EBP. With no
+arguments it retains the established Glasspane paths. `--check` compares both
+committed projections without writing them:
+
+```sh
+python3 tools/gen-renderer-extension-vocabulary.py --check
+```
+
+For another renderer, pass its manifest plus explicit `--kotlin-output` and
+`--elisp-output` paths; `--kotlin-package` selects the receiving package. The
+Kotlin constant prefix and Elisp feature prefix are derived from the manifest's
+extension identifier, so endpoints cannot acquire separately authored names.
 
 ## Theme migration
 

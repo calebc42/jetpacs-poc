@@ -15,6 +15,13 @@ emacs() {
     -L emacs/apps/glasspane-material3 "$@"
 }
 
+# Renderer extensions are renderer-owned, but their Kotlin and Elisp endpoint
+# projections still have one manifest authority.  Exercise the generic CLI on
+# a synthetic extension, then prove the installed Glasspane projections are
+# current without rewriting the worktree.
+python3 test/test_renderer_extension_generator.py
+python3 tools/gen-renderer-extension-vocabulary.py --check
+
 # The startup-layout contract: one selected HOME, one marked early-init
 # redirect, one marked normal-init seam, and every managed artifact below
 # ~/.emacs.d/jetpacs. This is a hermetic fake-device run of the exact Termux
@@ -369,7 +376,7 @@ emacs -Q --batch -L emacs -l test/ebp-wire-test.el -l test/jetpacs-integration-t
 emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
   -f ert-run-tests-batch-and-exit
 
-# Jetpacs Components (the Material 3 Tier-1 app) exit gate: the upstream
+# Glasspane Material 3 Catalog exit gate: the upstream
 # inventory — 41 components, 279 examples, upstream order — plus a build
 # of EVERY screen it can show, each checked for the §16.2 profile, §16.1
 # id uniqueness, and canonical serialization.  Nothing else in the tree

@@ -415,6 +415,13 @@ string is not a top-bar flex trap."
     (should (string-match-p "279 examples" json))
     (should (string-match-p "43 Elisp builders" json))))
 
+(ert-deftest jetpacs-m3-catalog-has-glasspane-material-branding ()
+  "Visible names distinguish this M3 library client from Jetpacs design."
+  (should (equal jetpacs-m3-label "Material 3"))
+  (should (equal jetpacs-m3-title "Material 3 Catalog"))
+  (should (equal jetpacs-m3-identity
+                 "Glasspane Material 3 Catalog — authored in Elisp")))
+
 ;;;; App identity: `jetpacs-defapp''s first caller
 
 (ert-deftest jetpacs-m3-catalog-registers-as-an-app ()
@@ -443,7 +450,7 @@ single-app contract."
     (should (equal (car (jetpacs-apps-current)) jetpacs-m3-owner))
     (let ((labels (mapcar (lambda (i) (plist-get i :label))
                           (jetpacs-apps-dock-items "app:hub"))))
-      (should (equal labels '("Home" "Files" "Components")))
+      (should (equal labels '("Home" "Files" "Material 3")))
       (should-not (member "Apps" labels)))
     ;; The destination reads selected only on the catalog's own surface.
     (let ((home (jetpacs-shell-surface-for jetpacs-m3-owner)))

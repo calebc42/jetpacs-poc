@@ -168,10 +168,11 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; the Apps view also gains an Org Mode home.  This is the template a
 ;; future `jetpacs-elisp-mode' app can reuse.
 (require 'jetpacs-org-mode)
-;; Jetpacs Components (owner `m3catalog'): the upstream Material 3 inventory,
-;; 41 components and 279 examples of the node vocabulary, authored in Elisp
-;; on its own surface.  It is also the tree's first `jetpacs-defapp'
-;; registration, so its "Components" destination composes into every dock.
+;; Material 3 Catalog (owner `m3catalog'): the upstream Material 3 inventory,
+;; 41 components and 279 examples of the reusable Jetpacs M3 vocabulary,
+;; authored in Elisp on its own surface.  It is also the tree's first
+;; `jetpacs-defapp' registration, so its "Material 3" destination composes
+;; into every dock.
 ;; Reach it there, from the Apps button, or M-x jetpacs-m3-catalog.
 (require 'jetpacs-m3-catalog)
 ;; The live editor loop (parity P1), and the `ebp-' half of the stack:

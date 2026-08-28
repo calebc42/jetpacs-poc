@@ -1,13 +1,14 @@
-# Jetpacs Components: the Material 3 catalog in Elisp
+# Glasspane Material 3 Catalog
 
 A faithful re-creation of
 `resources/android/Compose-Material-3-Expressive-Catalog` as a Jetpacs
 Tier-1 app: **41 components, 279 examples**, three screens deep, all
-authored in Elisp and rendered by the Companion. The visible app is
-**Jetpacs Components** (short dock label: **Components**). The established
-`jetpacs-m3-*` symbols and `m3catalog.*` wire verbs remain stable internal
-identifiers, so persisted screens, actions, and authoring workflows do not
-change when the product label does.
+authored in Elisp and rendered by the Companion. The visible app is the
+**Glasspane Material 3 Catalog** (short dock label: **Material 3**). The
+established `jetpacs-m3-*` symbols and `m3catalog.*` wire verbs are the
+reusable library and stable wire identities Glasspane consumes; persisted
+screens, actions, and authoring workflows do not change with the product
+label.
 
 This catalog is intentionally downstream of the optional
 `glasspane.material3` renderer extension. Jetpacs itself targets EBP semantics

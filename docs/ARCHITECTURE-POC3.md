@@ -49,9 +49,9 @@ renderer extensions, so a different design system can implement the same core
 without importing Material or emulating Material-only controls.
 
 The reference Companion installs `:renderer:material3` as Glasspane's
-selectable implementation. Glasspane and Jetpacs Components explicitly require
-its `glasspane.material3` extension. The schema and golden witnesses live in
-`renderer-extensions/`, outside EBP. EBP 3 carries only positive target
+selectable implementation. Glasspane and its Material 3 Catalog explicitly
+require the `glasspane.material3` extension. The schema and golden witnesses
+live in `renderer-extensions/`, outside EBP. EBP 3 carries only positive target
 profiles; Jetpacs dual-gates each extension node on its advertised node name
 and the app's declared extension requirement. A receiver never implies support
 from a prefix, and an unavailable app remains outside its builders and gets an
