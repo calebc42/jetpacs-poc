@@ -227,9 +227,17 @@ class TextInputController internal constructor(
         passwordSubmissionPending = false
     }
 
-    /** Clear the native password owner; dialog hosts register this callback. */
+    /**
+     * Clear every native password owner; dialog hosts register this callback.
+     *
+     * Compose stages user edits for undo separately from [TextFieldState.text].
+     * Purging both sides of the text clear prevents the submitted password and
+     * the clear transaction from remaining reachable through undo history.
+     */
     internal fun eraseVolatileState() {
+        state.undoState.clearHistory()
         if (state.text.isNotEmpty()) state.setTextAndPlaceCursorAtEnd("")
+        state.undoState.clearHistory()
         if (config.publishPasswordLocally) publishState("")
     }
 }

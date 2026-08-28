@@ -24,6 +24,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -71,6 +73,49 @@ class EditingControllersInstrumentedTest {
         compose.runOnIdle {
             assertEquals("a1b", controller.state.text.toString())
             assertEquals(listOf("state:a1b", "action:\"a1b\""), events)
+        }
+    }
+
+    @Test
+    fun passwordErasureClearsTextAndComposeUndoHistory() {
+        lateinit var controller: TextInputController
+        compose.setContent {
+            controller = rememberTextInputController(
+                presentationEpoch = 0,
+                initialText = "",
+                initialSelection = TextRange.Zero,
+                config = TextInputControllerConfig(
+                    id = "password",
+                    password = true,
+                    singleLine = true,
+                    filter = null,
+                    maxLengthScalars = null,
+                    clearOnSubmit = false,
+                    onChange = null,
+                    onSubmit = null,
+                    publishPasswordLocally = false,
+                ),
+                maxFieldBytes = 65_536,
+                publishState = { error("password text must not be published") },
+                actionDispatcher = EditingActionDispatcher { _, _, _, _, _ ->
+                    ActionHandoff.HandedOff
+                },
+            )
+            BasicTextField(
+                state = controller.state,
+                inputTransformation = controller.inputTransformation,
+            )
+        }
+
+        compose.onNode(hasSetTextAction()).performTextInput("heap-canary")
+
+        compose.runOnIdle {
+            assertEquals("heap-canary", controller.state.text.toString())
+            assertTrue(controller.state.undoState.canUndo)
+            controller.eraseVolatileState()
+            assertEquals("", controller.state.text.toString())
+            assertFalse(controller.state.undoState.canUndo)
+            assertFalse(controller.state.undoState.canRedo)
         }
     }
 
