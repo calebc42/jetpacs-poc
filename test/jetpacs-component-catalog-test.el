@@ -29,7 +29,10 @@
   (should-error
    (jetpacs-component-choice
     "choice" "Choice" nil (jetpacs-action "test.choice")))
-  (should-error (jetpacs-component-panel "Panel" (list '(:not-a-node t)))))
+  (should-error (jetpacs-component-panel "Panel" (list '(:not-a-node t))))
+  (should-error (jetpacs-component-scope (list '(:not-a-node t))))
+  (should-error (jetpacs-component-scope
+                 (cons (jetpacs-text "Ready") t))))
 
 (ert-deftest jetpacs-components-panel-keeps-real-child-vector ()
   "Panel returns the actual plist/vector IR without a parallel catalog AST."
@@ -39,15 +42,32 @@
     (should (vectorp (plist-get panel :children)))
     (should (equal (aref (plist-get panel :children) 0) child))))
 
+(ert-deftest jetpacs-components-scope-keeps-canonical-child-vector ()
+  "Scope is actual IR and adds no parallel component or semantics model."
+  (let* ((child (jetpacs-text "Ready"))
+         (scope (jetpacs-component-scope (list child))))
+    (should (equal (plist-get scope :t) "jetpacs.scope"))
+    (should (vectorp (plist-get scope :children)))
+    (should (equal (aref (plist-get scope :children) 0) child))
+    (should
+     (equal
+      (jetpacs-node->canonical-json scope)
+      "{\"children\":[{\"t\":\"text\",\"text\":\"Ready\"}],\"t\":\"jetpacs.scope\"}"))))
+
 (ert-deftest jetpacs-components-generated-extension-registers-all-targets ()
   "Generated schema and target maps are the authoring authority."
   (should (equal jetpacs-components-extension "jetpacs.components"))
   (should (equal (cdr (assoc jetpacs-components-extension
                              jetpacs-renderer-extensions))
-                 '("jetpacs.action" "jetpacs.choice" "jetpacs.panel")))
+                 '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
+                   "jetpacs.scope")))
   (should (equal (jetpacs-renderer-target-node-types 'dialog) nil))
-  (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"))
-    (should (member type (jetpacs-renderer-target-node-types 'app)))))
+  (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
+                  "jetpacs.scope"))
+    (should (member type (jetpacs-renderer-target-node-types 'app))))
+  (let ((scope (jetpacs-component-scope (list (jetpacs-text "Ready")))))
+    (should (jetpacs-check-profile scope 'app))
+    (should-error (jetpacs-check-profile scope 'dialog))))
 
 (ert-deftest jetpacs-components-require-node-and-extension-advertisement ()
   "A namespaced node alone cannot imply its renderer extension."
@@ -87,15 +107,20 @@
     (should (equal (plist-get (cdr entry) :surfaces) '("jpcatalog")))))
 
 (ert-deftest jetpacs-component-catalog-builds-home-and-every-detail ()
-  "Every catalog screen is typed, serializable IR with all three node kinds."
+  "Every catalog screen is typed, scoped, serializable extension IR."
   (let* ((screens
           (list (jetpacs-component-catalog--home-screen nil)
                 (jetpacs-component-catalog--action-screen nil)
                 (jetpacs-component-catalog--choice-screen nil)
                 (jetpacs-component-catalog--panel-screen nil)))
          (json (mapconcat #'jetpacs-node->canonical-json screens "\n")))
-    (dolist (screen screens) (should (jetpacs-root-node-p screen)))
-    (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"))
+    (dolist (screen screens)
+      (should (jetpacs-root-node-p screen))
+      (should (string-match-p
+               (regexp-quote "\"t\":\"jetpacs.scope\"")
+               (jetpacs-node->canonical-json screen))))
+    (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
+                    "jetpacs.scope"))
       (should (string-match-p (regexp-quote type) json)))))
 
 (ert-deftest jetpacs-component-catalog-action-dispatches-exactly-once ()
