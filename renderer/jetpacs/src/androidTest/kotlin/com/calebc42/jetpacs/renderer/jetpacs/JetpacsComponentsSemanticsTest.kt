@@ -198,6 +198,39 @@ class JetpacsComponentsSemanticsTest {
     }
 
     @Test
+    fun maskedTextFieldKeepsLiteralsOutOfLogicalStateAndHasOneEditableOwner() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"text_input","id":"phone","label":"Phone",
+              "single_line":true,"mask":"(##) ##",
+              "on_change":{"action":"catalog.phone-change"}
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsTextInputRenderer.render(
+                    node,
+                    context,
+                    Modifier
+                        .testTag("masked-field")
+                        .ebpSemantics(node) { context.dispatchAction(it) },
+                )
+            }
+        }
+
+        compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "masked-field"),
+        ).performTextInput("12😀34")
+        compose.runOnIdle {
+            assertEquals(listOf("state:12😀34", "action:catalog.phone-change"), context.events)
+            assertEquals(JsonPrimitive("12😀34"), context.states.single().second)
+            assertEquals(JsonPrimitive("12😀34"), context.actions.single().second)
+        }
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+    }
+
+    @Test
     fun textFieldProjectsErrorDisabledAndMaximumLengthSemantics() {
         val context = RecordingContext()
         val node = Json.parseToJsonElement(
