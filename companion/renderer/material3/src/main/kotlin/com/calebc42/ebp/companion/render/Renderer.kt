@@ -87,7 +87,6 @@ import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -820,7 +819,7 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         else OutlinedTextFieldDefaults.contentPaddingWithLabel()
     }
 
-    val fieldModifier = m.focusRequester(binding.focusRequester)
+    val fieldModifier = binding.fieldModifier(m)
     if (presentation.password) {
         if (filled) {
                 androidx.compose.material3.SecureTextField(

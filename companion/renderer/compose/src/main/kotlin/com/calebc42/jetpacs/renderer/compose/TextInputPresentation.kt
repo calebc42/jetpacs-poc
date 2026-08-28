@@ -15,7 +15,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.editableText
+import androidx.compose.ui.semantics.inputText
+import androidx.compose.ui.semantics.password
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.textSelectionRange
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -76,7 +84,58 @@ class TextInputBinding internal constructor(
 
     /** Submit the current logical value through the ordinary action host. */
     fun submit(): ActionHandoff = controller.submit()
+
+    /**
+     * Attach the shared focus owner and password-safe accessibility value.
+     *
+     * Compose 1.12's secure fields visually obfuscate `EditableText` but also
+     * publish the raw value as `InputText`; Android's accessibility bridge
+     * selects that raw property for `AccessibilityNodeInfo.text`. Password
+     * fields override both properties with scalar-count bullets here while
+     * leaving the field's native editing actions and autofill type intact.
+     */
+    fun fieldModifier(modifier: Modifier): Modifier {
+        val focused = modifier.focusRequester(focusRequester)
+        if (!presentation.password) return focused
+        return focused.semantics {
+            val text = controller.state.text
+            val obfuscated = AnnotatedString(
+                SECURE_ACCESSIBILITY_BULLET.toString().repeat(text.scalarCount()),
+            )
+            inputText = obfuscated
+            editableText = obfuscated
+            textSelectionRange = controller.state.selection.toScalarRange(text)
+            password()
+        }
+    }
 }
+
+private const val SECURE_ACCESSIBILITY_BULLET = '\u2022'
+
+private fun CharSequence.scalarCount(endExclusive: Int = length): Int {
+    var count = 0
+    var index = 0
+    val end = endExclusive.coerceIn(0, length)
+    while (index < end) {
+        val first = this[index]
+        index += if (
+            Character.isHighSurrogate(first) &&
+            index + 1 < end &&
+            Character.isLowSurrogate(this[index + 1])
+        ) {
+            2
+        } else {
+            1
+        }
+        count += 1
+    }
+    return count
+}
+
+private fun TextRange.toScalarRange(text: CharSequence): TextRange = TextRange(
+    text.scalarCount(start),
+    text.scalarCount(end),
+)
 
 /** Initial state selected from authored content and an accepted retained value. */
 internal data class TextInputSeed(

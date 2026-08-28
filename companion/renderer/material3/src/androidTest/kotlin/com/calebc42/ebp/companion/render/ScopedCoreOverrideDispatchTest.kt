@@ -7,13 +7,16 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.calebc42.ebp.companion.MaterialRendererHost
 import com.calebc42.ebp.companion.ui.SemanticsHostActivity
@@ -148,6 +151,35 @@ class ScopedCoreOverrideDispatchTest {
 
         compose.onNodeWithText("dialog").assertIsDisplayed()
         compose.onAllNodesWithText("First:dialog").assertCountEquals(0)
+    }
+
+    @Test
+    fun canonicalPasswordPublishesOnlyObfuscatedAccessibilityText() {
+        val node = buildJsonObject {
+            put("t", "text_input")
+            put("id", "secret")
+            put("label", "One-time secret")
+            put("password", true)
+            put("single_line", true)
+        }
+        val root = RenderCtx("app:test", bridge)
+
+        compose.setContent { RenderNode(node, root.child(node, 0)) }
+
+        val field = compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.Password),
+        )
+        field.performTextInput("swordfish")
+        val obfuscated = AnnotatedString("\u2022".repeat(9))
+        field
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.InputText,
+                obfuscated,
+            ))
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.EditableText,
+                obfuscated,
+            ))
     }
 
     private fun textNode(text: String, semanticsName: String? = null) = buildJsonObject {
