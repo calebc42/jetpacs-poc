@@ -12,10 +12,11 @@ val JETPACS_COMPONENTS_NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "jetpacs.action" to NodeRow(setOf("label", "on_tap"), setOf("enabled")),
     "jetpacs.choice" to NodeRow(setOf("id", "label", "checked", "on_change"), setOf("enabled")),
     "jetpacs.panel" to NodeRow(setOf("label", "children"), setOf()),
+    "jetpacs.scope" to NodeRow(setOf("children"), setOf()),
 )
 
 val JETPACS_COMPONENTS_TARGET_NODE_TYPES: Map<String, Set<String>> = mapOf(
-    "app" to setOf("jetpacs.action", "jetpacs.choice", "jetpacs.panel"),
+    "app" to setOf("jetpacs.action", "jetpacs.choice", "jetpacs.panel", "jetpacs.scope"),
     "dialog" to setOf(),
     "notification" to setOf(),
 )

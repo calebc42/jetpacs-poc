@@ -54,7 +54,12 @@ class JetpacsComponentsVocabularyTest {
             JETPACS_COMPONENTS_NODE_SCHEMA.keys.toList(),
         )
         assertEquals(
-            setOf("jetpacs.action", "jetpacs.choice", "jetpacs.panel"),
+            setOf(
+                "jetpacs.action",
+                "jetpacs.choice",
+                "jetpacs.panel",
+                "jetpacs.scope",
+            ),
             JETPACS_COMPONENTS_TARGET_NODE_TYPES.getValue("app"),
         )
         assertEquals(emptySet<String>(),
@@ -82,6 +87,7 @@ class JetpacsComponentsVocabularyTest {
             """{"t":"jetpacs.choice","id":"choice","label":"Choice","checked":"false","on_change":{"action":"x.change"}}""",
             """{"t":"jetpacs.action","label":"","on_tap":{"action":"x.run"}}""",
             """{"t":"jetpacs.panel","label":"","children":[]}""",
+            """{"t":"jetpacs.scope"}""",
         )
         malformed.forEach { json ->
             assertThrows(Exception::class.java) {
