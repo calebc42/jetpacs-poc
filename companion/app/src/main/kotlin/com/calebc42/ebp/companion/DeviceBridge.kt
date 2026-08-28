@@ -35,6 +35,7 @@ import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererActionContext
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererActionRequest
+import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
 import com.calebc42.jetpacs.renderer.model.parseDiagnostics
 import com.calebc42.jetpacs.renderer.model.parseEldoc
 import com.calebc42.jetpacs.renderer.model.parseFontify
@@ -51,7 +52,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -241,6 +241,8 @@ class DeviceBridge(
     // directly (EbpApplication), independent of any connection.
     private val firing = CompanionStores.firing(appContext)
     @Volatile private var current: Socket? = null
+    /** Exact engine-to-socket ownership used by password deadline aborts. */
+    private val engineTransports = ConcurrentHashMap<CompanionEngine, Socket>()
     private val acceptedConnectionGeneration = AtomicLong(0)
     // Unlike CompanionStores.liveSession (which preserves the existing
     // accept-time routing behavior), this tracker advances only after proof
@@ -451,8 +453,11 @@ class DeviceBridge(
     data class PendingConfirm(
         val prompt: String, val surface: String, val descriptor: JsonObject,
         val value: JsonElement?, val injected: JsonObject?, val fields: JsonObject?,
+        val secret: RendererVolatileSecret?,
         val sourceId: String?,
         val onOutcome: (RendererActionOutcome) -> Unit,
+        /** Identity only; keeps the internal deadline type out of UI state. */
+        val secretAttemptToken: Any? = null,
         // §14.1: the object form's optional face — a bare-string confirm
         // leaves all four null and the host draws what it always drew.
         val title: String? = null, val icon: String? = null,
@@ -467,15 +472,18 @@ class DeviceBridge(
         _pendingConfirm.value = null
         if (run) dispatch(
             p.surface, p.descriptor, p.value, p.injected, p.fields,
-            p.sourceId, p.onOutcome,
-        ) else deliverOutcome(p.onOutcome, RendererActionOutcome.NotAdmitted(
+            p.secret, p.sourceId,
+            p.secretAttemptToken as? SecretActionAttempt,
+            p.onOutcome,
+        ) else p.onOutcome(RendererActionOutcome.NotAdmitted(
             com.calebc42.ebp.wire.UnsafeAdmissionReason.Cancelled))
     }
 
     /** Park when DESCRIPTOR carries `confirm`; true when parked. */
     private fun parkIfConfirmed(surface: String, descriptor: JsonObject,
                                 value: JsonElement?, injected: JsonObject?,
-                                fields: JsonObject?, sourceId: String?,
+                                fields: JsonObject?, secret: RendererVolatileSecret?,
+                                sourceId: String?, secretAttempt: SecretActionAttempt?,
                                 onOutcome: (RendererActionOutcome) -> Unit): Boolean {
         // §14.1: `confirm` is a bare string, or the object form
         // {text, title?, icon?, confirm_label?, dismiss_label?}.
@@ -487,8 +495,7 @@ class DeviceBridge(
         // second handoff must conclude rather than overwrite the first one's
         // only terminal callback.
         if (_pendingConfirm.value != null) {
-            deliverOutcome(
-                onOutcome,
+            onOutcome(
                 RendererActionOutcome.NotAdmitted(
                     com.calebc42.ebp.wire.UnsafeAdmissionReason.Overloaded,
                 ),
@@ -496,8 +503,8 @@ class DeviceBridge(
             return true
         }
         _pendingConfirm.value = PendingConfirm(
-            prompt, surface, descriptor, value, injected, fields, sourceId,
-            onOutcome,
+            prompt, surface, descriptor, value, injected, fields, secret,
+            sourceId, onOutcome, secretAttempt,
             title = obj?.stringOr("title")?.takeIf { it.isNotEmpty() },
             icon = obj?.stringOr("icon")?.takeIf { it.isNotEmpty() },
             confirmLabel = obj?.stringOr("confirm_label")?.takeIf { it.isNotEmpty() },
@@ -507,9 +514,39 @@ class DeviceBridge(
 
     private fun dispatch(surface: String, descriptor: JsonObject, value: JsonElement?,
                          injected: JsonObject?, fields: JsonObject?,
-                         sourceId: String?,
+                         secret: RendererVolatileSecret?, sourceId: String?,
+                         secretAttempt: SecretActionAttempt?,
                          onOutcome: (RendererActionOutcome) -> Unit) {
         dispatchExecutor.execute {
+            if (secret != null) {
+                if (secretAttempt?.isPending() != true) return@execute
+                val captured = secret.fieldsOrNull() ?: return@execute
+                val activeEngine = secretAttempt.engine
+                try {
+                    if (surface.startsWith("dialog:")) {
+                        activeEngine?.dispatchDialogSecretAction(
+                            surface.removePrefix("dialog:"),
+                            descriptor,
+                            captured,
+                            secret.secretIds,
+                            sourceId,
+                        ) { outcome -> onOutcome(renderOutcome(outcome)) }
+                            ?: onOutcome(rendererNotReadyOutcome())
+                    } else {
+                        activeEngine?.dispatchSecretAction(
+                            surface,
+                            descriptor,
+                            captured,
+                            secret.secretIds,
+                            sourceId,
+                        ) { outcome -> onOutcome(renderOutcome(outcome)) }
+                            ?: onOutcome(rendererNotReadyOutcome())
+                    }
+                } finally {
+                    secretAttempt.releaseAfterDispatch()
+                }
+                return@execute
+            }
             val traceVariant = descriptor.stringOr("builtin") == "variant.switch"
             if (traceVariant) android.os.Trace.beginSection("EBP variant.switch")
             try {
@@ -548,8 +585,7 @@ class DeviceBridge(
                             // engine so a pre-READY occurrence is recorded in
                             // syncingDirty and READY ordering stays intact.
                             activeEngine?.dispatchAction(
-                                surface, descriptor, value, injected, fields,
-                                sourceId,
+                                surface, descriptor, value, injected, sourceId,
                             ) { outcome -> completeOutcome(onOutcome, outcome) }
                                 ?: deliverOutcome(onOutcome,
                                     rendererNotReadyOutcome())
@@ -567,10 +603,11 @@ class DeviceBridge(
                 if (surface.startsWith("dialog:"))
                     activeEngine?.dispatchDialogAction(
                         surface.removePrefix("dialog:"), descriptor, value,
-                        fields) { outcome -> completeOutcome(onOutcome, outcome) }
+                        fields, sourceId,
+                    ) { outcome -> completeOutcome(onOutcome, outcome) }
                         ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
                 else activeEngine?.dispatchAction(
-                    surface, descriptor, value, injected, fields, sourceId,
+                    surface, descriptor, value, injected, sourceId,
                 ) { outcome -> completeOutcome(onOutcome, outcome) }
                     ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
             } finally {
@@ -584,23 +621,66 @@ class DeviceBridge(
         request: RendererActionRequest,
         onOutcome: (RendererActionOutcome) -> Unit,
     ): ActionHandoff {
-        val delivered = AtomicBoolean(false)
-        val oneShot: (RendererActionOutcome) -> Unit = { outcome ->
-            if (delivered.compareAndSet(false, true)) onOutcome(outcome)
-        }
         val surface = when (val context = request.context) {
             is RendererActionContext.Surface -> context.surface
             is RendererActionContext.Dialog -> "dialog:${context.dialogId}"
         }
+        val secret = request.secret
+        val secretAttempt = secret?.let { capture ->
+            val boundEngine = engine
+            SecretActionAttempt(
+                engine = boundEngine,
+                capture = capture,
+                scheduler = SystemSecretDeadlineScheduler,
+                abortTransport = ::abortSecretTransport,
+                beforeTimeout = { attempt ->
+                    if (_pendingConfirm.value?.secretAttemptToken === attempt) {
+                        _pendingConfirm.value = null
+                    }
+                },
+                terminal = { outcome ->
+                    deliverOutcome(
+                        callback = { delivered ->
+                            capture.erase()
+                            onOutcome(delivered)
+                        },
+                        outcome = outcome,
+                    )
+                },
+            )
+        }
+        val oneShot: (RendererActionOutcome) -> Unit = if (secretAttempt != null) {
+            secretAttempt::complete
+        } else {
+            RendererOutcomeGate(onOutcome)::complete
+        }
+        val invalidUntypedFields =
+            request.context is RendererActionContext.Surface &&
+                request.fields?.isNotEmpty() == true
+        if (invalidUntypedFields || (request.fields != null && secret != null)) {
+            val invalid = RendererActionOutcome.NotAdmitted(
+                com.calebc42.ebp.wire.UnsafeAdmissionReason.ContentInvalid,
+            )
+            if (secretAttempt != null) oneShot(invalid)
+            else deliverOutcome(oneShot, invalid)
+            return ActionHandoff.HandedOff
+        }
         if (parkIfConfirmed(
                 surface, request.descriptor, request.value, request.injected,
-                request.fields, request.sourceId, oneShot,
+                request.fields, secret, request.sourceId, secretAttempt, oneShot,
             )) return ActionHandoff.HandedOff
         dispatch(
             surface, request.descriptor, request.value, request.injected,
-            request.fields, request.sourceId, oneShot,
+            request.fields, secret, request.sourceId, secretAttempt, oneShot,
         )
         return ActionHandoff.HandedOff
+    }
+
+    /** Close only the transport that owned the expiring secret occurrence. */
+    private fun abortSecretTransport(boundEngine: CompanionEngine?) {
+        if (boundEngine == null) return
+        boundEngine.runCatching { close("password submission deadline") }
+        engineTransports.remove(boundEngine)?.runCatching { close() }
     }
 
     /** SPEC 14.6: renderer edit -> draft + state.changed publication. */
@@ -612,6 +692,11 @@ class DeviceBridge(
         callback: (RendererActionOutcome) -> Unit,
         outcome: ActionAdmissionOutcome,
     ) {
+        deliverOutcome(callback, renderOutcome(outcome))
+    }
+
+    /** Convert at the session thread so a pre-deadline result cancels on time. */
+    private fun renderOutcome(outcome: ActionAdmissionOutcome): RendererActionOutcome {
         val rendered = when (outcome) {
             is ActionAdmissionOutcome.SafelyAdmitted ->
                 RendererActionOutcome.SafelyAdmitted(outcome.evidence)
@@ -624,7 +709,7 @@ class DeviceBridge(
             rendered.error?.let {
                 onQueueProblem(it.stringOr("message", "queue error"))
             }
-        deliverOutcome(callback, rendered)
+        return rendered
     }
 
     private fun deliverOutcome(
@@ -1107,16 +1192,50 @@ class DeviceBridge(
         dialogId: String,
         value: JsonElement?,
         fields: JsonObject,
+        secret: RendererVolatileSecret?,
         onOutcome: (RendererActionOutcome) -> Unit,
     ): ActionHandoff {
-        val delivered = AtomicBoolean(false)
-        val oneShot: (RendererActionOutcome) -> Unit = { outcome ->
-            if (delivered.compareAndSet(false, true)) onOutcome(outcome)
+        val boundEngine = engine
+        val secretAttempt = secret?.let { capture ->
+            SecretActionAttempt(
+                engine = boundEngine,
+                capture = capture,
+                scheduler = SystemSecretDeadlineScheduler,
+                abortTransport = ::abortSecretTransport,
+                terminal = { outcome ->
+                    deliverOutcome(
+                        callback = { delivered ->
+                            capture.erase()
+                            onOutcome(delivered)
+                        },
+                        outcome = outcome,
+                    )
+                },
+            )
         }
+        val oneShot: (RendererActionOutcome) -> Unit = secretAttempt?.let {
+            it::complete
+        } ?: RendererOutcomeGate(onOutcome)::complete
         dispatchExecutor.execute {
-            engine?.completeDialogSubmit(dialogId, value, fields) { outcome ->
-                completeOutcome(oneShot, outcome)
-            } ?: deliverOutcome(oneShot, rendererNotReadyOutcome())
+            if (secret != null) {
+                if (secretAttempt?.isPending() != true) return@execute
+                val captured = secret.fieldsOrNull() ?: return@execute
+                try {
+                    boundEngine?.completeDialogSecretSubmit(
+                        dialogId,
+                        value,
+                        captured,
+                        secret.secretIds,
+                    ) { outcome -> oneShot(renderOutcome(outcome)) }
+                        ?: oneShot(rendererNotReadyOutcome())
+                } finally {
+                    secretAttempt.releaseAfterDispatch()
+                }
+            } else {
+                boundEngine?.completeDialogSubmit(dialogId, value, fields) { outcome ->
+                    completeOutcome(oneShot, outcome)
+                } ?: deliverOutcome(oneShot, rendererNotReadyOutcome())
+            }
         }
         return ActionHandoff.HandedOff
     }
@@ -1184,12 +1303,17 @@ class DeviceBridge(
                 // MUST NOT crash that thread (and with it the app): close the
                 // socket so the reader loop unwinds through engine.close().
                 try {
-                    out.write(bytes); out.flush()
-                } catch (_: java.io.IOException) {
+                    out.write(bytes)
+                    out.flush()
+                } catch (failure: java.io.IOException) {
                     socket.runCatching { close() }
+                    throw failure
                 }
             }
         } ?: return
+        // Installed before activation, so every renderer-visible engine has
+        // an exact transport the hard password deadline can abort.
+        engineTransports[engine] = socket
         // SPEC 20.1.1: seed the new session with the last-known geometry so
         // the welcome can mirror it before the Activity recomposes.
         lastWindow?.let { (w, h) -> engine.windowChanged(w, h) }
@@ -1326,6 +1450,7 @@ class DeviceBridge(
         if (!variantEngineRoute.activate(generation, engine) {
                 CompanionStores.setLiveSession(it)
             }) {
+            engineTransports.remove(engine)
             engine.close("superseded before activation")
             return
         }
@@ -1353,6 +1478,7 @@ class DeviceBridge(
         } catch (_: Exception) {
             // transport loss: SPEC 10.1, any state may close
         } finally {
+            engineTransports.remove(engine)
             // SPEC 15.3: the engine releases its in-flight marker so the
             // next session's replay is never wedged (review P0). LD-18:
             // best-effort — a throw here must not skip clearLiveSession and

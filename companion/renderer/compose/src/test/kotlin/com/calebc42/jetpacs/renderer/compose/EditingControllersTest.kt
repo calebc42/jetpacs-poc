@@ -120,10 +120,13 @@ class EditingControllersTest {
             ),
             65_536,
             published::add,
-            EditingActionDispatcher { _, value, fields, _, callback ->
+            EditingActionDispatcher { _, value, secret, _, callback ->
                 dispatches++
                 assertEquals(null, value)
-                assertEquals("secret", fields!!["password"]?.toString()?.trim('"'))
+                assertEquals(
+                    "secret",
+                    secret!!.fieldsOrNull()!!["password"]?.toString()?.trim('"'),
+                )
                 outcome = callback
                 ActionHandoff.HandedOff
             },

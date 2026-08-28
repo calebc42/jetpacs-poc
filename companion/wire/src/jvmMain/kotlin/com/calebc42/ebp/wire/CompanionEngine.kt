@@ -194,6 +194,7 @@ class CompanionEngine(
 
     @Synchronized
     fun close(reason: String) {
+        if (state == SessionState.CLOSED) return
         state = SessionState.CLOSED
         closeReason = reason
         // LD-18: leave the device-lifetime slot FIRST — a throw from any
@@ -228,6 +229,7 @@ class CompanionEngine(
             dialogs.clear()
             dialogEditors.clear() // sessions die with the connection anyway
             dialogDefaults.clear()
+            dialogPasswordFields.clear()
             ids.forEach { runCatching { dialogListener?.invoke(it, null) } }
         }
         // SPEC 18.3: pie menus are ephemeral to the session — dismiss all.
@@ -305,7 +307,24 @@ class CompanionEngine(
     @Synchronized
     fun sendRequest(method: String, params: JsonObject,
                     bounded: Boolean = true,
-                    callback: (JsonObject?, JsonObject?) -> Unit) {
+                    callback: (JsonObject?, JsonObject?) -> Unit) =
+        sendRequestInternal(method, params, bounded, false, callback)
+
+    /** Send one live-only request and zero its mutable encoded frame. */
+    private fun sendSecretRequest(
+        method: String,
+        params: JsonObject,
+        callback: (JsonObject?, JsonObject?) -> Unit,
+    ) = sendRequestInternal(method, params, true, true, callback)
+
+    @Synchronized
+    private fun sendRequestInternal(
+        method: String,
+        params: JsonObject,
+        bounded: Boolean,
+        eraseEncodedFrame: Boolean,
+        callback: (JsonObject?, JsonObject?) -> Unit,
+    ) {
         if (pendingHeld && pending.size <= PENDING_RESUME) pendingHeld = false
         if (bounded && (pendingHeld || pending.size >= PENDING_HOLD)) {
             pendingHeld = true
@@ -323,7 +342,7 @@ class CompanionEngine(
             put("id", id)
             put("method", method)
             put("params", params)
-        })
+        }, eraseEncodedFrame)
     }
 
     // ---------------------------------------- actions and input (SPEC 14)
@@ -355,9 +374,84 @@ class CompanionEngine(
      * worked, because those route through DialogContext instead.  The
      * JA-6 lesson verbatim: a wire member is not implemented because the
      * validator accepts it. */
-    fun dispatchDialogAction(dialogId: String, descriptor: JsonObject,
-                             hookValue: JsonElement?, fields: JsonObject?,
-                             callback: ((ActionAdmissionOutcome) -> Unit)? = null) {
+    fun dispatchDialogAction(
+        dialogId: String,
+        descriptor: JsonObject,
+        hookValue: JsonElement?,
+        fields: JsonObject?,
+        sourceId: String? = null,
+        callback: ((ActionAdmissionOutcome) -> Unit)? = null,
+    ) = dispatchDialogActionInternal(
+        dialogId,
+        descriptor,
+        hookValue,
+        fields,
+        sourceId,
+        emptySet(),
+        callback,
+    )
+
+    /** Explicit volatile entrypoint for a password-owned dialog action. */
+    fun dispatchDialogSecretAction(
+        dialogId: String,
+        descriptor: JsonObject,
+        fields: JsonObject,
+        secretIds: Set<String>,
+        sourceId: String?,
+        callback: ((ActionAdmissionOutcome) -> Unit)? = null,
+    ) = dispatchDialogActionInternal(
+        dialogId,
+        descriptor,
+        null,
+        fields,
+        sourceId,
+        secretIds,
+        callback,
+    )
+
+    @Synchronized
+    private fun dispatchDialogActionInternal(
+        dialogId: String,
+        descriptor: JsonObject,
+        hookValue: JsonElement?,
+        fields: JsonObject?,
+        sourceId: String?,
+        secretIds: Set<String>,
+        callback: ((ActionAdmissionOutcome) -> Unit)?,
+    ) {
+        val captureIds = descriptor.arrOrNull("capture_fields")
+            ?.mapNotNull { it.asStringOrNull() }
+            .orEmpty()
+        val passwordIds = dialogPasswordFields[dialogId].orEmpty()
+        if (secretIds.isEmpty()) {
+            if (captureIds.any(passwordIds::contains)) {
+                callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                    UnsafeAdmissionReason.ContentInvalid,
+                ))
+                return
+            }
+        } else {
+            val valid = state == SessionState.READY &&
+                "builtin" !in descriptor &&
+                descriptor.stringOr("when_offline", OFFLINE_DEFAULT) == "drop" &&
+                "dedupe" !in descriptor &&
+                "ttl_s" !in descriptor &&
+                fields != null &&
+                fields.keys == captureIds.toSet() &&
+                captureIds.containsAll(secretIds) &&
+                sourceId != null && sourceId in secretIds &&
+                secretIds.all(passwordIds::contains)
+            if (!valid) {
+                callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                    if (state == SessionState.READY) {
+                        UnsafeAdmissionReason.ContentInvalid
+                    } else {
+                        UnsafeAdmissionReason.NotReady
+                    },
+                ))
+                return
+            }
+        }
         if ("builtin" in descriptor) {
             callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
                 UnsafeAdmissionReason.InvalidContext))
@@ -407,9 +501,14 @@ class CompanionEngine(
                 UnsafeAdmissionReason.ContentInvalid))
             return
         }
-        sendRequest("event.action", params) { result, error ->
+        val onResult: (JsonObject?, JsonObject?) -> Unit = { result, error ->
             callback?.invoke(actionAdmissionOutcome(
                 result?.stringOr("status"), error))
+        }
+        if (secretIds.isNotEmpty()) {
+            sendSecretRequest("event.action", params, onResult)
+        } else {
+            sendRequest("event.action", params, callback = onResult)
         }
     }
 
@@ -536,15 +635,96 @@ class CompanionEngine(
      * dropped, which is exactly `when_offline: "drop"` — the durable
      * queue and wake policies land at W6, builtins at W7.
      */
-    @Synchronized
     fun dispatchAction(surface: String, descriptor: JsonObject, hookValue: JsonElement?,
                        injected: JsonObject? = null,
-                       extraFields: JsonObject? = null,
                        /** The id of the node whose hook fired, when the host
                        * knows it. Required for a synchronized `editor`'s
                        * hooks so the §19 read-only rule can be enforced. */
                        sourceId: String? = null,
-                       callback: ((ActionAdmissionOutcome) -> Unit)? = null) {
+                       callback: ((ActionAdmissionOutcome) -> Unit)? = null) =
+        dispatchSurfaceAction(
+            surface,
+            descriptor,
+            hookValue,
+            injected,
+            sourceId,
+            null,
+            emptySet(),
+            callback,
+        )
+
+    /**
+     * Dispatch one explicitly typed volatile password occurrence.
+     *
+     * This is the only surface entrypoint that accepts renderer-owned fields.
+     * It independently proves accepted password identity, self ownership,
+     * capture membership, READY state, and drop-only policy before any event
+     * object can reach serialization or durable admission.
+     */
+    fun dispatchSecretAction(
+        surface: String,
+        descriptor: JsonObject,
+        secretFields: JsonObject,
+        secretIds: Set<String>,
+        sourceId: String?,
+        callback: ((ActionAdmissionOutcome) -> Unit)? = null,
+    ) = dispatchSurfaceAction(
+        surface,
+        descriptor,
+        null,
+        null,
+        sourceId,
+        secretFields,
+        secretIds,
+        callback,
+    )
+
+    @Synchronized
+    private fun dispatchSurfaceAction(
+        surface: String,
+        descriptor: JsonObject,
+        hookValue: JsonElement?,
+        injected: JsonObject?,
+        sourceId: String?,
+        secretFields: JsonObject?,
+        secretIds: Set<String>,
+        callback: ((ActionAdmissionOutcome) -> Unit)?,
+    ) {
+        val captureIds = descriptor.arrOrNull("capture_fields")
+            ?.mapNotNull(JsonElement::asStringOrNull)
+            .orEmpty()
+        if (secretFields == null) {
+            // A password capture without the explicit volatile entrypoint is
+            // malformed accepted state, never an ordinary/null occurrence.
+            if (captureIds.any { surfaces.isPasswordNode(surface, it) }) {
+                callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                    UnsafeAdmissionReason.ContentInvalid,
+                ))
+                return
+            }
+        } else {
+            val policy = descriptor.stringOr("when_offline", OFFLINE_DEFAULT)
+            val valid = state == SessionState.READY &&
+                "builtin" !in descriptor &&
+                policy == "drop" &&
+                "dedupe" !in descriptor &&
+                "ttl_s" !in descriptor &&
+                secretIds.isNotEmpty() &&
+                secretFields.keys == secretIds &&
+                captureIds.containsAll(secretIds) &&
+                sourceId != null && sourceId in secretIds &&
+                secretIds.all { surfaces.isPasswordNode(surface, it) }
+            if (!valid) {
+                callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                    if (state == SessionState.READY) {
+                        UnsafeAdmissionReason.ContentInvalid
+                    } else {
+                        UnsafeAdmissionReason.NotReady
+                    },
+                ))
+                return
+            }
+        }
         // SPEC 19: "A synchronized editor MUST become read-only whenever the
         // connection is not READY. It MUST NOT create an offline input draft,
         // delta, save, completion, or editor command." Its every other path
@@ -593,10 +773,8 @@ class CompanionEngine(
                     put(fieldId, surfaces.currentValue(surface, fieldId) ?: JsonNull)
                 }
             }
-            // SPEC 14.6: a value the renderer supplies at occurrence time — a
-            // text_input password's on_submit, whose secret has no retained
-            // draft for currentValue() to read (it never emits state.changed).
-            extraFields?.forEach { (k, v) -> put(k, v) }
+            // SPEC 14.6: only dispatchSecretAction can supply a password.
+            secretFields?.forEach { (k, v) -> put(k, v) }
         }
         val policy = descriptor.stringOr("when_offline", OFFLINE_DEFAULT)
         val params = buildJsonObject {
@@ -699,9 +877,14 @@ class CompanionEngine(
                         UnsafeAdmissionReason.OfflineDrop))
                     return
                 }
-                sendRequest("event.action", params) { result, error ->
+                val onResult: (JsonObject?, JsonObject?) -> Unit = { result, error ->
                     callback?.invoke(actionAdmissionOutcome(
                         result?.stringOr("status"), error))
+                }
+                if (secretFields != null) {
+                    sendSecretRequest("event.action", params, onResult)
+                } else {
+                    sendRequest("event.action", params, callback = onResult)
                 }
             }
         }
@@ -1105,6 +1288,8 @@ class CompanionEngine(
     // dialog — the layer under the user's dialog-local edits. Dialog state is
     // dialog-local (SPEC 18.1), so nothing else holds these.
     private val dialogDefaults = HashMap<String, JsonObject>()
+    /** Accepted password identities for defense-in-depth typed dialog capture. */
+    private val dialogPasswordFields = HashMap<String, Set<String>>()
 
     /** SPEC 14.1/18.1 (T3/LD-3): the authored values for an outstanding
      * dialog's stateful nodes, so `capture_fields` can resolve a field the
@@ -1298,6 +1483,7 @@ class CompanionEngine(
                 dialogs.remove(entry.key)
                 closeDialogEditors(entry.key)
                 dialogDefaults.remove(entry.key)
+                dialogPasswordFields.remove(entry.key)
                 respondError(entry.value, 1301, "Request was cancelled",
                     "request-cancelled")
                 dialogListener?.invoke(entry.key, null)
@@ -2567,9 +2753,16 @@ class CompanionEngine(
         dialogDefaults[dialogId] = buildJsonObject {
             // A stateful with no authored value defaults to JSON null — the
             // JsonNull write is the logical value, not a collapsed guard.
-            for ((nodeId, node) in statefuls)
-                put(nodeId, SurfaceStore.authoredValueOf(node) ?: JsonNull)
+            for ((nodeId, node) in statefuls) {
+                if (!node.boolOr("password")) {
+                    put(nodeId, SurfaceStore.authoredValueOf(node) ?: JsonNull)
+                }
+            }
         }
+        dialogPasswordFields[dialogId] = statefuls
+            .filterValues { it.boolOr("password") }
+            .keys
+            .toSet()
         if (dialogEditorNodes.isNotEmpty()) {
             val map = LinkedHashMap<String, String>()
             for ((identity, node) in dialogEditorNodes) {
@@ -2585,13 +2778,62 @@ class CompanionEngine(
     /** SPEC 18.1: dialog.submit builtin completes the request as submitted.
      * VALUE is the builtin's authored value; FIELDS the captured node
      * values (the renderer holds dialog-local state, SPEC 18.1). */
-    @Synchronized
     fun completeDialogSubmit(dialogId: String, value: JsonElement? = null,
                              fields: JsonObject? = null,
-                             callback: ((ActionAdmissionOutcome) -> Unit)? = null) {
+                             callback: ((ActionAdmissionOutcome) -> Unit)? = null) =
+        completeDialogSubmitInternal(
+            dialogId,
+            value,
+            fields,
+            emptySet(),
+            callback,
+        )
+
+    /** Explicit volatile completion for dialog.submit with password fields. */
+    fun completeDialogSecretSubmit(
+        dialogId: String,
+        value: JsonElement? = null,
+        fields: JsonObject,
+        secretIds: Set<String>,
+        callback: ((ActionAdmissionOutcome) -> Unit)? = null,
+    ) = completeDialogSubmitInternal(
+        dialogId,
+        value,
+        fields,
+        secretIds,
+        callback,
+    )
+
+    @Synchronized
+    private fun completeDialogSubmitInternal(
+        dialogId: String,
+        value: JsonElement?,
+        fields: JsonObject?,
+        secretIds: Set<String>,
+        callback: ((ActionAdmissionOutcome) -> Unit)?,
+    ) {
         val reqId = dialogs[dialogId] ?: run {
             callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
                 UnsafeAdmissionReason.InvalidContext,
+            ))
+            return
+        }
+        val passwordIds = dialogPasswordFields[dialogId].orEmpty()
+        val suppliedIds = fields?.keys.orEmpty()
+        val validSecretCapture = if (secretIds.isEmpty()) {
+            suppliedIds.none(passwordIds::contains)
+        } else {
+            state == SessionState.READY &&
+                suppliedIds.containsAll(secretIds) &&
+                secretIds.all(passwordIds::contains)
+        }
+        if (!validSecretCapture) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                if (state == SessionState.READY) {
+                    UnsafeAdmissionReason.ContentInvalid
+                } else {
+                    UnsafeAdmissionReason.NotReady
+                },
             ))
             return
         }
@@ -2622,10 +2864,21 @@ class CompanionEngine(
             ))
             return
         }
+        val written = respondResultWritten(
+            reqId,
+            result,
+            eraseEncodedFrame = secretIds.isNotEmpty(),
+        )
+        if (!written) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.TransportClosed,
+            ))
+            return
+        }
         dialogs.remove(dialogId)
         closeDialogEditors(dialogId)
         dialogDefaults.remove(dialogId)
-        respondResult(reqId, result)
+        dialogPasswordFields.remove(dialogId)
         callback?.invoke(ActionAdmissionOutcome.LocallyCompleted)
         dialogListener?.invoke(dialogId, null)
     }
@@ -2636,6 +2889,7 @@ class CompanionEngine(
         val reqId = dialogs.remove(dialogId) ?: return
         closeDialogEditors(dialogId)
         dialogDefaults.remove(dialogId)
+        dialogPasswordFields.remove(dialogId)
         respondResult(reqId, buildJsonObject { put("status", "dismissed") })
         dialogListener?.invoke(dialogId, null)
     }
@@ -2944,6 +3198,15 @@ class CompanionEngine(
     // -------------------------------------------------------------- output
 
     private fun respondResult(id: JsonElement, result: JsonObject) {
+        respondResultWritten(id, result, eraseEncodedFrame = false)
+    }
+
+    /** True only when the complete response reached the synchronous sink. */
+    private fun respondResultWritten(
+        id: JsonElement,
+        result: JsonObject,
+        eraseEncodedFrame: Boolean,
+    ): Boolean {
         // SPEC 7.1: "A responder that computes a result but cannot serialize
         // the response body MUST answer the request with -32603
         // internal-error; it MUST NOT leave the request unanswered." Every
@@ -2963,9 +3226,9 @@ class CompanionEngine(
             // The error body is small, fixed, and built from constants — it
             // serializes on a stack that has already unwound.
             respondError(id, -32603, "Internal error", "internal-error")
-            return
+            return false
         }
-        sink(encodeFrame(body))
+        return writeFrame(encodeFrame(body), eraseEncodedFrame)
     }
 
     /** null when the body cannot be encoded. Both arms stay across the
@@ -3004,7 +3267,28 @@ class CompanionEngine(
         })
     }
 
-    private fun emit(msg: JsonObject) = sink(encodeFrame(wireSerialize(msg)))
+    private fun emit(msg: JsonObject, eraseEncodedFrame: Boolean = false): Boolean =
+        writeFrame(encodeFrame(wireSerialize(msg)), eraseEncodedFrame)
+
+    /**
+     * One synchronous transport handoff. A failed write closes the engine so
+     * every pending correlation concludes; secret frames are zeroed whether
+     * the sink wrote all, part, or none of their bytes.
+     */
+    private fun writeFrame(frame: ByteArray, eraseEncodedFrame: Boolean): Boolean =
+        try {
+            sink(frame)
+            true
+        } catch (_: Exception) {
+            close("transport write failed")
+            false
+        } finally {
+            if (eraseEncodedFrame) frame.fill(0)
+        }
+
+    /** Bounded diagnostic used to prove transport teardown releases requests. */
+    @Synchronized
+    internal fun outstandingRequestCount(): Int = pending.size
 
     /** The ONE outbound serializer: every emit site and every byte-measuring
      * site go through it, so the SPEC 4.5/14.4/15.4 gates measure exactly the

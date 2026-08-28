@@ -8,6 +8,7 @@ import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -116,18 +117,31 @@ fun rememberTextInputBinding(
             publishPasswordLocally = context.inDialog,
         ),
         maxFieldBytes = context.maxFieldBytes,
-        publishState = { context.state(id, JsonPrimitive(it)) },
+        publishState = { context.state(id, JsonPrimitive(it), password) },
         actionDispatcher = EditingActionDispatcher {
-                descriptor, value, fields, sourceId, onOutcome ->
+                descriptor, value, secret, sourceId, onOutcome ->
             context.dispatchAction(
                 descriptor = descriptor,
                 value = value,
-                fields = fields,
+                secret = secret,
                 sourceId = sourceId,
                 onOutcome = onOutcome,
             )
         },
     )
+    DisposableEffect(
+        controller,
+        context.volatileSecretRegistryKey,
+        id,
+        password,
+    ) {
+        val unregister = if (password) {
+            context.registerVolatileSecret(id, controller::eraseVolatileState)
+        } else {
+            {}
+        }
+        onDispose(unregister)
+    }
     val presentation = textInputPresentationOf(node)
     val focusRequester = rememberPresentationFocusRequester(
         identity = context.path,

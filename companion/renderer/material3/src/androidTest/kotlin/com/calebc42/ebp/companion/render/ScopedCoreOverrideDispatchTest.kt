@@ -245,6 +245,7 @@ private class InertMaterialHost : MaterialRendererHost {
         dialogId: String,
         value: JsonElement?,
         fields: JsonObject,
+        secret: com.calebc42.jetpacs.renderer.model.RendererVolatileSecret?,
         onOutcome: (RendererActionOutcome) -> Unit,
     ) = ActionHandoff.HandedOff
     override fun dismissDialog(dialogId: String) = Unit

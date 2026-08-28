@@ -68,6 +68,7 @@ import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.VerticalFloatingToolbar
 import androidx.compose.material3.animateFloatingActionButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
@@ -104,6 +105,7 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.RendererActionContext
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererActionRequest
+import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -142,6 +144,38 @@ class DialogContext(
      * dialog's spec — the layer UNDER the user's edits. */
     val defaults: JsonObject? = null,
 ) {
+    private val volatileFields = LinkedHashMap<String, JsonElement?>()
+    private val volatileErasers = LinkedHashMap<String, () -> Unit>()
+
+    /** Keep password state outside the ordinary dialog field map. */
+    fun putVolatile(id: String, value: JsonElement?) {
+        if ((value as? JsonPrimitive)?.content?.isEmpty() == true) {
+            volatileFields.remove(id)
+        } else {
+            volatileFields[id] = value
+        }
+    }
+
+    /** Register the native owner used by dialog.submit and lifecycle erasure. */
+    fun registerVolatile(id: String, erase: () -> Unit): () -> Unit {
+        volatileErasers[id] = erase
+        return {
+            if (volatileErasers[id] === erase) volatileErasers.remove(id)
+            volatileFields.remove(id)
+        }
+    }
+
+    fun isVolatile(id: String): Boolean = id in volatileErasers
+
+    /** Erase selected dialog secrets without retaining their values. */
+    fun eraseVolatile(ids: Set<String>) {
+        val erasers = ids.mapNotNull(volatileErasers::get)
+        ids.forEach(volatileFields::remove)
+        erasers.forEach { it() }
+    }
+
+    fun dispose() = eraseVolatile(volatileErasers.keys.toSet())
+
     /**
      * SPEC 14.1: the logical value of a stateful node at occurrence time —
      * the user's dialog-local edit when there is one, else the authored
@@ -159,7 +193,10 @@ class DialogContext(
      * default cell, with an explicit `found` bit deciding which layer answers
      * rather than the value's own emptiness.
      */
-    fun capture(id: String): JsonElement? = captureValue(id, fields, defaults)
+    fun capture(id: String): JsonElement? = when {
+        id in volatileErasers -> volatileFields[id] ?: JsonPrimitive("")
+        else -> captureValue(id, fields, defaults)
+    }
 }
 
 /** The two-layer lookup of [DialogContext.capture], as pure logic so the
@@ -239,7 +276,7 @@ data class RenderCtx(
     fun dispatchAction(
         descriptor: JsonObject?,
         value: JsonElement? = null,
-        fields: JsonObject? = null,
+        secret: RendererVolatileSecret? = null,
         sourceId: String? = null,
         onOutcome: (RendererActionOutcome) -> Unit = {},
     ): ActionHandoff {
@@ -257,23 +294,14 @@ data class RenderCtx(
         if (d != null && "builtin" in descriptor) {
             when (descriptor.stringOr("builtin")) {
                 "dialog.submit" -> {
-                    val submittedFields = buildJsonObject {
-                        descriptor.arrOrNull("capture_fields")?.let { capture ->
-                            for (i in capture.indices) {
-                                val fieldId = capture[i].strOrNull()!!
-                                // T3/LD-3: user layer, then authored layer.
-                                put(fieldId,
-                                    d.capture(fieldId) ?: JsonNull)
-                            }
-                        }
-                        fields?.forEach { (fieldId, fieldValue) ->
-                            put(fieldId, fieldValue)
-                        }
-                    }
+                    val (submittedFields, volatile) =
+                        captureDialogFields(d, descriptor, secret)
                     return d.bridge.submitDialog(
                         d.dialogId,
                         if ("value" in descriptor) descriptor["value"] else null,
-                        submittedFields,
+                        submittedFields.takeIf { volatile == null }
+                            ?: JsonObject(emptyMap()),
+                        volatile,
                         onOutcome,
                     )
                 }
@@ -290,21 +318,15 @@ data class RenderCtx(
             // field layer exactly like dialog.submit (T3/LD-3).  The generic
             // surface path silently dropped these — the JA-5 device gate's
             // token+confirm Archive and date-pick relay were dead taps.
-            val capturedFields = buildJsonObject {
-                descriptor.arrOrNull("capture_fields")?.let { capture ->
-                    for (i in capture.indices) {
-                        val fieldId = capture[i].strOrNull()!!
-                        put(fieldId, d.capture(fieldId) ?: JsonNull)
-                    }
-                }
-                fields?.forEach { (fieldId, fieldValue) ->
-                    put(fieldId, fieldValue)
-                }
-            }
+            val (capturedFields, volatile) =
+                captureDialogFields(d, descriptor, secret)
             return d.bridge.dispatch(
                 RendererActionRequest(
                     RendererActionContext.Dialog(d.dialogId), descriptor,
-                    value = value, fields = capturedFields, sourceId = sourceId,
+                    value = value,
+                    fields = capturedFields.takeIf { volatile == null },
+                    secret = volatile,
+                    sourceId = sourceId,
                 ),
                 onOutcome,
             )
@@ -312,7 +334,7 @@ data class RenderCtx(
         return bridge.dispatch(
             RendererActionRequest(
                 RendererActionContext.Surface(surface), descriptor,
-                value = value, fields = fields, sourceId = sourceId,
+                value = value, secret = secret, sourceId = sourceId,
             ),
             onOutcome,
         )
@@ -331,9 +353,51 @@ data class RenderCtx(
 
     val inDialog: Boolean get() = dialog != null
 
-    fun state(id: String, value: JsonElement?, caret: Int? = null) {
-        if (dialog != null) dialog.fields[id] = value // SPEC 18.1: local only
+    fun state(
+        id: String,
+        value: JsonElement?,
+        caret: Int? = null,
+        volatileSecret: Boolean = false,
+    ) {
+        if (dialog != null) {
+            if (volatileSecret) dialog.putVolatile(id, value)
+            else dialog.fields[id] = value // SPEC 18.1: local only
+        }
         else bridge.publishState(surface, id, value, caret)
+    }
+
+    private fun captureDialogFields(
+        context: DialogContext,
+        descriptor: JsonObject,
+        supplied: RendererVolatileSecret?,
+    ): Pair<JsonObject, RendererVolatileSecret?> {
+        val suppliedFields = supplied?.fieldsOrNull()
+        val capturedIds = descriptor.arrOrNull("capture_fields")
+            ?.mapNotNull { it.strOrNull() }
+            .orEmpty()
+        val fieldValues = linkedMapOf<String, JsonElement>()
+        for (fieldId in capturedIds) {
+            fieldValues[fieldId] = suppliedFields?.get(fieldId)
+                ?: context.capture(fieldId)
+                ?: JsonNull
+        }
+        // Malformed accepted state still reaches the typed engine guard,
+        // which will refuse an ID omitted from capture_fields.
+        suppliedFields?.forEach { (fieldId, fieldValue) ->
+            fieldValues.putIfAbsent(fieldId, fieldValue)
+        }
+        val fields = JsonObject(fieldValues)
+        val secretIds = capturedIds.filterTo(linkedSetOf(), context::isVolatile)
+            .also { supplied?.secretIds?.let(it::addAll) }
+        if (secretIds.isEmpty()) return fields to null
+        val additionalIds = secretIds - supplied?.secretIds.orEmpty()
+        val volatile = supplied?.derive(fields, secretIds) {
+            context.eraseVolatile(additionalIds)
+        } ?: RendererVolatileSecret(fields, secretIds) {
+            context.eraseVolatile(secretIds)
+        }
+        supplied?.releaseCapturedValues()
+        return fields to volatile
     }
 
     /** §17.7 toolbar `command` -> edit.command with the live editor context. */
@@ -385,8 +449,11 @@ fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendere
     // this spec — read once per presented dialog, so the two layers can never
     // disagree about which nodes are stateful.
     val defaults = remember(dialogId, epoch) { bridge.dialogDefaults(dialogId) }
-    RenderNode(spec, RenderCtx("dialog:$dialogId", bridge,
-        DialogContext(dialogId, fields, bridge, defaults),
+    val dialog = remember(dialogId, epoch, bridge, defaults) {
+        DialogContext(dialogId, fields, bridge, defaults)
+    }
+    DisposableEffect(dialog) { onDispose(dialog::dispose) }
+    RenderNode(spec, RenderCtx("dialog:$dialogId", bridge, dialog,
         configuration = configuration))
 }
 
@@ -398,22 +465,27 @@ private open class MaterialNodeRenderContext(
     override val path: String get() = context.path
     override val inDialog: Boolean get() = context.inDialog
     override val maxFieldBytes: Int get() = context.bridge.maxFieldBytes
+    override val volatileSecretRegistryKey: Any? get() = context.dialog
 
     override fun dispatchAction(
         descriptor: JsonObject?,
         value: JsonElement?,
-        fields: JsonObject?,
+        secret: RendererVolatileSecret?,
         sourceId: String?,
         onOutcome: (RendererActionOutcome) -> Unit,
     ) = context.dispatchAction(
         descriptor = descriptor,
         value = value,
-        fields = fields,
+        secret = secret,
         sourceId = sourceId,
         onOutcome = onOutcome,
     )
 
-    override fun state(id: String, value: JsonElement?) = context.state(id, value)
+    override fun state(id: String, value: JsonElement?, volatileSecret: Boolean) =
+        context.state(id, value, volatileSecret = volatileSecret)
+
+    override fun registerVolatileSecret(id: String, erase: () -> Unit): () -> Unit =
+        context.dialog?.registerVolatile(id, erase) ?: {}
     override fun storeValue(id: String): JsonElement? = context.storeValue(id)
     override fun epochOf(id: String): Long = context.epochOf(id)
 
@@ -849,11 +921,11 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         ?.content
         ?: node.stringOr("value")
     val actionDispatcher = com.calebc42.jetpacs.renderer.compose.EditingActionDispatcher {
-            descriptor, actionValue, fields, sourceId, onOutcome ->
+            descriptor, actionValue, secret, sourceId, onOutcome ->
         ctx.dispatchAction(
             descriptor = descriptor,
             value = actionValue,
-            fields = fields,
+            secret = secret,
             sourceId = sourceId,
             onOutcome = onOutcome,
         )

@@ -28,6 +28,7 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererEditorHost
+import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
 import com.calebc42.jetpacs.renderer.model.Utf16TextSplice
 import com.calebc42.jetpacs.renderer.model.utf16TextSplice
 import kotlinx.coroutines.delay
@@ -42,7 +43,7 @@ fun interface EditingActionDispatcher {
     fun dispatch(
         descriptor: JsonObject,
         value: JsonElement?,
-        fields: JsonObject?,
+        secret: RendererVolatileSecret?,
         sourceId: String?,
         onOutcome: (RendererActionOutcome) -> Unit,
     ): ActionHandoff
@@ -83,6 +84,7 @@ class TextInputController internal constructor(
     private var actionDispatcher = actionDispatcher
     private var editGeneration = 0L
     private var disposed = false
+    private var activeSecret: RendererVolatileSecret? = null
 
     /** True only while a secret-bearing occurrence awaits its terminal result. */
     var passwordSubmissionPending by mutableStateOf(false)
@@ -158,14 +160,22 @@ class TextInputController internal constructor(
         }
         val submittedGeneration = editGeneration
         if (config.password) passwordSubmissionPending = true
+        val secret = if (config.password) {
+            RendererVolatileSecret(
+                fields = buildJsonObject { put(config.id, submitted) },
+                secretIds = setOf(config.id),
+                eraseNativeState = ::eraseVolatileState,
+            ).also { activeSecret = it }
+        } else null
         val handoff = actionDispatcher.dispatch(
             descriptor,
             if (config.password) null else JsonPrimitive(submitted),
-            if (config.password) buildJsonObject { put(config.id, submitted) } else null,
+            secret,
             config.id,
         ) { outcome ->
             if (config.password) {
-                eraseSecret()
+                secret!!.erase()
+                if (activeSecret === secret) activeSecret = null
                 passwordSubmissionPending = false
             } else if (config.clearOnSubmit && outcome.isSafeAdmission() &&
                 submittedGeneration == editGeneration && !disposed
@@ -175,7 +185,8 @@ class TextInputController internal constructor(
             }
         }
         if (handoff == ActionHandoff.Ignored && config.password) {
-            eraseSecret()
+            secret!!.erase()
+            if (activeSecret === secret) activeSecret = null
             passwordSubmissionPending = false
         }
         return handoff
@@ -184,11 +195,15 @@ class TextInputController internal constructor(
     /** Erase volatile secret state when its containing presentation ends. */
     fun dispose() {
         disposed = true
-        if (config.password) eraseSecret()
+        val submittedSecret = activeSecret
+        activeSecret = null
+        if (submittedSecret != null) submittedSecret.erase()
+        else if (config.password) eraseVolatileState()
         passwordSubmissionPending = false
     }
 
-    private fun eraseSecret() {
+    /** Clear the native password owner; dialog hosts register this callback. */
+    internal fun eraseVolatileState() {
         if (state.text.isNotEmpty()) state.setTextAndPlaceCursorAtEnd("")
         if (config.publishPasswordLocally) publishState("")
     }

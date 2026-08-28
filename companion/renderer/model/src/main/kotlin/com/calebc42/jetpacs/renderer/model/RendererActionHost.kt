@@ -7,6 +7,7 @@ import com.calebc42.ebp.wire.UnsafeAdmissionReason
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import java.util.concurrent.atomic.AtomicReference
 
 /** Synchronous proof that a renderer occurrence entered the ordinary host path. */
 enum class ActionHandoff {
@@ -27,14 +28,129 @@ sealed interface RendererActionContext {
  * delivery. Renderers supply only the accepted descriptor and occurrence-time
  * values; no presentation module acquires a transport or storage boundary.
  */
-data class RendererActionRequest(
+class RendererActionRequest(
     val context: RendererActionContext,
     val descriptor: JsonObject,
     val value: JsonElement? = null,
     val injected: JsonObject? = null,
+    /** Non-secret dialog-local capture. Surface renderers must leave this null. */
     val fields: JsonObject? = null,
+    /** Explicit volatile secret capture; never interchangeable with [fields]. */
+    val secret: RendererVolatileSecret? = null,
     val sourceId: String? = null,
-)
+) {
+    override fun toString(): String =
+        "RendererActionRequest(context=$context, descriptor=$descriptor, " +
+            "value=$value, injected=${injected != null}, " +
+            "fields=${fields?.size ?: 0}<redacted>, secret=$secret, " +
+            "sourceId=$sourceId)"
+}
+
+/**
+ * One controlled, renderer-owned password capture.
+ *
+ * The type deliberately does not expose its values through `toString`,
+ * equality, or hashing. The session borrows [fieldsOrNull] only while building
+ * the one live drop request, then calls [releaseCapturedValues]. A terminal
+ * outcome calls [erase] on the main thread to clear both the borrowed fields
+ * and the native editing state exactly once.
+ */
+class RendererVolatileSecret private constructor(
+    fields: JsonObject,
+    /** Exact field identifiers whose values are secret. */
+    val secretIds: Set<String>,
+    private val lifetime: SecretLifetime,
+) {
+    constructor(
+        fields: JsonObject,
+        secretIds: Set<String>,
+        eraseNativeState: () -> Unit,
+    ) : this(fields, secretIds, SecretLifetime(eraseNativeState))
+
+    private val captured = AtomicReference<JsonObject?>(fields)
+
+    init {
+        require(secretIds.isNotEmpty()) { "A volatile secret needs an identifier" }
+        require(fields.keys.containsAll(secretIds)) {
+            "Every volatile secret identifier must have a captured value"
+        }
+        lifetime.register(captured)
+    }
+
+    private constructor(
+        fields: JsonObject,
+        secretIds: Set<String>,
+        lifetime: SecretLifetime,
+        eraseAdditionalState: () -> Unit,
+    ) : this(fields, secretIds, lifetime) {
+        lifetime.registerAdditionalEraser(eraseAdditionalState)
+    }
+
+    /** Borrow the capture for immediate synchronous request construction. */
+    fun fieldsOrNull(): JsonObject? = captured.get()
+
+    /** Drop this controlled capture without touching Compose state. */
+    fun releaseCapturedValues() {
+        captured.set(null)
+    }
+
+    /** Release all related captures and erase their native owners once. */
+    fun erase() {
+        lifetime.erase()
+    }
+
+    /**
+     * Create a combined dialog capture sharing this capture's erasure life.
+     * Erasing either instance clears every registered value reference.
+     */
+    fun derive(
+        fields: JsonObject,
+        secretIds: Set<String>,
+        eraseAdditionalState: () -> Unit,
+    ): RendererVolatileSecret = RendererVolatileSecret(
+        fields,
+        secretIds,
+        lifetime,
+        eraseAdditionalState,
+    )
+
+    override fun toString(): String =
+        "RendererVolatileSecret(ids=${secretIds.size}, values=<redacted>)"
+}
+
+/** All controlled copies and native erasers for one password occurrence. */
+private class SecretLifetime(initialEraser: () -> Unit) {
+    private val references = mutableListOf<AtomicReference<JsonObject?>>()
+    private val erasers = mutableListOf(initialEraser)
+    private var erased = false
+
+    @Synchronized
+    fun register(reference: AtomicReference<JsonObject?>) {
+        if (erased) reference.set(null) else references += reference
+    }
+
+    fun registerAdditionalEraser(eraser: () -> Unit) {
+        val invokeNow = synchronized(this) {
+            if (erased) true
+            else {
+                erasers += eraser
+                false
+            }
+        }
+        if (invokeNow) eraser()
+    }
+
+    fun erase() {
+        val callbacks = synchronized(this) {
+            if (erased) return
+            erased = true
+            references.forEach { it.set(null) }
+            references.clear()
+            erasers.toList().also { erasers.clear() }
+        }
+        callbacks.forEach { it() }
+    }
+}
 
 /** One terminal result delivered exactly once for a handed-off occurrence. */
 sealed interface RendererActionOutcome {
@@ -92,6 +208,7 @@ interface RendererActionStateHost {
         dialogId: String,
         value: JsonElement?,
         fields: JsonObject,
+        secret: RendererVolatileSecret? = null,
         onOutcome: (RendererActionOutcome) -> Unit = {},
     ): ActionHandoff
 

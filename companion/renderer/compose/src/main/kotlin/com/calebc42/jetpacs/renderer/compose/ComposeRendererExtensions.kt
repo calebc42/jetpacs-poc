@@ -7,6 +7,7 @@ import androidx.compose.ui.Modifier
 import com.calebc42.ebp.wire.CORE_NODE_SET
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
+import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
@@ -25,6 +26,9 @@ interface ComposeNodeRenderContext {
     /** Negotiated JCS byte ceiling for one logical input value. */
     val maxFieldBytes: Int
 
+    /** Stable identity of the dialog-local volatile registry, when present. */
+    val volatileSecretRegistryKey: Any? get() = null
+
     fun action(
         descriptor: JsonObject?,
         value: JsonElement? = null,
@@ -38,19 +42,22 @@ interface ComposeNodeRenderContext {
     /**
      * Hand one accepted occurrence to the ordinary host action pipeline.
      *
-     * [fields] is reserved for occurrence-local capture such as a password;
-     * the host still owns dialog rebinding, capture validation, admission,
-     * durability, offline policy, and terminal result delivery.
+     * [secret] is the explicit volatile password path. Ordinary renderers
+     * cannot attach arbitrary field maps or choose a durable admission path.
      */
     fun dispatchAction(
         descriptor: JsonObject?,
         value: JsonElement? = null,
-        fields: JsonObject? = null,
+        secret: RendererVolatileSecret? = null,
         sourceId: String? = null,
         onOutcome: (RendererActionOutcome) -> Unit = {},
     ): ActionHandoff
 
-    fun state(id: String, value: JsonElement?)
+    fun state(id: String, value: JsonElement?, volatileSecret: Boolean = false)
+
+    /** Register a dialog password's native eraser; surfaces need no registry. */
+    fun registerVolatileSecret(id: String, erase: () -> Unit): () -> Unit = {}
+
     fun storeValue(id: String): JsonElement?
     fun epochOf(id: String): Long
 
