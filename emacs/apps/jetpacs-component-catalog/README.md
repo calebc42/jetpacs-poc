@@ -24,6 +24,11 @@ increments Emacs state exactly once, and Choice commits the injected boolean
 before requesting a refreshed document. Component rendering and presentation
 state remain receiver-owned; application decisions remain in Emacs.
 
+Every catalog body is wrapped in the invisible `jetpacs.scope` selection
+boundary while its Glasspane chrome remains outside. Phase 2 installs no core
+override, so this exercises negotiated scope traversal without changing the
+catalog's layout or Material rendering of canonical nodes.
+
 Run its focused gate from the repository root:
 
 ```sh

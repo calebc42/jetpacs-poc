@@ -5,13 +5,15 @@
   "node_types": [
     "jetpacs.action",
     "jetpacs.choice",
-    "jetpacs.panel"
+    "jetpacs.panel",
+    "jetpacs.scope"
   ],
   "targets": {
     "app": [
       "jetpacs.action",
       "jetpacs.choice",
-      "jetpacs.panel"
+      "jetpacs.panel",
+      "jetpacs.scope"
     ],
     "dialog": [],
     "notification": []
@@ -27,6 +29,10 @@
     },
     "jetpacs.panel": {
       "required": ["label", "children"],
+      "optional": []
+    },
+    "jetpacs.scope": {
+      "required": ["children"],
       "optional": []
     }
   },

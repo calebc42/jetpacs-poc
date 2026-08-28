@@ -80,6 +80,9 @@ With one authorized device connected:
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.compose.EbpSemanticsTest
+
+./gradlew :renderer:material3:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.companion.render.ScopedCoreOverrideDispatchTest
 ```
 
 The shared editing class enters normalized text through a real
@@ -96,6 +99,10 @@ live region, error, state description, collection/item, traversal, determinate
 and indeterminate progress, and custom actions in the semantics tree. Its
 Foundation button dispatches one custom action through the ordinary action sink
 exactly once and retains one click target.
+`ScopedCoreOverrideDispatchTest` proves nearest-scope selection, canonical
+Material fallback outside scope, extension-node ownership inside scope,
+universal semantics on the interaction-owning overridden node, the invisible
+scope boundary, and app-to-dialog admission isolation.
 
 These tests do not replace manual TalkBack/Switch Access checks on the target
 tablet. Verify pane announcements, heading navigation, collection position,

@@ -113,6 +113,8 @@ object NodeSupport {
     val COMPOSE_CONFIGURATION = ComposeRendererConfiguration(
         appNodeTypes = appProfile.nodeTypes,
         dialogNodeTypes = dialogProfile.nodeTypes,
+        appExtensions = appProfile.extensions,
+        dialogExtensions = dialogProfile.extensions,
     )
 
     /** EBP 3 §10.2 profiles, including renderer-extension negotiation. */

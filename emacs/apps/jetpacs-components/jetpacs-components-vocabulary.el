@@ -18,12 +18,13 @@
   '(
     ("jetpacs.action" ("label" "on_tap") ("enabled"))
     ("jetpacs.choice" ("checked" "id" "label" "on_change") ("enabled"))
-    ("jetpacs.panel" ("children" "label") ()))
+    ("jetpacs.panel" ("children" "label") ())
+    ("jetpacs.scope" ("children") ()))
   "Jetpacs Components node schemas as (TYPE REQUIRED OPTIONAL).")
 
 (defconst jetpacs-components-target-node-types
   '(
-    (app . ("jetpacs.action" "jetpacs.choice" "jetpacs.panel"))
+    (app . ("jetpacs.action" "jetpacs.choice" "jetpacs.panel" "jetpacs.scope"))
     (dialog . ())
     (notification . ()))
   "Jetpacs Components node types supported by each Jetpacs target.")

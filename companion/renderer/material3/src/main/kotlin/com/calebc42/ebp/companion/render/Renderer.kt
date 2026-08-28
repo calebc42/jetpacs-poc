@@ -98,6 +98,7 @@ import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
 import com.calebc42.ebp.wire.textInputScalarToUtf16
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
@@ -194,11 +195,16 @@ data class RenderCtx(
     val displays: Map<Pair<String, String>, InputDisplay> = emptyMap(),
     /** The app-selected target profile and downstream renderer installation. */
     val configuration: ComposeRendererConfiguration = NodeSupport.COMPOSE_CONFIGURATION,
+    /** Nearest admitted downstream design scope; roots always start unscoped. */
+    val designScope: String? = null,
 ) {
     fun child(node: JsonObject?, index: Int): RenderCtx =
         copy(path = identityPath(path, node, index))
 
     fun atPath(path: String): RenderCtx = copy(path = path)
+
+    /** Select [scope] only for the recursively rendered authored subtree. */
+    fun inDesignScope(scope: String): RenderCtx = copy(designScope = scope)
 
     /**
      * T3/LD-2: the generation of the value this node's widget should show.
@@ -394,10 +400,10 @@ fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendere
         configuration = configuration))
 }
 
-/** Adapter that keeps downstream rendering behind the ordinary host paths. */
-private class MaterialExtensionRenderContext(
-    private val context: RenderCtx,
-) : ComposeExtensionRenderContext {
+/** Adapter that keeps alternate rendering behind the ordinary host paths. */
+private open class MaterialNodeRenderContext(
+    protected val context: RenderCtx,
+) : ComposeNodeRenderContext {
     override val surface: String get() = context.surface
     override val path: String get() = context.path
     override val inDialog: Boolean get() = context.inDialog
@@ -415,6 +421,25 @@ private class MaterialExtensionRenderContext(
     @Composable
     override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) {
         RenderNode(child, context.child(child, index), modifier)
+    }
+}
+
+/** Extension adapter whose scoped-child operation can select only its owner. */
+private class MaterialExtensionRenderContext(
+    context: RenderCtx,
+    override val extensionId: String,
+) : MaterialNodeRenderContext(context), ComposeExtensionRenderContext {
+    @Composable
+    override fun renderScopedChild(
+        child: JsonObject,
+        index: Int,
+        modifier: Modifier,
+    ) {
+        RenderNode(
+            child,
+            context.inDesignScope(extensionId).child(child, index),
+            modifier,
+        )
     }
 }
 
@@ -477,7 +502,18 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
     }
     val extension = ctx.configuration.extensions.rendererFor(type)
     if (extension != null) {
-        extension.render(node, MaterialExtensionRenderContext(ctx), m)
+        extension.render(
+            node,
+            MaterialExtensionRenderContext(ctx, extension.extensionId),
+            m,
+        )
+        return
+    }
+    val coreOverride = ctx.designScope
+        ?.takeIf { ctx.configuration.admitsDesignScope(it, ctx.inDialog) }
+        ?.let { ctx.configuration.coreOverrides.rendererFor(it, type) }
+    if (coreOverride != null) {
+        coreOverride.render(node, MaterialNodeRenderContext(ctx), m)
         return
     }
     when (type) {

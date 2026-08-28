@@ -12,6 +12,7 @@ The first public builders are:
 (jetpacs-component-action LABEL ON-TAP :enabled BOOL)
 (jetpacs-component-choice ID LABEL CHECKED ON-CHANGE :enabled BOOL)
 (jetpacs-component-panel LABEL CHILDREN)
+(jetpacs-component-scope CHILDREN)
 ```
 
 - `LABEL` is always a non-empty string.
@@ -19,6 +20,9 @@ The first public builders are:
 - Boolean values use `t` or `:json-false`; `CHECKED` is required.
 - `CHILDREN` is a proper list of real typed node plists and is emitted as the
   node's JSON array without hiding or merging descendants.
+- `jetpacs-component-scope` is an app-only, invisible renderer-selection
+  boundary. It has no layout or accessibility bounds of its own; universal
+  presentation attributes are therefore nonsensical on it.
 - Choice publishes `state.changed` before dispatching `ON-CHANGE`, with the
   same next boolean supplied through the ordinary action value path.
 

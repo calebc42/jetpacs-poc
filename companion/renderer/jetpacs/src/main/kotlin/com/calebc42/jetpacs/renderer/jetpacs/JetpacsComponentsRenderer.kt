@@ -24,6 +24,7 @@ val JetpacsComponentsContribution = RendererContribution(
 /** Compose Foundation implementation of the `jetpacs.components` extension. */
 object JetpacsComponentsRenderer : ComposeNodeExtension {
     override val id: String = "jetpacs.components.compose"
+    override val extensionId: String = JETPACS_COMPONENTS_EXTENSION
     override val nodeTypes: Set<String> = JETPACS_COMPONENTS_NODE_SCHEMA.keys
 
     @Composable
@@ -48,6 +49,16 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
                 children.forEachIndexed { index, element ->
                     (element as? JsonObject)?.let {
                         context.renderChild(it, index)
+                    }
+                }
+            }
+            "jetpacs.scope" -> {
+                // An invisible selection boundary: no layout, modifier,
+                // semantics, state, or interaction owner is introduced.
+                val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
+                children.forEachIndexed { index, element ->
+                    (element as? JsonObject)?.let {
+                        context.renderScopedChild(it, index)
                     }
                 }
             }

@@ -49,9 +49,16 @@
     (jetpacs-divider)
     (jetpacs-text ebp :style "mono" :selectable t))))
 
+(cl-defun jetpacs-component-catalog--screen (title body &key back)
+  "Build a catalog screen titled TITLE around scoped BODY and BACK.
+Glasspane chrome remains outside the invisible `jetpacs.scope'; canonical EBP
+nodes inside BODY may therefore select installed Jetpacs core overrides."
+  (jetpacs-chrome-screen
+   title (jetpacs-component-scope (list body)) :back back))
+
 (defun jetpacs-component-catalog--home-screen (back)
   "Build the component catalog root with BACK navigation."
-  (jetpacs-chrome-screen
+  (jetpacs-component-catalog--screen
    jetpacs-component-catalog-title
    (apply
     #'jetpacs-lazy-column
@@ -81,7 +88,7 @@
 
 (defun jetpacs-component-catalog--action-screen (back)
   "Build the Action anatomy, states, and protocol screen with BACK."
-  (jetpacs-chrome-screen
+  (jetpacs-component-catalog--screen
    "Action"
    (jetpacs-lazy-column
     (jetpacs-component-panel
@@ -114,7 +121,7 @@
 
 (defun jetpacs-component-catalog--choice-screen (back)
   "Build the Choice anatomy, states, and protocol screen with BACK."
-  (jetpacs-chrome-screen
+  (jetpacs-component-catalog--screen
    "Choice"
    (jetpacs-lazy-column
     (jetpacs-component-panel
@@ -148,7 +155,7 @@
 
 (defun jetpacs-component-catalog--panel-screen (back)
   "Build the Panel anatomy, nesting, and protocol screen with BACK."
-  (jetpacs-chrome-screen
+  (jetpacs-component-catalog--screen
    "Panel"
    (jetpacs-lazy-column
     (jetpacs-component-panel

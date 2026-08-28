@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 1 complete; Phase 2 is next
+Status: Phase 2 complete; Phase 3 is next
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -54,7 +54,10 @@ ordinary EBP children and selects Jetpacs overrides for canonical nodes below
 it. The scope carries no application state or accessibility semantics, never
 merges or hides descendants, and degrades to its children on a receiver that
 does not implement the extension. The nearest scope wins if scopes are nested.
-The first implementation overrides only `text_input` and `editor`.
+The initial scoped registry deliberately accepts only the generated eight-node
+EBP Core Node Set. The first visual implementation overrides `text_input`.
+Optional canonical nodes, including `editor`, require a later explicit
+registry expansion after the foundational core set has matured.
 
 This keeps Glasspane's current renderer selected outside the scope and avoids
 coupling design selection to `jetpacs.panel`, which would make standalone
@@ -191,11 +194,17 @@ from extension-node ownership:
 - Duplicate overrides for one scope and core node fail when the composition
   root is assembled.
 - Scope activation cannot cross a surface or dialog boundary.
+- Registrations are limited to the generated `CORE_NODE_SET`; optional EBP and
+  downstream extension nodes fail composition-root validation.
 
 Add `jetpacs.scope` to the `jetpacs.components` extension manifest and
 regenerate its Kotlin and Elisp vocabulary. Implement app surfaces first;
 advertise dialog support only after secure-field and dialog-lifecycle tests
 pass.
+
+Phase 2 installs the selection seam but no production core override. Existing
+Jetpacs catalog bodies enter the scope to exercise the negotiated traversal
+path without changing their pixels; Glasspane chrome remains outside.
 
 ## Phase 3: implement `JetpacsTextField`
 
@@ -240,6 +249,11 @@ crisp focus boundary, explicit label and supporting/error line, and Jetpacs
 typography and spacing rather than a recreation of a Material field.
 
 ## Phase 4: implement the local `JetpacsEditor`
+
+Begin Phase 4 by explicitly expanding scoped override eligibility from the
+Core Node Set to canonical EBP-owned optional nodes. Continue to reject every
+downstream extension-owned node; `editor` remains the sole canonical semantic
+node and no `jetpacs.editor` alias is introduced.
 
 Support the complete local-editor tier before synchronized editing:
 
@@ -324,8 +338,9 @@ Keep `jetpacs-text-input` and `jetpacs-editor` as the sole semantic builders.
 Add a downstream `jetpacs-component-scope` helper that wraps canonical children
 in `jetpacs.scope`; do not create a second set of text semantics.
 
-Add a **Text editing** catalog category with **Text Field** and **Editor**
-pages. Cover purpose, anatomy, empty/filled/focused/error/disabled/secure
+Phase 3 adds a **Text editing** catalog category with a **Text Field** page.
+Phase 4 adds **Editor** after optional-node override eligibility exists. Across
+the two pages cover purpose, anatomy, empty/filled/focused/error/disabled/secure
 states, local and synchronized editors, line numbers, syntax, diagnostics,
 completion, toolbar, offline read-only behavior, canonical Elisp/EBP source,
 and a live action/state readout.

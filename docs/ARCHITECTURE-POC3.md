@@ -60,6 +60,14 @@ from a prefix, and an unavailable app remains outside its builders and gets an
 explanatory Apps screen. This keeps Jetpacs' Compose-shaped foundation reusable
 while letting Glasspane remain deliberately and faithfully Material 3.
 
+`jetpacs.scope` is the app-only, invisible selection boundary for Jetpacs core
+presentation. Compose extension-node ownership remains singular; a separate
+composition-root registry may replace only types in the generated eight-node
+EBP Core Node Set, keyed by a positively admitted renderer-extension ID.
+Scoped selection never changes node validation or target profiles, and roots
+discard inherited scope. The registry intentionally excludes optional EBP
+nodes such as `editor` until a later, explicit architecture expansion.
+
 The Material renderer's version is pinned by
 `companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
 `jetpacs-m3-material-version` constant restates that value so the device can
@@ -237,6 +245,11 @@ neutral EBP roles and never reads or provides `MaterialTheme`. Its public
 while ordinary modifiers own layout, click/toggle behavior, enabled state,
 focus, and semantics. The Action and Choice each expose one full-row target,
 and Panel labels are headings without merging their child tree.
+
+Its `jetpacs.scope` renderer emits canonical children directly through the
+shared dispatcher under the owning `jetpacs.components` scope. It creates no
+layout, semantics, state, or interaction owner; Glasspane Material dispatch
+continues everywhere outside that authored subtree.
 
 The existing Material gallery components deliberately exercise separate
 contracts:

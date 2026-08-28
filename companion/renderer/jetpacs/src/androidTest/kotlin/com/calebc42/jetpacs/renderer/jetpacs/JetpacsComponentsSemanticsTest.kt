@@ -4,12 +4,14 @@ package com.calebc42.jetpacs.renderer.jetpacs
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasClickAction
@@ -23,6 +25,7 @@ import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -103,18 +106,40 @@ class JetpacsComponentsSemanticsTest {
         compose.onNodeWithText("STATUS").assert(
             SemanticsMatcher.expectValue(SemanticsProperties.Heading, Unit),
         )
-        compose.onNodeWithText("Ready")
+        compose.onNodeWithText("Ready").assertIsDisplayed()
         compose.onNodeWithText("Nested").performClick()
         compose.runOnIdle { assertEquals(1, taps) }
         compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun scopeRendersChildrenInOwnerScopeWithoutCreatingBounds() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{"t":"jetpacs.scope","children":[{"t":"text","text":"One"},{"t":"text","text":"Two"}]}""",
+        ) as JsonObject
+        compose.setContent {
+            JetpacsComponentsRenderer.render(node, context, Modifier.testTag("scope"))
+        }
+
+        compose.onNodeWithText("One").assertIsDisplayed()
+        compose.onNodeWithText("Two").assertIsDisplayed()
+        compose.onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "scope"),
+        ).assertCountEquals(0)
+        compose.runOnIdle {
+            assertEquals(listOf(0, 1), context.scopedChildren.map { it.second })
+        }
     }
 
     private class RecordingContext : ComposeExtensionRenderContext {
         override val surface = "app:test"
         override val path = "root"
         override val inDialog = false
+        override val extensionId = JETPACS_COMPONENTS_EXTENSION
         val states = mutableListOf<Pair<String, JsonElement?>>()
         val actions = mutableListOf<Pair<JsonObject?, JsonElement?>>()
+        val scopedChildren = mutableListOf<Pair<JsonObject, Int>>()
 
         override fun action(
             descriptor: JsonObject?,
@@ -134,5 +159,15 @@ class JetpacsComponentsSemanticsTest {
 
         @Composable
         override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) = Unit
+
+        @Composable
+        override fun renderScopedChild(
+            child: JsonObject,
+            index: Int,
+            modifier: Modifier,
+        ) {
+            scopedChildren += child to index
+            BasicText((child["text"] as? JsonPrimitive)?.content.orEmpty(), modifier)
+        }
     }
 }

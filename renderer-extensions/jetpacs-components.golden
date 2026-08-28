@@ -1,3 +1,4 @@
 00 {"label":"Run","on_tap":{"action":"catalog.run"},"t":"jetpacs.action"}
 01 {"checked":false,"id":"catalog-choice","label":"Mirror updates","on_change":{"action":"catalog.choice"},"t":"jetpacs.choice"}
 02 {"children":[{"t":"text","text":"Ready"}],"label":"STATUS","t":"jetpacs.panel"}
+03 {"children":[{"t":"text","text":"Ready"}],"t":"jetpacs.scope"}

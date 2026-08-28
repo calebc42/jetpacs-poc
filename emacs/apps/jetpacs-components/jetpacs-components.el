@@ -64,5 +64,16 @@ their semantics and actions remain independent descendants of the panel."
   (jetpacs-make-node "jetpacs.panel"
                      :label label :children (vconcat children)))
 
+(defun jetpacs-component-scope (children)
+  "Select Jetpacs core rendering for canonical EBP CHILDREN.
+CHILDREN is a proper list of typed node plists.  The returned
+`jetpacs.scope' is an invisible renderer-selection boundary: it owns no
+layout, state, interaction, or accessibility semantics and emits CHILDREN as
+the actual canonical node vector."
+  (unless (and (proper-list-p children)
+               (cl-every #'jetpacs-root-node-p children))
+    (error "jetpacs-component-scope: CHILDREN must be a proper list of nodes"))
+  (jetpacs-make-node "jetpacs.scope" :children (vconcat children)))
+
 (provide 'jetpacs-components)
 ;;; jetpacs-components.el ends here

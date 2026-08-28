@@ -94,6 +94,8 @@ object CompanionRenderer {
     val composeConfiguration = ComposeRendererConfiguration(
         appNodeTypes = appProfile.nodeTypes,
         dialogNodeTypes = dialogProfile.nodeTypes,
+        appExtensions = appProfile.extensions,
+        dialogExtensions = dialogProfile.extensions,
         extensions = ComposeExtensionRegistry(listOf(JetpacsComponentsRenderer)),
     )
 }
