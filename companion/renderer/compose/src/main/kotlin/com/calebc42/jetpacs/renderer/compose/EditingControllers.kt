@@ -4,7 +4,6 @@
 package com.calebc42.jetpacs.renderer.compose
 
 import androidx.compose.foundation.text.input.InputTransformation
-import androidx.compose.foundation.text.input.OutputTransformation
 import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.delete
@@ -20,9 +19,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.ScalarPos
-import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
 import com.calebc42.ebp.wire.normalizeTextInput
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.EditorMirror
@@ -142,6 +141,32 @@ class TextInputController internal constructor(
                 ) {}
             }
         }
+    }
+
+    /**
+     * Admit one legacy value-based Foundation transaction.
+     *
+     * Compose's value-based API is used only for masks because it accepts an
+     * explicit linear offset mapping. The canonical [state] is updated before
+     * publication, preserving the same state-before-action ordering as
+     * [inputTransformation]. A null result means the entire edit was refused.
+     */
+    internal fun applyLegacyEdit(proposed: TextFieldValue): TextFieldValue? {
+        if (config.password && passwordSubmissionPending) return null
+        val normalized = normalizeLegacyTextFieldValue(
+            proposed,
+            config.singleLine,
+            config.filter,
+            config.maxLengthScalars,
+        )
+        if (EditorSession.jcsUtf8Bytes(normalized.text) > maxFieldBytes) return null
+        val changed = normalized.text != state.text.toString()
+        state.edit {
+            if (changed) replace(0, length, normalized.text)
+            selection = normalized.selection
+        }
+        if (changed) recordUserEdit(normalized.text)
+        return normalized
     }
 
     /**
@@ -448,30 +473,6 @@ fun rememberEditorController(
         }
     }
     controller
-}
-
-/** Foundation output formatter for EBP's scalar-aware `mask` template. */
-class MaskOutputTransformation(private val mask: String) : OutputTransformation {
-    override fun TextFieldBuffer.transformOutput() {
-        val slot = TEXT_INPUT_CONTRACT.mask.slot.codePointAt(0)
-        var storedOffset = 0
-        var outputOffset = 0
-        var maskOffset = 0
-        while (maskOffset < mask.length && storedOffset < originalText.length) {
-            val codePoint = mask.codePointAt(maskOffset)
-            if (codePoint == slot) {
-                val storedCodePoint = Character.codePointAt(originalText, storedOffset)
-                val width = Character.charCount(storedCodePoint)
-                storedOffset += width
-                outputOffset += width
-            } else {
-                val literal = String(Character.toChars(codePoint))
-                replace(outputOffset, outputOffset, literal)
-                outputOffset += literal.length
-            }
-            maskOffset += Character.charCount(codePoint)
-        }
-    }
 }
 
 /** One enclosing splice derived from this transaction's `ChangeList`. */

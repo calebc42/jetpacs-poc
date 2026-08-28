@@ -33,4 +33,18 @@ class JetpacsRendererBoundaryTest {
         assertFalse(build.contains("renderer.material3"))
         assertTrue(build.contains("androidx.compose.foundation"))
     }
+
+    @Test
+    fun maskedFieldsUseTheSharedExplicitOffsetMappingPath() {
+        val source = File(
+            moduleDirectory(),
+            "src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/" +
+                "JetpacsTextInputRenderer.kt",
+        ).readText()
+
+        assertTrue(source.contains("rememberLegacyTextInputAdapter(binding.controller)"))
+        assertTrue(source.contains("MaskVisualTransformation(mask)"))
+        assertTrue(source.contains("JetpacsMaskedTextField("))
+        assertFalse(source.contains("MaskOutputTransformation"))
+    }
 }

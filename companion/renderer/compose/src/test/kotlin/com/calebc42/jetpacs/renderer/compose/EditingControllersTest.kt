@@ -3,6 +3,8 @@ package com.calebc42.jetpacs.renderer.compose
 
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.SafeAdmissionEvidence
@@ -59,6 +61,75 @@ class EditingControllersTest {
             listOf("state:typed", "action:\"demo.change\":\"typed\""),
             events,
         )
+    }
+
+    @Test
+    fun legacyMaskedEditUsesGeneratedNormalizationAndRemapsImeRanges() {
+        val proposed = TextFieldValue(
+            text = "a1\n😀23",
+            selection = TextRange(1, 7),
+            composition = TextRange(0, 5),
+        )
+
+        val normalized = normalizeLegacyTextFieldValue(
+            proposed,
+            singleLine = true,
+            filter = "digits",
+            maximum = 2,
+        )
+
+        assertEquals("12", normalized.text)
+        assertEquals(TextRange(0, 2), normalized.selection)
+        assertEquals(TextRange(0, 1), normalized.composition)
+    }
+
+    @Test
+    fun legacyMaskedEditUpdatesCanonicalStateBeforeChangeAndRefusesByteOverflow() {
+        val state = TextFieldState()
+        val events = mutableListOf<String>()
+        val controller = TextInputController(
+            state,
+            TextInputControllerConfig(
+                id = "phone",
+                password = false,
+                singleLine = true,
+                filter = "digits",
+                maxLengthScalars = 3,
+                clearOnSubmit = false,
+                onChange = descriptor("demo.change"),
+                onSubmit = null,
+                publishPasswordLocally = false,
+            ),
+            maxFieldBytes = 5,
+            publishState = { events += "state:$it:${state.text}" },
+            actionDispatcher = EditingActionDispatcher { _, value, _, _, _ ->
+                events += "action:$value:${state.text}"
+                ActionHandoff.HandedOff
+            },
+        )
+
+        val admitted = controller.applyLegacyEdit(
+            TextFieldValue("a12\n3", TextRange(5)),
+        )
+        assertEquals("123", admitted?.text)
+        assertEquals("123", state.text.toString())
+        assertEquals(
+            listOf("state:123:123", "action:\"123\":123"),
+            events,
+        )
+
+        val limitedState = TextFieldState("123")
+        val limited = TextInputController(
+            limitedState,
+            textConfig(clearOnSubmit = false).copy(onSubmit = null),
+            maxFieldBytes = 5,
+            publishState = { events += "unexpected:$it" },
+            actionDispatcher = ignoredDispatcher,
+        )
+        val refused = limited.applyLegacyEdit(TextFieldValue("1234", TextRange(4)))
+        assertEquals(null, refused)
+        assertEquals("123", limitedState.text.toString())
+        assertEquals(2, events.size)
     }
 
     @Test

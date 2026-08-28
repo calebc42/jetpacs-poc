@@ -3,6 +3,7 @@
 
 package com.calebc42.jetpacs.renderer.jetpacs
 
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -10,9 +11,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.calebc42.jetpacs.renderer.compose.ComposeCoreNodeOverride
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
-import com.calebc42.jetpacs.renderer.compose.MaskOutputTransformation
+import com.calebc42.jetpacs.renderer.compose.MaskVisualTransformation
 import com.calebc42.jetpacs.renderer.compose.keyboardAction
+import com.calebc42.jetpacs.renderer.compose.rememberLegacyTextInputAdapter
 import com.calebc42.jetpacs.renderer.compose.rememberTextInputBinding
+import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import kotlinx.serialization.json.JsonObject
 
 /** Jetpacs-scoped presentation override for canonical EBP `text_input`. */
@@ -33,38 +36,65 @@ object JetpacsTextInputRenderer : ComposeCoreNodeOverride {
         val syntaxColors = JetpacsTheme.syntax
         val mask = presentation.mask
         val syntax = presentation.syntax
-        val outputTransformation = remember(
-            mask,
-            syntax,
-            syntaxColors,
-        ) {
-            when {
-                mask != null -> MaskOutputTransformation(mask)
-                syntax != null -> JetpacsSyntaxOutputTransformation(syntax, syntaxColors)
-                else -> null
-            }
+        val outputTransformation = remember(syntax, syntaxColors) {
+            syntax?.let { JetpacsSyntaxOutputTransformation(it, syntaxColors) }
+        }
+        val variant = if (presentation.variant == "filled") {
+            JetpacsTextFieldVariant.Filled
+        } else {
+            JetpacsTextFieldVariant.Outlined
+        }
+        val leading: (@Composable () -> Unit)? = presentation.leadingIcon?.let { name ->
+            { JetpacsFieldGlyph(name) }
+        }
+        val trailing: (@Composable () -> Unit)? = presentation.trailingIcon?.let { name ->
+            { JetpacsFieldGlyph(name) }
+        }
+        if (mask != null) {
+            val adapter = rememberLegacyTextInputAdapter(binding.controller)
+            val transformation = remember(mask) { MaskVisualTransformation(mask) }
+            JetpacsMaskedTextField(
+                value = adapter.value,
+                onValueChange = adapter::onValueChange,
+                visualTransformation = transformation,
+                modifier = modifier.focusRequester(binding.focusRequester),
+                enabled = binding.enabled,
+                variant = variant,
+                label = presentation.label,
+                placeholder = presentation.hint,
+                supportingText = presentation.supportingText,
+                prefix = presentation.prefix,
+                suffix = presentation.suffix,
+                leadingDecoration = leading,
+                trailingDecoration = trailing,
+                isError = presentation.isError,
+                monospace = presentation.monospace,
+                contentPadding = presentation.contentPadding,
+                keyboardOptions = presentation.keyboardOptions,
+                keyboardActions = KeyboardActions(onDone = {
+                    if (binding.submit() == ActionHandoff.HandedOff &&
+                        presentation.hideKeyboardOnSubmit
+                    ) {
+                        keyboard?.hide()
+                    }
+                }),
+                lineLimits = presentation.lineLimits,
+            )
+            return
         }
         JetpacsTextField(
             state = binding.controller.state,
             modifier = modifier.focusRequester(binding.focusRequester),
             enabled = binding.enabled,
             secure = presentation.password,
-            variant = if (presentation.variant == "filled") {
-                JetpacsTextFieldVariant.Filled
-            } else {
-                JetpacsTextFieldVariant.Outlined
-            },
+            variant = variant,
             label = presentation.label,
             placeholder = presentation.hint,
             supportingText = presentation.supportingText,
             prefix = presentation.prefix,
             suffix = presentation.suffix,
-            leadingDecoration = presentation.leadingIcon?.let { name ->
-                { JetpacsFieldGlyph(name) }
-            },
-            trailingDecoration = presentation.trailingIcon?.let { name ->
-                { JetpacsFieldGlyph(name) }
-            },
+            leadingDecoration = leading,
+            trailingDecoration = trailing,
             isError = presentation.isError,
             monospace = presentation.monospace || presentation.syntax != null,
             contentPadding = presentation.contentPadding,

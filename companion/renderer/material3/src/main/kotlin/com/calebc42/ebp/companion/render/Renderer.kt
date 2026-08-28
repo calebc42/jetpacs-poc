@@ -11,6 +11,8 @@ package com.calebc42.ebp.companion.render
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.consumeWindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -32,6 +35,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -84,12 +89,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.companion.MaterialRendererHost
 import com.calebc42.jetpacs.renderer.model.CompletionCandidate
@@ -101,6 +108,8 @@ import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
 import com.calebc42.jetpacs.renderer.compose.keyboardAction
+import com.calebc42.jetpacs.renderer.compose.MaskVisualTransformation
+import com.calebc42.jetpacs.renderer.compose.rememberLegacyTextInputAdapter
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.RendererActionContext
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
@@ -767,13 +776,9 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val language = presentation.syntax.orEmpty()
     val syntaxColors = LocalSyntaxColors.current
     val maskSpec = presentation.mask.orEmpty()
-    val outputTransformation = remember(language, syntaxColors, maskSpec) {
-        when {
-            maskSpec.isNotEmpty() ->
-                com.calebc42.jetpacs.renderer.compose.MaskOutputTransformation(maskSpec)
-            language.isNotEmpty() -> SyntaxOutputTransformation(language, syntaxColors)
-            else -> null
-        }
+    val outputTransformation = remember(language, syntaxColors) {
+        language.takeIf { it.isNotEmpty() }
+            ?.let { SyntaxOutputTransformation(it, syntaxColors) }
     }
     val isError = presentation.isError
     val supporting = presentation.supportingText.orEmpty()
@@ -786,6 +791,8 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // why a sibling `text` node underneath is not a substitute.
     val labelSlot:
         (@Composable androidx.compose.material3.TextFieldLabelScope.() -> Unit)? =
+        presentation.label?.let { { Text(it) } }
+    val legacyLabelSlot: (@Composable () -> Unit)? =
         presentation.label?.let { { Text(it) } }
     val placeholderSlot: (@Composable () -> Unit)? = presentation.hint
         ?.let { { Text(it) } }
@@ -856,6 +863,35 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     contentPadding = padding,
                 )
         }
+    } else if (maskSpec.isNotEmpty()) {
+        val adapter = rememberLegacyTextInputAdapter(controller)
+        val maskTransformation = remember(maskSpec) { MaskVisualTransformation(maskSpec) }
+        LegacyMaskedMaterialTextField(
+            value = adapter.value,
+            onValueChange = adapter::onValueChange,
+            visualTransformation = maskTransformation,
+            modifier = fieldModifier,
+            filled = filled,
+            enabled = enabled,
+            label = legacyLabelSlot,
+            placeholder = placeholderSlot,
+            leadingIcon = leadingSlot,
+            trailingIcon = trailingSlot,
+            prefix = prefixSlot,
+            suffix = suffixSlot,
+            supportingText = supportingSlot,
+            isError = isError,
+            keyboardOptions = presentation.keyboardOptions,
+            keyboardActions = KeyboardActions(onDone = {
+                if (binding.submit() == ActionHandoff.HandedOff &&
+                    presentation.hideKeyboardOnSubmit
+                ) {
+                    keyboardController?.hide()
+                }
+            }),
+            lineLimits = presentation.lineLimits,
+            contentPadding = padding,
+        )
     } else if (filled) {
         TextField(
             state = controller.state,
@@ -897,6 +933,100 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             contentPadding = padding,
         )
     }
+}
+
+/** Legacy value-based Material field with a linear explicit mask mapping. */
+@Composable
+private fun LegacyMaskedMaterialTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    visualTransformation: VisualTransformation,
+    modifier: Modifier,
+    filled: Boolean,
+    enabled: Boolean,
+    label: (@Composable () -> Unit)?,
+    placeholder: (@Composable () -> Unit)?,
+    leadingIcon: (@Composable () -> Unit)?,
+    trailingIcon: (@Composable () -> Unit)?,
+    prefix: (@Composable () -> Unit)?,
+    suffix: (@Composable () -> Unit)?,
+    supportingText: (@Composable () -> Unit)?,
+    isError: Boolean,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions,
+    keyboardActions: KeyboardActions,
+    lineLimits: androidx.compose.foundation.text.input.TextFieldLineLimits,
+    contentPadding: PaddingValues,
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    val colors = if (filled) TextFieldDefaults.colors() else OutlinedTextFieldDefaults.colors()
+    val textColor = colors.textColor(enabled, isError, focused)
+    val multiLine = lineLimits as?
+        androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine
+    val singleLine = lineLimits ==
+        androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.defaultMinSize(
+            minWidth = if (filled) TextFieldDefaults.MinWidth
+            else OutlinedTextFieldDefaults.MinWidth,
+            minHeight = if (filled) TextFieldDefaults.MinHeight
+            else OutlinedTextFieldDefaults.MinHeight,
+        ),
+        enabled = enabled,
+        readOnly = false,
+        textStyle = LocalTextStyle.current.copy(color = textColor),
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = singleLine,
+        minLines = multiLine?.minHeightInLines ?: 1,
+        maxLines = multiLine?.maxHeightInLines ?: 1,
+        visualTransformation = visualTransformation,
+        interactionSource = interactionSource,
+        cursorBrush = SolidColor(colors.cursorColor(isError)),
+        decorationBox = { innerTextField ->
+            if (filled) {
+                TextFieldDefaults.DecorationBox(
+                    value = value.text,
+                    innerTextField = innerTextField,
+                    enabled = enabled,
+                    singleLine = singleLine,
+                    visualTransformation = visualTransformation,
+                    interactionSource = interactionSource,
+                    isError = isError,
+                    label = label,
+                    placeholder = placeholder,
+                    leadingIcon = leadingIcon,
+                    trailingIcon = trailingIcon,
+                    prefix = prefix,
+                    suffix = suffix,
+                    supportingText = supportingText,
+                    colors = colors,
+                    contentPadding = contentPadding,
+                )
+            } else {
+                OutlinedTextFieldDefaults.DecorationBox(
+                    value = value.text,
+                    innerTextField = innerTextField,
+                    enabled = enabled,
+                    singleLine = singleLine,
+                    visualTransformation = visualTransformation,
+                    interactionSource = interactionSource,
+                    isError = isError,
+                    label = label,
+                    placeholder = placeholder,
+                    leadingIcon = leadingIcon,
+                    trailingIcon = trailingIcon,
+                    prefix = prefix,
+                    suffix = suffix,
+                    supportingText = supportingText,
+                    colors = colors,
+                    contentPadding = contentPadding,
+                )
+            }
+        },
+    )
 }
 
 // The @OptIn is combinedClickable's (the completion rows' long-press);

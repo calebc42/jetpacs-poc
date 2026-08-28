@@ -22,6 +22,7 @@ import androidx.compose.foundation.style.styleable
 import androidx.compose.foundation.text.BasicSecureTextField
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.InputTransformation
 import androidx.compose.foundation.text.input.KeyboardActionHandler
@@ -40,6 +41,8 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -100,7 +103,7 @@ fun JetpacsTextField(
     )
     val decorator = TextFieldDecorator { innerTextField ->
         JetpacsTextFieldDecoration(
-            state = state,
+            textIsEmpty = state.text.isEmpty(),
             label = label,
             placeholder = placeholder,
             supportingText = supportingText,
@@ -151,9 +154,93 @@ fun JetpacsTextField(
     }
 }
 
+/**
+ * Value-based field used only when an EBP mask supplies explicit offsets.
+ * Decorations remain semantics-free and the [BasicTextField] is still the
+ * sole editable owner.
+ */
+@Composable
+internal fun JetpacsMaskedTextField(
+    value: TextFieldValue,
+    onValueChange: (TextFieldValue) -> Unit,
+    visualTransformation: VisualTransformation,
+    modifier: Modifier = Modifier,
+    style: Style = Style,
+    enabled: Boolean = true,
+    variant: JetpacsTextFieldVariant = JetpacsTextFieldVariant.Outlined,
+    label: String? = null,
+    placeholder: String? = null,
+    supportingText: String? = null,
+    prefix: String? = null,
+    suffix: String? = null,
+    leadingDecoration: (@Composable () -> Unit)? = null,
+    trailingDecoration: (@Composable () -> Unit)? = null,
+    isError: Boolean = false,
+    monospace: Boolean = false,
+    contentPadding: Dp? = null,
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    lineLimits: TextFieldLineLimits = TextFieldLineLimits.Default,
+    interactionSource: MutableInteractionSource? = null,
+) {
+    val source = interactionSource ?: remember { MutableInteractionSource() }
+    val styleState = rememberUpdatedStyleState(source) {
+        it.isEnabled = enabled
+        it.isTextFieldError = isError
+    }
+    val baseStyle = when (variant) {
+        JetpacsTextFieldVariant.Outlined -> JetpacsTheme.styles.textFieldOutlined
+        JetpacsTextFieldVariant.Filled -> JetpacsTheme.styles.textFieldFilled
+    }
+    val paddingStyle = contentPadding?.let { inset ->
+        Style { contentPadding(inset) }
+    } ?: Style
+    val colors = JetpacsTheme.colors
+    val typography = JetpacsTheme.typography
+    val textStyle = (if (monospace) typography.code else typography.field).copy(
+        color = colors.content,
+    )
+    val multiLine = lineLimits as? TextFieldLineLimits.MultiLine
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.heightIn(min = 48.dp),
+        enabled = enabled,
+        readOnly = false,
+        textStyle = textStyle,
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        singleLine = lineLimits == TextFieldLineLimits.SingleLine,
+        minLines = multiLine?.minHeightInLines ?: 1,
+        maxLines = multiLine?.maxHeightInLines ?: 1,
+        visualTransformation = visualTransformation,
+        interactionSource = source,
+        cursorBrush = SolidColor(colors.focus),
+        decorationBox = { innerTextField ->
+            JetpacsTextFieldDecoration(
+                textIsEmpty = value.text.isEmpty(),
+                label = label,
+                placeholder = placeholder,
+                supportingText = supportingText,
+                prefix = prefix,
+                suffix = suffix,
+                leadingDecoration = leadingDecoration,
+                trailingDecoration = trailingDecoration,
+                isError = isError,
+                enabled = enabled,
+                styleState = styleState,
+                baseStyle = baseStyle,
+                paddingStyle = paddingStyle,
+                callerStyle = style,
+                innerTextField = innerTextField,
+            )
+        },
+    )
+}
+
 @Composable
 private fun JetpacsTextFieldDecoration(
-    state: TextFieldState,
+    textIsEmpty: Boolean,
     label: String?,
     placeholder: String?,
     supportingText: String?,
@@ -199,7 +286,7 @@ private fun JetpacsTextFieldDecoration(
                 Spacer(Modifier.width(4.dp))
             }
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
-                if (state.text.isEmpty()) {
+                if (textIsEmpty) {
                     placeholder?.let {
                         BasicText(
                             it,
@@ -251,7 +338,7 @@ internal fun JetpacsTextFieldFocusFixture(
         }
     }
     JetpacsTextFieldDecoration(
-        state = state,
+        textIsEmpty = state.text.isEmpty(),
         label = label,
         placeholder = null,
         supportingText = "Focused work surface",

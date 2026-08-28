@@ -7,6 +7,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertNull
@@ -420,5 +421,15 @@ class VariantHostRenderTest {
         val visualization = sourceFile("VisualizationNodes.kt").readText()
         assertTrue(visualization.contains("MonthGridPresentationSaver"))
         assertTrue(visualization.contains("reconcileMonthGridPresentation("))
+    }
+
+    @Test
+    fun maskedFieldsUseTheSharedExplicitOffsetMappingPath() {
+        val renderer = sourceFile("Renderer.kt").readText()
+
+        assertTrue(renderer.contains("rememberLegacyTextInputAdapter(controller)"))
+        assertTrue(renderer.contains("MaskVisualTransformation(maskSpec)"))
+        assertTrue(renderer.contains("LegacyMaskedMaterialTextField("))
+        assertFalse(renderer.contains("MaskOutputTransformation"))
     }
 }

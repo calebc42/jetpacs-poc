@@ -2,13 +2,14 @@
 package com.calebc42.ebp.companion.render
 
 import androidx.compose.ui.text.AnnotatedString
+import com.calebc42.jetpacs.renderer.compose.MaskVisualTransformation
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class MaskTransformationTest {
     @Test
     fun slotsConsumeUnicodeScalarsAndMappingsRemainTotal() {
-        val transformed = MaskTransformation("##-#").filter(AnnotatedString("1😀2"))
+        val transformed = MaskVisualTransformation("##-#").filter(AnnotatedString("1😀2"))
 
         assertEquals("1😀-2", transformed.text.text)
         assertEquals(listOf(0, 1, 2, 4, 5), (0..4).map {
@@ -21,7 +22,7 @@ class MaskTransformationTest {
 
     @Test
     fun astralLiteralAndOverflowKeepBothMappingsInBounds() {
-        val prefixed = MaskTransformation("😀#").filter(AnnotatedString("a"))
+        val prefixed = MaskVisualTransformation("😀#").filter(AnnotatedString("a"))
         assertEquals("😀a", prefixed.text.text)
         assertEquals(listOf(2, 3), (0..1).map {
             prefixed.offsetMapping.originalToTransformed(it)
@@ -30,7 +31,7 @@ class MaskTransformationTest {
             prefixed.offsetMapping.transformedToOriginal(it)
         })
 
-        val overflow = MaskTransformation("#").filter(AnnotatedString("😀x"))
+        val overflow = MaskVisualTransformation("#").filter(AnnotatedString("😀x"))
         assertEquals("😀x", overflow.text.text)
         assertEquals(listOf(0, 1, 2, 3), (0..3).map {
             overflow.offsetMapping.originalToTransformed(it)
