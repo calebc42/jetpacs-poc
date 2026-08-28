@@ -144,10 +144,11 @@ class PreSwapNumberTest {
         // closes the session on the device — acceptance alone never covered
         // that read.
         val onTap = engine.surfaces.spec("app:t")!!.reqObj("on_tap")
-        var status: String? = null
-        engine.dispatchAction("app:t", onTap, null) { s, _ -> status = s }
+        var outcome: ActionAdmissionOutcome? = null
+        engine.dispatchAction("app:t", onTap, null) { outcome = it }
         assertEquals("a stored 60.0 ttl_s must still queue at tap time",
-            "queued", status)
+            ActionAdmissionOutcome.SafelyAdmitted(SafeAdmissionEvidence.DurableQueued),
+            outcome)
     }
 
     @Test

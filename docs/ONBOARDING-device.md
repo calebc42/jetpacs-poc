@@ -220,7 +220,9 @@ the rest of `init.el`, and the Vault survive.
 
 The commands below are the Advanced/desktop maintenance interface.
 
-Rerun installation with the same pair to update distribution files:
+Rerun installation with the same pair to build and reinstall the debug
+Companion APK with `adb install -r`, preserving its app data, and then update
+the managed Elisp distribution files:
 
 ```sh
 tools/onboard-tablet.sh --vault shared --emacs-home emacs
@@ -247,6 +249,7 @@ tools/onboard-tablet.sh --reset-home --vault shared --emacs-home emacs
 ```
 
 Neither operation deletes the Vault.
+`--remove` and `--reset-home` do not uninstall the Companion APK.
 
 ## Legacy directories
 

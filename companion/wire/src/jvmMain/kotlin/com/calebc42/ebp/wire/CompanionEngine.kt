@@ -357,10 +357,22 @@ class CompanionEngine(
      * validator accepts it. */
     fun dispatchDialogAction(dialogId: String, descriptor: JsonObject,
                              hookValue: JsonElement?, fields: JsonObject?,
-                             callback: ((String?, JsonObject?) -> Unit)? = null) {
-        if ("builtin" in descriptor) return  // builtins are the renderer's
-        if (state != SessionState.READY) return
-        if (!dialogs.containsKey(dialogId)) return
+                             callback: ((ActionAdmissionOutcome) -> Unit)? = null) {
+        if ("builtin" in descriptor) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.InvalidContext))
+            return // builtins are the renderer's
+        }
+        if (state != SessionState.READY) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.OfflineDrop))
+            return
+        }
+        if (!dialogs.containsKey(dialogId)) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.InvalidContext))
+            return
+        }
         // R4: the authored args share directly — immutable trees need no
         // deep copy — and the injection is a single-builder merge (R3).
         val args = buildJsonObject {
@@ -390,22 +402,44 @@ class CompanionEngine(
         }
         // SPEC 14.4/15.4: the COMPLETE params against max_event_bytes.
         if (wireSerialize(params).utf8Len() >
-            config.limits.reqLong("max_event_bytes")) return
+            config.limits.reqLong("max_event_bytes")) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.ContentInvalid))
+            return
+        }
         sendRequest("event.action", params) { result, error ->
-            callback?.invoke(result?.stringOr("status"), error)
+            callback?.invoke(actionAdmissionOutcome(
+                result?.stringOr("status"), error))
         }
     }
 
-    private fun executeBuiltin(surface: String, descriptor: JsonObject) {
-        when (descriptor.stringOr("builtin")) {
+    private fun executeBuiltin(
+        surface: String,
+        descriptor: JsonObject,
+    ): ActionAdmissionOutcome {
+        return when (descriptor.stringOr("builtin")) {
             "view.switch" -> {
-                val view = descriptor.stringOrNull("view") ?: return
-                if (!surfaces.switchView(surface, view)) return
-                surfaceListener?.invoke(surface)
+                val view = descriptor.stringOrNull("view")
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
+                if (!surfaces.switchView(surface, view)) {
+                    return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
+                }
+                // The view mutation already completed. A host repaint fault
+                // cannot erase that local outcome or strand its callback.
+                runCatching { surfaceListener?.invoke(surface) }
                 // SPEC 14.2: while READY, report view.switched with the view
                 // in args — when_offline drop, so never queued.
-                if (state != SessionState.READY) return
-                val revision = surfaces.revisionOf(surface) ?: return
+                if (state != SessionState.READY) {
+                    return ActionAdmissionOutcome.LocallyCompleted
+                }
+                val revision = surfaces.revisionOf(surface)
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
                 val params = buildJsonObject {
                     put("event_id", EbpAuth.generateNonce())
                     put("action", "view.switched")
@@ -417,32 +451,81 @@ class CompanionEngine(
                 if (wireSerialize(params).utf8Len() <=
                     config.limits.reqLong("max_event_bytes"))
                     sendRequest("event.action", params) { _, _ -> }
+                ActionAdmissionOutcome.LocallyCompleted
             }
             "variant.switch" -> {
-                val id = descriptor.stringOrNull("id") ?: return
+                val id = descriptor.stringOrNull("id")
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
                 val requested = descriptor.stringOrNull("value")
-                val next = surfaces.resolveVariantSwitch(surface, id, requested) ?: return
+                val next = surfaces.resolveVariantSwitch(surface, id, requested)
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
                 // Retained presentation moves only after the complete
                 // input_state fits its advertised bound and the draft commit
                 // succeeds. A failed commit leaves both UI and wire still.
                 if (!tryPublishState(surface, id, JsonPrimitive(next))) {
-                    localStateProblemListener?.invoke(VARIANT_SAVE_FAILURE_MESSAGE)
-                    return
+                    runCatching {
+                        localStateProblemListener?.invoke(VARIANT_SAVE_FAILURE_MESSAGE)
+                    }
+                    return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.StorageFailed,
+                    )
                 }
-                variantListener?.invoke(surface, id, next)
+                // Persistence and publication already committed the switch;
+                // isolate downstream presentation failures from admission.
+                runCatching { variantListener?.invoke(surface, id, next) }
+                ActionAdmissionOutcome.LocallyCompleted
             }
             "trigger.fire" -> {
                 // SPEC 14.2/21.5: fire the named manual trigger through the
                 // normal pipeline; requires the triggers capability.
-                if ("triggers" !in granted) return
-                val id = descriptor.stringOrNull("id") ?: return
-                pendingPairingId?.let { firing.fireManual(it, id, "tap") }
+                if ("triggers" !in granted) {
+                    return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.NotReady,
+                    )
+                }
+                val id = descriptor.stringOrNull("id")
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
+                val pairingId = pendingPairingId
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.NotReady,
+                    )
+                runCatching { firing.fireManual(pairingId, id, "tap") }.fold(
+                    onSuccess = { ActionAdmissionOutcome.LocallyCompleted },
+                    onFailure = {
+                        ActionAdmissionOutcome.NotAdmitted(
+                            UnsafeAdmissionReason.Unknown,
+                        )
+                    },
+                )
             }
-            "surface.open", "clipboard.copy", "share.send", "companion.settings.open" ->
-                hostBuiltinListener?.invoke(descriptor.stringOr("builtin"), descriptor)
+            "surface.open", "clipboard.copy", "share.send", "companion.settings.open" -> {
+                val listener = hostBuiltinListener
+                    ?: return ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.InvalidContext,
+                    )
+                runCatching {
+                    listener(descriptor.stringOr("builtin"), descriptor)
+                }.fold(
+                    onSuccess = { ActionAdmissionOutcome.LocallyCompleted },
+                    onFailure = {
+                        ActionAdmissionOutcome.NotAdmitted(
+                            UnsafeAdmissionReason.Unknown,
+                        )
+                    },
+                )
+            }
             // dialog.submit/dismiss are valid only inside their dialog; the
             // renderer routes those through DialogContext. Reaching here is an
             // invalid context: no-op.
+            else -> ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.InvalidContext,
+            )
         }
     }
 
@@ -458,10 +541,10 @@ class CompanionEngine(
                        injected: JsonObject? = null,
                        extraFields: JsonObject? = null,
                        /** The id of the node whose hook fired, when the host
-                        * knows it. Required for a synchronized `editor`'s
-                        * hooks so the §19 read-only rule can be enforced. */
+                       * knows it. Required for a synchronized `editor`'s
+                       * hooks so the §19 read-only rule can be enforced. */
                        sourceId: String? = null,
-                       callback: ((String?, JsonObject?) -> Unit)? = null) {
+                       callback: ((ActionAdmissionOutcome) -> Unit)? = null) {
         // SPEC 19: "A synchronized editor MUST become read-only whenever the
         // connection is not READY. It MUST NOT create an offline input draft,
         // delta, save, completion, or editor command." Its every other path
@@ -469,9 +552,21 @@ class CompanionEngine(
         // `on_save`, `on_enter` — reaches the DURABLE queue through the
         // generic dispatch, so it is gated here rather than in the renderer.
         if (sourceId != null && state != SessionState.READY &&
-            surfaceEditors[surface]?.containsKey(sourceId) == true) return
-        if ("builtin" in descriptor) return executeBuiltin(surface, descriptor)
-        val revision = surfaces.revisionOf(surface) ?: return
+            surfaceEditors[surface]?.containsKey(sourceId) == true) {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.NotReady))
+            return
+        }
+        if ("builtin" in descriptor) {
+            val outcome = executeBuiltin(surface, descriptor)
+            callback?.invoke(outcome)
+            return
+        }
+        val revision = surfaces.revisionOf(surface) ?: run {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.InvalidContext))
+            return
+        }
         // R3/R4: authored args + hook value + multi-member injections merge
         // in ONE builder; the immutable authored tree shares, no deep copy.
         val args = buildJsonObject {
@@ -523,14 +618,14 @@ class CompanionEngine(
         // local diagnostic, never a frame or a record.
         if (wireSerialize(params).utf8Len() >
             config.limits.reqLong("max_event_bytes")) {
-            callback?.invoke(null, buildJsonObject {
+            callback?.invoke(actionAdmissionOutcome(null, buildJsonObject {
                 put("code", 1201)
                 put("message", "Event exceeds max_event_bytes")
                 put("data", buildJsonObject {
                     put("kind", "content-invalid")
                     put("reason", "event-too-large")
                 })
-            })
+            }))
             return
         }
         when (policy) {
@@ -549,33 +644,39 @@ class CompanionEngine(
                             ?: throw NoSuchElementException("ttl_s"))) {
                     is AdmitResult.Admitted -> {
                         descriptor.stringOrNull("open_surface")?.let { target ->
-                            hostBuiltinListener?.invoke("surface.open", buildJsonObject {
-                                put("builtin", "surface.open")
-                                put("surface", target)
-                            })
+                            runCatching {
+                                hostBuiltinListener?.invoke(
+                                    "surface.open",
+                                    buildJsonObject {
+                                        put("builtin", "surface.open")
+                                        put("surface", target)
+                                    },
+                                )
+                            }
                         }
                         if (policy == "wake" && state != SessionState.READY &&
                             queue.effectiveNow() - lastWakeMs >= 60_000) {
                             lastWakeMs = queue.effectiveNow()
-                            wakeListener?.invoke()
+                            runCatching { wakeListener?.invoke() }
                         }
-                        callback?.invoke("queued", null)
+                        callback?.invoke(ActionAdmissionOutcome.SafelyAdmitted(
+                            SafeAdmissionEvidence.DurableQueued))
                         pumpAdvance() // no-op unless READY and unpaused
                     }
                     AdmitResult.QueueFull ->
                         // SPEC 15.1: the 1601 queue-full equivalent, local.
-                        callback?.invoke(null, buildJsonObject {
+                        callback?.invoke(actionAdmissionOutcome(null, buildJsonObject {
                             put("code", 1601)
                             put("message", "Queue full")
                             put("data", buildJsonObject { put("kind", "queue-full") })
-                        })
+                        }))
                     AdmitResult.StorageFailed ->
                         // SPEC 15.1: MUST NOT claim the interaction queued.
-                        callback?.invoke(null, buildJsonObject {
+                        callback?.invoke(actionAdmissionOutcome(null, buildJsonObject {
                             put("code", -32603)
                             put("message", "Storage failed")
                             put("data", buildJsonObject { put("kind", "internal-error") })
-                        })
+                        }))
                 }
             }
             else -> { // drop: live delivery only (SPEC 15.1)
@@ -583,14 +684,24 @@ class CompanionEngine(
                 // independent of remote availability. Confirmation has already
                 // been resolved by the host before this funnel is entered.
                 descriptor.stringOrNull("open_surface")?.let { target ->
-                    hostBuiltinListener?.invoke("surface.open", buildJsonObject {
-                        put("builtin", "surface.open")
-                        put("surface", target)
-                    })
+                    runCatching {
+                        hostBuiltinListener?.invoke(
+                            "surface.open",
+                            buildJsonObject {
+                                put("builtin", "surface.open")
+                                put("surface", target)
+                            },
+                        )
+                    }
                 }
-                if (state != SessionState.READY) return
+                if (state != SessionState.READY) {
+                    callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                        UnsafeAdmissionReason.OfflineDrop))
+                    return
+                }
                 sendRequest("event.action", params) { result, error ->
-                    callback?.invoke(result?.stringOr("status"), error)
+                    callback?.invoke(actionAdmissionOutcome(
+                        result?.stringOr("status"), error))
                 }
             }
         }
@@ -2476,8 +2587,14 @@ class CompanionEngine(
      * values (the renderer holds dialog-local state, SPEC 18.1). */
     @Synchronized
     fun completeDialogSubmit(dialogId: String, value: JsonElement? = null,
-                             fields: JsonObject? = null) {
-        val reqId = dialogs[dialogId] ?: return
+                             fields: JsonObject? = null,
+                             callback: ((ActionAdmissionOutcome) -> Unit)? = null) {
+        val reqId = dialogs[dialogId] ?: run {
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.InvalidContext,
+            ))
+            return
+        }
         // The null guard survives AS a guard: a null VALUE means the member is
         // absent from the result, exactly as org.json's put(k, null) removal
         // behaved (an authored JSON null arrives as JsonNull, which is
@@ -2500,12 +2617,16 @@ class CompanionEngine(
         }).utf8Len()
         if (body > WireLimits.MAX_BODY_OCTETS) {
             dialogOverflowListener?.invoke(dialogId)
+            callback?.invoke(ActionAdmissionOutcome.NotAdmitted(
+                UnsafeAdmissionReason.ContentInvalid,
+            ))
             return
         }
         dialogs.remove(dialogId)
         closeDialogEditors(dialogId)
         dialogDefaults.remove(dialogId)
         respondResult(reqId, result)
+        callback?.invoke(ActionAdmissionOutcome.LocallyCompleted)
         dialogListener?.invoke(dialogId, null)
     }
 

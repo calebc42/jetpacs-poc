@@ -11,7 +11,6 @@ package com.calebc42.ebp.companion.render
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -77,7 +76,6 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.Stable
@@ -90,20 +88,22 @@ import androidx.compose.ui.layout.positionInParent
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.TextFieldValue
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
-import com.calebc42.ebp.companion.CompletionCandidate
-import com.calebc42.ebp.companion.MaterialRendererBridge
+import com.calebc42.ebp.companion.MaterialRendererHost
+import com.calebc42.jetpacs.renderer.model.CompletionCandidate
+import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.ebp.wire.CompletionNarrowing
-import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.ENUMS
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
-import com.calebc42.ebp.wire.normalizeTextInput
 import com.calebc42.ebp.wire.textInputScalarToUtf16
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
+import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.RendererActionContext
+import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
+import com.calebc42.jetpacs.renderer.model.RendererActionRequest
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -137,7 +137,7 @@ class DialogContext(
     // Raw scalar values (string, boolean, number) so §14.6 capture returns
     // each stateful node's logical value, not a stringified one.
     val fields: SnapshotStateMap<String, JsonElement?>,
-    val bridge: MaterialRendererBridge,
+    val bridge: MaterialRendererHost,
     /** T3/LD-3: the authored values the engine computed while validating this
      * dialog's spec — the layer UNDER the user's edits. */
     val defaults: JsonObject? = null,
@@ -180,13 +180,13 @@ fun captureValue(id: String, fields: Map<String, JsonElement?>, defaults: JsonOb
 
 /**
  * Everything a node render needs beside the node itself: the surface, the
- * engine seam (bridge.action/state/editorEdit on the ebp-dispatch executor),
+ * engine seam (neutral action/state/editor hosts on the ebp-dispatch executor),
  * the optional dialog rebinding, and the §16.1 identity path.
  */
 @Stable
 data class RenderCtx(
     val surface: String,
-    val bridge: MaterialRendererBridge,
+    val bridge: MaterialRendererHost,
     val dialog: DialogContext? = null,
     val path: String = "",
     /** T3/LD-2: what each of this surface's stateful nodes should display,
@@ -228,6 +228,16 @@ data class RenderCtx(
     fun storeValue(id: String): JsonElement? = displays[surface to id]?.value
 
     fun action(descriptor: JsonObject?, value: JsonElement? = null) {
+        dispatchAction(descriptor, value)
+    }
+
+    fun dispatchAction(
+        descriptor: JsonObject?,
+        value: JsonElement? = null,
+        sourceId: String? = null,
+        onOutcome: (RendererActionOutcome) -> Unit = {},
+    ): ActionHandoff {
+        descriptor ?: return ActionHandoff.Ignored
         // SPEC 18.1 (T3c, closes LD-1): inside a dialog the dialog.submit /
         // dialog.dismiss builtins complete the outstanding request instead of
         // dispatching remotely — resolved HERE, in the one ordinary dispatch
@@ -238,7 +248,7 @@ data class RenderCtx(
         // trailing action, or any on_tap inside a dialog document fell into
         // the engine's when with no dialog.submit arm and hung Emacs forever.
         val d = dialog
-        if (d != null && descriptor != null && "builtin" in descriptor) {
+        if (d != null && "builtin" in descriptor) {
             when (descriptor.stringOr("builtin")) {
                 "dialog.submit" -> {
                     val fields = buildJsonObject {
@@ -251,18 +261,21 @@ data class RenderCtx(
                             }
                         }
                     }
-                    d.bridge.dialogSubmit(d.dialogId,
+                    return d.bridge.submitDialog(
+                        d.dialogId,
                         if ("value" in descriptor) descriptor["value"] else null,
-                        fields)
-                    return
+                        fields,
+                        onOutcome,
+                    )
                 }
                 "dialog.dismiss" -> {
-                    d.bridge.dialogDismiss(d.dialogId)
-                    return
+                    d.bridge.dismissDialog(d.dialogId)
+                    onOutcome(RendererActionOutcome.LocallyCompleted)
+                    return ActionHandoff.HandedOff
                 }
             }
         }
-        if (d != null && descriptor != null && "builtin" !in descriptor) {
+        if (d != null && "builtin" !in descriptor) {
             // SPEC 18.1/14.4: a REMOTE descriptor inside a dialog dispatches
             // in DIALOG context, its capture snapshot read from the local
             // field layer exactly like dialog.submit (T3/LD-3).  The generic
@@ -276,39 +289,74 @@ data class RenderCtx(
                     }
                 }
             }
-            d.bridge.dialogAction(d.dialogId, descriptor, value, fields)
-            return
+            return d.bridge.dispatch(
+                RendererActionRequest(
+                    RendererActionContext.Dialog(d.dialogId), descriptor,
+                    value = value, fields = fields, sourceId = sourceId,
+                ),
+                onOutcome,
+            )
         }
-        bridge.action(surface, descriptor, value)
+        return bridge.dispatch(
+            RendererActionRequest(
+                RendererActionContext.Surface(surface), descriptor,
+                value = value, sourceId = sourceId,
+            ),
+            onOutcome,
+        )
     }
 
     /** §14.3 multi-member hooks (on_reorder, on_add_row/col, swipe sides). */
     fun actionInjecting(descriptor: JsonObject?, injected: JsonObject,
-                        value: JsonElement? = null) =
-        bridge.actionInjecting(surface, descriptor, injected, value)
+                        value: JsonElement? = null) {
+        descriptor?.let {
+            bridge.dispatch(RendererActionRequest(
+                RendererActionContext.Surface(surface), it,
+                value = value, injected = injected,
+            ))
+        }
+    }
 
     /** §14.6 an app-surface password on_submit — the secret rides `fields`,
      * never `args` and never a retained draft. (In a dialog the secret is
      * captured dialog-locally via dialog.submit + capture_fields instead.) */
-    fun actionWithFields(descriptor: JsonObject?, fields: JsonObject) =
-        bridge.actionWithFields(surface, descriptor, fields)
+    fun actionWithFields(
+        descriptor: JsonObject?,
+        fields: JsonObject,
+        onOutcome: (RendererActionOutcome) -> Unit = {},
+    ): ActionHandoff = descriptor?.let {
+        bridge.dispatch(
+            RendererActionRequest(
+                RendererActionContext.Surface(surface), it, fields = fields,
+            ),
+            onOutcome,
+        )
+    } ?: ActionHandoff.Ignored
 
     val inDialog: Boolean get() = dialog != null
 
     fun state(id: String, value: JsonElement?, caret: Int? = null) {
         if (dialog != null) dialog.fields[id] = value // SPEC 18.1: local only
-        else bridge.state(surface, id, value, caret)
+        else bridge.publishState(surface, id, value, caret)
     }
 
     /** §17.7 toolbar `command` -> edit.command with the live editor context. */
     fun editorCommand(document: String, editorId: String, command: String,
                       cursor: Int, selStart: Int, selEnd: Int) =
-        bridge.editorCommand(surface, document, editorId, command, cursor, selStart, selEnd)
+        bridge.dispatchEditorCommand(
+            surface,
+            document,
+            editorId,
+            command,
+            cursor,
+            selStart,
+            selEnd,
+        )
 }
 
 /** Root entry for a surface (MainActivity). */
 @Composable
-fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererBridge,
+fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererHost,
                dialog: DialogContext? = null,
                configuration: ComposeRendererConfiguration =
                    NodeSupport.COMPOSE_CONFIGURATION) {
@@ -322,7 +370,7 @@ fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererBridge
 
 /** Root of a dialog's node tree: owns the local field map (SPEC 18.1). */
 @Composable
-fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendererBridge,
+fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendererHost,
                      epoch: Long = 0L,
                      configuration: ComposeRendererConfiguration =
                          NodeSupport.COMPOSE_CONFIGURATION) {
@@ -354,8 +402,11 @@ private class MaterialExtensionRenderContext(
     override val path: String get() = context.path
     override val inDialog: Boolean get() = context.inDialog
 
-    override fun action(descriptor: JsonObject?, value: JsonElement?) =
-        context.action(descriptor, value)
+    override fun action(
+        descriptor: JsonObject?,
+        value: JsonElement?,
+        onOutcome: (RendererActionOutcome) -> Unit,
+    ) = context.dispatchAction(descriptor, value, onOutcome = onOutcome)
 
     override fun state(id: String, value: JsonElement?) = context.state(id, value)
     override fun storeValue(id: String): JsonElement? = context.storeValue(id)
@@ -599,54 +650,66 @@ fun ColumnScope.RenderColumnChildren(children: JsonArray?, ctx: RenderCtx) {
 @Composable
 private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true) // SPEC 17.4
     val password = node.boolOr("password")
     val singleLine = node.boolOr("single_line")
-    val onChange = node.objOrNull("on_change")
-    val onSubmit = node.objOrNull("on_submit")
-    // SPEC 14.6: a password value MUST NOT be persisted to saved-instance-state.
-    // A non-password draft keys on the §13.6 wire address (surface+id), NOT the
-    // key-first presentation path, so changing only a `key` keeps a compatible
-    // draft (§16.1 input-draft exception).
-    var value by if (password)
-        remember(id) { mutableStateOf("") } // never seeded, never saved
-    else
-        rememberSaveable(ctx.surface, id, ctx.epochOf(id),
-            key = "ti:${ctx.surface}:$id:${ctx.epochOf(id)}") {
-            // C6: the store's value is a JsonElement, so the seed reads the
-            // STRING primitive explicitly — a safe cast to a Kotlin String
-            // would compile and be forever null, silently reverting the widget
-            // to the authored value while the store still held the user's
-            // draft (LD-2).
-            mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
-                ?.takeIf { it.isString }?.content ?: node.stringOr("value"))
+    val authored = node.stringOr("value")
+    val stored = (ctx.storeValue(id) as? JsonPrimitive)
+        ?.takeIf { it.isString }
+        ?.content
+    val initialText = if (password) "" else stored ?: authored
+    val retainedDraftWins = !password && stored != null && stored != authored
+    val selectionArray = node.arrOrNull("selection")
+        ?.mapNotNull { it.numOrNull()?.toInt() }
+    val initialSelection = if (retainedDraftWins || selectionArray == null) {
+        TextRange(initialText.length)
+    } else {
+        TextRange(
+            textInputScalarToUtf16(initialText, selectionArray.getOrNull(0) ?: 0),
+            textInputScalarToUtf16(
+                initialText,
+                selectionArray.getOrNull(1) ?: selectionArray.getOrNull(0) ?: 0,
+            ),
+        )
+    }
+    val actionDispatcher = com.calebc42.jetpacs.renderer.compose.EditingActionDispatcher {
+            descriptor, value, fields, sourceId, onOutcome ->
+        when {
+            fields != null && !ctx.inDialog ->
+                ctx.actionWithFields(descriptor, fields, onOutcome)
+            else -> ctx.dispatchAction(descriptor, value, sourceId, onOutcome)
         }
-    // SPEC 18.4/17.4: a `syntax` language recolours the field in place; a
-    // password masks with dots instead (a syntax highlight on a secret is
-    // moot); a `mask` template formats the stored value for DISPLAY only —
-    // its literals never enter value/state.changed — and outranks syntax.
+    }
+    val controller = com.calebc42.jetpacs.renderer.compose.rememberTextInputController(
+        presentationEpoch = ctx.epochOf(id),
+        initialText = initialText,
+        initialSelection = initialSelection,
+        config = com.calebc42.jetpacs.renderer.compose.TextInputControllerConfig(
+            id = id,
+            password = password,
+            singleLine = singleLine,
+            filter = node.stringOrNull("filter"),
+            maxLengthScalars = node["max_length"]?.numOrNull()?.toLong(),
+            clearOnSubmit = node.boolOr("clear_on_submit"),
+            onChange = node.objOrNull("on_change"),
+            onSubmit = node.objOrNull("on_submit"),
+            publishPasswordLocally = ctx.inDialog,
+        ),
+        maxFieldBytes = ctx.bridge.maxFieldBytes,
+        publishState = { ctx.state(id, JsonPrimitive(it)) },
+        actionDispatcher = actionDispatcher,
+    )
+
+    // Output-only presentation never changes the logical controller value.
     val language = node.stringOr("syntax")
     val syntaxColors = LocalSyntaxColors.current
     val maskSpec = node.stringOr("mask")
-    val transform = remember(language, syntaxColors, password, maskSpec) {
+    val outputTransformation = remember(language, syntaxColors, maskSpec) {
         when {
-            password -> androidx.compose.ui.text.input.PasswordVisualTransformation()
-            maskSpec.isNotEmpty() -> MaskTransformation(maskSpec)
-            language.isEmpty() -> VisualTransformation.None
-            else -> SyntaxTransformation(language, syntaxColors)
+            maskSpec.isNotEmpty() ->
+                com.calebc42.jetpacs.renderer.compose.MaskOutputTransformation(maskSpec)
+            language.isNotEmpty() -> SyntaxOutputTransformation(language, syntaxColors)
+            else -> null
         }
-    }
-    fun submit() {
-        val v = value
-        when {
-            onSubmit == null -> {}
-            // SPEC 14.6/14.3: a password submission carries the secret in
-            // `fields.<id>`, never in `args`.
-            password -> ctx.actionWithFields(onSubmit, buildJsonObject { put(id, v) })
-            else -> ctx.action(onSubmit, JsonPrimitive(v)) // §14.3 value injection
-        }
-        // SPEC 17.4: clear_on_submit resets the field after submit.
-        if (node.boolOr("clear_on_submit")) value = ""
     }
     val isError = node.boolOr("is_error")
     val supporting = node.stringOr("supporting_text")
@@ -657,7 +720,9 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // §17.4 shared slots. M3 measures the helper line to the FIELD's own
     // width and tints it from (enabled, isError, focused), which is exactly
     // why a sibling `text` node underneath is not a substitute.
-    val labelSlot: (@Composable () -> Unit)? = node.stringOr("label")
+    val labelSlot:
+        (@Composable androidx.compose.material3.TextFieldLabelScope.() -> Unit)? =
+        node.stringOr("label")
         .takeIf { it.isNotEmpty() }?.let { { Text(it) } }
     val placeholderSlot: (@Composable () -> Unit)? = node.stringOr("hint")
         .takeIf { it.isNotEmpty() }?.let { { Text(it) } }
@@ -671,239 +736,124 @@ private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         prefixText.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
     val suffixSlot: (@Composable () -> Unit)? =
         suffixText.takeIf { it.isNotEmpty() }?.let { { Text(it) } }
-    val onValueChange: (String) -> Unit = { raw ->
-        // §17.4 fixes the local order and Unicode unit. This shared helper
-        // keeps Material from silently broadening ASCII filters or splitting
-        // an astral-plane character at max_length.
-        val next = normalizeTextInput(
-            raw,
-            singleLine,
-            node.stringOrNull("filter"),
-            node["max_length"]?.numOrNull()?.toLong(),
-        )
-        value = next
-        if (!password) {
-            ctx.state(id, JsonPrimitive(next))
-            onChange?.let { ctx.action(it, JsonPrimitive(next)) }
-        } else if (ctx.inDialog) {
-            ctx.state(id, JsonPrimitive(next))
-        }
-    }
     val keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
         keyboardType = keyboardTypeOf(node.stringOr("keyboard"), password),
-        imeAction = if (onSubmit != null) androidx.compose.ui.text.input.ImeAction.Done
+        imeAction = if (node.objOrNull("on_submit") != null)
+            androidx.compose.ui.text.input.ImeAction.Done
             else androidx.compose.ui.text.input.ImeAction.Default)
-    // §17.4 `hide_keyboard_on_submit`: Compose's default hide-on-Done is
-    // SUPPRESSED the moment KeyboardActions supplies onDone, so without this
-    // member the IME stays up after every submit and nothing can ask otherwise.
     val keyboardController = LocalSoftwareKeyboardController.current
     val hideOnSubmit = node.boolOr("hide_keyboard_on_submit")
-    val keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-        onDone = { submit(); if (hideOnSubmit) keyboardController?.hide() })
-    // §17.4 `content_padding`: the field's INTERIOR padding, which only the
-    // DecorationBox overload owns — the universal `padding` lands outside the
-    // widget as margin and `min_height` cannot shrink the ~56dp interior.
-    val innerPad = node["content_padding"]?.numOrNull()
-    // §17.4 `selection`: seeds the initial TextRange only — re-seeded on an
-    // input-reset epoch exactly like `value` — so the field composes through
-    // the TextFieldValue overload while the draft store still carries the
-    // bare string.
-    val selSpec = node.arrOrNull("selection")
-    if (selSpec != null && !password) {
-        val authoredValue = node.stringOr("value")
-        val retainedDraftWins = ctx.storeValue(id)?.strOrNull()?.let {
-            it != authoredValue
-        } ?: false
-        var sel by remember(ctx.surface, id, ctx.path, ctx.epochOf(id)) {
-            if (retainedDraftWins) {
-                // §13.6/17.4: authored offsets belong to authored text. A
-                // retained dirty draft keeps its own presentation state; if
-                // this widget is newly composed, use a collapsed safe caret
-                // rather than apply those offsets to different text.
-                mutableStateOf(androidx.compose.ui.text.TextRange(value.length))
-            } else {
-                val a = selSpec.mapNotNull { it.numOrNull()?.toInt() }
-                val start = textInputScalarToUtf16(value, a.getOrNull(0) ?: 0)
-                val end = textInputScalarToUtf16(
-                    value,
-                    a.getOrNull(1) ?: a.getOrNull(0) ?: 0,
-                )
-                mutableStateOf(androidx.compose.ui.text.TextRange(start, end))
+    val onKeyboardAction:
+        androidx.compose.foundation.text.input.KeyboardActionHandler =
+        androidx.compose.foundation.text.input.KeyboardActionHandler {
+            if (controller.submit() == ActionHandoff.HandedOff && hideOnSubmit) {
+                keyboardController?.hide()
             }
         }
-        val tfv = androidx.compose.ui.text.input.TextFieldValue(value, sel)
-        val onTfv: (androidx.compose.ui.text.input.TextFieldValue) -> Unit = {
-            onValueChange(it.text)
-            // Local transforms may shorten the proposed value. Compose uses
-            // UTF-16 offsets, so keep both ends inside the committed text.
-            sel = androidx.compose.ui.text.TextRange(
-                it.selection.start.coerceIn(0, value.length),
-                it.selection.end.coerceIn(0, value.length),
-            )
-        }
-        if (innerPad != null) {
-            RenderDenseTextInput(
-                node, value, onValueChange, transform,
-                keyboardOptions, keyboardActions, enabled, singleLine, isError,
-                innerPad.toFloat(), labelSlot, placeholderSlot, supportingSlot,
-                leadingSlot, trailingSlot, prefixSlot, suffixSlot, m,
-                textFieldValue = tfv,
-                onTextFieldValueChange = onTfv,
-            )
-            return
-        }
-        if (textInputVariant(node) == "filled")
-            TextField(
-                value = tfv, enabled = enabled, visualTransformation = transform,
-                onValueChange = onTfv, label = labelSlot,
-                placeholder = placeholderSlot, singleLine = singleLine,
-                isError = isError, supportingText = supportingSlot,
-                leadingIcon = leadingSlot, trailingIcon = trailingSlot,
-                prefix = prefixSlot, suffix = suffixSlot,
-                keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
-                modifier = m)
-        else OutlinedTextField(
-            value = tfv, enabled = enabled, visualTransformation = transform,
-            onValueChange = onTfv, label = labelSlot,
-            placeholder = placeholderSlot, singleLine = singleLine,
-            isError = isError, supportingText = supportingSlot,
-            leadingIcon = leadingSlot, trailingIcon = trailingSlot,
-            prefix = prefixSlot, suffix = suffixSlot,
-            keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
-            modifier = m)
-        return
+    val enabled = node.boolOr("enabled", true) &&
+        !(password && controller.passwordSubmissionPending)
+    val minLines = if (singleLine) 1 else node.intByValue("min_lines", 1)
+    val maxLines = if (singleLine) 1 else
+        node.intByValue("max_lines", Int.MAX_VALUE)
+    val lineLimits = if (singleLine) {
+        androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine
+    } else {
+        androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(
+            minHeightInLines = minLines,
+            maxHeightInLines = maxLines,
+        )
     }
-    if (innerPad != null) {
-        RenderDenseTextInput(node, value, onValueChange, transform,
-            keyboardOptions, keyboardActions, enabled, singleLine, isError,
-            innerPad.toFloat(), labelSlot, placeholderSlot, supportingSlot,
-            leadingSlot, trailingSlot, prefixSlot, suffixSlot, m)
-        return
-    }
-    if (textInputVariant(node) == "filled") {
-        TextField(
-            value = value, enabled = enabled, visualTransformation = transform,
-            onValueChange = onValueChange, label = labelSlot,
-            placeholder = placeholderSlot, singleLine = singleLine,
-            isError = isError, supportingText = supportingSlot,
-            leadingIcon = leadingSlot, trailingIcon = trailingSlot,
-            prefix = prefixSlot, suffix = suffixSlot,
-            keyboardOptions = keyboardOptions, keyboardActions = keyboardActions,
-            modifier = m)
-        return
-    }
-    OutlinedTextField(
-        value = value,
-        enabled = enabled,
-        isError = isError,
-        supportingText = supportingSlot,
-        leadingIcon = leadingSlot,
-        trailingIcon = trailingSlot,
-        prefix = prefixSlot,
-        suffix = suffixSlot,
-        visualTransformation = transform,
-        onValueChange = onValueChange,
-        label = labelSlot,
-        // SPEC 17.4 `hint` is the M3 placeholder — shown while the field is
-        // unfocused and empty. It was declared, elisp-validated and never
-        // passed here, so every authored hint rendered as nothing.
-        placeholder = placeholderSlot,
-        singleLine = singleLine,
-        keyboardOptions = keyboardOptions,
-        keyboardActions = keyboardActions,
-        modifier = m)
-}
-
-/** §17.4 `content_padding`: BasicTextField under the variant's own
- * DecorationBox, which is the only seam where M3 exposes the interior
- * padding. Everything else — slots, transform, keyboard — is the same
- * machinery RenderTextInput hoisted; only the decoration differs. */
-@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-@Composable
-private fun RenderDenseTextInput(
-    node: JsonObject,
-    value: String,
-    onValueChange: (String) -> Unit,
-    transform: VisualTransformation,
-    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions,
-    keyboardActions: androidx.compose.foundation.text.KeyboardActions,
-    enabled: Boolean,
-    singleLine: Boolean,
-    isError: Boolean,
-    innerPadDp: Float,
-    labelSlot: (@Composable () -> Unit)?,
-    placeholderSlot: (@Composable () -> Unit)?,
-    supportingSlot: (@Composable () -> Unit)?,
-    leadingSlot: (@Composable () -> Unit)?,
-    trailingSlot: (@Composable () -> Unit)?,
-    prefixSlot: (@Composable () -> Unit)?,
-    suffixSlot: (@Composable () -> Unit)?,
-    m: Modifier,
-    textFieldValue: TextFieldValue? = null,
-    onTextFieldValueChange: ((TextFieldValue) -> Unit)? = null,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val padding = PaddingValues(innerPadDp.dp)
     val filled = textInputVariant(node) == "filled"
-    val textStyle = MaterialTheme.typography.bodyLarge.copy(
-        color = MaterialTheme.colorScheme.onSurface)
-    val decoration: @Composable (@Composable () -> Unit) -> Unit = { inner ->
-        if (filled)
-            TextFieldDefaults.DecorationBox(
-                value = value, innerTextField = inner, enabled = enabled,
-                singleLine = singleLine, visualTransformation = transform,
-                interactionSource = interaction, isError = isError,
-                label = labelSlot, placeholder = placeholderSlot,
-                leadingIcon = leadingSlot, trailingIcon = trailingSlot,
-                prefix = prefixSlot, suffix = suffixSlot,
-                supportingText = supportingSlot,
-                contentPadding = padding)
-        else OutlinedTextFieldDefaults.DecorationBox(
-            value = value, innerTextField = inner, enabled = enabled,
-            singleLine = singleLine, visualTransformation = transform,
-            interactionSource = interaction, isError = isError,
-            label = labelSlot, placeholder = placeholderSlot,
-            leadingIcon = leadingSlot, trailingIcon = trailingSlot,
-            prefix = prefixSlot, suffix = suffixSlot,
-            supportingText = supportingSlot,
-            contentPadding = padding,
-            container = {
-                OutlinedTextFieldDefaults.Container(
-                    enabled = enabled, isError = isError,
-                    interactionSource = interaction)
-            })
+    val authoredPadding = node["content_padding"]?.numOrNull()?.toFloat()
+    val padding = authoredPadding?.let { PaddingValues(it.dp) } ?: if (filled) {
+        if (labelSlot == null) TextFieldDefaults.contentPaddingWithoutLabel()
+        else TextFieldDefaults.contentPaddingWithLabel()
+    } else {
+        if (labelSlot == null) OutlinedTextFieldDefaults.contentPaddingWithoutLabel()
+        else OutlinedTextFieldDefaults.contentPaddingWithLabel()
     }
-    if (textFieldValue != null && onTextFieldValueChange != null) {
-        androidx.compose.foundation.text.BasicTextField(
-            value = textFieldValue,
-            onValueChange = onTextFieldValueChange,
-            enabled = enabled,
-            singleLine = singleLine,
-            textStyle = textStyle,
-            cursorBrush = androidx.compose.ui.graphics.SolidColor(
-                MaterialTheme.colorScheme.primary),
-            visualTransformation = transform,
-            keyboardOptions = keyboardOptions,
-            keyboardActions = keyboardActions,
-            interactionSource = interaction,
+
+    if (password) {
+        if (filled) {
+                androidx.compose.material3.SecureTextField(
+                    state = controller.state,
+                    modifier = m,
+                    enabled = enabled,
+                    label = labelSlot,
+                    placeholder = placeholderSlot,
+                    leadingIcon = leadingSlot,
+                    trailingIcon = trailingSlot,
+                    prefix = prefixSlot,
+                    suffix = suffixSlot,
+                    supportingText = supportingSlot,
+                    isError = isError,
+                    inputTransformation = controller.inputTransformation,
+                    textObfuscationMode =
+                        androidx.compose.foundation.text.input.TextObfuscationMode.Hidden,
+                    keyboardOptions = keyboardOptions,
+                    onKeyboardAction = onKeyboardAction,
+                    contentPadding = padding,
+                )
+        } else {
+                androidx.compose.material3.OutlinedSecureTextField(
+                    state = controller.state,
+                    modifier = m,
+                    enabled = enabled,
+                    label = labelSlot,
+                    placeholder = placeholderSlot,
+                    leadingIcon = leadingSlot,
+                    trailingIcon = trailingSlot,
+                    prefix = prefixSlot,
+                    suffix = suffixSlot,
+                    supportingText = supportingSlot,
+                    isError = isError,
+                    inputTransformation = controller.inputTransformation,
+                    textObfuscationMode =
+                        androidx.compose.foundation.text.input.TextObfuscationMode.Hidden,
+                    keyboardOptions = keyboardOptions,
+                    onKeyboardAction = onKeyboardAction,
+                    contentPadding = padding,
+                )
+        }
+    } else if (filled) {
+        TextField(
+            state = controller.state,
             modifier = m,
-            decorationBox = decoration,
+            enabled = enabled,
+            label = labelSlot,
+            placeholder = placeholderSlot,
+            leadingIcon = leadingSlot,
+            trailingIcon = trailingSlot,
+            prefix = prefixSlot,
+            suffix = suffixSlot,
+            supportingText = supportingSlot,
+            isError = isError,
+            inputTransformation = controller.inputTransformation,
+            outputTransformation = outputTransformation,
+            keyboardOptions = keyboardOptions,
+            onKeyboardAction = onKeyboardAction,
+            lineLimits = lineLimits,
+            contentPadding = padding,
         )
     } else {
-        androidx.compose.foundation.text.BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            singleLine = singleLine,
-            textStyle = textStyle,
-            cursorBrush = androidx.compose.ui.graphics.SolidColor(
-                MaterialTheme.colorScheme.primary),
-            visualTransformation = transform,
-            keyboardOptions = keyboardOptions,
-            keyboardActions = keyboardActions,
-            interactionSource = interaction,
+        OutlinedTextField(
+            state = controller.state,
             modifier = m,
-            decorationBox = decoration,
+            enabled = enabled,
+            label = labelSlot,
+            placeholder = placeholderSlot,
+            leadingIcon = leadingSlot,
+            trailingIcon = trailingSlot,
+            prefix = prefixSlot,
+            suffix = suffixSlot,
+            supportingText = supportingSlot,
+            isError = isError,
+            inputTransformation = controller.inputTransformation,
+            outputTransformation = outputTransformation,
+            keyboardOptions = keyboardOptions,
+            onKeyboardAction = onKeyboardAction,
+            lineLimits = lineLimits,
+            contentPadding = padding,
         )
     }
 }
@@ -932,23 +882,6 @@ private fun keyboardTypeOf(name: String, password: Boolean): androidx.compose.ui
     }
 }
 
-/** SPEC 17.4: a single-line editor deletes every U+000A before commit.
- * Selection and composition offsets are remapped through the deletion so a
- * paste or IME composition cannot leave an out-of-range caret behind. */
-internal fun editorWithoutLineFeeds(value: TextFieldValue): TextFieldValue {
-    if ('\n' !in value.text) return value
-    fun remap(offset: Int): Int {
-        val end = offset.coerceIn(0, value.text.length)
-        var lineFeeds = 0
-        for (i in 0 until end) if (value.text[i] == '\n') lineFeeds++
-        return end - lineFeeds
-    }
-    return TextFieldValue(
-        text = value.text.replace("\n", ""),
-        selection = TextRange(remap(value.selection.start), remap(value.selection.end)),
-        composition = value.composition?.let { TextRange(remap(it.start), remap(it.end)) })
-}
-
 // The @OptIn is combinedClickable's (the completion rows' long-press);
 // a long-press-ONLY affordance with no visual cue makes onLongClickLabel
 // its entire TalkBack surface, so the label is not optional decoration.
@@ -964,44 +897,50 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val onSave = node.objOrNull("on_save")
     val onEnter = node.objOrNull("on_enter")
     val singleLine = node.boolOr("single_line")
-    // A TextFieldValue (not a bare String) so the toolbar can read the live
-    // selection/caret for ${selection}, placements, line ops, and edit.command.
-    // SPEC 16.1/13.6: the draft keys on the wire address (surface+id), not the
-    // key-first path — changing only a `key` keeps a compatible draft.
-    var value by rememberSaveable(ctx.surface, id, ctx.epochOf(id),
-        stateSaver = TextFieldValue.Saver,
-        key = "ed:${ctx.surface}:$id:${ctx.epochOf(id)}") {
-        // C6: the explicit STRING primitive read, for the reason spelled out
-        // at the text_input seed — a Kotlin-String safe cast on a JsonElement
-        // is always null.
-        mutableStateOf(TextFieldValue(
-            (ctx.storeValue(id) as? JsonPrimitive)?.takeIf { it.isString }?.content
-                ?: node.stringOr("value")))
-    }
-    // T2/LD-5: the engine shadow is the text authority for a synchronized
-    // editor. Adopt every mirror publication — an inbound edit.apply, or the
-    // snap-back after a refused local edit — keyed on epoch so adoption
-    // happens exactly once per publication. The caret arrives peer-dictated
-    // (SPEC 19.4 requires cursor on every text-changing apply), already
-    // converted to UTF-16 against the mirrored text.
-    if (document.isNotEmpty()) {
-        val mirrors by ctx.bridge.editorMirrors.collectAsState()
-        val mirror = mirrors[document to id]
-        LaunchedEffect(mirror?.epoch) {
-            mirror?.let {
-                value = TextFieldValue(it.text,
-                    if (it.selStartU != it.selEndU)
-                        androidx.compose.ui.text.TextRange(it.selStartU, it.selEndU)
-                    else androidx.compose.ui.text.TextRange(it.cursorU))
-            }
+    val mirrors by ctx.bridge.editorMirrors.collectAsState()
+    val mirror = if (document.isEmpty()) null else mirrors[document to id]
+    val initialText = (ctx.storeValue(id) as? JsonPrimitive)
+        ?.takeIf { it.isString }
+        ?.content
+        ?: node.stringOr("value")
+    val actionDispatcher = com.calebc42.jetpacs.renderer.compose.EditingActionDispatcher {
+            descriptor, actionValue, fields, sourceId, onOutcome ->
+        when {
+            fields != null && !ctx.inDialog ->
+                ctx.actionWithFields(descriptor, fields, onOutcome)
+            else -> ctx.dispatchAction(
+                descriptor,
+                actionValue,
+                sourceId,
+                onOutcome,
+            )
         }
     }
-    // SPEC 18.4/17.4/19.5: the field's colouring, as ONE identity
-    // VisualTransformation (never changes the character count, so the
-    // cursor/selection/IME behave exactly as on a plain field). Emacs's own
-    // fontify runs win where they apply; the client tokenizer is the fallback
-    // for first paint, big pastes, and every editor with a `syntax` language
-    // but no attached buffer at all; diagnostics draw over whichever won.
+    val wantsCompletion = node.boolOr("complete", false)
+    val controller = com.calebc42.jetpacs.renderer.compose.rememberEditorController(
+        presentationEpoch = ctx.epochOf(id),
+        initialText = initialText,
+        initialSelection = TextRange(initialText.length),
+        config = com.calebc42.jetpacs.renderer.compose.EditorControllerConfig(
+            surface = ctx.surface,
+            id = id,
+            document = document,
+            singleLine = singleLine,
+            publishState = node.boolOr("publish_state"),
+            maxFieldBytes = ctx.bridge.maxFieldBytes,
+            maxEditorBytes = ctx.bridge.maxEditorBytes,
+        ),
+        mirror = mirror,
+        requestCompletion = wantsCompletion,
+        enabled = enabled,
+        readOnly = readOnly,
+        publishLocalState = { ctx.state(id, JsonPrimitive(it)) },
+        editorHost = ctx.bridge,
+        actionDispatcher = actionDispatcher,
+    )
+    val value = controller.snapshot()
+
+    // Material owns palette and decoration; the shared controller owns text.
     val language = node.stringOr("syntax")
     val syntaxColors = LocalSyntaxColors.current
     val annotations = if (document.isEmpty()) null else {
@@ -1013,81 +952,33 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         warning = Color(0xFFC08A00),
         info = MaterialTheme.colorScheme.primary,
         hint = MaterialTheme.colorScheme.outline)
-    // Keyed on the annotation EPOCH rather than on the batches: a §19.5 push is
-    // latest-wins and bumps the epoch exactly once, so this rebuilds once per
-    // push and the transformation's own memo absorbs every layout pass between.
-    val transform = remember(language, syntaxColors, diagColors, annotations?.epoch) {
-        if (annotations != null)
-            AnnotationTransformation(annotations.fontify, annotations.diags,
-                language, syntaxColors, diagColors)
-        else if (language.isEmpty()) VisualTransformation.None
-        else SyntaxTransformation(language, syntaxColors)
-    }
-    // Commit a new field state: mirror any TEXT change (§19.3 splice for a
-    // synchronized editor, else state.changed); a selection-only change just
-    // updates the local value. A read-only editor is server-authoritative.
-    val commit: (TextFieldValue) -> Unit = commit@{ raw ->
-        // SPEC 17.4: a read-only OR disabled editor MUST NOT dispatch — the
-        // toolbar is otherwise an unblocked side channel around the field.
-        if (readOnly || !enabled) return@commit
-        val new = if (singleLine) editorWithoutLineFeeds(raw) else raw
-        val old = value.text
-        if (new.text != old) {
-            if (document.isNotEmpty()) {
-                val (start, del, ins) = EditorSession.diff(old, new.text)
-                // `old` is the base this splice is expressed against; the
-                // engine refuses it if the shadow has moved since (#100).
-                if (del > 0 || ins.isNotEmpty())
-                    ctx.bridge.editorEdit(document, id, start, del, ins, old)
-            } else {
-                ctx.state(id, JsonPrimitive(new.text)) // local editor: state.changed
-            }
-            // SPEC 19.3 (amendment #171): the offer now SURVIVES a
-            // qualifying extension (the engine tracker is rule (a)). The
-            // keep-or-drop is NOT read here: the bridge publishes the
-            // tracker's verdict into offerViews after the splice runs on
-            // its executor - a synchronous read from this thread would
-            // see pre-splice state and could stall on the engine monitor
-            // while it is held across a blocking socket write.
+    val outputTransformation = remember(
+        language,
+        syntaxColors,
+        diagColors,
+        annotations?.epoch,
+    ) {
+        if (annotations != null) {
+            AnnotationOutputTransformation(
+                annotations.fontify,
+                annotations.diagnostics,
+                language,
+                syntaxColors,
+                diagColors,
+            )
+        } else if (language.isEmpty()) {
+            null
+        } else {
+            SyntaxOutputTransformation(language, syntaxColors)
         }
-        value = new
     }
-    // SPEC 19.3 (JC-4b): ask for completions once the text settles. Keyed on
-    // the text so it re-arms per keystroke, and the delay coalesces a typing
-    // burst into ONE request — §22.2 conflation, and what makes a
-    // type-to-narrow picker cost a round trip per pause rather than per key.
-    // SPEC 17.4: `complete` is the node's own request for completion, so it
-    // gates both the round trips and the dropdown. Without it every
-    // synchronized editor would pay for completions it never asked for.
-    val wantsCompletion = node.boolOr("complete", false)
     val offers by ctx.bridge.completionOffers.collectAsState()
     val offer = if (wantsCompletion) offers[document to id] else null
-    val offerViewMap by ctx.bridge.offerViews.collectAsState()
+    val offerViewMap by ctx.bridge.completionOfferViews.collectAsState()
     // R5 (amendment #172): the lazily fetched candidate doc, observed
     // like the offer views beside it.
-    val candidateDocs by ctx.bridge.candidateDocs.collectAsState()
+    val candidateDocs by ctx.bridge.candidateDocuments.collectAsState()
     val haptic = androidx.compose.ui.platform.LocalHapticFeedback.current
-    // SPEC 19.3: report the caret so the other endpoint can answer a POSITION.
-    // Keyed on the selection, so it re-runs exactly when the selection moves
-    // and a no-op re-composition reports nothing; the delay coalesces a drag
-    // or an arrow-key run into one report, which is the throttling §19.3 asks
-    // the Companion to do AT THE SOURCE — an intermediate position never
-    // emitted is not §22.2 conflation. Until this existed, every Emacs-side
-    // feature keyed on the device caret saw offset 0 for the session's life.
-    if (document.isNotEmpty()) {
-        LaunchedEffect(document, id, value.selection) {
-            kotlinx.coroutines.delay(90)
-            ctx.bridge.editorCaret(document, id, value.selection.end,
-                value.selection.start, value.selection.end)
-        }
-    }
-    if (wantsCompletion && document.isNotEmpty() && !readOnly && enabled) {
-        LaunchedEffect(document, id, value.text) {
-            if (value.text.isEmpty()) return@LaunchedEffect
-            kotlinx.coroutines.delay(180)
-            ctx.bridge.editorComplete(document, id)
-        }
-    }
     Column(modifier = m) {
         // SPEC 17.7: the toolbar rail above the field. `command` is valid only
         // for a synchronized editor (document present) in READY — the wire side
@@ -1096,8 +987,22 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             EditorToolbar(
                 items = items,
                 enabled = enabled && !readOnly, // §17.4: disabled/read-only inert
-                value = { value },
-                onValueChange = commit,
+                value = {
+                    TextFieldValue(
+                        value.text,
+                        TextRange(
+                            value.selectionStartUtf16,
+                            value.selectionEndUtf16,
+                        ),
+                    )
+                },
+                onValueChange = {
+                    controller.applyPresentationEdit(
+                        it.text,
+                        it.selection.start,
+                        it.selection.end,
+                    )
+                },
                 dispatch = { ctx.action(it) },
                 onCommand = { command ->
                     // T2/LD-4: cursor is the ACTIVE selection end (where the
@@ -1105,7 +1010,9 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     // engine orders the pair during scalar conversion.
                     if (document.isNotEmpty())
                         ctx.editorCommand(document, id, command,
-                            value.selection.end, value.selection.start, value.selection.end)
+                            value.selectionEndUtf16,
+                            value.selectionStartUtf16,
+                            value.selectionEndUtf16)
                 },
                 localDate = ::localDateStamp,
                 localTime = ::localTimeStamp)
@@ -1118,29 +1025,28 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         // and its Return key. A single-line picker is still submitted by its
         // dialog button unless it explicitly authors `on_enter`.
         OutlinedTextField(
-            value = value,
+            state = controller.state,
             readOnly = readOnly,
             enabled = enabled,
-            visualTransformation = transform,
-            onValueChange = commit,
-            singleLine = singleLine,
-            minLines = if (singleLine) 1 else
-                node.doubleOr("min_lines", 3.0)
-                    .coerceAtMost(Int.MAX_VALUE.toDouble()).toInt(),
-            maxLines = if (singleLine) 1 else
-                node.doubleOr("max_lines", Int.MAX_VALUE.toDouble())
-                    .coerceAtMost(Int.MAX_VALUE.toDouble()).toInt(),
+            inputTransformation = controller.inputTransformation,
+            outputTransformation = outputTransformation,
+            lineLimits = if (singleLine) {
+                androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine
+            } else {
+                androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(
+                    minHeightInLines = node.intByValue("min_lines", 3),
+                    maxHeightInLines = node.intByValue("max_lines", Int.MAX_VALUE),
+                )
+            },
             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
                 imeAction =
                     if (onEnter != null) androidx.compose.ui.text.input.ImeAction.Done
                     else androidx.compose.ui.text.input.ImeAction.Default),
-            keyboardActions = androidx.compose.foundation.text.KeyboardActions(
-                // §17.4: a read-only or disabled editor MUST NOT dispatch —
-                // the same rule the commit path and the save button pin.
-                onDone = {
+            onKeyboardAction =
+                androidx.compose.foundation.text.input.KeyboardActionHandler {
                     if (enabled && !readOnly)
-                        onEnter?.let { ctx.action(it, JsonPrimitive(value.text)) }
-                }),
+                        controller.dispatchValueAction(onEnter)
+                },
             // A code editor that renders in the body font undermines every
             // fontify run Emacs sends: alignment is half of what font-lock
             // communicates. POC 1's editor was monospaced; this one was not.
@@ -1153,9 +1059,14 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         // only for a collapsed caret, because a selection drag is not a
         // question about a position. A plain row rather than a popup, for the
         // reason the completion rows below record.
-        if (document.isNotEmpty() && value.selection.collapsed) {
-            val caretDiag = diagnosticAt(annotations?.diags, value.text,
-                value.selection.start)
+        if (document.isNotEmpty() &&
+            value.selectionStartUtf16 == value.selectionEndUtf16
+        ) {
+            val caretDiag = com.calebc42.jetpacs.renderer.model.diagnosticAt(
+                annotations?.diagnostics,
+                value.text,
+                value.selectionStartUtf16,
+            )
             val eldoc = annotations?.eldoc?.text?.takeIf { it.isNotEmpty() }
             if (caretDiag != null || eldoc != null) {
                 Row(verticalAlignment = Alignment.CenterVertically,
@@ -1194,7 +1105,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             Row(modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End) {
                 IconButton(
-                    onClick = { ctx.action(onSave, JsonPrimitive(value.text)) },
+                    onClick = { controller.dispatchValueAction(onSave) },
                     // §17.4: a read-only or disabled editor MUST NOT
                     // dispatch — same rule the commit path pins.
                     enabled = enabled && !readOnly) {
@@ -1234,7 +1145,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = {
-                                ctx.bridge.editorSelectCompletion(
+                                ctx.bridge.selectEditorCompletion(
                                     document, id, cand.label, cand.insert)
                             },
                             // R5 (amendment #172): docs for the row, on
@@ -1248,7 +1159,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                                 haptic.performHapticFeedback(
                                     androidx.compose.ui.hapticfeedback
                                         .HapticFeedbackType.LongPress)
-                                ctx.bridge.editorCandidateDoc(
+                                ctx.bridge.requestCandidateDocument(
                                     document, id, wireIndex, offer.epoch)
                             })
                         .padding(horizontal = 12.dp, vertical = 8.dp)) {
@@ -1325,7 +1236,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
  * candidate, timeout, latch collision, and failure), so an empty doc
  * shows NO panel, exactly the eldoc row's own takeIf guard. */
 internal fun candidateDocVisible(
-    doc: com.calebc42.ebp.companion.CandidateDoc?,
+    doc: CandidateDocument?,
     offerEpoch: Long,
     visibleIndices: List<Int>,
 ): Boolean = doc != null && doc.epoch == offerEpoch &&

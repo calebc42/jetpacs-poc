@@ -20,14 +20,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
-import com.calebc42.ebp.companion.MaterialRendererBridge
+import com.calebc42.ebp.companion.MaterialRendererHost
 import kotlinx.serialization.json.JsonObject
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun RenderPieMenu(menuId: String, spec: JsonObject, bridge: MaterialRendererBridge) {
+fun RenderPieMenu(menuId: String, spec: JsonObject, bridge: MaterialRendererHost) {
     val categories = spec.arrOrNull("categories") ?: return
     var expanded by remember(menuId) { mutableStateOf<Int?>(null) }
     Dialog(onDismissRequest = { bridge.pieMenuDismiss(menuId) }) {

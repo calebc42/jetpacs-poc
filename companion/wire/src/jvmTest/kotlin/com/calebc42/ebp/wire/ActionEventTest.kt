@@ -63,10 +63,10 @@ class ActionEventTest {
     fun eventConstructionAndStatusRoundTrip() {
         val out = mutableListOf<JsonObject>()
         val engine = readyEngine(out)
-        var status: String? = null
+        var outcome: ActionAdmissionOutcome? = null
         engine.publishState("app:main", "title", JsonPrimitive("typed"))
-        engine.dispatchAction("app:main", descriptor("title"), JsonPrimitive("clicked")) { s, _ ->
-            status = s
+        engine.dispatchAction("app:main", descriptor("title"), JsonPrimitive("clicked")) {
+            outcome = it
         }
         // SPEC 14.6: state.changed precedes the action on the wire.
         val stateIdx = out.indexOfFirst { it.stringOrNull("method") == "state.changed" }
@@ -94,7 +94,10 @@ class ActionEventTest {
             put("id", event["id"]!!)
             putJsonObject("result") { put("status", "accepted") }
         }))
-        assertEquals("accepted", status)
+        assertEquals(
+            ActionAdmissionOutcome.SafelyAdmitted(SafeAdmissionEvidence.RemoteAccepted),
+            outcome,
+        )
     }
 
     @Test
@@ -164,22 +167,67 @@ class ActionEventTest {
         engine.surfaces.update("app:main", 5,
             buildJsonObject { put("t", "text_input"); put("id", "title") },
             null, null, null)
-        engine.dispatchAction("app:main",
-            buildJsonObject { put("action", "demo.tap") }, null)
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
+        engine.dispatchAction(
+            "app:main",
+            buildJsonObject { put("action", "demo.tap") },
+            null,
+            callback = outcomes::add,
+        )
         engine.publishState("app:main", "title", JsonPrimitive("offline draft"))
         // Nothing on the wire pre-READY; the draft is retained locally
         // for the next welcome's input_state (SPEC 14.6).
         assertTrue(out.isEmpty())
+        assertEquals(
+            listOf(
+                ActionAdmissionOutcome.NotAdmitted(
+                    UnsafeAdmissionReason.OfflineDrop,
+                ),
+            ),
+            outcomes,
+        )
         assertEquals(JsonPrimitive("offline draft"), engine.surfaces.draft("app:main", "title"))
+    }
+
+    @Test
+    fun transportCloseConcludesAnOutstandingOccurrenceExactlyOnce() {
+        val out = mutableListOf<JsonObject>()
+        val engine = readyEngine(out)
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
+        engine.dispatchAction(
+            "app:main",
+            descriptor(),
+            null,
+            callback = outcomes::add,
+        )
+        val event = out.last { it.stringOrNull("method") == "event.action" }
+
+        engine.close("test transport loss")
+        engine.close("duplicate teardown")
+
+        assertEquals(1, outcomes.size)
+        val refused = outcomes.single() as ActionAdmissionOutcome.NotAdmitted
+        assertEquals(UnsafeAdmissionReason.TransportClosed, refused.reason)
+        assertEquals(
+            "connection-closed",
+            refused.error!!.reqObj("data").reqString("kind"),
+        )
+        // A response delivered after terminal teardown cannot conclude it twice.
+        engine.feed(frame(buildJsonObject {
+            put("jsonrpc", "2.0")
+            put("id", event["id"]!!)
+            putJsonObject("result") { put("status", "accepted") }
+        }))
+        assertEquals(1, outcomes.size)
     }
 
     @Test
     fun responseCorrelationSurvivesReordering() {
         val out = mutableListOf<JsonObject>()
         val engine = readyEngine(out)
-        val statuses = mutableListOf<String?>()
-        engine.dispatchAction("app:main", descriptor(), null) { s, _ -> statuses.add(s) }
-        engine.dispatchAction("app:main", descriptor(), null) { s, _ -> statuses.add(s) }
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
+        engine.dispatchAction("app:main", descriptor(), null, callback = outcomes::add)
+        engine.dispatchAction("app:main", descriptor(), null, callback = outcomes::add)
         val events = out.filter { it.stringOrNull("method") == "event.action" }
         assertEquals(2, events.size)
         // Answer the second first: callbacks must match ids, not order.
@@ -193,7 +241,13 @@ class ActionEventTest {
             put("id", events[0]["id"]!!)
             putJsonObject("result") { put("status", "accepted") }
         }))
-        assertEquals(listOf("rejected", "accepted"), statuses)
+        assertEquals(
+            listOf(
+                ActionAdmissionOutcome.NotAdmitted(UnsafeAdmissionReason.RemoteRejected),
+                ActionAdmissionOutcome.SafelyAdmitted(SafeAdmissionEvidence.RemoteAccepted),
+            ),
+            outcomes,
+        )
         // An unknown response id is ignored, not fatal.
         engine.feed(frame(buildJsonObject {
             put("jsonrpc", "2.0")

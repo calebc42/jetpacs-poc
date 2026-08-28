@@ -111,14 +111,16 @@ class DialogTest {
         assertEquals("rename", presented.single().first)
         assertNotNull(presented.single().second)
         // dialog.submit builtin completes it with value + captured fields.
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
         engine.completeDialogSubmit("rename", JsonPrimitive("ok"),
-            buildJsonObject { put("name", "typed") })
+            buildJsonObject { put("name", "typed") }, outcomes::add)
         val result = responseFor(out, "d1")!!.reqObj("result")
         assertEquals("submitted", result.reqString("status"))
         assertEquals("ok", result.reqString("value"))
         assertEquals("typed", result.reqObj("fields").reqString("name"))
         // The presentation was dismissed after completion.
         assertEquals("rename" to null, presented.last())
+        assertEquals(listOf(ActionAdmissionOutcome.LocallyCompleted), outcomes)
     }
 
     @Test
@@ -130,10 +132,19 @@ class DialogTest {
         show(engine, "d1", "rename")
         // SPEC 18.1: a submit whose prospective response exceeds max_frame_bytes
         // writes nothing and does NOT complete the dialog.
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
         engine.completeDialogSubmit("rename", JsonPrimitive("ok"),
-            buildJsonObject { put("blob", "x".repeat(4_300_000)) })
+            buildJsonObject { put("blob", "x".repeat(4_300_000)) }, outcomes::add)
         assertNull(responseFor(out, "d1"))          // no part of the response written
         assertEquals(listOf("rename"), overflowed)  // host told to diagnose + erase
+        assertEquals(
+            listOf(
+                ActionAdmissionOutcome.NotAdmitted(
+                    UnsafeAdmissionReason.ContentInvalid,
+                ),
+            ),
+            outcomes,
+        )
         // The dialog is still outstanding: a shrunk submit now completes it.
         engine.completeDialogSubmit("rename", JsonPrimitive("ok"),
             buildJsonObject { put("name", "small") })

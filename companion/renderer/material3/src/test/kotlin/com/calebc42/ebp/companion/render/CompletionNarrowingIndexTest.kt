@@ -4,8 +4,9 @@
 // filter + take must keep the index Emacs knows it by, not its screen slot.
 package com.calebc42.ebp.companion.render
 
-import com.calebc42.ebp.companion.CompletionCandidate
 import com.calebc42.ebp.wire.CompletionNarrowing
+import com.calebc42.jetpacs.renderer.model.CandidateDocument
+import com.calebc42.jetpacs.renderer.model.CompletionCandidate
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -59,7 +60,7 @@ class CompletionNarrowingIndexTest {
 
     @Test
     fun docPanelShowsOnlyForTheCurrentEpochsVisibleRow() {
-        val doc = com.calebc42.ebp.companion.CandidateDoc(2, "Prints.", 7L)
+        val doc = CandidateDocument(2, "Prints.", 7L)
         assertTrue(candidateDocVisible(doc, 7L, listOf(0, 2, 3)))
         // A stale fetch or a fresh offer: epoch mismatch hides it.
         assertTrue(!candidateDocVisible(doc, 8L, listOf(0, 2, 3)))
@@ -74,7 +75,7 @@ class CompletionNarrowingIndexTest {
         // "" is the universal degradation arm — every picker candidate,
         // timeout, latch collision, and failure — not a rare case; a
         // panel for it would be indistinguishable from a regression.
-        val empty = com.calebc42.ebp.companion.CandidateDoc(2, "", 7L)
+        val empty = CandidateDocument(2, "", 7L)
         assertTrue(!candidateDocVisible(empty, 7L, listOf(2)))
     }
 }

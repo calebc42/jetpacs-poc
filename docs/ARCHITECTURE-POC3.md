@@ -93,9 +93,9 @@ UI toolkit, or product dependency.
 | `:core:data` | Read-only Room `Flow` projections for Jetpacs UI state | `:core:model`, `:core:database` |
 | `:core:navigation` | Serializable Nav 3 destination keys | Nav 3 |
 | `:core:testing` | Shared read-model fakes and backend contract fixtures | `:core:data`, `:core:model` |
-| `:renderer:model` | Toolkit-neutral renderer contribution/profile registry, shared raw-EBP JSON readers, and the authored/derived semantic projection | `:wire`, serialization; no Compose or design-system dependency |
-| `:renderer:compose` | Foundation-only reference renderer for the eight EBP core nodes and the one Compose mapping of generic EBP semantics | `:renderer:model`, Compose Foundation/UI; no Material or Styles |
-| `:renderer:material3` | Glasspane Material 3 extension, rich app renderer, theme projection, custom Styles components, and visual/accessibility tests | `:renderer:compose`, Material 3, adaptive Compose, experimental Foundation Styles |
+| `:renderer:model` | Toolkit-neutral renderer contribution/profile registry, shared raw-EBP JSON readers, semantic projection, action/editor hosts, and editing transport models | `:wire`, serialization, coroutines; no Compose or design-system dependency |
+| `:renderer:compose` | Foundation-only reference renderer, generic semantics mapping, and shared state-based text-input/editor controllers | `:renderer:model`, Compose Foundation/UI; no Material or Styles |
+| `:renderer:material3` | Glasspane Material 3 extension, rich app presentation, theme projection, custom Styles components, and visual/accessibility tests | `:renderer:compose`, Material 3, adaptive Compose, experimental Foundation Styles |
 | `:renderer:jetpacs` | Jetpacs-owned Foundation components, private theme tokens, Styles, generated `jetpacs.components` vocabulary, and visual/accessibility tests | `:renderer:compose`, Compose Foundation/UI, experimental Foundation Styles; no Material |
 | `:renderer:glance` (later) | Restricted widget renderer/profile | `:renderer:model`, Glance |
 | `:feature:pairing`, `:feature:surface`, `:feature:settings` | ViewModels, entry providers, and Jetpacs feature UI | Jetpacs `:core:*` modules |
@@ -246,6 +246,35 @@ contracts:
 - `JetpacsChoiceRow` is one full-row radio target; its Material `RadioButton`
   glyph has no callback, so accessibility services never encounter duplicate
   controls for one setting.
+
+Text-editing behavior is not Material-owned. `:renderer:model` defines the
+toolkit-neutral action/state and synchronized-editor hosts and carries input
+display epochs, editor mirrors, completion offers, raw annotations, and exact
+Unicode-scalar/UTF-16 conversions. `:renderer:compose` owns the state-based
+`TextInputController` and `EditorController`; downstream renderers supply only
+their field decoration, palette, typography, annotations, completion popup,
+and toolbar presentation. The Glasspane Material renderer consumes these
+controllers through a small host that adds only retained presentation slots,
+variant selection, and pie-menu facilities. A future Jetpacs field or editor
+therefore shares reconciliation and protocol behavior without importing
+Material.
+
+Action handoff and admission are distinct. A renderer synchronously learns
+whether the app host accepted an occurrence into the ordinary confirmation,
+capture, and dispatch path. Every handed-off occurrence then receives exactly
+one terminal callback on the Android main thread. Only a committed durable
+queue record or a live `accepted`/`duplicate` result is safe remote admission;
+receiver-local builtins complete under a separate local outcome, while local,
+queue, storage, transport, and peer refusals remain explicit failures. Normal
+`clear_on_submit` waits for safe admission and is guarded against a later edit.
+Passwords never enter accepted draft state, `state.changed`, saved Compose
+state, or logs; the owning occurrence captures the volatile value, and every
+terminal result or presentation disposal erases it. Remote editor mirror
+adoption bypasses the local change path and cannot echo a delta. Local editors
+publish drafts only when `publish_state` is authored and are bounded by
+`max_field_bytes`; synchronized documents use the independent
+`max_editor_bytes` limit. Both limits count JCS-encoded text at the controller
+boundary.
 
 Generic accessibility is not Material-owned. `:renderer:model` consumes the
 contract-generated §16.5.1 schema and node defaults, resolves accessible names

@@ -15,7 +15,7 @@ import kotlinx.serialization.json.JsonObject
  * leading slot is something else. Null means the system default proceeds and
  * the Activity finishes, which is the pre-S11 behavior for every screen.
  *
- * VIEW is the RESOLVED current view (MaterialRendererBridge.resolveView collapses the
+ * VIEW is the RESOLVED current view (the app host collapses the
  * stack's multi_view before publishing), so "this screen's back arrow" is
  * unambiguous — the views below it are not in this tree at all.
  *

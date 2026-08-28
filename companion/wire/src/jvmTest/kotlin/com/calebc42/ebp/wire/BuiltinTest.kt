@@ -90,10 +90,18 @@ class BuiltinTest {
         val changed = mutableListOf<String>()
         engine.surfaceListener = { changed.add(it) }
         val before = out.size
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
         engine.dispatchAction("app:main",
-            buildJsonObject { put("builtin", "view.switch"); put("view", "detail") }, null)
+            buildJsonObject { put("builtin", "view.switch"); put("view", "detail") },
+            null,
+            callback = outcomes::add,
+        )
         assertTrue(changed.isEmpty())
         assertEquals(before, out.size)
+        assertEquals(
+            ActionAdmissionOutcome.NotAdmitted(UnsafeAdmissionReason.InvalidContext),
+            outcomes.single(),
+        )
         // A multi-view surface but an unknown view: also a no-op.
         engine.feed(frame(request("s2", "surface.update", buildJsonObject {
             put("surface", "app:main"); put("revision", 2)
@@ -108,6 +116,34 @@ class BuiltinTest {
     }
 
     @Test
+    fun completedViewSwitchStillConcludesWhenHostRepaintFails() {
+        val out = mutableListOf<JsonObject>()
+        val engine = readyEngine(out)
+        engine.feed(frame(request("s1", "surface.update", buildJsonObject {
+            put("surface", "app:main"); put("revision", 1)
+            put("spec", multiViewSpec())
+        })))
+        engine.surfaceListener = { error("test repaint failure") }
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
+
+        engine.dispatchAction(
+            "app:main",
+            buildJsonObject {
+                put("builtin", "view.switch")
+                put("view", "detail")
+            },
+            null,
+            callback = outcomes::add,
+        )
+
+        assertEquals(listOf(ActionAdmissionOutcome.LocallyCompleted), outcomes)
+        assertEquals(
+            "detail",
+            out.events().single().reqObj("params").reqObj("args").reqString("view"),
+        )
+    }
+
+    @Test
     fun hostBuiltinsReachTheHostListener() {
         val out = mutableListOf<JsonObject>()
         val engine = readyEngine(out)
@@ -119,20 +155,35 @@ class BuiltinTest {
         engine.hostBuiltinListener = { name, d ->
             seen.add(name to (d.stringOrNull("surface") ?: d.stringOr("text")))
         }
+        val outcomes = mutableListOf<ActionAdmissionOutcome>()
         engine.dispatchAction("app:main",
             buildJsonObject {
                 put("builtin", "surface.open")
                 put("surface", "app:jetpacs.app-store")
-            }, null)
+            }, null, callback = outcomes::add)
         engine.dispatchAction("app:main",
-            buildJsonObject { put("builtin", "clipboard.copy"); put("text", "hello") }, null)
+            buildJsonObject { put("builtin", "clipboard.copy"); put("text", "hello") },
+            null,
+            callback = outcomes::add,
+        )
         engine.dispatchAction("app:main",
-            buildJsonObject { put("builtin", "companion.settings.open") }, null)
+            buildJsonObject { put("builtin", "companion.settings.open") },
+            null,
+            callback = outcomes::add,
+        )
         assertEquals(listOf("surface.open" to "app:jetpacs.app-store",
             "clipboard.copy" to "hello",
             "companion.settings.open" to ""), seen)
         // Builtins never create event.action frames of their own.
         assertTrue(out.events().isEmpty())
+        assertEquals(
+            listOf(
+                ActionAdmissionOutcome.LocallyCompleted,
+                ActionAdmissionOutcome.LocallyCompleted,
+                ActionAdmissionOutcome.LocallyCompleted,
+            ),
+            outcomes,
+        )
     }
 
     @Test

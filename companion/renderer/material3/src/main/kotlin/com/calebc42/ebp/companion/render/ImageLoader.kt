@@ -24,7 +24,7 @@ object ImageLoader {
 
     data class Limits(val maxBytes: Long, val maxDecodedBytes: Long, val maxPixels: Long)
 
-    // SPEC 4.5/17.2: the single source for the three image limits — MaterialRendererBridge
+    // SPEC 4.5/17.2: the single source for the three image limits — the app host
     // advertises exactly these and RenderImage enforces them, so the advertised
     // and enforced values cannot drift.
     const val MAX_IMAGE_BYTES = 8_388_608L          // 8 MiB encoded

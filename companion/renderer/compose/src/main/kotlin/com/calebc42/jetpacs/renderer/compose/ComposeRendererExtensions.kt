@@ -4,6 +4,8 @@ package com.calebc42.jetpacs.renderer.compose
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.Modifier
+import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 
@@ -19,7 +21,11 @@ interface ComposeExtensionRenderContext {
     val path: String
     val inDialog: Boolean
 
-    fun action(descriptor: JsonObject?, value: JsonElement? = null)
+    fun action(
+        descriptor: JsonObject?,
+        value: JsonElement? = null,
+        onOutcome: (RendererActionOutcome) -> Unit = {},
+    ): ActionHandoff
     fun state(id: String, value: JsonElement?)
     fun storeValue(id: String): JsonElement?
     fun epochOf(id: String): Long

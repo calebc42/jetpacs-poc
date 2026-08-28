@@ -61,6 +61,8 @@ import com.calebc42.jetpacs.core.navigation.JetpacsNavKey
 import com.calebc42.jetpacs.core.navigation.openPresentJetpacsSurface
 import com.calebc42.jetpacs.core.navigation.pushJetpacsDestination
 import com.calebc42.jetpacs.core.navigation.reconcileJetpacsBackStack
+import com.calebc42.jetpacs.renderer.model.RendererActionContext
+import com.calebc42.jetpacs.renderer.model.RendererActionRequest
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 
@@ -373,7 +375,14 @@ private fun SurfaceDocumentHost(
             BackHandler(
                 enabled = back != null && entryLifecycle == Lifecycle.State.RESUMED,
             ) {
-                back?.let { bridge.action(surfaceId, it) }
+                back?.let {
+                    bridge.dispatch(
+                        RendererActionRequest(
+                            context = RendererActionContext.Surface(surfaceId),
+                            descriptor = it,
+                        ),
+                    )
+                }
             }
             RenderNode(
                 spec,

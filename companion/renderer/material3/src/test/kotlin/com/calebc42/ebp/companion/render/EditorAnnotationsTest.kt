@@ -9,6 +9,18 @@ package com.calebc42.ebp.companion.render
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
+import com.calebc42.jetpacs.renderer.model.DiagnosticRange as DiagRange
+import com.calebc42.jetpacs.renderer.model.FONTIFY_SHIFT_MAX_EDIT
+import com.calebc42.jetpacs.renderer.model.FontifyRun
+import com.calebc42.jetpacs.renderer.model.FontifySet
+import com.calebc42.jetpacs.renderer.model.ScalarToUtf16Index
+import com.calebc42.jetpacs.renderer.model.Utf16TextSplice as TextSplice
+import com.calebc42.jetpacs.renderer.model.diagnosticAt
+import com.calebc42.jetpacs.renderer.model.parseDiagnostics
+import com.calebc42.jetpacs.renderer.model.parseEldoc
+import com.calebc42.jetpacs.renderer.model.parseFontify
+import com.calebc42.jetpacs.renderer.model.shiftFontifyRuns as shiftRuns
+import com.calebc42.jetpacs.renderer.model.utf16TextSplice as textSplice
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -58,12 +70,12 @@ class EditorAnnotationsTest {
         assertEquals(listOf(FontifyRun(3, 4, "keyword")), set.runs)
         // Sequential conversion is order-independent for a sorted batch and
         // restarts cleanly for one that is not.
-        val idx = ScalarIndex(text)
-        assertEquals(0, idx.toUtf16(0))
-        assertEquals(1, idx.toUtf16(1))
-        assertEquals(3, idx.toUtf16(2))
-        assertEquals(4, idx.toUtf16(3))
-        assertEquals(1, idx.toUtf16(1))   // backwards: restarts, still right
+        val idx = ScalarToUtf16Index(text)
+        assertEquals(0, idx.convert(0))
+        assertEquals(1, idx.convert(1))
+        assertEquals(3, idx.convert(2))
+        assertEquals(4, idx.convert(3))
+        assertEquals(1, idx.convert(1))   // backwards: restarts, still right
     }
 
     @Test
@@ -83,7 +95,7 @@ class EditorAnnotationsTest {
         assertNull(parseEldoc(buildJsonObject { put("session", "s") }))
         // An EMPTY batch is a real batch — it is how Emacs clears squiggles.
         assertEquals(0, parseFontify(fontifyParams(), "x")!!.runs.size)
-        assertEquals(0, parseDiagnostics(diagParams(), "x")!!.diags.size)
+        assertEquals(0, parseDiagnostics(diagParams(), "x")!!.diagnostics.size)
         assertEquals("", parseEldoc(buildJsonObject { put("text", "") })!!.text)
     }
 
@@ -175,7 +187,10 @@ class EditorAnnotationsTest {
             annotationSpans("hello!", null, diags, "", colors, diagColors))
         // A zero-width diagnostic still marks one character.
         val point = parseDiagnostics(diagParams(diag(5, 5)), src)!!
-        assertEquals(listOf(DiagRange(4, 5, "error", "m")), point.diags)
+        assertEquals(
+            listOf(DiagRange(4, 5, "error", "m")),
+            point.diagnostics,
+        )
     }
 
     // ------------------------------------------------------- transform

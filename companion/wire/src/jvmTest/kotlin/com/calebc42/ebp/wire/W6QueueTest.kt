@@ -339,6 +339,51 @@ class W6QueueTest {
         assertEquals(1, q.count()) // the queue is unchanged
     }
 
+    @Test
+    fun actionOutcomeDistinguishesQueueCapacityFromStorageFailure() {
+        val fullQueue = DurableQueue(
+            MemoryQueueStore(),
+            maxEvents = 0,
+            maxBytes = 8_388_608,
+        )
+        val fullEngine = engineOn(fullQueue, surfaceWithInput(), mutableListOf())
+        var fullOutcome: ActionAdmissionOutcome? = null
+        fullEngine.dispatchAction(
+            "app:main",
+            queuedDescriptor(),
+            null,
+            callback = { fullOutcome = it },
+        )
+        assertEquals(
+            UnsafeAdmissionReason.QueueFull,
+            (fullOutcome as ActionAdmissionOutcome.NotAdmitted).reason,
+        )
+
+        val failingStore = object : QueueStore {
+            override fun load() = QueueSnapshot(emptyList(), 1, 0)
+            override fun replace(snapshot: QueueSnapshot) {
+                throw java.io.IOException("test storage failure")
+            }
+        }
+        val failingQueue = DurableQueue(failingStore, 1, 8_388_608)
+        val failingEngine = engineOn(
+            failingQueue,
+            surfaceWithInput(),
+            mutableListOf(),
+        )
+        var failureOutcome: ActionAdmissionOutcome? = null
+        failingEngine.dispatchAction(
+            "app:main",
+            queuedDescriptor(),
+            null,
+            callback = { failureOutcome = it },
+        )
+        assertEquals(
+            UnsafeAdmissionReason.StorageFailed,
+            (failureOutcome as ActionAdmissionOutcome.NotAdmitted).reason,
+        )
+    }
+
     // --------------------------- review-confirmed regressions (P0s + P1s)
 
     @Test
@@ -374,14 +419,16 @@ class W6QueueTest {
         val e = engineOn(q, store, out)
         e.handshake()
         e.publishState("app:main", "title", JsonPrimitive("x".repeat(300_000)))
-        var localError: JsonObject? = null
+        var outcome: ActionAdmissionOutcome? = null
         e.dispatchAction("app:main",
             queuedDescriptor().with("capture_fields",
                 JsonArray(listOf("title").map(::JsonPrimitive))),
-            null) { _, error -> localError = error }
+            null) { outcome = it }
         assertEquals(0, q.count())            // never persisted
         assertTrue(out.events().isEmpty())    // never transmitted
-        assertEquals("event-too-large", localError!!
+        val refused = outcome as ActionAdmissionOutcome.NotAdmitted
+        assertEquals(UnsafeAdmissionReason.ContentInvalid, refused.reason)
+        assertEquals("event-too-large", refused.error!!
             .reqObj("data").reqString("reason"))
     }
 
@@ -562,12 +609,14 @@ class W6QueueTest {
         val q = DurableQueue(MemoryQueueStore(), 256, 8_388_608) { 1000L }
         val out = mutableListOf<JsonObject>()
         val engine = engineOn(q, surfaceWithInput(), out)
-        var error: JsonObject? = null
+        var outcome: ActionAdmissionOutcome? = null
         engine.dispatchAction("app:main",
             queuedDescriptor().with("args", buildJsonObject { put("pad", pad) }),
-            null) { _, e -> error = e }
-        assertEquals(1201L, error!!.reqLong("code"))
-        assertEquals("event-too-large", error!!.reqObj("data").reqString("reason"))
+            null) { outcome = it }
+        val refused = outcome as ActionAdmissionOutcome.NotAdmitted
+        assertEquals(UnsafeAdmissionReason.ContentInvalid, refused.reason)
+        assertEquals(1201L, refused.error!!.reqLong("code"))
+        assertEquals("event-too-large", refused.error.reqObj("data").reqString("reason"))
         assertEquals(0, q.count()) // not admitted
     }
 

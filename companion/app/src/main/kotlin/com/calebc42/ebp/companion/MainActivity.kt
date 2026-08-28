@@ -154,7 +154,7 @@ private fun DialogHost(
     dialog?.let { (id, dspec, epoch) ->
         androidx.compose.ui.window.Dialog(
             // SPEC 18.1: a platform dismissal is a dismiss.
-            onDismissRequest = { bridge.dialogDismiss(id) }) {
+            onDismissRequest = { bridge.dismissDialog(id) }) {
             Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
                 // The HOST container scrolls. SPEC 18.1 forbids lazy_column
                 // NODES in a dialog spec, not the window scrolling — and

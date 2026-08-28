@@ -1,7 +1,7 @@
 # Jetpacs text-editing plan
 
-Status: Phase 0 complete; Phase 1 is next
-Date: 2026-08-27
+Status: Phase 1 complete; Phase 2 is next
+Date: 2026-08-28
 
 ## Outcome and ownership
 
@@ -145,6 +145,38 @@ The renderer must not infer that conclusion from connectivity or remote timing.
 
 This phase has no intentional visual change. Existing Glasspane screenshot
 references are an acceptance gate.
+
+### Phase 1 outcome
+
+The renderer boundary is now toolkit-neutral. `:renderer:model` owns the
+action/state and synchronized-editor hosts plus input displays, editor mirrors,
+completion data, raw annotations, and scalar/UTF-16 conversion. The
+Material-only host extends those interfaces solely with Glasspane presentation
+facilities. `:renderer:compose` owns shared state-based `TextInputController`
+and `EditorController` implementations, and the existing Material field and
+editor renderers consume them.
+
+Every handed-off action occurrence now receives one typed terminal outcome.
+Durable queue commit and live `accepted` or `duplicate` replies are the only
+safe-admission evidence; local builtins complete separately, and every local,
+transport, storage, queue, or remote refusal is explicit. Callbacks cross the
+Android bridge on the main thread exactly once. `clear_on_submit` waits for
+safe admission and clears only when no newer edit has occurred.
+
+Normal input still publishes accepted draft state before its paired action.
+Password input uses unsaveable state, never emits `state.changed`, carries its
+secret only in the owning occurrence's capture fields, blocks duplicate
+submission, and erases on every terminal outcome or disposal. Dialog password
+capture is also cleared from its volatile capture layer. Editor changes are
+derived from the state API's change list, converted losslessly between UTF-16
+and Unicode-scalar offsets, and remote mirror adoption cannot echo a local
+delta. Local publication honors `publish_state`; local and synchronized
+editors enforce their distinct `max_field_bytes` and `max_editor_bytes` JCS
+budgets.
+
+Focused wire, model, controller, renderer, and app tests cover the new seams;
+device instrumentation drives the controllers through real state-based Compose
+fields. All 11 existing Glasspane screenshot references validate unchanged.
 
 ## Phase 2: add scoped core-renderer overrides
 

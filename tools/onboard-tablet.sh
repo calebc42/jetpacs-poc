@@ -7,6 +7,9 @@
 #   tools/onboard-tablet.sh [--vault shared|emacs|termux]
 #                            [--emacs-home emacs|termux|remote] [SERIAL]
 #
+#   PHASE companion-build / companion-install (install mode only): builds the
+#     tree's debug Companion and reinstalls it with app data preserved.
+#
 #   PHASE ssh-bootstrap (skipped once ssh already answers): launches
 #     Termux, waits until Termux really is the FOCUSED app (checked with
 #     dumpsys, not by asking a human to promise), then types ONE chained
@@ -81,7 +84,8 @@ With no options, Recommended selects Local Emacs HOME plus an /sdcard Vault.
 Advanced chooses the Emacs host first and then an eligible Vault. Explicit
 flags retain the lower-level path controls for automation. Remove/reset-home
 require both choices when no terminal is available. .emacs.d is always in one
-of the two private homes, never /sdcard.
+of the two private homes, never /sdcard. Install mode also rebuilds and
+reinstalls the debug Companion APK while preserving its app data.
 EOF
 }
 
@@ -266,6 +270,39 @@ DEFAULT_KEY="$HOME/.ssh/id_ed25519"
 DEDICATED_KEY="$SCRATCH_DIR/onboard_ed25519"
 
 adbs() { adb -s "$SERIAL" "$@"; }
+
+COMPANION_DIR="$REPO_ROOT/companion"
+COMPANION_APK="$COMPANION_DIR/app/build/outputs/apk/debug/app-debug.apk"
+COMPANION_PACKAGE="com.calebc42.ebp.companion"
+COMPANION_VERSION=""
+
+phase_companion_build() {
+  [ -x "$COMPANION_DIR/gradlew" ] \
+    || die "Companion Gradle wrapper is missing or not executable"
+  log "building the debug Companion APK from this tree"
+  (cd "$COMPANION_DIR" && ./gradlew :app:assembleDebug) \
+    || die "Companion debug APK build failed"
+  [ -f "$COMPANION_APK" ] \
+    || die "Companion build succeeded but $COMPANION_APK is missing"
+}
+
+phase_companion_install() {
+  local install_output
+  log "reinstalling the Companion APK with existing app data preserved"
+  install_output="$(adbs install -r "$COMPANION_APK")" \
+    || die "adb could not install the Companion APK"
+  case "$install_output" in
+    *Success*) ;;
+    *) die "unexpected adb install result: $install_output" ;;
+  esac
+  COMPANION_VERSION="$(
+    adbs shell dumpsys package "$COMPANION_PACKAGE" \
+      | sed -n 's/^[[:space:]]*versionName=//p' \
+      | head -n1 || true
+  )"
+  [ -n "$COMPANION_VERSION" ] \
+    || die "the Companion package was not visible after adb install"
+}
 
 # ---------------------------------------------------------------------
 # Preflight: local tools, device visible, the tree's own invariants
@@ -654,6 +691,10 @@ phase_verify() {
   echo "=================== Jetpacs onboarding report ==================" >&2
   printf '  device serial          : %s\n' "$SERIAL" >&2
   printf '  action                 : %s\n' "$ACTION" >&2
+  if [ "$ACTION" = install ]; then
+    printf '  Companion APK          : %s  [version %s, app data preserved]\n' \
+      "$COMPANION_PACKAGE" "$COMPANION_VERSION" >&2
+  fi
   printf '  Vault mode             : %s\n' "$VAULT_MODE" >&2
   printf '  user-content Vault     : %s  [writable from Termux: %s]\n' \
     "${vault:-?}" "${vault_writable:-?}" >&2
@@ -714,6 +755,11 @@ phase_verify() {
 # main
 # ---------------------------------------------------------------------
 
+if [ "$ACTION" = install ]; then
+  step "PHASE companion-build"
+  phase_companion_build
+fi
+
 resolve_ssh_key
 ensure_forward
 
@@ -740,6 +786,11 @@ fi
 
 step "PHASE provision"
 phase_provision
+
+if [ "$ACTION" = install ]; then
+  step "PHASE companion-install"
+  phase_companion_install
+fi
 
 step "PHASE verify"
 phase_verify

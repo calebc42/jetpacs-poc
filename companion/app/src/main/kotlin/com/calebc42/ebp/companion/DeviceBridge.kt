@@ -8,18 +8,13 @@
 // with onboarding). Not a secret and not a deployment configuration.
 package com.calebc42.ebp.companion
 
-import com.calebc42.ebp.companion.render.DiagSet
-import com.calebc42.ebp.companion.render.EldocLine
-import com.calebc42.ebp.companion.render.FontifySet
 import com.calebc42.ebp.companion.render.ImageCache
 import com.calebc42.ebp.companion.render.RetainedPresentationIncarnationTracker
 import com.calebc42.ebp.companion.render.objOrNull
-import com.calebc42.ebp.companion.render.parseDiagnostics
-import com.calebc42.ebp.companion.render.parseEldoc
-import com.calebc42.ebp.companion.render.parseFontify
 import com.calebc42.ebp.companion.render.stringOr
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
+import com.calebc42.ebp.wire.ActionAdmissionOutcome
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.CompanionConfig
 import com.calebc42.ebp.wire.EbpAuth
@@ -31,6 +26,18 @@ import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.ebp.wire.Utf16Pos
 import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
 import com.calebc42.ebp.wire.utf16PosIn
+import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.CandidateDocument
+import com.calebc42.jetpacs.renderer.model.CompletionCandidate
+import com.calebc42.jetpacs.renderer.model.CompletionOffer
+import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorMirror
+import com.calebc42.jetpacs.renderer.model.RendererActionContext
+import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
+import com.calebc42.jetpacs.renderer.model.RendererActionRequest
+import com.calebc42.jetpacs.renderer.model.parseDiagnostics
+import com.calebc42.jetpacs.renderer.model.parseEldoc
+import com.calebc42.jetpacs.renderer.model.parseFontify
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -44,6 +51,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -214,7 +222,7 @@ class DeviceBridge(
     /** SPEC 14.2 `companion.settings.open`: present the Companion's own
      * settings (R4: the completion-narrowing row is its first tenant). */
     private val onOpenSettings: () -> Unit = {},
-) : MaterialRendererBridge {
+) : MaterialRendererHost {
 
     // SPEC 13.1/15.1/18.6: the durable stores are process-wide singletons
     // (CompanionStores), shared with cold-started manifest receivers.
@@ -299,7 +307,7 @@ class DeviceBridge(
             // SPEC 4.5 (amendment #84): REQUIRED when editor.sync is granted.
             // Declared at the floor: it is what keeps every editor path
             // (shadow rebuild, diff, highlight, relayout) comfortably linear.
-            put("max_editor_bytes", 65_536)
+            put("max_editor_bytes", CompanionStores.MAX_EDITOR_BYTES)
         },
         // SPEC 20.1/20.2: advertise the device report and the platform executor.
         deviceReport = AppCapabilities.deviceReport(),
@@ -443,6 +451,8 @@ class DeviceBridge(
     data class PendingConfirm(
         val prompt: String, val surface: String, val descriptor: JsonObject,
         val value: JsonElement?, val injected: JsonObject?, val fields: JsonObject?,
+        val sourceId: String?,
+        val onOutcome: (RendererActionOutcome) -> Unit,
         // §14.1: the object form's optional face — a bare-string confirm
         // leaves all four null and the host draws what it always drew.
         val title: String? = null, val icon: String? = null,
@@ -455,22 +465,39 @@ class DeviceBridge(
     fun resolveConfirm(run: Boolean) {
         val p = _pendingConfirm.value ?: return
         _pendingConfirm.value = null
-        if (run) dispatch(p.surface, p.descriptor, p.value, p.injected, p.fields)
+        if (run) dispatch(
+            p.surface, p.descriptor, p.value, p.injected, p.fields,
+            p.sourceId, p.onOutcome,
+        ) else deliverOutcome(p.onOutcome, RendererActionOutcome.NotAdmitted(
+            com.calebc42.ebp.wire.UnsafeAdmissionReason.Cancelled))
     }
 
     /** Park when DESCRIPTOR carries `confirm`; true when parked. */
     private fun parkIfConfirmed(surface: String, descriptor: JsonObject,
                                 value: JsonElement?, injected: JsonObject?,
-                                fields: JsonObject?): Boolean {
+                                fields: JsonObject?, sourceId: String?,
+                                onOutcome: (RendererActionOutcome) -> Unit): Boolean {
         // §14.1: `confirm` is a bare string, or the object form
         // {text, title?, icon?, confirm_label?, dismiss_label?}.
         val obj = descriptor.objOrNull("confirm")
         val prompt = obj?.stringOr("text") ?: descriptor.stringOr("confirm")
         if (prompt.isEmpty()) return false
-        // One outstanding confirmation: the modal is what the user is
-        // looking at, so a second tap cannot reach another descriptor.
+        // Preserve the first parked occurrence. Accessibility or a synthetic
+        // input source can still race the modal even when touch cannot; such a
+        // second handoff must conclude rather than overwrite the first one's
+        // only terminal callback.
+        if (_pendingConfirm.value != null) {
+            deliverOutcome(
+                onOutcome,
+                RendererActionOutcome.NotAdmitted(
+                    com.calebc42.ebp.wire.UnsafeAdmissionReason.Overloaded,
+                ),
+            )
+            return true
+        }
         _pendingConfirm.value = PendingConfirm(
-            prompt, surface, descriptor, value, injected, fields,
+            prompt, surface, descriptor, value, injected, fields, sourceId,
+            onOutcome,
             title = obj?.stringOr("title")?.takeIf { it.isNotEmpty() },
             icon = obj?.stringOr("icon")?.takeIf { it.isNotEmpty() },
             confirmLabel = obj?.stringOr("confirm_label")?.takeIf { it.isNotEmpty() },
@@ -479,7 +506,9 @@ class DeviceBridge(
     }
 
     private fun dispatch(surface: String, descriptor: JsonObject, value: JsonElement?,
-                         injected: JsonObject?, fields: JsonObject?) {
+                         injected: JsonObject?, fields: JsonObject?,
+                         sourceId: String?,
+                         onOutcome: (RendererActionOutcome) -> Unit) {
         dispatchExecutor.execute {
             val traceVariant = descriptor.stringOr("builtin") == "variant.switch"
             if (traceVariant) android.os.Trace.beginSection("EBP variant.switch")
@@ -500,21 +529,30 @@ class DeviceBridge(
                                     _variantSelections.update { selections ->
                                         selections +
                                             ((surface to result.id) to result.value)
+                                    }.also {
+                                        deliverOutcome(onOutcome,
+                                            RendererActionOutcome.LocallyCompleted)
                                     }
-                                OfflineVariantSwitchResult.NoChange -> Unit
-                                OfflineVariantSwitchResult.StorageFailed ->
+                                OfflineVariantSwitchResult.NoChange ->
+                                    deliverOutcome(onOutcome,
+                                        RendererActionOutcome.LocallyCompleted)
+                                OfflineVariantSwitchResult.StorageFailed -> {
                                     onQueueProblem(VARIANT_SAVE_FAILURE_MESSAGE)
+                                    deliverOutcome(onOutcome,
+                                        RendererActionOutcome.NotAdmitted(
+                                            com.calebc42.ebp.wire.UnsafeAdmissionReason.StorageFailed))
+                                }
                             }
                         } else {
                             // CONNECTED/CHALLENGED/SYNCING/READY all use the
                             // engine so a pre-READY occurrence is recorded in
                             // syncingDirty and READY ordering stays intact.
                             activeEngine?.dispatchAction(
-                                surface, descriptor, value, injected, fields
-                            ) { _, error ->
-                                error?.let { onQueueProblem(
-                                    it.stringOr("message", "queue error")) }
-                            }
+                                surface, descriptor, value, injected, fields,
+                                sourceId,
+                            ) { outcome -> completeOutcome(onOutcome, outcome) }
+                                ?: deliverOutcome(onOutcome,
+                                    rendererNotReadyOutcome())
                         }
                     }
                     return@execute
@@ -529,63 +567,76 @@ class DeviceBridge(
                 if (surface.startsWith("dialog:"))
                     activeEngine?.dispatchDialogAction(
                         surface.removePrefix("dialog:"), descriptor, value,
-                        fields) { _, error ->
-                        error?.let {
-                            onQueueProblem(it.stringOr("message", "queue error"))
-                        }
-                    }
+                        fields) { outcome -> completeOutcome(onOutcome, outcome) }
+                        ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
                 else activeEngine?.dispatchAction(
-                    surface, descriptor, value, injected, fields) { _, error ->
-                    // SPEC 15.1: queue-full/storage failures are visible.
-                    error?.let { onQueueProblem(
-                        it.stringOr("message", "queue error")) }
-                }
+                    surface, descriptor, value, injected, fields, sourceId,
+                ) { outcome -> completeOutcome(onOutcome, outcome) }
+                    ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
             } finally {
                 if (traceVariant) android.os.Trace.endSection()
             }
         }
     }
 
-    /** SPEC 14.1: renderer hook -> remote action through the live engine. */
-    override fun action(surface: String, descriptor: JsonObject?, value: JsonElement?) {
-        descriptor ?: return
-        if (parkIfConfirmed(surface, descriptor, value, null, null)) return
-        dispatch(surface, descriptor, value, null, null)
-    }
-
-    /** SPEC 18.1: renderer hook -> remote action from INSIDE a dialog.
-     * FIELDS is the capture snapshot read from the dialog's LOCAL field
-     * layer at tap time (dialog statefuls never enter the store). */
-    override fun dialogAction(dialogId: String, descriptor: JsonObject?,
-                              value: JsonElement?, fields: JsonObject?) {
-        descriptor ?: return
-        val surface = "dialog:" + dialogId
-        if (parkIfConfirmed(surface, descriptor, value, null, fields)) return
-        dispatch(surface, descriptor, value, null, fields)
-    }
-
-    /** SPEC 14.3: a multi-member hook (on_reorder from/to/order, on_add_row/
-     * col index, swipe direction) injects a member object beside args. */
-    override fun actionInjecting(surface: String, descriptor: JsonObject?,
-                                 injected: JsonObject, value: JsonElement?) {
-        descriptor ?: return
-        if (parkIfConfirmed(surface, descriptor, value, injected, null)) return
-        dispatch(surface, descriptor, value, injected, null)
-    }
-
-    /** SPEC 14.6: a renderer-supplied occurrence-time field value — a
-     * text_input password's on_submit, whose secret has no retained draft. */
-    override fun actionWithFields(surface: String, descriptor: JsonObject?,
-                                  fields: JsonObject) {
-        descriptor ?: return
-        if (parkIfConfirmed(surface, descriptor, null, null, fields)) return
-        dispatch(surface, descriptor, null, null, fields)
+    /** Renderer occurrence -> the one confirmation/admission/delivery path. */
+    override fun dispatch(
+        request: RendererActionRequest,
+        onOutcome: (RendererActionOutcome) -> Unit,
+    ): ActionHandoff {
+        val delivered = AtomicBoolean(false)
+        val oneShot: (RendererActionOutcome) -> Unit = { outcome ->
+            if (delivered.compareAndSet(false, true)) onOutcome(outcome)
+        }
+        val surface = when (val context = request.context) {
+            is RendererActionContext.Surface -> context.surface
+            is RendererActionContext.Dialog -> "dialog:${context.dialogId}"
+        }
+        if (parkIfConfirmed(
+                surface, request.descriptor, request.value, request.injected,
+                request.fields, request.sourceId, oneShot,
+            )) return ActionHandoff.HandedOff
+        dispatch(
+            surface, request.descriptor, request.value, request.injected,
+            request.fields, request.sourceId, oneShot,
+        )
+        return ActionHandoff.HandedOff
     }
 
     /** SPEC 14.6: renderer edit -> draft + state.changed publication. */
-    override fun state(surface: String, id: String, value: JsonElement?, caret: Int?) {
+    override fun publishState(surface: String, id: String, value: JsonElement?, caret: Int?) {
         dispatchExecutor.execute { engine?.publishState(surface, id, value, caret) }
     }
+
+    private fun completeOutcome(
+        callback: (RendererActionOutcome) -> Unit,
+        outcome: ActionAdmissionOutcome,
+    ) {
+        val rendered = when (outcome) {
+            is ActionAdmissionOutcome.SafelyAdmitted ->
+                RendererActionOutcome.SafelyAdmitted(outcome.evidence)
+            is ActionAdmissionOutcome.NotAdmitted ->
+                RendererActionOutcome.NotAdmitted(outcome.reason, outcome.error)
+            ActionAdmissionOutcome.LocallyCompleted ->
+                RendererActionOutcome.LocallyCompleted
+        }
+        if (rendered is RendererActionOutcome.NotAdmitted)
+            rendered.error?.let {
+                onQueueProblem(it.stringOr("message", "queue error"))
+            }
+        deliverOutcome(callback, rendered)
+    }
+
+    private fun deliverOutcome(
+        callback: (RendererActionOutcome) -> Unit,
+        outcome: RendererActionOutcome,
+    ) {
+        appContext.mainExecutor.execute { callback(outcome) }
+    }
+
+    private fun rendererNotReadyOutcome() = RendererActionOutcome.NotAdmitted(
+        com.calebc42.ebp.wire.UnsafeAdmissionReason.NotReady,
+    )
 
     // A tiny scope for the fire-and-forget cache bind (SPEC 17.2 identity
     // scoping); the cache owns its own IO scope for the fetches themselves.
@@ -600,6 +651,9 @@ class DeviceBridge(
         MutableStateFlow<Map<Pair<String, String>, InputDisplay>>(emptyMap())
     override val inputDisplays: StateFlow<Map<Pair<String, String>, InputDisplay>>
         get() = _inputDisplays
+
+    override val maxFieldBytes: Int = CompanionStores.MAX_FIELD_BYTES.toInt()
+    override val maxEditorBytes: Int = CompanionStores.MAX_EDITOR_BYTES.toInt()
 
     // A variant switch changes which already-authored branch is placed. Keep
     // it out of the root inputDisplays subscription: invalidating the whole
@@ -692,7 +746,9 @@ class DeviceBridge(
         val prior = _editorAnnotations.value[key] ?: EditorAnnotationState()
         val next = when (method) {
             "fontify.show" -> prior.copy(fontify = parseFontify(params, text))
-            "diagnostics.show" -> prior.copy(diags = parseDiagnostics(params, text))
+            "diagnostics.show" -> prior.copy(
+                diagnostics = parseDiagnostics(params, text),
+            )
             "eldoc.show" -> prior.copy(eldoc = parseEldoc(params))
             else -> return
         }
@@ -730,7 +786,7 @@ class DeviceBridge(
      * cursor) the request was issued against ride along so a later selection
      * is validated against THAT state, not against whatever the engine holds
      * when the user finally taps. */
-    override fun editorComplete(document: String, editorId: String) {
+    override fun requestEditorCompletion(document: String, editorId: String) {
         dispatchExecutor.execute {
             engine?.requestCompletion(document, editorId) {
                 prefix, cands, session, seq, cursor ->
@@ -770,8 +826,12 @@ class DeviceBridge(
     /** SPEC 19.3: accept a candidate — a local edit replacing the prefix.
      * The engine refuses a selection whose session/seq/cursor have moved,
      * so a stale tap is a no-op rather than a wrong edit (SPEC 19.2). */
-    override fun editorSelectCompletion(document: String, editorId: String,
-                                        label: String, insert: String) {
+    override fun selectEditorCompletion(
+        document: String,
+        editorId: String,
+        label: String,
+        insert: String,
+    ) {
         clearCompletions(document, editorId)
         dispatchExecutor.execute {
             val e = engine ?: return@execute
@@ -824,7 +884,8 @@ class DeviceBridge(
     // edit.resync).
     private val _offerViews =
         MutableStateFlow<Map<Pair<String, String>, CompletionOfferView>>(emptyMap())
-    override val offerViews: StateFlow<Map<Pair<String, String>, CompletionOfferView>>
+    override val completionOfferViews:
+        StateFlow<Map<Pair<String, String>, CompletionOfferView>>
         get() = _offerViews
 
     /** Publish VIEW for KEY; a dead tracker retires the candidates with
@@ -863,8 +924,9 @@ class DeviceBridge(
     private val candidateDocSlots =
         ConcurrentHashMap<Pair<String, String>, CandidateDocSlot>()
     private val _candidateDocs =
-        MutableStateFlow<Map<Pair<String, String>, CandidateDoc>>(emptyMap())
-    override val candidateDocs: StateFlow<Map<Pair<String, String>, CandidateDoc>>
+        MutableStateFlow<Map<Pair<String, String>, CandidateDocument>>(emptyMap())
+    override val candidateDocuments:
+        StateFlow<Map<Pair<String, String>, CandidateDocument>>
         get() = _candidateDocs
 
     /** A row was long-pressed. EPOCH is the epoch of the offer the row
@@ -874,8 +936,12 @@ class DeviceBridge(
      * this task — pairing the NEW offer's frozen (session, seq) with the
      * OLD index would pass every staleness gate on both endpoints and
      * document a candidate the user never highlighted (R5 review F11). */
-    override fun editorCandidateDoc(document: String, editorId: String,
-                                    index: Int, epoch: Long) {
+    override fun requestCandidateDocument(
+        document: String,
+        editorId: String,
+        index: Int,
+        epoch: Long,
+    ) {
         dispatchExecutor.execute {
             val key = document to editorId
             val offer = _completionOffers.value[key] ?: return@execute
@@ -901,7 +967,7 @@ class DeviceBridge(
                                   flight: CandidateDocSlot.Flight) {
         val e = engine
         val sent = e != null && e.requestCandidateDoc(
-            key.first, key.second, offer.session, offer.seq, flight.index) { doc ->
+            key.first, key.second, offer.session, offer.sequence, flight.index) { doc ->
             // EVERY conclusion lands here — a doc, an explicit "", or
             // null for error/malformed/discarded (the engine split
             // conclusion from publication so a single 1201 can never
@@ -910,7 +976,7 @@ class DeviceBridge(
                 val live = _completionOffers.value[key]
                 if (offerEpochCurrent(live?.epoch, flight.epoch))
                     _candidateDocs.update {
-                        it + (key to CandidateDoc(flight.index, doc,
+                        it + (key to CandidateDocument(flight.index, doc,
                             flight.epoch))
                     }
             }
@@ -956,12 +1022,27 @@ class DeviceBridge(
      * no OPEN session in READY, or past max_editor_bytes ("as if the editor
      * were read-only", SPEC 19.4) — publishes the unchanged shadow so the
      * field snaps back instead of silently diverging. */
-    override fun editorEdit(document: String, editorId: String, start: ScalarPos,
-                            del: Int, text: String, base: String) {
+    override fun publishEditorEdit(
+        document: String,
+        editorId: String,
+        start: ScalarPos,
+        deletedScalars: Int,
+        inserted: String,
+        base: String,
+    ) {
         dispatchExecutor.execute {
             val e = engine ?: return@execute
-            if (!e.localEditorEdit(document, editorId, start, del, text, base))
+            if (!e.localEditorEdit(
+                    document,
+                    editorId,
+                    start,
+                    deletedScalars,
+                    inserted,
+                    base,
+                )
+            ) {
                 e.withEditor(document, editorId) { publishMirror(it) }
+            }
             // Amendment #171: the splice extended or killed the tracker;
             // publish what it decided. On the SAME serial executor, so the
             // read is ordered after the splice — never pre-splice state.
@@ -981,32 +1062,63 @@ class DeviceBridge(
      * it every caret-keyed feature (eldoc, diagnostics targeting, completion
      * context) sees offset 0 for the life of the session. Positions are
      * Compose UTF-16; the engine converts against the shadow (LD-4). */
-    override fun editorCaret(document: String, editorId: String,
-                             cursor: Int, selStart: Int, selEnd: Int) {
+    override fun publishEditorCaret(
+        document: String,
+        editorId: String,
+        cursorUtf16: Int,
+        selectionStartUtf16: Int,
+        selectionEndUtf16: Int,
+    ) {
         val key = document to editorId
-        val next = Triple(cursor, selStart, selEnd)
+        val next = Triple(cursorUtf16, selectionStartUtf16, selectionEndUtf16)
         if (lastCaret.put(key, next) == next) return
         dispatchExecutor.execute {
-            engine?.localEditorCaret(document, editorId, Utf16Pos(cursor),
-                Utf16Pos(selStart), Utf16Pos(selEnd))
+            engine?.localEditorCaret(
+                document,
+                editorId,
+                Utf16Pos(cursorUtf16),
+                Utf16Pos(selectionStartUtf16),
+                Utf16Pos(selectionEndUtf16),
+            )
         }
     }
 
     /** SPEC 17.7: a toolbar `command` -> non-durable edit.command
      * event.action. Positions are Compose UTF-16; the engine converts to
      * scalars against the shadow (LD-4). */
-    override fun editorCommand(surface: String, document: String, editorId: String,
-                               command: String, cursor: Int, selStart: Int,
-                               selEnd: Int) {
+    override fun dispatchEditorCommand(
+        surface: String,
+        document: String,
+        editorId: String,
+        command: String,
+        cursorUtf16: Int,
+        selectionStartUtf16: Int,
+        selectionEndUtf16: Int,
+    ) {
         dispatchExecutor.execute {
             engine?.editorCommand(surface, document, editorId, command,
-                Utf16Pos(cursor), Utf16Pos(selStart), Utf16Pos(selEnd))
+                Utf16Pos(cursorUtf16), Utf16Pos(selectionStartUtf16),
+                Utf16Pos(selectionEndUtf16))
         }
     }
 
-    /** SPEC 18.1: dialog.submit builtin -> complete the outstanding request. */
-    override fun dialogSubmit(dialogId: String, value: JsonElement?, fields: JsonObject) {
-        dispatchExecutor.execute { engine?.completeDialogSubmit(dialogId, value, fields) }
+    /** SPEC 18.1: conclude only after the dialog response reaches the sink. */
+    override fun submitDialog(
+        dialogId: String,
+        value: JsonElement?,
+        fields: JsonObject,
+        onOutcome: (RendererActionOutcome) -> Unit,
+    ): ActionHandoff {
+        val delivered = AtomicBoolean(false)
+        val oneShot: (RendererActionOutcome) -> Unit = { outcome ->
+            if (delivered.compareAndSet(false, true)) onOutcome(outcome)
+        }
+        dispatchExecutor.execute {
+            engine?.completeDialogSubmit(dialogId, value, fields) { outcome ->
+                completeOutcome(oneShot, outcome)
+            } ?: deliverOutcome(oneShot, rendererNotReadyOutcome())
+        }
+        return ActionHandoff.HandedOff
     }
 
     /** SPEC 14.1/18.1 (T3/LD-3): the authored values the engine computed for
@@ -1016,7 +1128,7 @@ class DeviceBridge(
         engine?.dialogDefaults(dialogId)
 
     /** SPEC 18.1: dialog.dismiss builtin / platform dismissal. */
-    override fun dialogDismiss(dialogId: String) {
+    override fun dismissDialog(dialogId: String) {
         dispatchExecutor.execute { engine?.completeDialogDismiss(dialogId) }
     }
 

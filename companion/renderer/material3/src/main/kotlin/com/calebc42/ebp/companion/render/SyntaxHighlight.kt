@@ -14,6 +14,8 @@
 package com.calebc42.ebp.companion.render
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.foundation.text.input.OutputTransformation
+import androidx.compose.foundation.text.input.TextFieldBuffer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -167,6 +169,17 @@ class SyntaxTransformation(
         val styled = if (spans.isEmpty()) AnnotatedString(text.text)
             else AnnotatedString(text.text, spanStyles = spans)
         return TransformedText(styled, OffsetMapping.Identity)
+    }
+}
+
+/** State-based equivalent used by editable fields without changing text. */
+class SyntaxOutputTransformation(
+    private val language: String,
+    private val colors: SyntaxColors,
+) : OutputTransformation {
+    override fun TextFieldBuffer.transformOutput() {
+        highlightSpans(language, asCharSequence().toString(), colors)
+            .forEach { range -> addStyle(range.item, range.start, range.end) }
     }
 }
 

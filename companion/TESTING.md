@@ -10,6 +10,7 @@ references when the explicit update task is used.
 ./gradlew :renderer:model:testDebugUnitTest
 ./gradlew :wire:jvmTest --tests '*SemanticsTest'
 ./gradlew :renderer:compose:testDebugUnitTest
+./gradlew :renderer:compose:compileDebugAndroidTestKotlin
 ./gradlew :renderer:jetpacs:testDebugUnitTest
 ./gradlew :renderer:jetpacs:compileDebugAndroidTestKotlin
 ./gradlew :renderer:jetpacs:compileDebugScreenshotTestKotlin
@@ -21,7 +22,12 @@ The model suite pins registry-derived profiles, semantic name/default/state
 projection, and the no-Material dependency boundary for EBP, wire, core,
 renderer model, and the Foundation renderer. `SemanticsTest` consumes the
 shared EBP semantic golden witnesses and proves builtin, feature, capture, and
-unknown-member admission behavior. The Material renderer's Android tests cover
+unknown-member admission behavior. The Compose controller tests pin input
+normalization, state-before-action ordering, typed safe-admission clearing,
+secret erasure, `publish_state`, distinct JCS field/editor byte budgets,
+Unicode-scalar editor splices, and no-echo remote adoption.
+Their device test drives the same controllers through real state-based Compose
+fields and IME semantics. The Material renderer's Android tests cover
 the shared Compose projection as well as receiver-owned component roles and
 single-click-target behavior. The Jetpacs module pins generated extension
 admission, private theme derivation, singular Compose dispatch, state-before-
@@ -63,6 +69,9 @@ make a validation failure disappear.
 With one authorized device connected:
 
 ```sh
+./gradlew :renderer:compose:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.compose.EditingControllersInstrumentedTest
+
 ./gradlew :renderer:jetpacs:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsSemanticsTest
 
@@ -73,7 +82,10 @@ With one authorized device connected:
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.compose.EbpSemanticsTest
 ```
 
-The Jetpacs class checks Action, Choice, and Panel roles, enabled/checked state,
+The shared editing class enters normalized text through a real
+`BasicTextField` and edits an astral Unicode selection through a real editor;
+it proves state-before-action ordering and exactly one scalar splice. The
+Jetpacs class checks Action, Choice, and Panel roles, enabled/checked state,
 one-control/one-target behavior, descendant preservation, and exact ordinary
 action dispatch after `state.changed`. The first Material class checks its
 receiver-owned catalog and single-choice components. A third case mounts a
@@ -101,6 +113,7 @@ transitive Espresso cannot initialize on Android 17/API 37.
 ./gradlew :wire:jvmTest \
   :renderer:model:testDebugUnitTest \
   :renderer:compose:testDebugUnitTest \
+  :renderer:compose:compileDebugAndroidTestKotlin \
   :renderer:jetpacs:testDebugUnitTest \
   :renderer:material3:testDebugUnitTest \
   :app:testDebugUnitTest \
@@ -112,3 +125,19 @@ transitive Espresso cannot initialize on Android 17/API 37.
 Compilation and screenshots prove deterministic code and pixels. Behavior that
 crosses persistence, reconnect, offline delivery, Android navigation, IME, or
 accessibility-service boundaries still needs its focused device flow.
+
+## Tablet deployment
+
+After the broad and connected gates pass, return to the `llm-poc-3` root and
+refresh both the Companion APK and managed Elisp tree through the repository's
+one-command path:
+
+```sh
+cd ..
+tools/onboard-tablet.sh --vault shared --emacs-home emacs --skip-pylsp SERIAL
+```
+
+Install mode builds `:app:assembleDebug`, reinstalls it with app data
+preserved, provisions the selected Emacs home, and prints the installed package
+version and managed-tree audit. Pass the current serial from `adb devices -l`;
+wireless ADB ports do not remain stable across reconnects.
