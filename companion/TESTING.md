@@ -125,6 +125,12 @@ Enter, syntax, line-number scroll alignment, toolbar snippets/line operations,
 read-only selection, disabled state, chromeless presentation, autofocus-once,
 rotation/restore, and preservation across a compatible repaint. Keyboard/focus,
 font-scale, and touch-target checks remain part of the same device envelope.
+
+Phase 4 manual acceptance passed on the Pixel Tablet on 2026-08-28. The user
+reported successful TalkBack, Switch Access, hardware-keyboard, pointer, touch,
+and Editor-specific checks above; the device was left reconnected with ordinary
+touch interaction healthy.
+
 `espresso-core` is pinned directly to the stable
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older
 transitive Espresso cannot initialize on Android 17/API 37.

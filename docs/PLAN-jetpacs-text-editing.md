@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 4 implemented; manual accessibility acceptance pending
+Status: Phase 4 complete; Phase 5 next
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -358,9 +358,9 @@ screenshot validators, and all five connected suites pass. The final APK and
 proved save and software-IME Enter dispatch once, toolbar menu and prompted
 snippet insertion, disabled/read-only behavior, named editable semantics,
 autofocus-once, and exact draft preservation across portrait recreation; all
-temporarily changed device settings were restored. TalkBack, Switch Access,
-hardware-keyboard, pointer, and touch acceptance remain human-observation
-checks and must be recorded before Phase 5 starts.
+temporarily changed device settings were restored. On 2026-08-28 the user
+completed the remaining TalkBack, Switch Access, hardware-keyboard, pointer,
+and touch checks and reported that every Phase 4 acceptance check passed.
 
 ## Phase 5: add synchronized editing
 
