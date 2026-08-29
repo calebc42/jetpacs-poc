@@ -18,6 +18,7 @@
 (require 'jetpacs-shell)
 (require 'jetpacs-chrome)
 (require 'jetpacs-apps)
+(require 'ebp-sync)
 
 (defconst jetpacs-component-catalog-owner "jpcatalog"
   "Owner of the Jetpacs Components catalog surface and actions.")
@@ -60,6 +61,27 @@
 
 (defvar jetpacs-component-catalog--last-editor-length nil
   "Character length of the latest local Editor value.")
+
+(defconst jetpacs-component-catalog--sync-document
+  "doc:jpcatalog/synchronized-editor"
+  "Stable EBP document identifier for the in-memory synchronization fixture.")
+
+(defconst jetpacs-component-catalog--sync-editor-id
+  "jpcatalog-editor-sync"
+  "Canonical editor node identifier for the synchronization fixture.")
+
+(defconst jetpacs-component-catalog--sync-seed
+  "; Synchronized Jetpacs buffer\n(message \"Edit either side\")\n"
+  "Initial non-secret text for the synchronization fixture.")
+
+(defvar jetpacs-component-catalog--sync-buffer nil
+  "Process-volatile buffer backing the synchronized Editor demonstration.")
+
+(defvar jetpacs-component-catalog--sync-save-count 0
+  "Number of synchronized Editor save actions accepted this session.")
+
+(defvar jetpacs-component-catalog--last-sync-preview nil
+  "Bounded preview of the latest synchronized Editor save value.")
 
 (defconst jetpacs-component-catalog--components
   '(("action" "Action" "One explicit, full-width command target." "COMMANDS")
@@ -317,6 +339,83 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
             :label "Message"
             :snippet "(message \"${input:Text}\")")))))
 
+(defun jetpacs-component-catalog--ensure-sync-buffer ()
+  "Return the catalog's process-volatile synchronized buffer.
+The fixture deliberately disables every Phase 6 rider before attachment; it
+tests only the normative text, caret, selection, and session lifecycle path."
+  (unless (buffer-live-p jetpacs-component-catalog--sync-buffer)
+    (setq jetpacs-component-catalog--sync-buffer
+          (generate-new-buffer " *Jetpacs synchronized editor*"))
+    (with-current-buffer jetpacs-component-catalog--sync-buffer
+      (insert jetpacs-component-catalog--sync-seed)
+      (set-buffer-modified-p nil)
+      (setq buffer-undo-list nil)
+      (setq-local buffer-auto-save-file-name nil)
+      (setq-local ebp-sync-eglot nil)
+      (setq-local ebp-sync-diagnostics nil)
+      (setq-local ebp-sync-fontify nil)
+      (setq-local ebp-sync-eldoc nil)))
+  jetpacs-component-catalog--sync-buffer)
+
+(defun jetpacs-component-catalog--sync-value ()
+  "Return the whole synchronized catalog buffer as plain text."
+  (with-current-buffer (jetpacs-component-catalog--ensure-sync-buffer)
+    (save-restriction
+      (widen)
+      (buffer-substring-no-properties (point-min) (point-max)))))
+
+(defun jetpacs-component-catalog--sync-available-p (&optional client)
+  "Non-nil when CLIENT admits the catalog's synchronized app editor."
+  (and (jetpacs-granted-p "editor.sync" client)
+       (jetpacs-node-advertised-p "editor" :app)))
+
+(defun jetpacs-component-catalog--on-ready (client)
+  "Attach the in-memory catalog fixture to READY CLIENT when admitted."
+  (when (jetpacs-component-catalog--sync-available-p client)
+    (condition-case err
+        (ebp-sync-attach
+         client
+         jetpacs-component-catalog--sync-document
+         jetpacs-component-catalog--sync-editor-id
+         (jetpacs-component-catalog--ensure-sync-buffer))
+      (error
+       (message "jetpacs-component-catalog: sync attach failed: %s"
+                (jetpacs-error-label err))))))
+
+(defun jetpacs-component-catalog--release-sync-buffer ()
+  "Detach and destroy the catalog's non-durable synchronization fixture."
+  (when (buffer-live-p jetpacs-component-catalog--sync-buffer)
+    (with-current-buffer jetpacs-component-catalog--sync-buffer
+      (ignore-errors (ebp-sync-detach))
+      (set-buffer-modified-p nil))
+    (kill-buffer jetpacs-component-catalog--sync-buffer))
+  (setq jetpacs-component-catalog--sync-buffer nil))
+
+(defun jetpacs-component-catalog--sync-panel ()
+  "Build the admitted synchronized Editor panel or an honest fallback."
+  (jetpacs-component-panel
+   "SYNCHRONIZED / LIVE"
+   (if (jetpacs-component-catalog--sync-available-p)
+       (list
+        (jetpacs-editor
+         jetpacs-component-catalog--sync-editor-id
+         :document jetpacs-component-catalog--sync-document
+         :value (jetpacs-component-catalog--sync-value)
+         :on-save (jetpacs-action "jpcatalog.sync-editor-save")
+         :min-lines 5 :max-lines 8 :line-numbers t)
+        (jetpacs-text
+         (format "Saves: %d · latest: %s"
+                 jetpacs-component-catalog--sync-save-count
+                 (or jetpacs-component-catalog--last-sync-preview "—"))
+         :style "caption")
+        (jetpacs-text
+         "Disconnect keeps the visible value but makes this field read-only; reconnect opens a fresh session without an offline draft."
+         :style "caption"))
+     (list
+      (jetpacs-text
+       "This Companion did not admit editor.sync for app surfaces."
+       :style "caption")))))
+
 (defun jetpacs-component-catalog--editor-screen (back)
   "Build the canonical local Editor reference and live state screen with BACK."
   (jetpacs-component-catalog--screen
@@ -359,6 +458,7 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
        (format "Accepted Enter actions: %d"
                jetpacs-component-catalog--editor-enter-count)
        :style "caption")))
+    (jetpacs-component-catalog--sync-panel)
     (jetpacs-component-panel
      "READ-ONLY / DISABLED"
      (list
@@ -381,7 +481,7 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
      "LATER TIERS"
      (list
       (jetpacs-text
-       "Document synchronization, completion, and authoritative diagnostics remain on the existing EBP editor.sync path and are intentionally not claimed by this local Phase 4 renderer."
+       "Completion, authoritative diagnostics, eldoc, and editor commands remain Phase 6 work; this synchronized fixture enables none of those riders."
        :style "caption")))
     (jetpacs-component-catalog--code-panel
      "(jetpacs-editor \"draft\"\n  :value \"(message \\\"Jetpacs\\\")\"\n  :on-save (jetpacs-action \"app.save\")\n  :syntax \"elisp\" :line-numbers t\n  :publish-state t)"
@@ -491,6 +591,18 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
       (jetpacs-app-defer-refresh params)
       'accepted)))
 
+(defun jetpacs-component-catalog--on-sync-editor-save (args params)
+  "Record ARGS' synchronized Editor value and refresh PARAMS' screen."
+  (let ((value (plist-get args :value)))
+    (if (not (stringp value))
+        'rejected
+      (cl-incf jetpacs-component-catalog--sync-save-count)
+      (setq jetpacs-component-catalog--last-sync-preview
+            (truncate-string-to-width
+             (string-replace "\n" "↵" value) 72 nil nil "…"))
+      (jetpacs-app-defer-refresh params)
+      'accepted)))
+
 (defconst jetpacs-component-catalog--verbs
   '(("jpcatalog.open" . jetpacs-component-catalog--on-open)
     ("jpcatalog.activate" . jetpacs-component-catalog--on-activate)
@@ -499,7 +611,9 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
     ("jpcatalog.text-submit" . jetpacs-component-catalog--on-text-submit)
     ("jpcatalog.secure-submit" . jetpacs-component-catalog--on-secure-submit)
     ("jpcatalog.editor-save" . jetpacs-component-catalog--on-editor-save)
-    ("jpcatalog.editor-enter" . jetpacs-component-catalog--on-editor-enter))
+    ("jpcatalog.editor-enter" . jetpacs-component-catalog--on-editor-enter)
+    ("jpcatalog.sync-editor-save" .
+     jetpacs-component-catalog--on-sync-editor-save))
   "Catalog actions and their owning handlers.")
 
 (defun jetpacs-component-catalog--dock-items (surface)
@@ -543,6 +657,11 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
      "jpcatalog.editor-enter" #'jetpacs-component-catalog--on-editor-enter
      :args '((:name value :type "text" :required t))
      :doc "Record and display one single-line Editor enter value")
+    (jetpacs-defaction
+     "jpcatalog.sync-editor-save"
+     #'jetpacs-component-catalog--on-sync-editor-save
+     :args '((:name value :type "text" :required t))
+     :doc "Record one synchronized Editor save admitted only while READY")
     (jetpacs-on-state-change
      "jpcatalog-editor-live" #'jetpacs-component-catalog--on-editor-state)
     (jetpacs-on-state-change
@@ -550,6 +669,8 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
     (jetpacs-chrome-define-root
      jetpacs-component-catalog-owner "home"
      #'jetpacs-component-catalog--home-screen))
+  (add-hook 'jetpacs-ready-functions #'jetpacs-component-catalog--on-ready)
+  (jetpacs-component-catalog--ensure-sync-buffer)
   (jetpacs-defapp
    jetpacs-component-catalog-owner
    :label jetpacs-component-catalog-title
@@ -561,6 +682,8 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
 
 (defun jetpacs-component-catalog-unregister ()
   "Remove the catalog actions, surface, and app registration."
+  (remove-hook 'jetpacs-ready-functions #'jetpacs-component-catalog--on-ready)
+  (jetpacs-component-catalog--release-sync-buffer)
   (dolist (verb (mapcar #'car jetpacs-component-catalog--verbs))
     (jetpacs-undefaction verb))
   (jetpacs-on-state-change-clear "jpcatalog-editor-" "app:jpcatalog")

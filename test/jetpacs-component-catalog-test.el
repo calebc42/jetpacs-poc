@@ -8,6 +8,21 @@
 (require 'cl-lib)
 (require 'jetpacs-component-catalog)
 
+(defun jetpacs-component-catalog-test--find-node (tree id)
+  "Return the first plist node below TREE whose :id equals ID."
+  (let (found)
+    (cl-labels ((walk (value)
+                  (cond
+                   ((vectorp value) (mapc #'walk (append value nil)))
+                   ((and (listp value) (keywordp (car value)))
+                    (when (and (null found) (equal (plist-get value :id) id))
+                      (setq found value))
+                    (cl-loop for (_key child) on value by #'cddr
+                             do (walk child)))
+                   ((listp value) (mapc #'walk value)))))
+      (walk tree))
+    found))
+
 (ert-deftest jetpacs-components-builders-preserve-required-false ()
   "Choice emits JSON false rather than dropping its required state."
   (let ((node (jetpacs-component-choice
@@ -126,7 +141,7 @@
       (should (string-match-p (regexp-quote type) json)))))
 
 (ert-deftest jetpacs-component-catalog-editor-is-local-and-complete-for-phase-4 ()
-  "The Editor page exercises the local tier without claiming synchronization."
+  "The Editor fallback retains the complete local Phase 4 tier."
   (let* ((screen (jetpacs-component-catalog--editor-screen nil))
          (json (jetpacs-node->canonical-json screen)))
     (dolist (member '("\"publish_state\":true"
@@ -144,6 +159,80 @@
     (should (eq (gethash '("app:jpcatalog" . "jpcatalog-editor-live")
                          jetpacs--state-handlers)
                 #'jetpacs-component-catalog--on-editor-state))))
+
+(ert-deftest jetpacs-component-catalog-editor-adds-bounded-phase-5-sync-fixture ()
+  "The admitted page authors one real sync editor and no Phase 6 members."
+  (let ((jetpacs-component-catalog--sync-buffer nil))
+    (unwind-protect
+        (cl-letf (((symbol-function
+                    'jetpacs-component-catalog--sync-available-p)
+                   (lambda (&optional _client) t)))
+          (let* ((screen (jetpacs-component-catalog--editor-screen nil))
+                 (node (jetpacs-component-catalog-test--find-node
+                        screen jetpacs-component-catalog--sync-editor-id)))
+            (should node)
+            (should (equal (plist-get node :document)
+                           jetpacs-component-catalog--sync-document))
+            (should (equal (plist-get node :value)
+                           jetpacs-component-catalog--sync-seed))
+            (should (equal (plist-get (plist-get node :on_save) :action)
+                           "jpcatalog.sync-editor-save"))
+            (should (eq (plist-get node :line_numbers) t))
+            (dolist (member '(:complete :toolbar :syntax :publish_state))
+              (should-not (plist-member node member)))))
+      (jetpacs-component-catalog--release-sync-buffer))))
+
+(ert-deftest jetpacs-component-catalog-ready-attaches-real-sync-seam-without-riders ()
+  "READY binds the in-memory buffer after disabling every Phase 6 rider."
+  (let ((jetpacs-component-catalog--sync-buffer nil)
+        attached)
+    (unwind-protect
+        (cl-letf (((symbol-function
+                    'jetpacs-component-catalog--sync-available-p)
+                   (lambda (&optional _client) t))
+                  ((symbol-function 'ebp-sync-attach)
+                   (lambda (client document editor-id buffer)
+                     (setq attached (list client document editor-id buffer))
+                     buffer)))
+          (jetpacs-component-catalog--on-ready 'client)
+          (should (equal (butlast attached)
+                         (list 'client
+                               jetpacs-component-catalog--sync-document
+                               jetpacs-component-catalog--sync-editor-id)))
+          (with-current-buffer (car (last attached))
+            (should-not ebp-sync-eglot)
+            (should-not ebp-sync-diagnostics)
+            (should-not ebp-sync-fontify)
+            (should-not ebp-sync-eldoc)
+            (should-not buffer-auto-save-file-name)
+            (should-not buffer-file-name)))
+      (jetpacs-component-catalog--release-sync-buffer))))
+
+(ert-deftest jetpacs-component-catalog-sync-save-is-bounded-and-refreshes-once ()
+  "One admitted synchronized save records one bounded non-secret preview."
+  (let ((jetpacs-component-catalog--sync-save-count 0)
+        (jetpacs-component-catalog--last-sync-preview nil)
+        refreshes)
+    (cl-letf (((symbol-function 'jetpacs-app-defer-refresh)
+               (lambda (params) (push params refreshes))))
+      (should (eq (jetpacs-component-catalog--on-sync-editor-save
+                   (list :value (concat "line\n" (make-string 100 ?x)))
+                   '(:surface "app:jpcatalog"))
+                  'accepted))
+      (should (= jetpacs-component-catalog--sync-save-count 1))
+      (should (<= (string-width
+                   jetpacs-component-catalog--last-sync-preview) 72))
+      (should (string-search "↵"
+                             jetpacs-component-catalog--last-sync-preview))
+      (should (= (length refreshes) 1))
+      (should (eq (jetpacs-component-catalog--on-sync-editor-save
+                   '(:value 42) nil)
+                  'rejected)))))
+
+(ert-deftest jetpacs-component-catalog-registers-its-ready-attachment ()
+  "The synchronization fixture is wired at load, not from a screen builder."
+  (should (memq #'jetpacs-component-catalog--on-ready
+                jetpacs-ready-functions)))
 
 (ert-deftest jetpacs-component-catalog-action-dispatches-exactly-once ()
   "One ordinary Action event produces one application mutation."
