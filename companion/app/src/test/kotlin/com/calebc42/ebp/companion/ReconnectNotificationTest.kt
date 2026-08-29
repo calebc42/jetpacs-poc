@@ -2,6 +2,7 @@
 package com.calebc42.ebp.companion
 
 import com.calebc42.ebp.wire.SessionState
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -20,6 +21,27 @@ class ReconnectNotificationTest {
         assertTrue(isAuthenticatedConnectionState(SessionState.SYNCING))
         assertTrue(isAuthenticatedConnectionState(SessionState.READY))
         assertFalse(isAuthenticatedConnectionState(SessionState.CLOSED))
+    }
+
+    @Test
+    fun editorReadinessExposesOnlySyncingAndReadyAsInteractiveLifecycleStates() {
+        assertEquals(EditorConnectionPhase.OFFLINE, editorConnectionPhaseOf(null))
+        assertEquals(
+            EditorConnectionPhase.OFFLINE,
+            editorConnectionPhaseOf(SessionState.CHALLENGED),
+        )
+        assertEquals(
+            EditorConnectionPhase.OPENING,
+            editorConnectionPhaseOf(SessionState.SYNCING),
+        )
+        assertEquals(
+            EditorConnectionPhase.READY,
+            editorConnectionPhaseOf(SessionState.READY),
+        )
+        assertEquals(
+            EditorConnectionPhase.OFFLINE,
+            editorConnectionPhaseOf(SessionState.CLOSED),
+        )
     }
 
     @Test

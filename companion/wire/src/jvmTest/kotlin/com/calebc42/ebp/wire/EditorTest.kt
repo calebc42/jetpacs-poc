@@ -158,6 +158,27 @@ class EditorTest {
     }
 
     @Test
+    fun externalApplyCannotCorruptAPlatformComposition() {
+        val out = mutableListOf<JsonObject>()
+        val engine = engine(out)
+        val s = engine.openEditor("doc:1", "body", "a😀b")
+        assertTrue(engine.setEditorComposing("doc:1", "body", true))
+
+        applyText(engine, "a1", s.sessionId, 1, 1, 1, "!", 3)
+
+        val result = out.replyTo("a1").reqObj("result")
+        assertEquals("stale", result.reqString("status"))
+        assertEquals(0L, result.reqLong("seq"))
+        assertEquals("a😀b", s.shadow)
+        assertEquals(0L, s.seq)
+
+        assertTrue(engine.setEditorComposing("doc:1", "body", false))
+        applyText(engine, "a2", s.sessionId, 1, 1, 1, "!", 3)
+        assertEquals("applied", out.replyTo("a2").reqObj("result").reqString("status"))
+        assertEquals("a!b", s.shadow)
+    }
+
+    @Test
     fun moveOnlyApplyKeepsSeq() {
         val out = mutableListOf<JsonObject>()
         val engine = engine(out)

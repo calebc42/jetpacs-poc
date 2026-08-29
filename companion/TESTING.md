@@ -25,7 +25,10 @@ shared EBP semantic golden witnesses and proves builtin, feature, capture, and
 unknown-member admission behavior. The Compose controller tests pin input
 normalization, state-before-action ordering, typed safe-admission clearing,
 secret erasure, `publish_state`, distinct JCS field/editor byte budgets,
-Unicode-scalar editor splices, and no-echo remote adoption.
+Unicode-scalar editor splices, and no-echo remote adoption. They also pin the
+synchronized opening/READY/composing/stale/offline/closed lifecycle,
+composition-atomic adoption, typed edit outcomes, and retained Unicode
+text/selection seeding across a fresh session.
 Their device test drives the same controllers through real state-based Compose
 fields and IME semantics. The Material renderer's Android tests cover
 the shared Compose projection as well as receiver-owned component roles and
@@ -49,7 +52,8 @@ text-field gallery adds outlined, filled, error, disabled, syntax, empty secure,
 focused, and RTL states. The six text-field references join the five original
 component references. Six local-editor references add compact/expanded widths,
 dark mode, 1.5× text, focus/read-only, syntax with logical line numbers,
-toolbar/chromeless presentation, and RTL gutter placement. All 17 references
+toolbar/chromeless presentation, and RTL gutter placement. One synchronized
+reference adds the compact offline and stale status rows. All 18 references
 live under `renderer/jetpacs/src/screenshotTestDebug/reference/`.
 
 The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp by
@@ -93,12 +97,14 @@ With one authorized device connected:
 The shared editing class enters normalized text through a real
 `BasicTextField` and edits an astral Unicode selection through a real editor;
 it proves state-before-action ordering and exactly one scalar splice. The
-Jetpacs class checks Action, Choice, Panel, Text Field, and local Editor
+Jetpacs class checks Action, Choice, Panel, Text Field, and local or
+synchronized Editor
 semantics, enabled/checked/error/maximum-length state, one-control/one-target behavior,
 descendant preservation, autofocus, normalized text entry, exact ordinary
 action dispatch after `state.changed`, safe-admission clearing, volatile
 password capture/erasure, Editor save/value dispatch, toolbar edits, read-only
-inertness, and a single editable Editor owner. The first Material class checks
+inertness, offline text retention, synchronized action refusal, and a single
+editable Editor owner. The first Material class checks
 its receiver-owned catalog and single-choice components. A third case mounts a
 Material `OutlinedTextField` beside the custom Styles host;
 that is the device regression for keeping Material3's binary ABI compatible
@@ -130,6 +136,31 @@ Phase 4 manual acceptance passed on the Pixel Tablet on 2026-08-28. The user
 reported successful TalkBack, Switch Access, hardware-keyboard, pointer, touch,
 and Editor-specific checks above; the device was left reconnected with ordinary
 touch interaction healthy.
+
+For the Phase 5 live gate, open **Jetpacs Components → Editor → Synchronized /
+Live** and verify the in-memory buffer, not a local draft:
+
+1. Type ordinary and astral text, move the caret, select in both directions,
+   and save once; confirm Emacs receives each edit once and the save count
+   increases once.
+2. Start an IME composition while changing the same buffer from Emacs; confirm
+   the composition is not split and the winning value/selection appears after
+   reconciliation without a duplicate delta.
+3. Disconnect Emacs. Confirm the displayed value remains, the offline status
+   appears immediately, and text, Save, Enter, completion, and toolbar actions
+   are inert with no draft or queued action.
+4. Reconnect without repushing the catalog. Confirm a fresh session opens from
+   the visible value and selection. Then reconnect with an explicit newer
+   surface snapshot and confirm that snapshot wins.
+5. Rotate during READY and offline states, remove/re-add the editor page, and
+   restart the Companion; confirm session identity closes/reopens correctly
+   and process death does not pretend the volatile buffer was persisted.
+
+The Phase 5 automated, screenshot, and five connected suites passed on the
+Pixel Tablet on 2026-08-28. The reviewed APK and 115-file managed Elisp tree
+were redeployed, Emacs and the Companion reconnected, and the live synchronized
+fixture was left visible in READY. The five interaction checks above remain
+manual acceptance evidence and must not be inferred from instrumentation.
 
 `espresso-core` is pinned directly to the stable
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older

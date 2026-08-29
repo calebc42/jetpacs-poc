@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 4 complete; Phase 5 next
+Status: Phase 5 automated and connected gates complete; manual device acceptance pending
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -383,6 +383,51 @@ Connect the Jetpacs editor to the existing `editor.sync` module:
 
 Model opening, ready, composing, awaiting reconciliation, stale,
 offline-read-only, and closed as explicit testable states.
+
+### Phase 5 implementation outcome
+
+The existing EBP §19 protocol remains unchanged. The application bridge now
+projects each authenticated connection as offline, opening, or READY and the
+shared `EditorController` expands that into explicit per-editor opening, ready,
+composing, awaiting-reconciliation, stale, offline-read-only, and closed
+states. Only a settled READY synchronized editor admits ordinary text edits,
+save/Enter actions, caret reports, or completion requests. A stale local base
+re-presents the current shadow without advancing twice or echoing a delta.
+
+Transport loss closes the wire session, clears session-bound offers and
+annotations, and retains only the process-volatile displayed text and UTF-16
+selection. The retained value becomes read-only at newest-connection accept
+time and may seed a fresh reconnect session. An explicit surface snapshot
+accepted during SYNCING always overrides that volatile seed. Remote text
+applies lose with the standard typed stale result while the platform owns an
+IME composition; a mirror that arrives during composition is held and adopted
+as one text-and-selection edit when composition ends.
+
+`JetpacsEditorRenderer` now claims canonical local and synchronized `editor`
+nodes only below `jetpacs.scope`. It shows a compact non-animated lifecycle row
+for every unsettled synchronized state and uses the same shared controller as
+the Material fallback outside scope. Jetpacs still starts no completion,
+annotation, eldoc, syntax-fallback, or editor-command behavior for synchronized
+documents; those remain Phase 6.
+
+The **Editor** catalog page adds one real `ebp-sync` fixture backed by a
+non-durable in-memory Emacs buffer. Eglot and every Phase 6 rider are disabled
+before attachment. Focused ERT, wire, controller, app, Jetpacs unit, and Android
+test-source gates pass, and one new reviewed screenshot pins offline and stale
+status presentation without modifying the prior 17 references. The full ERT
+suite, deterministic 10,000-case text-input replay, broad Kotlin/APK gate, and
+all 18 Jetpacs plus 11 Material screenshot references pass. All five connected
+suites pass on the Pixel Tablet. The connected lifecycle test also caught and
+now pins the READY-to-offline accessibility transition so the retained field
+changes from editable to read-only semantics without losing its text.
+
+The verified APK and 115-file managed Elisp tree were deployed through
+`tools/onboard-tablet.sh`. Emacs and the Companion reconnected, and the live
+**Synchronized / Live** fixture is visible in READY with its process-volatile
+buffer and Save action. Concurrent IME/Emacs reconciliation, physical
+disconnect/reconnect variants, rotation, removal/re-addition, process restart,
+and assistive-technology behavior remain the manual device acceptance gate;
+Phase 5 is not closed until those checks are reported complete.
 
 ## Phase 6: completion, annotations, and tooling
 

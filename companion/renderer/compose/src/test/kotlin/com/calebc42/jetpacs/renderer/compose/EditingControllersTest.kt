@@ -14,7 +14,10 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.jetpacs.renderer.model.CompletionOffer
 import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
 import com.calebc42.jetpacs.renderer.model.EditorMirror
+import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererEditorHost
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -294,6 +297,66 @@ class EditingControllersTest {
     }
 
     @Test
+    fun synchronizedMirrorWaitsForCompositionAndAdoptsTextAndSelectionAtomically() {
+        val host = FakeEditorHost()
+        val state = TextFieldState("draft")
+        val controller = synchronizedController(state, host)
+
+        controller.setCompositionActive(true)
+        assertEquals(EditorSyncPhase.COMPOSING, controller.syncPhase)
+        controller.adoptMirror(
+            EditorMirror("remote😀text", 8, 6, 8, sequence = 2, epoch = 7),
+        )
+
+        assertEquals("draft", state.text.toString())
+        assertEquals(EditorSyncPhase.AWAITING_RECONCILIATION, controller.syncPhase)
+        assertTrue(host.edits.isEmpty())
+
+        controller.setCompositionActive(false)
+
+        assertEquals("remote😀text", state.text.toString())
+        assertEquals(TextRange(6, 8), state.selection)
+        assertEquals(EditorSyncPhase.READY, controller.syncPhase)
+        assertEquals(listOf(true, false), host.compositions)
+        assertTrue(host.edits.isEmpty())
+    }
+
+    @Test
+    fun synchronizedLifecycleRefusesOfflineEditsAndReconcilesAStaleLocalBase() {
+        val host = FakeEditorHost()
+        val state = TextFieldState("base")
+        val controller = synchronizedController(state, host)
+
+        controller.updateConnection(EditorConnectionPhase.OFFLINE, hasMirror = true)
+        assertEquals(EditorSyncPhase.OFFLINE_READ_ONLY, controller.syncPhase)
+        controller.applyPresentationEdit("offline edit", 12, 12)
+        assertEquals("base", state.text.toString())
+        assertTrue(host.edits.isEmpty())
+
+        controller.updateConnection(EditorConnectionPhase.OPENING, hasMirror = true)
+        assertEquals(EditorSyncPhase.OPENING, controller.syncPhase)
+        controller.updateConnection(EditorConnectionPhase.READY, hasMirror = true)
+        host.nextOutcome = EditorEditOutcome.RECONCILE
+        controller.applyPresentationEdit("local", 5, 5)
+        assertEquals("local", state.text.toString())
+        assertEquals(EditorSyncPhase.STALE, controller.syncPhase)
+        assertEquals(1, host.edits.size)
+
+        controller.adoptMirror(
+            EditorMirror("winner", 6, 6, 6, sequence = 3, epoch = 8),
+        )
+        assertEquals("winner", state.text.toString())
+        assertEquals(EditorSyncPhase.READY, controller.syncPhase)
+        assertEquals(1, host.edits.size)
+
+        controller.dispose()
+        assertEquals(EditorSyncPhase.CLOSED, controller.syncPhase)
+        controller.applyPresentationEdit("after close", 11, 11)
+        assertEquals("winner", state.text.toString())
+        assertEquals(1, host.edits.size)
+    }
+
+    @Test
     fun localEditorPublishesTheWholeLogicalValue() {
         val host = FakeEditorHost()
         val published = mutableListOf<String>()
@@ -390,6 +453,22 @@ class EditingControllersTest {
         publishPasswordLocally = false,
     )
 
+    private fun synchronizedController(
+        state: TextFieldState,
+        host: FakeEditorHost,
+    ) = EditorController(
+        state,
+        EditorControllerConfig(
+            "app:main", "body", "buffer:one", false,
+            publishState = false,
+            maxFieldBytes = 65_536,
+            maxEditorBytes = 65_536,
+        ),
+        {},
+        host,
+        ignoredDispatcher,
+    )
+
     private val ignoredDispatcher = EditingActionDispatcher { _, _, _, _, _ ->
         ActionHandoff.HandedOff
     }
@@ -404,6 +483,7 @@ private data class Edit(
 
 private class FakeEditorHost : RendererEditorHost {
     override val maxEditorBytes = 65_536
+    override val editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.READY)
     override val editorMirrors = MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(
         emptyMap(),
     )
@@ -417,6 +497,8 @@ private class FakeEditorHost : RendererEditorHost {
         MutableStateFlow<Map<Pair<String, String>, CandidateDocument>>(emptyMap())
     override var completionNarrowing = CompletionNarrowing.STRICT
     val edits = mutableListOf<Edit>()
+    val compositions = mutableListOf<Boolean>()
+    var nextOutcome = EditorEditOutcome.ACCEPTED
 
     override fun requestEditorCompletion(document: String, editorId: String) = Unit
     override fun selectEditorCompletion(
@@ -438,8 +520,13 @@ private class FakeEditorHost : RendererEditorHost {
         deletedScalars: Int,
         inserted: String,
         base: String,
+        onOutcome: (EditorEditOutcome) -> Unit,
     ) {
         edits += Edit(start, deletedScalars, inserted, base)
+        onOutcome(nextOutcome)
+    }
+    override fun publishEditorComposition(document: String, editorId: String, active: Boolean) {
+        compositions += active
     }
     override fun publishEditorCaret(
         document: String,

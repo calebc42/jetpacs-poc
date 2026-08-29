@@ -68,12 +68,10 @@ admits a downstream extension-owned node, including `jetpacs.scope`, and each
 registered renderer may decline an individual canonical node before the
 dispatcher takes its normal fallback. Scoped selection never changes node
 validation or target profiles, and roots discard inherited scope. The current
-registrations replace canonical `text_input` and local canonical `editor`
-presentation inside app-authored `jetpacs.scope`. An editor carrying `document`
-declines the Phase 4 override and therefore continues through Glasspane
-Material until synchronized Jetpacs editing lands in Phase 5. Dialogs do not
-admit the app scope, and every canonical control outside it also continues
-through Glasspane Material.
+registrations replace canonical `text_input` and `editor` presentation inside
+app-authored `jetpacs.scope`, including an editor carrying the standard
+synchronized `document` member. Dialogs do not admit the app scope, and every
+canonical control outside it continues through Glasspane Material.
 
 The Material renderer's version is pinned by
 `companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
@@ -260,9 +258,9 @@ glyphs, and logical line numbers remain presentation-only.
 Its `jetpacs.scope` renderer emits canonical children directly through the
 shared dispatcher under the owning `jetpacs.components` scope. It creates no
 layout, semantics, state, or interaction owner. The composition root resolves
-canonical `text_input` to `JetpacsTextInputRenderer` and local canonical
-`editor` to `JetpacsEditorRenderer` only in that subtree; Glasspane Material
-dispatch continues outside it and for synchronized editors.
+canonical `text_input` to `JetpacsTextInputRenderer` and canonical local or
+synchronized `editor` to `JetpacsEditorRenderer` only in that subtree;
+Glasspane Material dispatch continues outside it.
 
 The existing Material gallery components deliberately exercise separate
 contracts:
@@ -283,12 +281,25 @@ and toolbar presentation. Both Glasspane's Material field and Jetpacs'
 Foundation field consume the same `TextInputController` and toolkit-neutral
 presentation binding. The Jetpacs mapping adds only its compact work surface,
 private palette, code-native decoration glyphs, selection colors, and
-syntax-role palette. The local `JetpacsEditor` consumes the same shared
-`EditorController` through the shared presentation binding, adding a
-Foundation work surface, syntax projection, shared-scroll logical line gutter,
-and local toolbar presentation without importing Material. Nodes carrying a
-synchronized `document` deliberately retain the Material fallback until the
-existing neutral editor host is connected in Phase 5.
+syntax-role palette. `JetpacsEditor` consumes the same shared
+`EditorController` through the shared presentation binding for both local and
+synchronized documents, adding a Foundation work surface, local syntax
+projection, shared-scroll logical line gutter, and toolbar presentation without
+importing Material. A synchronized binding exposes opening, ready, composing,
+awaiting-reconciliation, stale, offline-read-only, and closed phases. Only
+READY admits ordinary edits, saves, Enter, completion, or commands; an active
+composition may finish before a pending remote mirror is adopted atomically.
+Jetpacs deliberately does not request or present completion, authoritative
+annotations, eldoc, or editor commands until Phase 6.
+
+The application bridge projects authenticated wire state into that neutral
+lifecycle. Transport loss retains only the process-volatile displayed text and
+UTF-16 selection, makes it immediately read-only, and clears session-bound
+offers and annotations. A reconnect opens a fresh editor session from that
+display seed only when no explicit SYNCING surface snapshot replaced it. The
+wire engine remains the one scalar-offset, sequence, byte-limit, stale, and
+session-closure authority; neither renderer owns a second synchronization
+protocol.
 
 Action handoff and admission are distinct. A renderer synchronously learns
 whether the app host accepted an occurrence into the ordinary confirmation,

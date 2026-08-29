@@ -24,7 +24,10 @@ import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.ScalarPos
 import com.calebc42.ebp.wire.normalizeTextInput
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
 import com.calebc42.jetpacs.renderer.model.EditorMirror
+import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererEditorHost
 import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
@@ -306,15 +309,49 @@ class EditorController internal constructor(
     publishLocalState: (String) -> Unit,
     editorHost: RendererEditorHost,
     actionDispatcher: EditingActionDispatcher,
+    initialConnectionPhase: EditorConnectionPhase = editorHost.editorConnectionPhase.value,
+    initialMirrorAvailable: Boolean = true,
 ) {
     private var config = config
     private var publishLocalState = publishLocalState
     private var editorHost = editorHost
     private var actionDispatcher = actionDispatcher
+    private var connectionPhase = initialConnectionPhase
+    private var mirrorAvailable = initialMirrorAvailable
+    private var compositionActive = false
+    private var pendingMirror: EditorMirror? = null
+    private var lastMirrorEpoch = Long.MIN_VALUE
+    private var disposed = false
+
+    /** Explicit lifecycle for synchronized editors; local editors have none. */
+    var syncPhase by mutableStateOf(
+        if (config.document.isEmpty()) null
+        else synchronizedPhase(initialConnectionPhase, initialMirrorAvailable),
+    )
+        private set
+
+    /** Forces mirror adoption to rerun after a refused stale local splice. */
+    internal var reconciliationGeneration by mutableStateOf(0L)
+        private set
+
+    /** A synchronized field may finish an active composition, but not start
+     * ordinary edits while opening, stale, offline, or closed. */
+    val synchronizedFieldWritable: Boolean
+        get() = config.document.isEmpty() || syncPhase == EditorSyncPhase.READY ||
+            syncPhase == EditorSyncPhase.COMPOSING ||
+            (syncPhase == EditorSyncPhase.AWAITING_RECONCILIATION && compositionActive)
+
+    /** Save, Enter, completion, and toolbar actions require a settled session. */
+    val synchronizedActionsReady: Boolean
+        get() = config.document.isEmpty() || syncPhase == EditorSyncPhase.READY
 
     /** One atomic input transaction, preserving the platform change list. */
     val inputTransformation: InputTransformation = object : InputTransformation {
         override fun TextFieldBuffer.transformInput() {
+            if (!synchronizedFieldWritable) {
+                revertAllChanges()
+                return
+            }
             if (config.singleLine) removeLineFeeds()
             val next = asCharSequence().toString()
             if (exceedsByteLimit(next)) {
@@ -338,6 +375,53 @@ class EditorController internal constructor(
         this.actionDispatcher = actionDispatcher
     }
 
+    /** Reconcile connection readiness with whether a live session published a mirror. */
+    internal fun updateConnection(
+        phase: EditorConnectionPhase,
+        hasMirror: Boolean,
+    ) {
+        if (config.document.isEmpty() || disposed) return
+        connectionPhase = phase
+        mirrorAvailable = hasMirror
+        syncPhase = when (phase) {
+            EditorConnectionPhase.OFFLINE -> EditorSyncPhase.OFFLINE_READ_ONLY
+            EditorConnectionPhase.OPENING -> EditorSyncPhase.OPENING
+            EditorConnectionPhase.READY -> when {
+                !hasMirror -> EditorSyncPhase.OPENING
+                compositionActive && pendingMirror != null ->
+                    EditorSyncPhase.AWAITING_RECONCILIATION
+                compositionActive -> EditorSyncPhase.COMPOSING
+                syncPhase == EditorSyncPhase.STALE -> EditorSyncPhase.STALE
+                syncPhase == EditorSyncPhase.CLOSED -> EditorSyncPhase.CLOSED
+                else -> EditorSyncPhase.READY
+            }
+        }
+    }
+
+    /** Publish composition ownership and apply a deferred authority atomically at end. */
+    internal fun setCompositionActive(active: Boolean) {
+        if (config.document.isEmpty() || disposed || compositionActive == active) return
+        compositionActive = active
+        editorHost.publishEditorComposition(config.document, config.id, active)
+        if (active) {
+            if (connectionPhase == EditorConnectionPhase.READY) {
+                syncPhase = if (pendingMirror == null) {
+                    EditorSyncPhase.COMPOSING
+                } else {
+                    EditorSyncPhase.AWAITING_RECONCILIATION
+                }
+            }
+            return
+        }
+        val deferred = pendingMirror
+        pendingMirror = null
+        if (deferred != null) {
+            adoptMirror(deferred)
+        } else {
+            updateConnection(connectionPhase, mirrorAvailable)
+        }
+    }
+
     /** Current logical text and UTF-16 selection for renderer-owned chrome. */
     fun snapshot(): EditorValueSnapshot = EditorValueSnapshot(
         state.text.toString(),
@@ -351,6 +435,7 @@ class EditorController internal constructor(
         selectionStartUtf16: Int,
         selectionEndUtf16: Int,
     ) {
+        if (!synchronizedFieldWritable) return
         val normalized = if (config.singleLine) proposedText.replace("\n", "")
         else proposedText
         if (exceedsByteLimit(normalized)) return
@@ -367,16 +452,38 @@ class EditorController internal constructor(
 
     /** Adopt a remote authority publication without producing a local delta. */
     fun adoptMirror(mirror: EditorMirror) {
-        state.edit {
-            replace(0, length, mirror.text)
-            selection = if (mirror.selectionStartUtf16 != mirror.selectionEndUtf16) {
-                TextRange(
-                    mirror.selectionStartUtf16.coerceIn(0, mirror.text.length),
-                    mirror.selectionEndUtf16.coerceIn(0, mirror.text.length),
-                )
-            } else {
-                TextRange(mirror.cursorUtf16.coerceIn(0, mirror.text.length))
+        if (mirror.epoch < lastMirrorEpoch || disposed) return
+        lastMirrorEpoch = mirror.epoch
+        mirrorAvailable = true
+        if (compositionActive) {
+            pendingMirror = mirror
+            if (connectionPhase == EditorConnectionPhase.READY) {
+                syncPhase = EditorSyncPhase.AWAITING_RECONCILIATION
             }
+            return
+        }
+        pendingMirror = null
+        val targetSelection = if (
+            mirror.selectionStartUtf16 != mirror.selectionEndUtf16
+        ) {
+            TextRange(
+                mirror.selectionStartUtf16.coerceIn(0, mirror.text.length),
+                mirror.selectionEndUtf16.coerceIn(0, mirror.text.length),
+            )
+        } else {
+            TextRange(mirror.cursorUtf16.coerceIn(0, mirror.text.length))
+        }
+        val textChanged = state.text.toString() != mirror.text
+        if (textChanged || state.selection != targetSelection) {
+            state.edit {
+                if (textChanged) replace(0, length, mirror.text)
+                selection = targetSelection
+            }
+        }
+        syncPhase = when (connectionPhase) {
+            EditorConnectionPhase.OFFLINE -> EditorSyncPhase.OFFLINE_READ_ONLY
+            EditorConnectionPhase.OPENING -> EditorSyncPhase.OPENING
+            EditorConnectionPhase.READY -> EditorSyncPhase.READY
         }
     }
 
@@ -405,7 +512,35 @@ class EditorController internal constructor(
             base.codePointCount(start, deletedEnd),
             splice.inserted,
             base,
-        )
+        ) { outcome -> handleEditOutcome(outcome) }
+    }
+
+    private fun handleEditOutcome(outcome: EditorEditOutcome) {
+        if (disposed || config.document.isEmpty()) return
+        when (outcome) {
+            EditorEditOutcome.ACCEPTED -> Unit
+            EditorEditOutcome.RECONCILE -> {
+                syncPhase = if (compositionActive) {
+                    EditorSyncPhase.AWAITING_RECONCILIATION
+                } else {
+                    EditorSyncPhase.STALE
+                }
+                reconciliationGeneration++
+            }
+            EditorEditOutcome.CLOSED -> syncPhase = EditorSyncPhase.CLOSED
+        }
+    }
+
+    /** End composition ownership and expose the terminal lifecycle on disposal. */
+    internal fun dispose() {
+        if (disposed) return
+        disposed = true
+        if (config.document.isNotEmpty() && compositionActive) {
+            compositionActive = false
+            editorHost.publishEditorComposition(config.document, config.id, false)
+        }
+        pendingMirror = null
+        if (config.document.isNotEmpty()) syncPhase = EditorSyncPhase.CLOSED
     }
 
     private fun exceedsByteLimit(text: String): Boolean {
@@ -415,6 +550,19 @@ class EditorController internal constructor(
             config.maxEditorBytes
         }
         return EditorSession.jcsUtf8Bytes(text) > limit
+    }
+
+    private fun synchronizedPhase(
+        phase: EditorConnectionPhase,
+        hasMirror: Boolean,
+    ): EditorSyncPhase = when (phase) {
+        EditorConnectionPhase.OFFLINE -> EditorSyncPhase.OFFLINE_READ_ONLY
+        EditorConnectionPhase.OPENING -> EditorSyncPhase.OPENING
+        EditorConnectionPhase.READY -> if (hasMirror) {
+            EditorSyncPhase.READY
+        } else {
+            EditorSyncPhase.OPENING
+        }
     }
 }
 
@@ -426,13 +574,14 @@ fun rememberEditorController(
     initialSelection: TextRange,
     config: EditorControllerConfig,
     mirror: EditorMirror?,
+    connectionPhase: EditorConnectionPhase,
     requestCompletion: Boolean,
     enabled: Boolean,
     readOnly: Boolean,
     publishLocalState: (String) -> Unit,
     editorHost: RendererEditorHost,
     actionDispatcher: EditingActionDispatcher,
-): EditorController = key(presentationEpoch) {
+): EditorController = key(presentationEpoch, config.id, config.document) {
     val state = rememberTextFieldState(initialText, initialSelection)
     val controller = remember(state) {
         EditorController(
@@ -441,23 +590,40 @@ fun rememberEditorController(
             publishLocalState,
             editorHost,
             actionDispatcher,
+            initialConnectionPhase = connectionPhase,
+            initialMirrorAvailable = mirror != null,
         )
     }
     SideEffect {
         controller.update(config, publishLocalState, editorHost, actionDispatcher)
+        controller.updateConnection(connectionPhase, mirror != null)
+        controller.setCompositionActive(state.composition != null)
     }
-    androidx.compose.runtime.LaunchedEffect(controller, mirror?.epoch) {
+    androidx.compose.runtime.LaunchedEffect(
+        controller,
+        mirror?.epoch,
+        controller.reconciliationGeneration,
+    ) {
         mirror?.let(controller::adoptMirror)
     }
     val selection = state.selection
     val text = state.text.toString()
+    val syncPhase = controller.syncPhase
     if (config.document.isNotEmpty()) {
         androidx.compose.runtime.LaunchedEffect(
             controller,
             config.document,
             config.id,
             selection,
+            connectionPhase,
+            syncPhase,
         ) {
+            if (connectionPhase != EditorConnectionPhase.READY ||
+                (syncPhase != EditorSyncPhase.READY &&
+                    syncPhase != EditorSyncPhase.COMPOSING)
+            ) {
+                return@LaunchedEffect
+            }
             delay(90)
             editorHost.publishEditorCaret(
                 config.document,
@@ -468,7 +634,10 @@ fun rememberEditorController(
             )
         }
     }
-    if (requestCompletion && config.document.isNotEmpty() && enabled && !readOnly) {
+    if (requestCompletion && config.document.isNotEmpty() && enabled && !readOnly &&
+        connectionPhase == EditorConnectionPhase.READY &&
+        controller.syncPhase == EditorSyncPhase.READY
+    ) {
         androidx.compose.runtime.LaunchedEffect(
             controller,
             config.document,
@@ -480,6 +649,7 @@ fun rememberEditorController(
             editorHost.requestEditorCompletion(config.document, config.id)
         }
     }
+    DisposableEffect(controller) { onDispose(controller::dispose) }
     controller
 }
 

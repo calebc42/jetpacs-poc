@@ -243,6 +243,7 @@ class CompanionEngine(
         editors.values.forEach { it.state = EditorSession.State.CLOSED }
         editors.clear()
         surfaceEditors.clear()
+        syncingEditorSeeds.clear()
     }
 
     /** The queue_seq this engine's connection put in flight, if any. */
@@ -1372,15 +1373,32 @@ class CompanionEngine(
         for ((identity, node) in newEditors) {
             val document = node.reqString("document")
             next[identity] = document
+            if (state == SessionState.SYNCING) {
+                // A full snapshot accepted by this connection explicitly
+                // replaces any process-volatile display seed (§19).
+                syncingEditorSeeds[document to identity] = EditorSeed(
+                    node.stringOr("value"),
+                    ScalarPos(0),
+                    ScalarPos(0),
+                    ScalarPos(0),
+                )
+            }
             val existed = prev[identity]
             if (existed == document) continue // identity preserved
-            if (existed != null) closeEditor(existed, identity) // document changed
+            if (existed != null) {
+                syncingEditorSeeds.remove(existed to identity)
+                closeEditor(existed, identity) // document changed
+            }
             if (state == SessionState.READY)
                 openEditor(document, identity, node.stringOr("value"))
         }
         // Editors that vanished from this surface close.
-        for ((identity, document) in prev)
-            if (identity !in next) closeEditor(document, identity)
+        for ((identity, document) in prev) {
+            if (identity !in next) {
+                syncingEditorSeeds.remove(document to identity)
+                closeEditor(document, identity)
+            }
+        }
         if (next.isEmpty()) surfaceEditors.remove(surface)
         else surfaceEditors[surface] = next
     }
@@ -1412,14 +1430,33 @@ class CompanionEngine(
                 // can only be a stale record.
                 if (editors.containsKey(document to identity)) continue
                 map[identity] = document
-                openEditor(document, identity, node.stringOr("value"))
+                val key = document to identity
+                val seed = syncingEditorSeeds[key]
+                    ?: editorSeedProvider?.invoke(document, identity)
+                    ?: EditorSeed(
+                        node.stringOr("value"),
+                        ScalarPos(0),
+                        ScalarPos(0),
+                        ScalarPos(0),
+                    )
+                openEditor(
+                    document,
+                    identity,
+                    seed.text,
+                    seed.cursor,
+                    seed.selectionStart,
+                    seed.selectionEnd,
+                )
             }
             if (map.isNotEmpty()) surfaceEditors[surface] = map
         }
+        syncingEditorSeeds.clear()
+        editorSetListener?.invoke(editors.keys.toSet())
     }
 
     private fun closeSurfaceEditors(surface: String) {
         surfaceEditors.remove(surface)?.forEach { (editorId, document) ->
+            syncingEditorSeeds.remove(document to editorId)
             closeEditor(document, editorId)
         }
     }
@@ -1924,10 +1961,16 @@ class CompanionEngine(
 
     // Keyed by (document, editor_id); the Companion is the shadow's owner.
     private val editors = LinkedHashMap<Pair<String, String>, EditorSession>()
+    /** Explicit seeds accepted during this connection's SYNCING phase. */
+    private val syncingEditorSeeds = LinkedHashMap<Pair<String, String>, EditorSeed>()
 
     /** Re-render hook: the session's shadow changed from an inbound apply or
      * a resync (the host editor must reflect it). */
     var editorListener: ((EditorSession) -> Unit)? = null
+    /** Process-volatile seed retained by a presentation across connections. */
+    var editorSeedProvider: ((String, String) -> EditorSeed?)? = null
+    /** Complete live editor key set after the READY opening pass. */
+    var editorSetListener: ((Set<Pair<String, String>>) -> Unit)? = null
     /** Close hook: (document, editorId) after the session is gone. The
      * counterpart to [editorListener] — a display that publishes per-editor
      * state on every apply needs the one event that ENDS it. */
@@ -1948,11 +1991,20 @@ class CompanionEngine(
      * by the host when a synchronized editor node first becomes present in
      * READY (the surface-node lifecycle wiring is a later atom). */
     @Synchronized
-    fun openEditor(document: String, editorId: String, seed: String,
-                   cursor: ScalarPos = ScalarPos(0)): EditorSession {
+    fun openEditor(
+        document: String,
+        editorId: String,
+        seed: String,
+        cursor: ScalarPos = ScalarPos(0),
+        selectionStart: ScalarPos? = null,
+        selectionEnd: ScalarPos? = null,
+    ): EditorSession {
         val s = EditorSession(document, editorId, EbpAuth.generateNonce())
         s.shadow = seed
-        s.setCaret(ScalarPos(cursor.v.coerceIn(0, s.scalarLength())), null, null)
+        val boundedCursor = ScalarPos(cursor.v.coerceIn(0, s.scalarLength()))
+        if (!s.setCaret(boundedCursor, selectionStart, selectionEnd)) {
+            s.setCaret(boundedCursor, null, null)
+        }
         editors[document to editorId] = s
         emit(notification("edit.open", buildJsonObject {
             put("document", document)
@@ -2047,6 +2099,15 @@ class CompanionEngine(
                 put("sel_end", s.selEnd)
             }
         }))
+    }
+
+    /** Record platform composition ownership on the serialized editor session. */
+    @Synchronized
+    fun setEditorComposing(document: String, editorId: String, active: Boolean): Boolean {
+        val s = editors[document to editorId] ?: return false
+        if (s.state != EditorSession.State.OPEN || state != SessionState.READY) return false
+        s.composing = active
+        return true
     }
 
     /** SPEC 19.1/19.3 (LD-4): convert a Compose caret to the scalar domain
@@ -2219,6 +2280,14 @@ class CompanionEngine(
         val cursor = cursorL.toInt()
         val selStart = selStartL?.toInt()
         val selEnd = selEndL?.toInt()
+        // SPEC 19.4: a remote text splice must not corrupt a platform-owned
+        // composition. The Companion is the serialization point, so the
+        // competing apply loses with the ordinary typed stale outcome.
+        if (s.composing)
+            return respondResult(id, buildJsonObject {
+                put("status", "stale")
+                put("seq", s.seq)
+            })
         // SPEC 19.4: apply only at seq+1 with a valid splice; otherwise a
         // typed stale result leaves this (winning) session OPEN.
         if (seq != s.seq + 1)

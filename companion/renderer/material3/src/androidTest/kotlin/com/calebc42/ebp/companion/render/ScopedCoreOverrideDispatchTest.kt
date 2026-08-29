@@ -13,7 +13,6 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -36,6 +35,8 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.jetpacs.renderer.model.CompletionOffer
 import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
 import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererActionRequest
@@ -189,7 +190,7 @@ class ScopedCoreOverrideDispatchTest {
 
         compose.onNodeWithText("Local editor override").assertIsDisplayed()
         compose.onNodeWithText("Synchronized fallback")
-            .assert(hasSetTextAction())
+            .assertIsDisplayed()
         compose.onAllNodesWithText("local seed").assertCountEquals(0)
     }
 
@@ -305,6 +306,7 @@ private class InertMaterialHost : MaterialRendererHost {
     override val inputDisplays = MutableStateFlow<Map<Pair<String, String>, InputDisplay>>(emptyMap())
     override val maxFieldBytes = 65_536
     override val maxEditorBytes = 65_536
+    override val editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.READY)
     override val editorMirrors = MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
     override val editorAnnotations =
         MutableStateFlow<Map<Pair<String, String>, EditorAnnotationState>>(emptyMap())
@@ -359,6 +361,7 @@ private class InertMaterialHost : MaterialRendererHost {
         deletedScalars: Int,
         inserted: String,
         base: String,
+        onOutcome: (EditorEditOutcome) -> Unit,
     ) = Unit
     override fun publishEditorCaret(
         document: String,

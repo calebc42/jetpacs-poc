@@ -6,23 +6,27 @@ package com.calebc42.jetpacs.renderer.jetpacs
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.style.MutableStyleState
+import androidx.compose.foundation.style.styleable
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalNodeOverride
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.jetpacs.renderer.compose.rememberEditorBinding
+import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
 import kotlinx.serialization.json.JsonObject
 
-/** Jetpacs-scoped presentation override for the local tier of canonical `editor`. */
+/** Jetpacs-scoped presentation override for canonical local and synchronized editors. */
 object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
     override val id: String = "jetpacs.components.editor.compose"
     override val designScope: String = JETPACS_COMPONENTS_EXTENSION
     override val nodeTypes: Set<String> = setOf("editor")
-
-    /** Synchronized editing keeps the mature Material path until Phase 5. */
-    override fun appliesTo(node: JsonObject): Boolean = "document" !in node
 
     @Composable
     override fun render(
@@ -30,11 +34,14 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
         context: ComposeNodeRenderContext,
         modifier: Modifier,
     ) {
-        val binding = rememberEditorBinding(node, context)
+        // Completion, annotations, and editor commands remain Phase 6. The
+        // shared binding still owns text synchronization, but this renderer
+        // does not start a completion request it cannot yet present.
+        val binding = rememberEditorBinding(node, context, requestCompletion = false)
         val presentation = binding.presentation
         val syntaxColors = JetpacsTheme.syntax
         val outputTransformation = remember(presentation.syntax, syntaxColors) {
-            presentation.syntax?.let {
+            presentation.syntax?.takeIf { presentation.document == null }?.let {
                 JetpacsSyntaxOutputTransformation(it, syntaxColors)
             }
         }
@@ -48,14 +55,14 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                     controller = binding.controller,
                     dispatch = { context.action(it) },
                     onCommand = {},
-                    enabled = binding.interactive,
+                    enabled = binding.actionsEnabled,
                 )
             }
             JetpacsEditor(
                 state = binding.controller.state,
                 modifier = binding.fieldModifier(modifier.fillMaxWidth()),
                 enabled = presentation.enabled,
-                readOnly = presentation.readOnly,
+                readOnly = binding.effectiveReadOnly,
                 lineNumbers = presentation.lineNumbers,
                 chromeless = presentation.chromeless,
                 inputTransformation = binding.controller.inputTransformation,
@@ -64,13 +71,43 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                 onKeyboardAction = { binding.enter() },
                 lineLimits = presentation.lineLimits,
             )
+            binding.syncPhase?.let { phase ->
+                JetpacsEditorSyncStatus(phase)
+            }
             if (presentation.onSave != null) {
                 JetpacsAction(
                     label = "Save",
                     onClick = { binding.save() },
-                    enabled = binding.interactive,
+                    enabled = binding.actionsEnabled,
                 )
             }
         }
     }
+}
+
+/** Visible lifecycle copy for every synchronized state except settled READY. */
+internal fun editorSyncStatusText(phase: EditorSyncPhase): String? = when (phase) {
+    EditorSyncPhase.OPENING -> "Opening synchronized editor…"
+    EditorSyncPhase.READY -> null
+    EditorSyncPhase.COMPOSING -> "Composing text…"
+    EditorSyncPhase.AWAITING_RECONCILIATION -> "Reconciling with Emacs…"
+    EditorSyncPhase.STALE -> "Editor changed remotely; restoring synchronized text…"
+    EditorSyncPhase.OFFLINE_READ_ONLY ->
+        "Emacs is offline — synchronized editor is read-only"
+    EditorSyncPhase.CLOSED -> "Synchronized editor closed"
+}
+
+@Composable
+internal fun JetpacsEditorSyncStatus(phase: EditorSyncPhase) {
+    val text = editorSyncStatusText(phase) ?: return
+    val styleState = remember { MutableStyleState(null) }
+    BasicText(
+        text = text,
+        style = JetpacsTheme.typography.fieldSupporting.copy(
+            color = JetpacsTheme.colors.mutedContent,
+        ),
+        modifier = Modifier
+            .styleable(styleState, JetpacsTheme.styles.editorSyncStatus)
+            .semantics { liveRegion = LiveRegionMode.Polite },
+    )
 }

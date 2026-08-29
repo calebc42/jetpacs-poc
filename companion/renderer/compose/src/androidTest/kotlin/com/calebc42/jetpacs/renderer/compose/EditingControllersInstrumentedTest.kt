@@ -18,6 +18,8 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.jetpacs.renderer.model.CompletionOffer
 import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
 import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererEditorHost
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -137,7 +139,15 @@ class EditingControllersInstrumentedTest {
                     maxFieldBytes = 65_536,
                     maxEditorBytes = 65_536,
                 ),
-                mirror = null,
+                mirror = EditorMirror(
+                    text = "a😀b",
+                    cursorUtf16 = 3,
+                    selectionStartUtf16 = 1,
+                    selectionEndUtf16 = 3,
+                    sequence = 0,
+                    epoch = 1,
+                ),
+                connectionPhase = EditorConnectionPhase.READY,
                 requestCompletion = false,
                 enabled = true,
                 readOnly = false,
@@ -176,6 +186,7 @@ private data class InstrumentedEdit(
 
 private class InstrumentedEditorHost : RendererEditorHost {
     override val maxEditorBytes = 65_536
+    override val editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.READY)
     override val editorMirrors =
         MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
     override val editorAnnotations =
@@ -209,8 +220,10 @@ private class InstrumentedEditorHost : RendererEditorHost {
         deletedScalars: Int,
         inserted: String,
         base: String,
+        onOutcome: (EditorEditOutcome) -> Unit,
     ) {
         edits += InstrumentedEdit(start, deletedScalars, inserted, base)
+        onOutcome(EditorEditOutcome.ACCEPTED)
     }
     override fun publishEditorCaret(
         document: String,

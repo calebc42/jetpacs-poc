@@ -1044,7 +1044,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val presentation = binding.presentation
     val id = presentation.id
     val document = presentation.document.orEmpty()
-    val readOnly = presentation.readOnly
+    val readOnly = binding.effectiveReadOnly
     val enabled = presentation.enabled
     val onSave = presentation.onSave
     val wantsCompletion = presentation.complete
@@ -1084,7 +1084,11 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         }
     }
     val offers by ctx.bridge.completionOffers.collectAsState()
-    val offer = if (wantsCompletion) offers[document to id] else null
+    val offer = if (wantsCompletion && binding.actionsEnabled) {
+        offers[document to id]
+    } else {
+        null
+    }
     val offerViewMap by ctx.bridge.completionOfferViews.collectAsState()
     // R5 (amendment #172): the lazily fetched candidate doc, observed
     // like the offer views beside it.
@@ -1097,7 +1101,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         presentation.toolbar?.let { items ->
             EditorToolbar(
                 items = items,
-                enabled = binding.interactive, // §17.4: disabled/read-only inert
+                enabled = binding.actionsEnabled, // §17.4: disabled/read-only inert
                 value = {
                     TextFieldValue(
                         value.text,
@@ -1119,7 +1123,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     // T2/LD-4: cursor is the ACTIVE selection end (where the
                     // caret is); a backward drag has start > end and the
                     // engine orders the pair during scalar conversion.
-                    if (document.isNotEmpty())
+                    if (document.isNotEmpty() && binding.actionsEnabled)
                         ctx.editorCommand(document, id, command,
                             value.selectionEndUtf16,
                             value.selectionStartUtf16,
@@ -1208,7 +1212,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     onClick = { binding.save() },
                     // §17.4: a read-only or disabled editor MUST NOT
                     // dispatch — same rule the commit path pins.
-                    enabled = binding.interactive) {
+                    enabled = binding.actionsEnabled) {
                     Icon(IconMap.get("save"), contentDescription = "Save")
                 }
             }

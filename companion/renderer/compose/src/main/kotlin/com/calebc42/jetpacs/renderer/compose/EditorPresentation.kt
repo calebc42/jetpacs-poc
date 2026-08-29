@@ -13,9 +13,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.semantics.isEditable
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -55,21 +59,46 @@ class EditorBinding internal constructor(
     val controller: EditorController,
     val focusRequester: FocusRequester,
 ) {
-    /** Whether user edits and editor actions are currently allowed. */
-    val interactive: Boolean get() = presentation.enabled && !presentation.readOnly
+    /** Effective read-only state, including synchronized lifecycle gates. */
+    val effectiveReadOnly: Boolean
+        get() = presentation.readOnly || !controller.synchronizedFieldWritable
 
-    /** Attach the identity-scoped focus requester to the editable owner. */
-    fun fieldModifier(modifier: Modifier): Modifier = modifier.focusRequester(focusRequester)
+    /** Whether the field itself may accept a text transaction. */
+    val fieldEditable: Boolean
+        get() = presentation.enabled && !effectiveReadOnly
+
+    /** Whether save, Enter, completion, and toolbar actions are allowed. */
+    val actionsEnabled: Boolean
+        get() = presentation.enabled && !presentation.readOnly &&
+            controller.synchronizedActionsReady
+
+    /** Compatibility name for existing presentation code. */
+    val interactive: Boolean get() = actionsEnabled
+
+    /** Explicit synchronized lifecycle; null for an ordinary local editor. */
+    val syncPhase: EditorSyncPhase? get() = controller.syncPhase
+
+    /**
+     * Attach live editability semantics and the identity-scoped focus requester.
+     *
+     * The runtime semantics must precede the authored EBP modifier so a
+     * synchronized lifecycle transition can override its static `read_only`
+     * projection without clearing the field's text and selection actions.
+     */
+    fun fieldModifier(modifier: Modifier): Modifier = Modifier
+        .semantics { isEditable = fieldEditable }
+        .then(modifier)
+        .focusRequester(focusRequester)
 
     /** Dispatch `on_save` with the occurrence-time full editor value. */
-    fun save(): ActionHandoff = if (interactive) {
+    fun save(): ActionHandoff = if (actionsEnabled) {
         controller.dispatchValueAction(presentation.onSave)
     } else {
         ActionHandoff.Ignored
     }
 
     /** Dispatch `on_enter` with the occurrence-time full editor value. */
-    fun enter(): ActionHandoff = if (interactive) {
+    fun enter(): ActionHandoff = if (actionsEnabled) {
         controller.dispatchValueAction(presentation.onEnter)
     } else {
         ActionHandoff.Ignored
@@ -81,12 +110,14 @@ class EditorBinding internal constructor(
  *
  * A local editor uses `max_field_bytes` and may reconcile an explicitly
  * published retained draft. A synchronized editor uses `max_editor_bytes` and
- * adopts only the host mirror; its Jetpacs presentation remains Phase 5 work.
+ * adopts only the host mirror. [requestCompletion] lets a presentation defer
+ * the candidate UI without starting requests it cannot display.
  */
 @Composable
 fun rememberEditorBinding(
     node: JsonObject,
     context: ComposeNodeRenderContext,
+    requestCompletion: Boolean = true,
 ): EditorBinding {
     val presentation = editorPresentationOf(node)
     val id = presentation.id
@@ -99,6 +130,7 @@ fun rememberEditorBinding(
     }
     val initialText = stored ?: node.editorString("value").orEmpty()
     val mirrors by context.editorHost.editorMirrors.collectAsState()
+    val connectionPhase by context.editorHost.editorConnectionPhase.collectAsState()
     val mirror = presentation.document?.let { mirrors[it to id] }
     val controller = rememberEditorController(
         presentationEpoch = context.epochOf(id),
@@ -114,7 +146,12 @@ fun rememberEditorBinding(
             maxEditorBytes = context.editorHost.maxEditorBytes,
         ),
         mirror = mirror,
-        requestCompletion = presentation.complete,
+        connectionPhase = if (presentation.document == null) {
+            EditorConnectionPhase.READY
+        } else {
+            connectionPhase
+        },
+        requestCompletion = requestCompletion && presentation.complete,
         enabled = presentation.enabled,
         readOnly = presentation.readOnly,
         publishLocalState = { context.state(id, JsonPrimitive(it)) },

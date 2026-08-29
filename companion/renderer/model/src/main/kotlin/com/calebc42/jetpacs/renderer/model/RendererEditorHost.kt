@@ -17,6 +17,9 @@ interface RendererEditorHost {
     /** Negotiated ceiling for one JCS-encoded synchronized editor document. */
     val maxEditorBytes: Int
 
+    /** Exact connection readiness used to make synchronized fields read-only. */
+    val editorConnectionPhase: StateFlow<EditorConnectionPhase>
+
     /** Latest synchronized text/selection authority by document and editor ID. */
     val editorMirrors: StateFlow<Map<Pair<String, String>, EditorMirror>>
 
@@ -62,7 +65,11 @@ interface RendererEditorHost {
         deletedScalars: Int,
         inserted: String,
         base: String,
+        onOutcome: (EditorEditOutcome) -> Unit = {},
     )
+
+    /** Report whether the platform currently owns an IME composition. */
+    fun publishEditorComposition(document: String, editorId: String, active: Boolean) {}
 
     /** Publish current UTF-16 caret/selection positions for host conversion. */
     fun publishEditorCaret(

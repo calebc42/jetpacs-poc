@@ -44,6 +44,14 @@ fun utf16PosIn(text: String, p: ScalarPos): Utf16Pos {
 /** One half-open scalar splice, as EditorSession.diff derives it. */
 data class Splice(val start: ScalarPos, val del: Int, val text: String)
 
+/** Process-volatile display seed used when a new connection opens a session. */
+data class EditorSeed(
+    val text: String,
+    val cursor: ScalarPos,
+    val selectionStart: ScalarPos,
+    val selectionEnd: ScalarPos,
+)
+
 class EditorSession(
     val document: String,
     val editorId: String,
@@ -52,6 +60,8 @@ class EditorSession(
     enum class State { OPEN, STALE, CLOSED }
     var state = State.OPEN
     var seq = 0L
+    /** True only while the platform owns an in-flight IME composition. */
+    var composing = false
     /** Amendments #170/#171 (R4): the survive-typing offer; dies with the
      * session by construction. */
     val offer = CompletionOfferTracker()

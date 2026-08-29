@@ -600,6 +600,80 @@ class EditorLifecycleTest {
     }
 
     @Test
+    fun cachedReconnectUsesProcessVolatileDisplaySeedAndSelection() {
+        val out = mutableListOf<JsonObject>()
+        val store = SurfaceStore(16, 1024)
+        fun connect(): CompanionEngine {
+            val e = CompanionEngine(CompanionConfig(
+                serverName = "kat", serverVersion = "1",
+                pairings = mapOf(katPid to katToken),
+                supportedCapabilities = setOf("editor.sync"),
+                surfaceProfiles = buildJsonObject {
+                    putJsonObject("app") {
+                        put("node_types", JsonArray(listOf("editor").map(::JsonPrimitive)))
+                        put("builtins", JsonArray(emptyList()))
+                        put("features", JsonArray(emptyList()))
+                        put("extensions", JsonArray(emptyList()))
+                    }
+                },
+                limits = testLimits("max_editor_sessions" to 8,
+                    "max_editor_bytes" to 65_536),
+                nonceSource = { katSn }), store) { bytes ->
+                FrameDecoder().let { d -> d.feed(bytes) { out.add(it) } }
+            }
+            e.feed(frame(request("h1", "session.hello",
+                EbpAuth.helloParams("t", "1", katPid, katCn, listOf("editor.sync")))))
+            e.feed(frame(request("h2", "auth.response",
+                EbpAuth.authParams(katPid, katCn, katSn, katToken))))
+            return e
+        }
+
+        val first = connect()
+        first.feed(frame(request("r1", "session.ready", JsonObject(emptyMap()))))
+        push(first, out, "app:main", 1, editorNode("body", "doc:1", "authored"))
+        first.close("transport closed")
+
+        out.clear()
+        val second = connect()
+        second.editorSeedProvider = { document, editorId ->
+            assertEquals("doc:1", document)
+            assertEquals("body", editorId)
+            EditorSeed(
+                text = "visible😀draft",
+                cursor = ScalarPos(8),
+                selectionStart = ScalarPos(7),
+                selectionEnd = ScalarPos(8),
+            )
+        }
+        second.feed(frame(request("r2", "session.ready", JsonObject(emptyMap()))))
+
+        val reopened = out.method("edit.open").single().reqObj("params")
+        assertEquals("visible😀draft", reopened.reqString("text"))
+        assertEquals(8L, reopened.reqLong("cursor"))
+        assertEquals(7L, reopened.reqLong("sel_start"))
+        assertEquals(8L, reopened.reqLong("sel_end"))
+    }
+
+    @Test
+    fun explicitSyncingSnapshotOverridesProcessVolatileDisplaySeed() {
+        val out = mutableListOf<JsonObject>()
+        val engine = engine(out, toReady = false)
+        engine.editorSeedProvider = { _, _ ->
+            EditorSeed("visible draft", ScalarPos(7), ScalarPos(0), ScalarPos(7))
+        }
+
+        push(engine, out, "app:main", 1,
+            editorNode("body", "doc:1", "authoritative snapshot"))
+        engine.feed(frame(request("r1", "session.ready", JsonObject(emptyMap()))))
+
+        val opened = out.method("edit.open").single().reqObj("params")
+        assertEquals("authoritative snapshot", opened.reqString("text"))
+        assertEquals(0L, opened.reqLong("cursor"))
+        assertEquals(0L, opened.reqLong("sel_start"))
+        assertEquals(0L, opened.reqLong("sel_end"))
+    }
+
+    @Test
     fun aSecondSurfaceClaimingTheSameEditorIsRefused() {
         // Audit §3.3 (amendment #104): the second claim silently overwrote
         // the first surface's session with NO edit.close — Emacs then got

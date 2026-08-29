@@ -18,6 +18,7 @@ import com.calebc42.ebp.wire.ActionAdmissionOutcome
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.CompanionConfig
 import com.calebc42.ebp.wire.EbpAuth
+import com.calebc42.ebp.wire.EditorSeed
 import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.ScalarPos
@@ -31,6 +32,8 @@ import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.jetpacs.renderer.model.CompletionCandidate
 import com.calebc42.jetpacs.renderer.model.CompletionOffer
 import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
 import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererActionContext
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
@@ -71,6 +74,14 @@ internal fun offerEpochCurrent(liveEpoch: Long?, epoch: Long): Boolean =
 /** CHALLENGED is only a pairing claim; authentication begins at SYNCING. */
 internal fun isAuthenticatedConnectionState(state: SessionState): Boolean =
     state == SessionState.SYNCING || state == SessionState.READY
+
+/** Project the wire session into the smaller lifecycle a renderer may trust. */
+internal fun editorConnectionPhaseOf(state: SessionState?): EditorConnectionPhase =
+    when (state) {
+        SessionState.SYNCING -> EditorConnectionPhase.OPENING
+        SessionState.READY -> EditorConnectionPhase.READY
+        else -> EditorConnectionPhase.OFFLINE
+    }
 
 private const val MAX_INPUT_STATE_BYTES = 262_144L
 
@@ -251,6 +262,9 @@ class DeviceBridge(
     private val authenticatedConnection =
         AuthenticatedConnectionTracker<CompanionEngine>()
     val connected: StateFlow<Boolean> get() = authenticatedConnection.connected
+    private val _editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.OFFLINE)
+    override val editorConnectionPhase: StateFlow<EditorConnectionPhase>
+        get() = _editorConnectionPhase
 
     private val config = CompanionConfig(
         serverName = "ebp-companion",
@@ -391,6 +405,10 @@ class DeviceBridge(
                         variantEngineRoute.advanceTo(generation) { prior ->
                             prior.close("superseded by newer connection")
                         }
+                        // Newest-wins ends the prior READY authority at
+                        // accept time, before the replacement authenticates.
+                        // Freeze synchronized fields across that entire gap.
+                        _editorConnectionPhase.value = EditorConnectionPhase.OFFLINE
                         current?.runCatching { close() }
                         current = socket
                         // Neither may the CONNECTION thread. `serve` sets up
@@ -784,6 +802,18 @@ class DeviceBridge(
         MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
     override val editorMirrors: StateFlow<Map<Pair<String, String>, EditorMirror>>
         get() = _editorMirrors
+    private val retainedEditorSeeds =
+        ConcurrentHashMap<Pair<String, String>, EditorSeed>()
+
+    /** Copy one serialized session into the process-volatile reconnect seed. */
+    private fun rememberEditorSeed(s: EditorSession) {
+        retainedEditorSeeds[s.document to s.editorId] = EditorSeed(
+            s.shadow,
+            ScalarPos(s.cursor),
+            ScalarPos(s.selStart),
+            ScalarPos(s.selEnd),
+        )
+    }
 
     /** Publish S as the display's text authority. Caret converts scalar ->
      * UTF-16 against the shadow through the one named conversion pair.
@@ -791,6 +821,7 @@ class DeviceBridge(
      * withEditor block — session reads are never torn. */
     private fun publishMirror(s: EditorSession) {
         val text = s.shadow
+        rememberEditorSeed(s)
         val m = EditorMirror(
             text,
             utf16PosIn(text, ScalarPos(s.cursor)).v,
@@ -799,6 +830,23 @@ class DeviceBridge(
             s.seq, mirrorEpoch.incrementAndGet())
         _editorMirrors.value =
             _editorMirrors.value + ((s.document to s.editorId) to m)
+    }
+
+    /** Return the latest surviving displayed session seed for reconnect. */
+    private fun retainedEditorSeed(document: String, editorId: String): EditorSeed? =
+        retainedEditorSeeds[document to editorId]
+
+    /** Prune volatile display state that no accepted editor still owns. */
+    private fun retainLiveEditors(keys: Set<Pair<String, String>>) {
+        _editorMirrors.update { mirrors -> mirrors.filterKeys(keys::contains) }
+        _editorAnnotations.update { values -> values.filterKeys(keys::contains) }
+        _completionOffers.update { values -> values.filterKeys(keys::contains) }
+        _offerViews.update { values -> values.filterKeys(keys::contains) }
+        _candidateDocs.update { values -> values.filterKeys(keys::contains) }
+        retainedEditorSeeds.keys.filter { it !in keys }.forEach(retainedEditorSeeds::remove)
+        candidateDocSlots.keys.filter { it !in keys }.forEach { key ->
+            candidateDocSlots.remove(key)?.retire()
+        }
     }
 
     // SPEC 19.5: annotations, keyed (document, editor_id) exactly like the
@@ -849,6 +897,7 @@ class DeviceBridge(
         _completionOffers.update { it - key }
         _offerViews.update { it - key }
         _editorAnnotations.update { it - key }
+        retainedEditorSeeds.remove(key)
         // The editor is gone for good: REMOVE the slot instance (the
         // in-place retire is for offer death under a live editor). A
         // conclusion still in flight lands on its captured instance,
@@ -1114,24 +1163,44 @@ class DeviceBridge(
         deletedScalars: Int,
         inserted: String,
         base: String,
+        onOutcome: (EditorEditOutcome) -> Unit,
     ) {
         dispatchExecutor.execute {
-            val e = engine ?: return@execute
-            if (!e.localEditorEdit(
-                    document,
-                    editorId,
-                    start,
-                    deletedScalars,
-                    inserted,
-                    base,
-                )
-            ) {
-                e.withEditor(document, editorId) { publishMirror(it) }
+            val outcome = runCatching {
+                val e = engine ?: return@runCatching EditorEditOutcome.CLOSED
+                if (e.localEditorEdit(
+                        document,
+                        editorId,
+                        start,
+                        deletedScalars,
+                        inserted,
+                        base,
+                    )
+                ) {
+                    e.withEditor(document, editorId, ::rememberEditorSeed)
+                    EditorEditOutcome.ACCEPTED
+                } else if (e.withEditor(document, editorId) { publishMirror(it) } != null) {
+                    EditorEditOutcome.RECONCILE
+                } else {
+                    EditorEditOutcome.CLOSED
+                }
+            }.getOrDefault(EditorEditOutcome.CLOSED)
+            if (outcome != EditorEditOutcome.CLOSED) {
+                // Amendment #171: the splice extended or killed the tracker;
+                // publish what it decided on the same serial executor.
+                publishOfferViewFor(document, editorId)
             }
-            // Amendment #171: the splice extended or killed the tracker;
-            // publish what it decided. On the SAME serial executor, so the
-            // read is ordered after the splice — never pre-splice state.
-            publishOfferViewFor(document, editorId)
+            appContext.mainExecutor.execute { onOutcome(outcome) }
+        }
+    }
+
+    override fun publishEditorComposition(
+        document: String,
+        editorId: String,
+        active: Boolean,
+    ) {
+        dispatchExecutor.execute {
+            engine?.setEditorComposing(document, editorId, active)
         }
     }
 
@@ -1158,13 +1227,15 @@ class DeviceBridge(
         val next = Triple(cursorUtf16, selectionStartUtf16, selectionEndUtf16)
         if (lastCaret.put(key, next) == next) return
         dispatchExecutor.execute {
-            engine?.localEditorCaret(
+            val e = engine ?: return@execute
+            e.localEditorCaret(
                 document,
                 editorId,
                 Utf16Pos(cursorUtf16),
                 Utf16Pos(selectionStartUtf16),
                 Utf16Pos(selectionEndUtf16),
             )
+            e.withEditor(document, editorId, ::rememberEditorSeed)
         }
     }
 
@@ -1417,6 +1488,12 @@ class DeviceBridge(
                 CompletionOfferView(s.offer.extendedPrefix(), s.offer.ext,
                     s.offer.active))
         }
+        // A cached synchronized field remains visible across transport loss,
+        // but never writable. If the reconnect carries no replacement
+        // snapshot, its displayed process-volatile text and selection seed the
+        // new §19 session; an explicit SYNCING snapshot wins in the engine.
+        engine.editorSeedProvider = ::retainedEditorSeed
+        engine.editorSetListener = ::retainLiveEditors
         // SPEC 19.5: diagnostics/fontify/eldoc have been validated, accepted
         // and then dropped into a null listener for the life of this tree —
         // no error, no log, no user-visible signal. They land here now.
@@ -1469,6 +1546,9 @@ class DeviceBridge(
                 val n = input.read(buffer)
                 if (n < 0) break
                 engine.feed(buffer, 0, n)
+                if (engine === variantEngineRoute.current()) {
+                    _editorConnectionPhase.value = editorConnectionPhaseOf(engine.state)
+                }
                 if (!authenticated && isAuthenticatedConnectionState(engine.state)) {
                     authenticated = true
                     authenticatedConnection.authenticated(engine)
@@ -1492,11 +1572,12 @@ class DeviceBridge(
             // the successor session's mirrors, offers, and docs).
             val wasCurrentSession = CompanionStores.clearLiveSession(engine)
             if (wasCurrentSession) {
-                // SPEC 19: transport loss closes every editor session, so
-                // no mirror outlives the connection that produced it (also
-                // keeps the maps bounded — entries are per (document,
-                // editor_id)).
-                _editorMirrors.value = emptyMap()
+                // SPEC 19 closes the WIRE sessions. The rendered snapshot is
+                // deliberately retained only in process memory so a cached
+                // field neither blanks nor regresses to its authored seed on
+                // reconnect; editorConnectionPhase makes it read-only before
+                // any interaction can publish against the dead session.
+                _editorConnectionPhase.value = EditorConnectionPhase.OFFLINE
                 _editorAnnotations.value = emptyMap()
                 // R5, a named pre-existing-gap fix: offers and their views
                 // were NOT cleared here, so a dropdown could ghost across a

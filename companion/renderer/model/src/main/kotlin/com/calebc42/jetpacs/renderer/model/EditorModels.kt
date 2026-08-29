@@ -6,6 +6,31 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
+/** Connection-wide readiness relevant to synchronized editor interaction. */
+enum class EditorConnectionPhase {
+    OFFLINE,
+    OPENING,
+    READY,
+}
+
+/** Explicit presentation lifecycle for one synchronized editor. */
+enum class EditorSyncPhase {
+    OPENING,
+    READY,
+    COMPOSING,
+    AWAITING_RECONCILIATION,
+    STALE,
+    OFFLINE_READ_ONLY,
+    CLOSED,
+}
+
+/** Terminal host conclusion for one renderer-originated synchronized splice. */
+enum class EditorEditOutcome {
+    ACCEPTED,
+    RECONCILE,
+    CLOSED,
+}
+
 /** Display-side text and selection authority for one synchronized editor. */
 data class EditorMirror(
     val text: String,

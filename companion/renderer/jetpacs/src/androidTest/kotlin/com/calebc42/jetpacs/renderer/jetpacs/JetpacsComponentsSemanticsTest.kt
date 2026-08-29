@@ -37,6 +37,8 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.jetpacs.renderer.model.CompletionOffer
 import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
 import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererEditorHost
@@ -387,6 +389,70 @@ class JetpacsComponentsSemanticsTest {
     }
 
     @Test
+    fun synchronizedEditorRetainsTextAndDisablesEveryActionWhenOffline() {
+        val context = RecordingContext()
+        context.editorMirrors.value = mapOf(
+            ("doc:catalog" to "sync") to EditorMirror(
+                text = "seed",
+                cursorUtf16 = 4,
+                selectionStartUtf16 = 4,
+                selectionEndUtf16 = 4,
+                sequence = 0,
+                epoch = 1,
+            ),
+        )
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"editor","id":"sync","document":"doc:catalog",
+              "value":"authored","complete":true,
+              "on_save":{"action":"catalog.sync-save"},
+              "toolbar":[{"label":"Prefix","snippet":"* ","placement":"line-start"}]
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsEditorRenderer.render(
+                    node,
+                    context,
+                    Modifier
+                        .testTag("sync-editor")
+                        .ebpSemantics(node) { context.dispatchAction(it) },
+                )
+            }
+        }
+
+        val editor = compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "sync-editor"),
+        )
+        compose.mainClock.advanceTimeBy(200)
+        compose.runOnIdle { assertEquals(0, context.completionRequests) }
+        editor.performTextInput("!")
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("!"), context.editorEdits)
+            assertEquals(listOf("catalog.sync-save"), context.actionNames)
+            context.editorConnectionPhase.value = EditorConnectionPhase.OFFLINE
+        }
+
+        compose.onNodeWithText(
+            "Emacs is offline — synchronized editor is read-only",
+        ).assertIsDisplayed()
+        editor
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.IsEditable, false))
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.EditableText,
+                AnnotatedString("seed!"),
+            ))
+        compose.onNodeWithText("Prefix").assertIsNotEnabled()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.runOnIdle {
+            assertEquals(listOf("!"), context.editorEdits)
+            assertEquals(1, context.actions.size)
+            assertEquals(0, context.completionRequests)
+        }
+    }
+
+    @Test
     fun localEditorToolbarUsesSharedTransformsAndKeepsActionsSeparate() {
         val context = RecordingContext()
         val node = Json.parseToJsonElement(
@@ -513,6 +579,7 @@ class JetpacsComponentsSemanticsTest {
         override val editorHost: RendererEditorHost get() = this
         override val extensionId = JETPACS_COMPONENTS_EXTENSION
         override val maxEditorBytes = 262_144
+        override val editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.READY)
         override val editorMirrors =
             MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
         override val editorAnnotations =
@@ -532,6 +599,7 @@ class JetpacsComponentsSemanticsTest {
         val events = mutableListOf<String>()
         val scopedChildren = mutableListOf<Pair<JsonObject, Int>>()
         val editorEdits = mutableListOf<String>()
+        var completionRequests = 0
 
         override fun dispatchAction(
             descriptor: JsonObject?,
@@ -560,7 +628,9 @@ class JetpacsComponentsSemanticsTest {
         override fun storeValue(id: String): JsonElement? = null
         override fun epochOf(id: String): Long = 0
 
-        override fun requestEditorCompletion(document: String, editorId: String) = Unit
+        override fun requestEditorCompletion(document: String, editorId: String) {
+            completionRequests++
+        }
 
         override fun selectEditorCompletion(
             document: String,
@@ -583,8 +653,10 @@ class JetpacsComponentsSemanticsTest {
             deletedScalars: Int,
             inserted: String,
             base: String,
+            onOutcome: (EditorEditOutcome) -> Unit,
         ) {
             editorEdits += inserted
+            onOutcome(EditorEditOutcome.ACCEPTED)
         }
 
         override fun publishEditorCaret(
