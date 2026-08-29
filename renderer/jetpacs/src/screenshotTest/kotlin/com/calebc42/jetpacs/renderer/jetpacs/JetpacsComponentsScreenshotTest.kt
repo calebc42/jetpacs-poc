@@ -19,6 +19,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
 import com.android.tools.screenshot.PreviewTest
 
 @PreviewTest
@@ -223,6 +224,36 @@ private fun JetpacsEditorsRtl() {
                     lineLimits = TextFieldLineLimits.MultiLine(4, 5),
                 )
             }
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "offline-stale", widthDp = 400, heightDp = 430)
+@Composable
+private fun JetpacsSynchronizedEditorStates() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BasicText("OFFLINE", style = JetpacsTheme.typography.panelLabel)
+            JetpacsEditor(
+                state = rememberTextFieldState("Visible synchronized draft"),
+                readOnly = true,
+                lineLimits = TextFieldLineLimits.MultiLine(2, 3),
+            )
+            JetpacsEditorSyncStatus(EditorSyncPhase.OFFLINE_READ_ONLY)
+            BasicText("STALE", style = JetpacsTheme.typography.panelLabel)
+            JetpacsEditor(
+                state = rememberTextFieldState("Winning remote value"),
+                readOnly = true,
+                lineLimits = TextFieldLineLimits.MultiLine(2, 3),
+            )
+            JetpacsEditorSyncStatus(EditorSyncPhase.STALE)
         }
     }
 }

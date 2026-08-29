@@ -157,6 +157,17 @@ object JetpacsComponentStyles {
         disabled { alpha(0.38f) }
     }
 
+    /** Compact non-animated lifecycle notice below a synchronized editor. */
+    val editorSyncStatus = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.selectedSurface)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.unit,
+        )
+    }
+
     /** Compact, non-animated toolbar item with a full platform touch target. */
     val editorToolbarItem = Style {
         shape(tokens.shapes.control)
