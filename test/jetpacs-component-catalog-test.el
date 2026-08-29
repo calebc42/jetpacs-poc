@@ -113,7 +113,8 @@
                 (jetpacs-component-catalog--action-screen nil)
                 (jetpacs-component-catalog--choice-screen nil)
                 (jetpacs-component-catalog--panel-screen nil)
-                (jetpacs-component-catalog--text-field-screen nil)))
+                (jetpacs-component-catalog--text-field-screen nil)
+                (jetpacs-component-catalog--editor-screen nil)))
          (json (mapconcat #'jetpacs-node->canonical-json screens "\n")))
     (dolist (screen screens)
       (should (jetpacs-root-node-p screen))
@@ -121,8 +122,28 @@
                (regexp-quote "\"t\":\"jetpacs.scope\"")
                (jetpacs-node->canonical-json screen))))
     (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
-                    "jetpacs.scope" "text_input"))
+                    "jetpacs.scope" "text_input" "editor"))
       (should (string-match-p (regexp-quote type) json)))))
+
+(ert-deftest jetpacs-component-catalog-editor-is-local-and-complete-for-phase-4 ()
+  "The Editor page exercises the local tier without claiming synchronization."
+  (let* ((screen (jetpacs-component-catalog--editor-screen nil))
+         (json (jetpacs-node->canonical-json screen)))
+    (dolist (member '("\"publish_state\":true"
+                      "\"line_numbers\":true"
+                      "\"syntax\":\"elisp\""
+                      "\"toolbar\":["
+                      "\"on_save\":{"
+                      "\"on_enter\":{"
+                      "\"read_only\":true"
+                      "\"enabled\":false"
+                      "\"chromeless\":true"))
+      (should (string-match-p (regexp-quote member) json)))
+    (should-not (string-match-p "\"document\":" json))
+    (should-not (string-match-p "\"complete\":" json))
+    (should (eq (gethash '("app:jpcatalog" . "jpcatalog-editor-live")
+                         jetpacs--state-handlers)
+                #'jetpacs-component-catalog--on-editor-state))))
 
 (ert-deftest jetpacs-component-catalog-action-dispatches-exactly-once ()
   "One ordinary Action event produces one application mutation."
@@ -172,6 +193,42 @@
       (should (equal refreshed '(:surface "app:jpcatalog")))
       (should (eq (jetpacs-component-catalog--on-text-submit
                    '(:value 42) nil)
+                  'rejected)))))
+
+(ert-deftest jetpacs-component-catalog-editor-actions-bound-live-readout ()
+  "Published drafts stay IME-safe and save/enter actions refresh once."
+  (let ((jetpacs-component-catalog--editor-state-count 0)
+        (jetpacs-component-catalog--editor-save-count 0)
+        (jetpacs-component-catalog--editor-enter-count 0)
+        (jetpacs-component-catalog--last-editor-preview nil)
+        (jetpacs-component-catalog--last-editor-length nil)
+        refreshes)
+    (cl-letf (((symbol-function 'jetpacs-app-defer-refresh)
+               (lambda (params) (push params refreshes))))
+      (jetpacs-component-catalog--on-editor-state
+       (concat "first line\n" (make-string 100 ?x)))
+      (should (= jetpacs-component-catalog--editor-state-count 1))
+      (should (= jetpacs-component-catalog--last-editor-length 111))
+      (should (string-match-p "first line↵"
+                              jetpacs-component-catalog--last-editor-preview))
+      (should (<= (string-width jetpacs-component-catalog--last-editor-preview)
+                  72))
+      (should-not refreshes)
+      (should (eq (jetpacs-component-catalog--on-editor-save
+                   '(:value "saved") '(:surface "app:jpcatalog"))
+                  'accepted))
+      (should (eq (jetpacs-component-catalog--on-editor-enter
+                   '(:value "entered") '(:surface "app:jpcatalog"))
+                  'accepted))
+      (should (= jetpacs-component-catalog--editor-save-count 1))
+      (should (= jetpacs-component-catalog--editor-enter-count 1))
+      (should (equal jetpacs-component-catalog--last-editor-preview "entered"))
+      (should (= (length refreshes) 2))
+      (should (eq (jetpacs-component-catalog--on-editor-save
+                   '(:value 42) nil)
+                  'rejected))
+      (should (eq (jetpacs-component-catalog--on-editor-enter
+                   '(:value :json-false) nil)
                   'rejected)))))
 
 (ert-deftest jetpacs-component-catalog-secure-submit-retains-only-length ()

@@ -46,11 +46,27 @@
 (defvar jetpacs-component-catalog--last-secret-length nil
   "Scalar length of the latest secure demo; never the secret itself.")
 
+(defvar jetpacs-component-catalog--editor-state-count 0
+  "Number of local Editor draft publications accepted this session.")
+
+(defvar jetpacs-component-catalog--editor-save-count 0
+  "Number of local Editor save actions accepted this session.")
+
+(defvar jetpacs-component-catalog--editor-enter-count 0
+  "Number of local single-line Editor enter actions accepted this session.")
+
+(defvar jetpacs-component-catalog--last-editor-preview nil
+  "Bounded non-secret preview of the latest local Editor value.")
+
+(defvar jetpacs-component-catalog--last-editor-length nil
+  "Character length of the latest local Editor value.")
+
 (defconst jetpacs-component-catalog--components
   '(("action" "Action" "One explicit, full-width command target." "COMMANDS")
     ("choice" "Choice" "A binary setting with reconciled boolean state." "SELECTION")
     ("panel" "Panel" "Labeled containment without descendant merging." "STRUCTURE")
-    ("text-field" "Text Field" "Native text entry with reconciled EBP state." "TEXT EDITING"))
+    ("text-field" "Text Field" "Native text entry with reconciled EBP state." "TEXT EDITING")
+    ("editor" "Editor" "Local multiline editing on the canonical EBP node." "TEXT EDITING"))
   "Catalog component rows as (ID NAME PURPOSE CATEGORY).")
 
 (defun jetpacs-component-catalog--open-action (id)
@@ -87,7 +103,7 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
         (jetpacs-text
          "Editor-native controls implemented with Compose Foundation. Material 3 remains a separate Glasspane library and catalog.")
         (jetpacs-text
-         "Four components prove command dispatch, reconciled state, containment, semantics, text editing, and renderer-extension negotiation."
+         "Five components prove command dispatch, reconciled state, containment, semantics, text editing, and renderer-extension negotiation."
          :style "caption"))))
      (mapcar
       (lambda (component)
@@ -283,6 +299,96 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
     :spacing 12 :content-padding 12)
    :back back))
 
+(defun jetpacs-component-catalog--editor-toolbar ()
+  "Return the deterministic local Editor toolbar demonstration."
+  (list
+   (jetpacs-toolbar-item
+    :label "Comment"
+    :snippet ";; ${input:Comment}"
+    :placement 'line-start
+    :long-press '(:snippet ";;; ${input:Heading}"))
+   (jetpacs-toolbar-item :label "Move down" :line 'move-down)
+   (jetpacs-toolbar-item
+    :label "Insert"
+    :menu (list
+           (jetpacs-toolbar-item :label "Date" :snippet "${date}")
+           (jetpacs-toolbar-item :label "Time" :snippet "${time}")
+           (jetpacs-toolbar-item
+            :label "Message"
+            :snippet "(message \"${input:Text}\")")))))
+
+(defun jetpacs-component-catalog--editor-screen (back)
+  "Build the canonical local Editor reference and live state screen with BACK."
+  (jetpacs-component-catalog--screen
+   "Editor"
+   (jetpacs-lazy-column
+    (jetpacs-component-panel
+     "PURPOSE"
+     (list
+      (jetpacs-text
+       "A canonical local EBP editor presented by Jetpacs only inside jetpacs.scope.")
+      (jetpacs-text
+       "The shared controller owns selection, composition, byte limits, publication, and snapshot reconciliation; Styles own visuals only."
+       :style "caption")))
+    (jetpacs-component-panel
+     "LIVE MULTILINE / SAVE"
+     (list
+      (jetpacs-editor
+       "jpcatalog-editor-live"
+       :value "; Local Jetpacs draft\n(message \"Edit me\")\n"
+       :on-save (jetpacs-action "jpcatalog.editor-save")
+       :min-lines 5 :max-lines 8
+       :syntax "elisp" :line-numbers t :publish-state t :autofocus t
+       :toolbar (jetpacs-component-catalog--editor-toolbar))
+      (jetpacs-text
+       (format "Drafts: %d · saves: %d · latest: %s chars · %s"
+               jetpacs-component-catalog--editor-state-count
+               jetpacs-component-catalog--editor-save-count
+               (or jetpacs-component-catalog--last-editor-length "—")
+               (or jetpacs-component-catalog--last-editor-preview "—"))
+       :style "caption")))
+    (jetpacs-component-panel
+     "SINGLE LINE / ENTER"
+     (list
+      (jetpacs-editor
+       "jpcatalog-editor-enter"
+       :value "Press Enter"
+       :on-enter (jetpacs-action "jpcatalog.editor-enter")
+       :single-line t :publish-state t)
+      (jetpacs-text
+       (format "Accepted Enter actions: %d"
+               jetpacs-component-catalog--editor-enter-count)
+       :style "caption")))
+    (jetpacs-component-panel
+     "READ-ONLY / DISABLED"
+     (list
+      (jetpacs-editor
+       "jpcatalog-editor-read-only"
+       :value "Read-only text remains selectable."
+       :read-only t :min-lines 2 :max-lines 3)
+      (jetpacs-editor
+       "jpcatalog-editor-disabled"
+       :value "Disabled editor"
+       :enabled :json-false :min-lines 2 :max-lines 3)))
+    (jetpacs-component-panel
+     "CHROMELESS"
+     (list
+      (jetpacs-editor
+       "jpcatalog-editor-chromeless"
+       :value "Borderless local scratch surface"
+       :chromeless t :min-lines 2 :max-lines 3)))
+    (jetpacs-component-panel
+     "LATER TIERS"
+     (list
+      (jetpacs-text
+       "Document synchronization, completion, and authoritative diagnostics remain on the existing EBP editor.sync path and are intentionally not claimed by this local Phase 4 renderer."
+       :style "caption")))
+    (jetpacs-component-catalog--code-panel
+     "(jetpacs-editor \"draft\"\n  :value \"(message \\\"Jetpacs\\\")\"\n  :on-save (jetpacs-action \"app.save\")\n  :syntax \"elisp\" :line-numbers t\n  :publish-state t)"
+     "{\"t\":\"editor\",\"id\":\"draft\",\"value\":\"(message \\\"Jetpacs\\\")\",\"on_save\":{\"action\":\"app.save\"},\"syntax\":\"elisp\",\"line_numbers\":true,\"publish_state\":true}")
+    :spacing 12 :content-padding 12)
+   :back back))
+
 (defun jetpacs-component-catalog--detail-screen (component back)
   "Build COMPONENT's detail screen using BACK navigation."
   (pcase component
@@ -290,6 +396,7 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
     ("choice" (jetpacs-component-catalog--choice-screen back))
     ("panel" (jetpacs-component-catalog--panel-screen back))
     ("text-field" (jetpacs-component-catalog--text-field-screen back))
+    ("editor" (jetpacs-component-catalog--editor-screen back))
     (_ (error "Unknown Jetpacs component %S" component))))
 
 (defun jetpacs-component-catalog--on-open (args params)
@@ -351,13 +458,48 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
       (jetpacs-app-defer-refresh params)
       'accepted)))
 
+(defun jetpacs-component-catalog--remember-editor-value (value)
+  "Retain only a bounded display preview and length for editor VALUE."
+  (let ((single-line (string-replace "\n" "↵" value)))
+    (setq jetpacs-component-catalog--last-editor-length (length value)
+          jetpacs-component-catalog--last-editor-preview
+          (truncate-string-to-width single-line 72 nil nil "…"))))
+
+(defun jetpacs-component-catalog--on-editor-state (value)
+  "Record one published non-secret local Editor VALUE without refreshing."
+  (when (stringp value)
+    (cl-incf jetpacs-component-catalog--editor-state-count)
+    (jetpacs-component-catalog--remember-editor-value value)))
+
+(defun jetpacs-component-catalog--on-editor-save (args params)
+  "Record ARGS' local Editor save and refresh PARAMS' current screen."
+  (let ((value (plist-get args :value)))
+    (if (not (stringp value))
+        'rejected
+      (cl-incf jetpacs-component-catalog--editor-save-count)
+      (jetpacs-component-catalog--remember-editor-value value)
+      (jetpacs-app-defer-refresh params)
+      'accepted)))
+
+(defun jetpacs-component-catalog--on-editor-enter (args params)
+  "Record ARGS' single-line Editor value and refresh PARAMS' screen."
+  (let ((value (plist-get args :value)))
+    (if (not (stringp value))
+        'rejected
+      (cl-incf jetpacs-component-catalog--editor-enter-count)
+      (jetpacs-component-catalog--remember-editor-value value)
+      (jetpacs-app-defer-refresh params)
+      'accepted)))
+
 (defconst jetpacs-component-catalog--verbs
   '(("jpcatalog.open" . jetpacs-component-catalog--on-open)
     ("jpcatalog.activate" . jetpacs-component-catalog--on-activate)
     ("jpcatalog.choice" . jetpacs-component-catalog--on-choice)
     ("jpcatalog.text-change" . jetpacs-component-catalog--on-text-change)
     ("jpcatalog.text-submit" . jetpacs-component-catalog--on-text-submit)
-    ("jpcatalog.secure-submit" . jetpacs-component-catalog--on-secure-submit))
+    ("jpcatalog.secure-submit" . jetpacs-component-catalog--on-secure-submit)
+    ("jpcatalog.editor-save" . jetpacs-component-catalog--on-editor-save)
+    ("jpcatalog.editor-enter" . jetpacs-component-catalog--on-editor-enter))
   "Catalog actions and their owning handlers.")
 
 (defun jetpacs-component-catalog--dock-items (surface)
@@ -393,6 +535,18 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
     (jetpacs-defaction
      "jpcatalog.secure-submit" #'jetpacs-component-catalog--on-secure-submit
      :doc "Count and immediately erase one volatile secure-field submission")
+    (jetpacs-defaction
+     "jpcatalog.editor-save" #'jetpacs-component-catalog--on-editor-save
+     :args '((:name value :type "text" :required t))
+     :doc "Record and display one local Editor save value")
+    (jetpacs-defaction
+     "jpcatalog.editor-enter" #'jetpacs-component-catalog--on-editor-enter
+     :args '((:name value :type "text" :required t))
+     :doc "Record and display one single-line Editor enter value")
+    (jetpacs-on-state-change
+     "jpcatalog-editor-live" #'jetpacs-component-catalog--on-editor-state)
+    (jetpacs-on-state-change
+     "jpcatalog-editor-enter" #'jetpacs-component-catalog--on-editor-state)
     (jetpacs-chrome-define-root
      jetpacs-component-catalog-owner "home"
      #'jetpacs-component-catalog--home-screen))
@@ -409,6 +563,7 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
   "Remove the catalog actions, surface, and app registration."
   (dolist (verb (mapcar #'car jetpacs-component-catalog--verbs))
     (jetpacs-undefaction verb))
+  (jetpacs-on-state-change-clear "jpcatalog-editor-" "app:jpcatalog")
   (jetpacs-apps-unregister jetpacs-component-catalog-owner)
   (jetpacs-chrome-remove jetpacs-component-catalog-owner))
 
