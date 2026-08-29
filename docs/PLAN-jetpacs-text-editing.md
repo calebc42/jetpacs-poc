@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Adversarial review complete; Phase 4 next
+Status: Phase 4 implemented; manual accessibility acceptance pending
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -325,6 +325,42 @@ falling back to a Material component.
 
 Line numbers are presentation-only and do not become separate accessibility
 nodes.
+
+### Phase 4 implementation outcome
+
+The scoped registry now admits canonical optional EBP nodes from the generated
+node schema while continuing to reject downstream extension-owned and invented
+types. The application installs one conditional local `editor` override under
+`jetpacs.scope`; synchronized editors with `document` continue through the
+canonical Material renderer until Phase 5. Both presentations consume the same
+shared editor binding for state, byte limits, focus identity, publication, and
+occurrence-time action values.
+
+`:renderer:jetpacs` now supplies a public Foundation `JetpacsEditor`, local
+syntax projection, shared-scroll logical line-number gutter, chromeless and
+read-only/disabled states, and an accessible toolbar with line operations,
+menus, snippets, long-press alternatives, and a named free-text prompt.
+Compose Styles control only editor, gutter, and toolbar visuals; no Style
+animates or owns text, caret, selection, composition, or layout state.
+
+The Jetpacs Components catalog has a live **Editor** page covering multiline
+save, single-line software-IME Enter, publication readout, syntax, line
+numbers, toolbar transformations, read-only, disabled, chromeless, and
+autofocus behavior. It explicitly labels synchronization, completion, and
+authoritative diagnostics as later tiers. Six new editor references cover
+compact and expanded widths, dark theme, focus/read-only, 1.5x text, and RTL;
+all previously tracked Jetpacs and Material references remain unchanged.
+
+The EBP validator, deterministic 10,000-case cross-language replay,
+warning-as-error Elisp compilation, full ERT suite, broad Kotlin/APK gate, both
+screenshot validators, and all five connected suites pass. The final APK and
+115-file managed Elisp tree are installed on the Pixel Tablet. Live checks
+proved save and software-IME Enter dispatch once, toolbar menu and prompted
+snippet insertion, disabled/read-only behavior, named editable semantics,
+autofocus-once, and exact draft preservation across portrait recreation; all
+temporarily changed device settings were restored. TalkBack, Switch Access,
+hardware-keyboard, pointer, and touch acceptance remain human-observation
+checks and must be recorded before Phase 5 starts.
 
 ## Phase 5: add synchronized editing
 

@@ -4,9 +4,10 @@ package com.calebc42.jetpacs.renderer.compose
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.ui.Modifier
-import com.calebc42.ebp.wire.CORE_NODE_SET
+import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
+import com.calebc42.jetpacs.renderer.model.RendererEditorHost
 import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -25,6 +26,9 @@ interface ComposeNodeRenderContext {
 
     /** Negotiated JCS byte ceiling for one logical input value. */
     val maxFieldBytes: Int
+
+    /** Shared synchronized-editor host; local editors use only its byte limit. */
+    val editorHost: RendererEditorHost
 
     /** Stable identity of the dialog-local volatile registry, when present. */
     val volatileSecretRegistryKey: Any? get() = null
@@ -106,20 +110,29 @@ interface ComposeNodeExtension {
 }
 
 /**
- * One design-scoped replacement for canonical EBP Core Node Set presentation.
+ * One design-scoped replacement for canonical EBP node presentation.
  *
  * This changes only Compose selection. The accepted node, its validation,
  * state, semantics, actions, and wire advertisement remain canonical EBP.
  */
-interface ComposeCoreNodeOverride {
+interface ComposeCanonicalNodeOverride {
     /** Stable implementation identity used to detect duplicate installation. */
     val id: String
 
     /** Positively advertised renderer-extension identifier selecting this design. */
     val designScope: String
 
-    /** Exact generated Core Node Set types this implementation replaces. */
+    /** Exact generated canonical EBP node types this implementation replaces. */
     val nodeTypes: Set<String>
+
+    /**
+     * Whether this renderer owns the accepted shape of [node].
+     *
+     * Implementations must make this a deterministic, side-effect-free
+     * decision. Returning false preserves the canonical renderer, which lets a
+     * design system roll out one semantic tier without claiming another.
+     */
+    fun appliesTo(node: JsonObject): Boolean = true
 
     /** Render one admitted canonical [node] through the ordinary host context. */
     @Composable
@@ -184,43 +197,43 @@ class ComposeExtensionRegistry(
 }
 
 /**
- * Strict design-scope lookup for the generated EBP Core Node Set.
+ * Strict design-scope lookup for the generated canonical EBP node schema.
  *
- * Registration cannot advertise nodes or reinterpret optional/downstream
+ * Registration cannot advertise nodes or reinterpret downstream extension
  * vocabulary. Duplicate `(designScope, nodeType)` ownership fails here at the
  * composition root rather than racing during composition.
  */
 @Stable
-class ComposeCoreOverrideRegistry(
-    overrides: Iterable<ComposeCoreNodeOverride>,
+class ComposeCanonicalOverrideRegistry(
+    overrides: Iterable<ComposeCanonicalNodeOverride>,
 ) {
     private data class Key(val scope: String, val nodeType: String)
 
     private val installed = overrides.toList()
-    private val byKey: Map<Key, ComposeCoreNodeOverride>
+    private val byKey: Map<Key, ComposeCanonicalNodeOverride>
 
     init {
         require(installed.map { it.id }.distinct().size == installed.size) {
-            "Compose core override ids must be unique"
+            "Compose canonical override ids must be unique"
         }
         require(installed.all {
             it.id.isNotBlank() && it.designScope.isNotBlank() &&
                 it.designScope.contains('.') && it.nodeTypes.isNotEmpty()
         }) {
-            "Compose core overrides need an id, namespaced design scope, and node types"
+            "Compose canonical overrides need an id, namespaced design scope, and node types"
         }
         installed.forEach { renderer ->
-            require(renderer.nodeTypes.all { it in CORE_NODE_SET }) {
-                "Compose core override ${renderer.id} may own only the EBP Core Node Set"
+            require(renderer.nodeTypes.all { it in NODE_SCHEMA }) {
+                "Compose canonical override ${renderer.id} may own only canonical EBP nodes"
             }
         }
-        val owners = mutableMapOf<Key, ComposeCoreNodeOverride>()
+        val owners = mutableMapOf<Key, ComposeCanonicalNodeOverride>()
         installed.forEach { renderer ->
             renderer.nodeTypes.forEach { nodeType ->
                 val key = Key(renderer.designScope, nodeType)
                 val previous = owners.putIfAbsent(key, renderer)
                 require(previous == null) {
-                    "Compose core node $nodeType in ${renderer.designScope} is overridden by " +
+                    "Compose canonical node $nodeType in ${renderer.designScope} is overridden by " +
                         "both ${previous?.id} and ${renderer.id}"
                 }
             }
@@ -231,7 +244,7 @@ class ComposeCoreOverrideRegistry(
     /** Positively selectable design-scope identifiers represented here. */
     val designScopes: Set<String> get() = installed.mapTo(mutableSetOf()) { it.designScope }
 
-    /** Core nodes registered beneath [designScope]. */
+    /** Canonical nodes registered beneath [designScope]. */
     fun nodeTypesFor(designScope: String): Set<String> = byKey.keys
         .asSequence()
         .filter { it.scope == designScope }
@@ -241,11 +254,11 @@ class ComposeCoreOverrideRegistry(
     fun rendererFor(
         designScope: String,
         nodeType: String,
-    ): ComposeCoreNodeOverride? = byKey[Key(designScope, nodeType)]
+    ): ComposeCanonicalNodeOverride? = byKey[Key(designScope, nodeType)]
 
     companion object {
         /** A composition with canonical rendering only. */
-        val Empty = ComposeCoreOverrideRegistry(emptyList())
+        val Empty = ComposeCanonicalOverrideRegistry(emptyList())
     }
 }
 
@@ -257,7 +270,8 @@ data class ComposeRendererConfiguration(
     val appExtensions: Set<String> = emptySet(),
     val dialogExtensions: Set<String> = emptySet(),
     val extensions: ComposeExtensionRegistry = ComposeExtensionRegistry.Empty,
-    val coreOverrides: ComposeCoreOverrideRegistry = ComposeCoreOverrideRegistry.Empty,
+    val canonicalOverrides: ComposeCanonicalOverrideRegistry =
+        ComposeCanonicalOverrideRegistry.Empty,
 ) {
     init {
         require(extensions.nodeTypes.all { it in appNodeTypes || it in dialogNodeTypes }) {
@@ -276,19 +290,19 @@ data class ComposeRendererConfiguration(
                 }
             }
         }
-        coreOverrides.designScopes.forEach { scope ->
+        canonicalOverrides.designScopes.forEach { scope ->
             require(scope in appExtensions || scope in dialogExtensions) {
-                "Compose core override scope $scope is not admitted by a render target"
+                "Compose canonical override scope $scope is not admitted by a render target"
             }
-            val nodeTypes = coreOverrides.nodeTypesFor(scope)
+            val nodeTypes = canonicalOverrides.nodeTypesFor(scope)
             if (scope in appExtensions) {
                 require(appNodeTypes.containsAll(nodeTypes)) {
-                    "App profile does not advertise every core override in $scope"
+                    "App profile does not advertise every canonical override in $scope"
                 }
             }
             if (scope in dialogExtensions) {
                 require(dialogNodeTypes.containsAll(nodeTypes)) {
-                    "Dialog profile does not advertise every core override in $scope"
+                    "Dialog profile does not advertise every canonical override in $scope"
                 }
             }
         }

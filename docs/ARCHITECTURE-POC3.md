@@ -62,14 +62,18 @@ while letting Glasspane remain deliberately and faithfully Material 3.
 
 `jetpacs.scope` is the app-only, invisible selection boundary for Jetpacs core
 presentation. Compose extension-node ownership remains singular; a separate
-composition-root registry may replace only types in the generated eight-node
-EBP Core Node Set, keyed by a positively admitted renderer-extension ID.
-Scoped selection never changes node validation or target profiles, and roots
-discard inherited scope. The registry intentionally excludes optional EBP
-nodes such as `editor` until a later, explicit architecture expansion.
-The first production registration replaces canonical `text_input` presentation
-inside app-authored `jetpacs.scope`; dialogs do not admit that scope, and every
-field outside it continues through Glasspane Material.
+composition-root registry may replace only types in the generated canonical
+EBP node schema, keyed by a positively admitted renderer-extension ID. It never
+admits a downstream extension-owned node, including `jetpacs.scope`, and each
+registered renderer may decline an individual canonical node before the
+dispatcher takes its normal fallback. Scoped selection never changes node
+validation or target profiles, and roots discard inherited scope. The current
+registrations replace canonical `text_input` and local canonical `editor`
+presentation inside app-authored `jetpacs.scope`. An editor carrying `document`
+declines the Phase 4 override and therefore continues through Glasspane
+Material until synchronized Jetpacs editing lands in Phase 5. Dialogs do not
+admit the app scope, and every canonical control outside it also continues
+through Glasspane Material.
 
 The Material renderer's version is pinned by
 `companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
@@ -244,18 +248,21 @@ their supported parameters and Material tokens.
 `:renderer:jetpacs` has an independent private theme derived from the same
 neutral EBP roles and never reads or provides `MaterialTheme`. Its public
 `JetpacsAction`, `JetpacsChoice`, `JetpacsPanel`, and state-based
-`JetpacsTextField` composables accept `style: Style = Style`; Styles own
-visuals and animated interaction states, while ordinary modifiers own layout,
-input, enabled state, focus, and semantics. The Action and Choice each expose
-one full-row target, Panel labels are headings without merging their child
-tree, and each field retains one editable interaction owner while its labels,
-affixes, and glyphs remain presentation-only.
+`JetpacsTextField` and `JetpacsEditor` composables accept
+`style: Style = Style`; Styles own visuals and ordinary modifiers own layout,
+input, enabled state, focus, and semantics. Action, Choice, and field styles may
+animate bounded interaction colors, while editor styles never animate caret,
+selection, or text-layout state. The Action and Choice each expose one full-row
+target, Panel labels are headings without merging their child tree, and each
+field or editor retains one editable interaction owner while labels, affixes,
+glyphs, and logical line numbers remain presentation-only.
 
 Its `jetpacs.scope` renderer emits canonical children directly through the
 shared dispatcher under the owning `jetpacs.components` scope. It creates no
 layout, semantics, state, or interaction owner. The composition root resolves
-canonical `text_input` to `JetpacsTextInputRenderer` only in that subtree;
-Glasspane Material dispatch continues everywhere outside it.
+canonical `text_input` to `JetpacsTextInputRenderer` and local canonical
+`editor` to `JetpacsEditorRenderer` only in that subtree; Glasspane Material
+dispatch continues outside it and for synchronized editors.
 
 The existing Material gallery components deliberately exercise separate
 contracts:
@@ -276,9 +283,12 @@ and toolbar presentation. Both Glasspane's Material field and Jetpacs'
 Foundation field consume the same `TextInputController` and toolkit-neutral
 presentation binding. The Jetpacs mapping adds only its compact work surface,
 private palette, code-native decoration glyphs, selection colors, and
-syntax-role palette. A future Jetpacs editor will use the existing editor
-controller after the explicit optional-node registry expansion, without
-importing Material.
+syntax-role palette. The local `JetpacsEditor` consumes the same shared
+`EditorController` through the shared presentation binding, adding a
+Foundation work surface, syntax projection, shared-scroll logical line gutter,
+and local toolbar presentation without importing Material. Nodes carrying a
+synchronized `document` deliberately retain the Material fallback until the
+existing neutral editor host is connected in Phase 5.
 
 Action handoff and admission are distinct. A renderer synchronously learns
 whether the app host accepted an occurrence into the ordinary confirmation,

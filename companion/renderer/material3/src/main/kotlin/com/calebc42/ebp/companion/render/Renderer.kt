@@ -473,6 +473,8 @@ private open class MaterialNodeRenderContext(
     override val path: String get() = context.path
     override val inDialog: Boolean get() = context.inDialog
     override val maxFieldBytes: Int get() = context.bridge.maxFieldBytes
+    override val editorHost: com.calebc42.jetpacs.renderer.model.RendererEditorHost
+        get() = context.bridge
     override val volatileSecretRegistryKey: Any? get() = context.dialog
 
     override fun dispatchAction(
@@ -588,11 +590,12 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
         )
         return
     }
-    val coreOverride = ctx.designScope
+    val canonicalOverride = ctx.designScope
         ?.takeIf { ctx.configuration.admitsDesignScope(it, ctx.inDialog) }
-        ?.let { ctx.configuration.coreOverrides.rendererFor(it, type) }
-    if (coreOverride != null) {
-        coreOverride.render(node, MaterialNodeRenderContext(ctx), m)
+        ?.let { ctx.configuration.canonicalOverrides.rendererFor(it, type) }
+        ?.takeIf { it.appliesTo(node) }
+    if (canonicalOverride != null) {
+        canonicalOverride.render(node, MaterialNodeRenderContext(ctx), m)
         return
     }
     when (type) {
@@ -1034,57 +1037,22 @@ private fun LegacyMaskedMaterialTextField(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val document = node.stringOr("document")
-    // SPEC 17.4: `read_only` governs editing permission and `enabled` the
-    // platform disabled state; a disabled/read-only node MUST NOT dispatch.
-    val readOnly = node.boolOr("read_only", false)
-    val enabled = node.boolOr("enabled", true)
-    val onSave = node.objOrNull("on_save")
-    val onEnter = node.objOrNull("on_enter")
-    val singleLine = node.boolOr("single_line")
-    val mirrors by ctx.bridge.editorMirrors.collectAsState()
-    val mirror = if (document.isEmpty()) null else mirrors[document to id]
-    val initialText = (ctx.storeValue(id) as? JsonPrimitive)
-        ?.takeIf { it.isString }
-        ?.content
-        ?: node.stringOr("value")
-    val actionDispatcher = com.calebc42.jetpacs.renderer.compose.EditingActionDispatcher {
-            descriptor, actionValue, secret, sourceId, onOutcome ->
-        ctx.dispatchAction(
-            descriptor = descriptor,
-            value = actionValue,
-            secret = secret,
-            sourceId = sourceId,
-            onOutcome = onOutcome,
-        )
-    }
-    val wantsCompletion = node.boolOr("complete", false)
-    val controller = com.calebc42.jetpacs.renderer.compose.rememberEditorController(
-        presentationEpoch = ctx.epochOf(id),
-        initialText = initialText,
-        initialSelection = TextRange(initialText.length),
-        config = com.calebc42.jetpacs.renderer.compose.EditorControllerConfig(
-            surface = ctx.surface,
-            id = id,
-            document = document,
-            singleLine = singleLine,
-            publishState = node.boolOr("publish_state"),
-            maxFieldBytes = ctx.bridge.maxFieldBytes,
-            maxEditorBytes = ctx.bridge.maxEditorBytes,
-        ),
-        mirror = mirror,
-        requestCompletion = wantsCompletion,
-        enabled = enabled,
-        readOnly = readOnly,
-        publishLocalState = { ctx.state(id, JsonPrimitive(it)) },
-        editorHost = ctx.bridge,
-        actionDispatcher = actionDispatcher,
+    val binding = com.calebc42.jetpacs.renderer.compose.rememberEditorBinding(
+        node,
+        MaterialNodeRenderContext(ctx),
     )
+    val presentation = binding.presentation
+    val id = presentation.id
+    val document = presentation.document.orEmpty()
+    val readOnly = presentation.readOnly
+    val enabled = presentation.enabled
+    val onSave = presentation.onSave
+    val wantsCompletion = presentation.complete
+    val controller = binding.controller
     val value = controller.snapshot()
 
     // Material owns palette and decoration; the shared controller owns text.
-    val language = node.stringOr("syntax")
+    val language = presentation.syntax.orEmpty()
     val syntaxColors = LocalSyntaxColors.current
     val annotations = if (document.isEmpty()) null else {
         val all by ctx.bridge.editorAnnotations.collectAsState()
@@ -1126,10 +1094,10 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         // SPEC 17.7: the toolbar rail above the field. `command` is valid only
         // for a synchronized editor (document present) in READY — the wire side
         // enforces the session/state gate; a local editor's command no-ops.
-        node.arrOrNull("toolbar")?.let { items ->
+        presentation.toolbar?.let { items ->
             EditorToolbar(
                 items = items,
-                enabled = enabled && !readOnly, // §17.4: disabled/read-only inert
+                enabled = binding.interactive, // §17.4: disabled/read-only inert
                 value = {
                     TextFieldValue(
                         value.text,
@@ -1173,29 +1141,18 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             enabled = enabled,
             inputTransformation = controller.inputTransformation,
             outputTransformation = outputTransformation,
-            lineLimits = if (singleLine) {
-                androidx.compose.foundation.text.input.TextFieldLineLimits.SingleLine
-            } else {
-                androidx.compose.foundation.text.input.TextFieldLineLimits.MultiLine(
-                    minHeightInLines = node.intByValue("min_lines", 3),
-                    maxHeightInLines = node.intByValue("max_lines", Int.MAX_VALUE),
-                )
-            },
-            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
-                imeAction =
-                    if (onEnter != null) androidx.compose.ui.text.input.ImeAction.Done
-                    else androidx.compose.ui.text.input.ImeAction.Default),
+            lineLimits = presentation.lineLimits,
+            keyboardOptions = presentation.keyboardOptions,
             onKeyboardAction =
                 androidx.compose.foundation.text.input.KeyboardActionHandler {
-                    if (enabled && !readOnly)
-                        controller.dispatchValueAction(onEnter)
+                    binding.enter()
                 },
             // A code editor that renders in the body font undermines every
             // fontify run Emacs sends: alignment is half of what font-lock
             // communicates. POC 1's editor was monospaced; this one was not.
             textStyle = LocalTextStyle.current.copy(
                 fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-            modifier = Modifier.fillMaxWidth())
+            modifier = binding.fieldModifier(Modifier.fillMaxWidth()))
         // SPEC 19.5: the doc line, between the field and the keyboard. A
         // diagnostic under the caret WINS — a user who moved onto a squiggle
         // is asking what is wrong there — and eldoc answers otherwise. Shown
@@ -1248,10 +1205,10 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             Row(modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End) {
                 IconButton(
-                    onClick = { controller.dispatchValueAction(onSave) },
+                    onClick = { binding.save() },
                     // §17.4: a read-only or disabled editor MUST NOT
                     // dispatch — same rule the commit path pins.
-                    enabled = enabled && !readOnly) {
+                    enabled = binding.interactive) {
                     Icon(IconMap.get("save"), contentDescription = "Save")
                 }
             }

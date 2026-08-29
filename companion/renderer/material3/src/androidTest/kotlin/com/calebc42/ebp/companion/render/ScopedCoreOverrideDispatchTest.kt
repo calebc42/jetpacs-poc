@@ -13,6 +13,7 @@ import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -24,8 +25,8 @@ import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.ScalarPos
-import com.calebc42.jetpacs.renderer.compose.ComposeCoreNodeOverride
-import com.calebc42.jetpacs.renderer.compose.ComposeCoreOverrideRegistry
+import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalNodeOverride
+import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalOverrideRegistry
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRegistry
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeExtension
@@ -79,7 +80,7 @@ class ScopedCoreOverrideDispatchTest {
             appExtensions = NodeSupport.APP_EXTENSIONS + firstScope + secondScope,
             dialogExtensions = NodeSupport.DIALOG_EXTENSIONS,
             extensions = ComposeExtensionRegistry(listOf(firstExtension, secondExtension)),
-            coreOverrides = ComposeCoreOverrideRegistry(
+            canonicalOverrides = ComposeCanonicalOverrideRegistry(
                 listOf(
                     TextOverride("first-text", firstScope, "First"),
                     TextOverride("second-text", secondScope, "Second"),
@@ -130,7 +131,7 @@ class ScopedCoreOverrideDispatchTest {
             dialogNodeTypes = NodeSupport.DIALOG_NODE_TYPES,
             appExtensions = NodeSupport.APP_EXTENSIONS + designScope,
             dialogExtensions = NodeSupport.DIALOG_EXTENSIONS,
-            coreOverrides = ComposeCoreOverrideRegistry(
+            canonicalOverrides = ComposeCanonicalOverrideRegistry(
                 listOf(TextOverride("first-text", designScope, "First")),
             ),
         )
@@ -151,6 +152,45 @@ class ScopedCoreOverrideDispatchTest {
 
         compose.onNodeWithText("dialog").assertIsDisplayed()
         compose.onAllNodesWithText("First:dialog").assertCountEquals(0)
+    }
+
+    @Test
+    fun conditionalEditorOverrideLeavesSynchronizedEditorOnMaterialFallback() {
+        val designScope = "example.editor"
+        val extension = ScopeExtension(
+            extensionId = designScope,
+            scopeNodeType = "example.editor.scope",
+        )
+        val configuration = ComposeRendererConfiguration(
+            appNodeTypes = NodeSupport.APP_NODE_TYPES + extension.nodeTypes,
+            dialogNodeTypes = NodeSupport.DIALOG_NODE_TYPES,
+            appExtensions = NodeSupport.APP_EXTENSIONS + designScope,
+            dialogExtensions = NodeSupport.DIALOG_EXTENSIONS,
+            extensions = ComposeExtensionRegistry(listOf(extension)),
+            canonicalOverrides = ComposeCanonicalOverrideRegistry(
+                listOf(LocalEditorOverride(designScope)),
+            ),
+        )
+        val local = buildJsonObject {
+            put("t", "editor")
+            put("id", "local")
+            put("value", "local seed")
+        }
+        val synchronized = buildJsonObject {
+            put("t", "editor")
+            put("id", "synchronized")
+            put("document", "notes")
+            put("value", "Synchronized fallback")
+        }
+        val scope = scopeNode(extension.scopeNodeType, local, synchronized)
+        val root = RenderCtx("app:test", bridge, configuration = configuration)
+
+        compose.setContent { RenderNode(scope, root.child(scope, 0)) }
+
+        compose.onNodeWithText("Local editor override").assertIsDisplayed()
+        compose.onNodeWithText("Synchronized fallback")
+            .assert(hasSetTextAction())
+        compose.onAllNodesWithText("local seed").assertCountEquals(0)
     }
 
     @Test
@@ -230,7 +270,7 @@ private class TextOverride(
     override val id: String,
     override val designScope: String,
     private val prefix: String,
-) : ComposeCoreNodeOverride {
+) : ComposeCanonicalNodeOverride {
     override val nodeTypes = setOf("text")
 
     @Composable
@@ -240,6 +280,24 @@ private class TextOverride(
         modifier: Modifier,
     ) {
         BasicText("$prefix:${(node["text"] as JsonPrimitive).content}", modifier)
+    }
+}
+
+private class LocalEditorOverride(
+    override val designScope: String,
+) : ComposeCanonicalNodeOverride {
+    override val id = "local-editor"
+    override val nodeTypes = setOf("editor")
+
+    override fun appliesTo(node: JsonObject): Boolean = "document" !in node
+
+    @Composable
+    override fun render(
+        node: JsonObject,
+        context: ComposeNodeRenderContext,
+        modifier: Modifier,
+    ) {
+        BasicText("Local editor override", modifier)
     }
 }
 

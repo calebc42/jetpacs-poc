@@ -31,7 +31,8 @@ fields and IME semantics. The Material renderer's Android tests cover
 the shared Compose projection as well as receiver-owned component roles and
 single-click-target behavior. The Jetpacs module pins generated extension
 admission, private theme derivation, singular Compose dispatch, state-before-
-action ordering, and the no-Material dependency boundary. Experimental Compose
+action ordering, local Editor projection, toolbar transforms, logical-line
+gutter indexing, and the no-Material dependency boundary. Experimental Compose
 Styles opt-in exists only in the two downstream design renderer modules, never
 in EBP, `:renderer:model`, or `:renderer:compose`.
 
@@ -46,8 +47,10 @@ The Jetpacs gallery covers compact and expanded widths, dark mode, 1.5× font
 scale, focus/hover, disabled controls, selected state, and nested content. Its
 text-field gallery adds outlined, filled, error, disabled, syntax, empty secure,
 focused, and RTL states. The six text-field references join the five original
-component references under
-`renderer/jetpacs/src/screenshotTestDebug/reference/`.
+component references. Six local-editor references add compact/expanded widths,
+dark mode, 1.5× text, focus/read-only, syntax with logical line numbers,
+toolbar/chromeless presentation, and RTL gutter placement. All 17 references
+live under `renderer/jetpacs/src/screenshotTestDebug/reference/`.
 
 The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp by
 400/500/1000 dp), a dark 610×500 configuration, and 1.5× font scale at
@@ -90,12 +93,13 @@ With one authorized device connected:
 The shared editing class enters normalized text through a real
 `BasicTextField` and edits an astral Unicode selection through a real editor;
 it proves state-before-action ordering and exactly one scalar splice. The
-Jetpacs class checks Action, Choice, Panel, and Text Field semantics,
-enabled/checked/error/maximum-length state, one-control/one-target behavior,
+Jetpacs class checks Action, Choice, Panel, Text Field, and local Editor
+semantics, enabled/checked/error/maximum-length state, one-control/one-target behavior,
 descendant preservation, autofocus, normalized text entry, exact ordinary
-action dispatch after `state.changed`, safe-admission clearing, and volatile
-password capture/erasure. The first Material class checks its receiver-owned
-catalog and single-choice components. A third case mounts a
+action dispatch after `state.changed`, safe-admission clearing, volatile
+password capture/erasure, Editor save/value dispatch, toolbar edits, read-only
+inertness, and a single editable Editor owner. The first Material class checks
+its receiver-owned catalog and single-choice components. A third case mounts a
 Material `OutlinedTextField` beside the custom Styles host;
 that is the device regression for keeping Material3's binary ABI compatible
 with the Compose 1.12 Styles API. The EBP class asserts heading, pane title,
@@ -116,8 +120,12 @@ accessibility setting afterward, then confirm reconnect and ordinary touch
 interaction. For Text Field, also exercise IME submit, paste normalization,
 selection, rotation/restore, hardware keyboard, pointer focus, error
 announcement, and one secure submit whose secret never appears in the catalog
-readout. Keyboard/focus, font-scale, and touch-target checks remain part of the
-same device envelope. `espresso-core` is pinned directly to the stable
+readout. For Editor, also exercise multiline selection, save, single-line
+Enter, syntax, line-number scroll alignment, toolbar snippets/line operations,
+read-only selection, disabled state, chromeless presentation, autofocus-once,
+rotation/restore, and preservation across a compatible repaint. Keyboard/focus,
+font-scale, and touch-target checks remain part of the same device envelope.
+`espresso-core` is pinned directly to the stable
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older
 transitive Espresso cannot initialize on Android 17/API 37.
 

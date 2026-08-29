@@ -50,11 +50,11 @@ class CompanionRendererTest {
         )
         assertEquals(
             setOf(JETPACS_COMPONENTS_EXTENSION),
-            CompanionRenderer.composeConfiguration.coreOverrides.designScopes,
+            CompanionRenderer.composeConfiguration.canonicalOverrides.designScopes,
         )
         assertEquals(
-            setOf("text_input"),
-            CompanionRenderer.composeConfiguration.coreOverrides
+            setOf("text_input", "editor"),
+            CompanionRenderer.composeConfiguration.canonicalOverrides
                 .nodeTypesFor(JETPACS_COMPONENTS_EXTENSION),
         )
         assertTrue(owned.none { it in CompanionRenderer.DIALOG_NODE_TYPES })

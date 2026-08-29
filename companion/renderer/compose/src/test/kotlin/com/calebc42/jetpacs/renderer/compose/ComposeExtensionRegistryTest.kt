@@ -23,11 +23,11 @@ class ComposeExtensionRegistryTest {
         ) = Unit
     }
 
-    private class CoreStub(
+    private class CanonicalStub(
         override val id: String,
         override val designScope: String,
         override val nodeTypes: Set<String>,
-    ) : ComposeCoreNodeOverride {
+    ) : ComposeCanonicalNodeOverride {
         @Composable
         override fun render(
             node: JsonObject,
@@ -83,17 +83,17 @@ class ComposeExtensionRegistryTest {
     }
 
     @Test
-    fun coreOverridesResolveByScopeAndNodeWithoutChangingProfileSets() {
-        val first = CoreStub("first", "example.first", setOf("text", "button"))
-        val second = CoreStub("second", "example.second", setOf("text"))
-        val registry = ComposeCoreOverrideRegistry(listOf(first, second))
+    fun canonicalOverridesResolveByScopeAndNodeWithoutChangingProfileSets() {
+        val first = CanonicalStub("first", "example.first", setOf("text", "button"))
+        val second = CanonicalStub("second", "example.second", setOf("text"))
+        val registry = ComposeCanonicalOverrideRegistry(listOf(first, second))
         val appNodes = setOf("text", "button")
         val appExtensions = setOf("example.first", "example.second")
         val configuration = ComposeRendererConfiguration(
             appNodeTypes = appNodes,
             dialogNodeTypes = emptySet(),
             appExtensions = appExtensions,
-            coreOverrides = registry,
+            canonicalOverrides = registry,
         )
 
         assertSame(first, registry.rendererFor("example.first", "text"))
@@ -104,31 +104,37 @@ class ComposeExtensionRegistryTest {
     }
 
     @Test
-    fun rejectsDuplicateCorePairAndImplementationIdentity() {
+    fun rejectsDuplicateCanonicalPairAndImplementationIdentity() {
         assertThrows(IllegalArgumentException::class.java) {
-            ComposeCoreOverrideRegistry(
+            ComposeCanonicalOverrideRegistry(
                 listOf(
-                    CoreStub("first", "example.design", setOf("text")),
-                    CoreStub("second", "example.design", setOf("text")),
+                    CanonicalStub("first", "example.design", setOf("text")),
+                    CanonicalStub("second", "example.design", setOf("text")),
                 ),
             )
         }
         assertThrows(IllegalArgumentException::class.java) {
-            ComposeCoreOverrideRegistry(
+            ComposeCanonicalOverrideRegistry(
                 listOf(
-                    CoreStub("same", "example.first", setOf("text")),
-                    CoreStub("same", "example.second", setOf("button")),
+                    CanonicalStub("same", "example.first", setOf("text")),
+                    CanonicalStub("same", "example.second", setOf("button")),
                 ),
             )
         }
     }
 
     @Test
-    fun rejectsOptionalAndDownstreamNodesFromStrictCoreRegistry() {
-        listOf("editor", "jetpacs.scope", "invented").forEach { nodeType ->
+    fun acceptsOptionalCanonicalNodesAndRejectsDownstreamOrInventedNodes() {
+        val editor = CanonicalStub("editor", "example.design", setOf("editor"))
+        val registry = ComposeCanonicalOverrideRegistry(listOf(editor))
+        assertSame(editor, registry.rendererFor("example.design", "editor"))
+
+        listOf("jetpacs.scope", "invented").forEach { nodeType ->
             assertThrows(IllegalArgumentException::class.java) {
-                ComposeCoreOverrideRegistry(
-                    listOf(CoreStub("bad-$nodeType", "example.design", setOf(nodeType))),
+                ComposeCanonicalOverrideRegistry(
+                    listOf(
+                        CanonicalStub("bad-$nodeType", "example.design", setOf(nodeType)),
+                    ),
                 )
             }
         }
@@ -136,14 +142,14 @@ class ComposeExtensionRegistryTest {
 
     @Test
     fun configurationRejectsUnadmittedScopeAndIncompleteTargetProfile() {
-        val registry = ComposeCoreOverrideRegistry(
-            listOf(CoreStub("first", "example.design", setOf("text"))),
+        val registry = ComposeCanonicalOverrideRegistry(
+            listOf(CanonicalStub("first", "example.design", setOf("text"))),
         )
         assertThrows(IllegalArgumentException::class.java) {
             ComposeRendererConfiguration(
                 appNodeTypes = setOf("text"),
                 dialogNodeTypes = emptySet(),
-                coreOverrides = registry,
+                canonicalOverrides = registry,
             )
         }
         assertThrows(IllegalArgumentException::class.java) {
@@ -151,7 +157,7 @@ class ComposeExtensionRegistryTest {
                 appNodeTypes = emptySet(),
                 dialogNodeTypes = emptySet(),
                 appExtensions = setOf("example.design"),
-                coreOverrides = registry,
+                canonicalOverrides = registry,
             )
         }
     }
