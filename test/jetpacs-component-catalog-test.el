@@ -160,8 +160,8 @@
                          jetpacs--state-handlers)
                 #'jetpacs-component-catalog--on-editor-state))))
 
-(ert-deftest jetpacs-component-catalog-editor-adds-bounded-phase-5-sync-fixture ()
-  "The admitted page authors one real sync editor and no Phase 6 members."
+(ert-deftest jetpacs-component-catalog-editor-adds-bounded-phase-6-tooling-fixture ()
+  "The admitted page authors one real sync editor with Phase 6 tooling."
   (let ((jetpacs-component-catalog--sync-buffer nil))
     (unwind-protect
         (cl-letf (((symbol-function
@@ -178,12 +178,15 @@
             (should (equal (plist-get (plist-get node :on_save) :action)
                            "jpcatalog.sync-editor-save"))
             (should (eq (plist-get node :line_numbers) t))
-            (dolist (member '(:complete :toolbar :syntax :publish_state))
-              (should-not (plist-member node member)))))
+            (should (eq (plist-get node :complete) t))
+            (should (equal (plist-get node :syntax) "elisp"))
+            (should (equal (plist-get (aref (plist-get node :toolbar) 0) :command)
+                           "indent-region"))
+            (should-not (plist-member node :publish_state))))
       (jetpacs-component-catalog--release-sync-buffer))))
 
-(ert-deftest jetpacs-component-catalog-ready-attaches-real-sync-seam-without-riders ()
-  "READY binds the in-memory buffer after disabling every Phase 6 rider."
+(ert-deftest jetpacs-component-catalog-ready-attaches-real-phase-6-riders ()
+  "READY binds the in-memory buffer with local tooling but without Eglot."
   (let ((jetpacs-component-catalog--sync-buffer nil)
         attached)
     (unwind-protect
@@ -201,11 +204,42 @@
                                jetpacs-component-catalog--sync-editor-id)))
           (with-current-buffer (car (last attached))
             (should-not ebp-sync-eglot)
-            (should-not ebp-sync-diagnostics)
-            (should-not ebp-sync-fontify)
-            (should-not ebp-sync-eldoc)
+            (should ebp-sync-diagnostics)
+            (should ebp-sync-fontify)
+            (should ebp-sync-eldoc)
+            (should (eq major-mode 'emacs-lisp-mode))
+            (should (memq #'jetpacs-component-catalog--completion-at-point
+                          completion-at-point-functions))
+            (should (memq #'jetpacs-component-catalog--eldoc
+                          eldoc-documentation-functions))
             (should-not buffer-auto-save-file-name)
             (should-not buffer-file-name)))
+      (jetpacs-component-catalog--release-sync-buffer))))
+
+(ert-deftest jetpacs-component-catalog-completion-fixture-has-kind-and-lazy-docs ()
+  "The buffer-local CAPF deterministically exercises optional candidate data."
+  (let ((jetpacs-component-catalog--sync-buffer nil)
+        (jetpacs-component-catalog--completion-doc-buffer nil))
+    (unwind-protect
+        (with-current-buffer (jetpacs-component-catalog--ensure-sync-buffer)
+          (goto-char (point-max))
+          (pcase-let ((`(,beg ,end ,table . ,props)
+                       (jetpacs-component-catalog--completion-at-point)))
+            (should (equal (buffer-substring-no-properties beg end) "jpc"))
+            (should (member "jpcatalog-print" table))
+            (should (equal
+                     (funcall (plist-get props :annotation-function)
+                              "jpcatalog-print")
+                     "catalog function"))
+            (should (eq (funcall (plist-get props :company-kind)
+                                 "jpcatalog-print")
+                        'function))
+            (let ((doc (funcall (plist-get props :company-doc-buffer)
+                                "jpcatalog-print")))
+              (should (buffer-live-p doc))
+              (with-current-buffer doc
+                (should (string-match-p "edit.candidate.doc"
+                                        (buffer-string)))))))
       (jetpacs-component-catalog--release-sync-buffer))))
 
 (ert-deftest jetpacs-component-catalog-sync-save-is-bounded-and-refreshes-once ()

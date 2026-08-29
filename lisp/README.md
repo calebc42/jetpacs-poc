@@ -17,7 +17,9 @@ presentations of two canonical EBP controls:
 - **Editor** — the complete local `editor` tier plus one real synchronized
   `editor`, including multiline and single-line input, save/enter actions,
   published local drafts, syntax, logical line numbers, toolbar snippets and
-  line operations, autofocus, read-only, disabled, and chromeless states.
+  line operations, autofocus, read-only, disabled, chromeless states,
+  completion, lazy candidate documentation, fontification, diagnostics,
+  eldoc, and synchronized editor commands.
 
 Home links to one detail screen per component. Each detail shows purpose,
 anatomy, interactive states, and the actual Elisp/EBP form. The app declares
@@ -33,11 +35,14 @@ The local Editor readout likewise avoids refreshing while a draft is changing.
 It retains only a 72-column preview and character count, then refreshes after a
 save or Enter action. The synchronized example authors the canonical
 `document` member and binds it through the real `ebp-sync` module to a
-process-volatile in-memory Emacs buffer. It disables eglot, completion,
-fontification, diagnostics, and eldoc so the fixture witnesses Phase 5 text,
-caret, selection, reconnect, and offline-read-only behavior only. It creates no
-offline draft or durable file. The buffer survives transport reconnects within
-the process and is detached and destroyed when the catalog unregisters.
+process-volatile in-memory Emacs Lisp buffer. It enables the production
+completion, font-lock, Flymake, eldoc, and editor-command riders while keeping
+Eglot disabled so the deterministic fixture never starts an external language
+server. Its catalog CAPF supplies bounded candidates, fixed kinds, and a lazy
+documentation buffer alongside the mode's ordinary tooling. It creates no
+offline draft or durable file. The buffer and documentation survive transport
+reconnects only within the process and are detached and destroyed when the
+catalog unregisters.
 
 The catalog deliberately exercises the real application loop: one Action
 increments Emacs state exactly once, and Choice commits the injected boolean
@@ -46,7 +51,7 @@ state remain receiver-owned; application decisions remain in Emacs.
 
 Every catalog body is wrapped in the invisible `jetpacs.scope` selection
 boundary while its Glasspane chrome remains outside. The app composition root
-installs the Phase 3 `text_input` and Phase 4/5 `editor` canonical overrides
+installs the Phase 3 `text_input` and Phase 4–6 `editor` canonical overrides
 for this app-only scope. Canonical nodes outside the boundary and dialogs
 continue through Glasspane Material.
 
