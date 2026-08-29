@@ -22,6 +22,7 @@ private val StyleScope.tokens: JetpacsThemeValue
     get() = LocalJetpacsTheme.currentValue
 
 private val textFieldErrorKey = StyleStateKey(false)
+private val editorReadOnlyKey = StyleStateKey(false)
 
 internal var MutableStyleState.isTextFieldError: Boolean
     get() = this[textFieldErrorKey]
@@ -29,6 +30,14 @@ internal var MutableStyleState.isTextFieldError: Boolean
 
 private fun StyleScope.textFieldError(block: () -> Unit) {
     state(textFieldErrorKey, block) { key, current -> current[key] }
+}
+
+internal var MutableStyleState.isEditorReadOnly: Boolean
+    get() = this[editorReadOnlyKey]
+    set(value) { this[editorReadOnlyKey] = value }
+
+private fun StyleScope.editorReadOnly(block: () -> Unit) {
+    state(editorReadOnlyKey, block) { key, current -> current[key] }
 }
 
 /** Theme-wide visual definitions for Jetpacs-owned components. */
@@ -113,6 +122,50 @@ object JetpacsComponentStyles {
             border(1.dp, tokens.colors.error)
             focused { border(2.dp, tokens.colors.error) }
         }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Stable editor work-surface visuals; text layout never participates in animation. */
+    val editor = Style {
+        fillWidth()
+        shape(tokens.shapes.panel)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(tokens.spacing.controlVertical)
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        editorReadOnly { background(tokens.colors.raisedSurface) }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Borderless editor visuals for EBP `chromeless`; behavior is unchanged. */
+    val editorChromeless = Style {
+        fillWidth()
+        background(androidx.compose.ui.graphics.Color.Transparent)
+        contentPadding(horizontal = 0.dp, vertical = tokens.spacing.unit)
+        editorReadOnly { background(tokens.colors.raisedSurface) }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Non-animated rail containing independently accessible editor actions. */
+    val editorToolbar = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(tokens.spacing.unit)
+        disabled { alpha(0.38f) }
+    }
+
+    /** Compact, non-animated toolbar item with a full platform touch target. */
+    val editorToolbarItem = Style {
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(horizontal = 10.dp, vertical = tokens.spacing.unit)
+        hovered { background(tokens.colors.selectedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { background(tokens.colors.pressedSurface) }
         disabled { alpha(0.38f) }
     }
 }

@@ -8,7 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import com.calebc42.jetpacs.renderer.compose.ComposeCoreNodeOverride
+import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalNodeOverride
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.jetpacs.renderer.compose.MaskVisualTransformation
 import com.calebc42.jetpacs.renderer.compose.keyboardAction
@@ -18,7 +18,7 @@ import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import kotlinx.serialization.json.JsonObject
 
 /** Jetpacs-scoped presentation override for canonical EBP `text_input`. */
-object JetpacsTextInputRenderer : ComposeCoreNodeOverride {
+object JetpacsTextInputRenderer : ComposeCanonicalNodeOverride {
     override val id: String = "jetpacs.components.text-input.compose"
     override val designScope: String = JETPACS_COMPONENTS_EXTENSION
     override val nodeTypes: Set<String> = setOf("text_input")

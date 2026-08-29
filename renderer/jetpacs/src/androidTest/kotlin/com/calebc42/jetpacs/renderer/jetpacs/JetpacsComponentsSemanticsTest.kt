@@ -20,18 +20,29 @@ import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.calebc42.ebp.wire.CompletionNarrowing
+import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.SafeAdmissionEvidence
+import com.calebc42.ebp.wire.ScalarPos
 import com.calebc42.ebp.wire.UnsafeAdmissionReason
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.CandidateDocument
+import com.calebc42.jetpacs.renderer.model.CompletionOffer
+import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
+import com.calebc42.jetpacs.renderer.model.EditorMirror
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
+import com.calebc42.jetpacs.renderer.model.RendererEditorHost
 import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -328,6 +339,152 @@ class JetpacsComponentsSemanticsTest {
     }
 
     @Test
+    fun localEditorPublishesStateAndInjectsCurrentValueIntoEachActionOnce() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"editor","id":"command","single_line":true,
+              "publish_state":true,"line_numbers":true,
+              "on_enter":{"action":"catalog.editor-enter"},
+              "on_save":{"action":"catalog.editor-save"}
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsEditorRenderer.render(
+                    node,
+                    context,
+                    Modifier
+                        .testTag("editor")
+                        .ebpSemantics(node) { context.dispatchAction(it) },
+                )
+            }
+        }
+
+        val editor = compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "editor"),
+        )
+        editor.assert(hasSetTextAction()).performTextInput("alpha\nbeta")
+        compose.runOnIdle {
+            assertEquals(listOf("state:alphabeta"), context.events)
+            assertEquals(JsonPrimitive("alphabeta"), context.states.single().second)
+        }
+
+        editor.performImeAction()
+        compose.onNodeWithText("Save").performClick()
+        compose.runOnIdle {
+            assertEquals(
+                listOf("catalog.editor-enter", "catalog.editor-save"),
+                context.actionNames,
+            )
+            assertEquals(
+                listOf(JsonPrimitive("alphabeta"), JsonPrimitive("alphabeta")),
+                context.actions.map { it.second },
+            )
+            assertTrue(context.editorEdits.isEmpty())
+        }
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun localEditorToolbarUsesSharedTransformsAndKeepsActionsSeparate() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"editor","id":"outline","value":"item","publish_state":true,
+              "toolbar":[
+                {"label":"Prefix","snippet":"* ","placement":"line-start"},
+                {"label":"Run","on_tap":{"action":"catalog.toolbar"}},
+                {"label":"Insert","menu":[
+                  {"label":"Message","snippet":"(message \"${'$'}{input:Text}\")"}
+                ]}
+              ]
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsEditorRenderer.render(
+                    node,
+                    context,
+                    Modifier.testTag("toolbar-editor"),
+                )
+            }
+        }
+
+        compose.onNodeWithText("Prefix").performClick()
+        compose.onNodeWithText("Run").performClick()
+        compose.runOnIdle {
+            assertEquals(JsonPrimitive("* item"), context.states.single().second)
+            assertEquals(listOf("catalog.toolbar"), context.actionNames)
+            assertEquals(null, context.actions.single().second)
+        }
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+        compose.onNodeWithText("Insert").performClick()
+        compose.onNodeWithText("Message").performClick()
+        compose.onNodeWithContentDescription("Input").assert(hasSetTextAction())
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(2)
+    }
+
+    @Test
+    fun readOnlyEditorExposesStateAndMakesToolbarAndSaveInert() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"editor","id":"readonly","value":"locked","read_only":true,
+              "on_save":{"action":"catalog.save"},
+              "toolbar":[{"label":"Prefix","snippet":"* ","placement":"line-start"}]
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsEditorRenderer.render(
+                    node,
+                    context,
+                    Modifier
+                        .testTag("readonly-editor")
+                        .ebpSemantics(node) { context.dispatchAction(it) },
+                )
+            }
+        }
+
+        compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "readonly-editor"),
+        ).assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.IsEditable, false),
+        )
+        compose.onNodeWithText("Prefix").assertIsNotEnabled()
+        compose.onNodeWithText("Save").assertIsNotEnabled()
+        compose.runOnIdle {
+            assertTrue(context.states.isEmpty())
+            assertTrue(context.actions.isEmpty())
+        }
+    }
+
+    @Test
+    fun localEditorAutofocusRunsForItsPresentationIdentity() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{"t":"editor","id":"draft","autofocus":true}""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsEditorRenderer.render(
+                    node,
+                    context,
+                    Modifier.testTag("editor-autofocus"),
+                )
+            }
+        }
+
+        compose.onNode(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.TestTag,
+                "editor-autofocus",
+            ),
+        ).assertIsFocused()
+    }
+
+    @Test
     fun autofocusRunsOnceForThePresentationIdentity() {
         val context = RecordingContext()
         val node = Json.parseToJsonElement(
@@ -348,12 +505,25 @@ class JetpacsComponentsSemanticsTest {
         ).assertIsFocused()
     }
 
-    private class RecordingContext : ComposeExtensionRenderContext {
+    private class RecordingContext : ComposeExtensionRenderContext, RendererEditorHost {
         override val surface = "app:test"
         override val path = "root"
         override val inDialog = false
         override val maxFieldBytes = 65_536
+        override val editorHost: RendererEditorHost get() = this
         override val extensionId = JETPACS_COMPONENTS_EXTENSION
+        override val maxEditorBytes = 262_144
+        override val editorMirrors =
+            MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
+        override val editorAnnotations =
+            MutableStateFlow<Map<Pair<String, String>, EditorAnnotationState>>(emptyMap())
+        override val completionOffers =
+            MutableStateFlow<Map<Pair<String, String>, CompletionOffer>>(emptyMap())
+        override val completionOfferViews =
+            MutableStateFlow<Map<Pair<String, String>, CompletionOfferView>>(emptyMap())
+        override val candidateDocuments =
+            MutableStateFlow<Map<Pair<String, String>, CandidateDocument>>(emptyMap())
+        override var completionNarrowing = CompletionNarrowing.STRICT
         val states = mutableListOf<Pair<String, JsonElement?>>()
         val actions = mutableListOf<Pair<JsonObject?, JsonElement?>>()
         val actionNames = mutableListOf<String>()
@@ -361,6 +531,7 @@ class JetpacsComponentsSemanticsTest {
         val outcomes = mutableListOf<(RendererActionOutcome) -> Unit>()
         val events = mutableListOf<String>()
         val scopedChildren = mutableListOf<Pair<JsonObject, Int>>()
+        val editorEdits = mutableListOf<String>()
 
         override fun dispatchAction(
             descriptor: JsonObject?,
@@ -388,6 +559,51 @@ class JetpacsComponentsSemanticsTest {
 
         override fun storeValue(id: String): JsonElement? = null
         override fun epochOf(id: String): Long = 0
+
+        override fun requestEditorCompletion(document: String, editorId: String) = Unit
+
+        override fun selectEditorCompletion(
+            document: String,
+            editorId: String,
+            label: String,
+            insert: String,
+        ) = Unit
+
+        override fun requestCandidateDocument(
+            document: String,
+            editorId: String,
+            index: Int,
+            epoch: Long,
+        ) = Unit
+
+        override fun publishEditorEdit(
+            document: String,
+            editorId: String,
+            start: ScalarPos,
+            deletedScalars: Int,
+            inserted: String,
+            base: String,
+        ) {
+            editorEdits += inserted
+        }
+
+        override fun publishEditorCaret(
+            document: String,
+            editorId: String,
+            cursorUtf16: Int,
+            selectionStartUtf16: Int,
+            selectionEndUtf16: Int,
+        ) = Unit
+
+        override fun dispatchEditorCommand(
+            surface: String,
+            document: String,
+            editorId: String,
+            command: String,
+            cursorUtf16: Int,
+            selectionStartUtf16: Int,
+            selectionEndUtf16: Int,
+        ) = Unit
 
         @Composable
         override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) = Unit

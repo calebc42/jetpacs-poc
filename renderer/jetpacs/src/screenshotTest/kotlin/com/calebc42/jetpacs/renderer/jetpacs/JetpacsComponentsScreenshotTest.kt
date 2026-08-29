@@ -152,6 +152,81 @@ private fun JetpacsTextFieldsRtl() {
     }
 }
 
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 820)
+@Preview(name = "expanded", widthDp = 900, heightDp = 820)
+@Composable
+private fun JetpacsEditorsAcrossWidths() {
+    JetpacsEditorGallery()
+}
+
+@PreviewTest
+@Preview(
+    name = "dark",
+    widthDp = 400,
+    heightDp = 820,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun JetpacsEditorsDark() {
+    JetpacsEditorGallery()
+}
+
+@PreviewTest
+@Preview(name = "large-text", widthDp = 400, heightDp = 1040, fontScale = 1.5f)
+@Composable
+private fun JetpacsEditorsLargeText() {
+    JetpacsEditorGallery()
+}
+
+@PreviewTest
+@Preview(name = "focus-read-only", widthDp = 400, heightDp = 400)
+@Composable
+private fun JetpacsEditorsFocusAndReadOnly() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            JetpacsEditorFocusFixture(
+                rememberTextFieldState("(message \"Focused\")"),
+            )
+            JetpacsEditor(
+                state = rememberTextFieldState("This draft is read-only."),
+                readOnly = true,
+                lineLimits = TextFieldLineLimits.MultiLine(2, 3),
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "rtl", widthDp = 400, heightDp = 480)
+@Composable
+private fun JetpacsEditorsRtl() {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        ProvideJetpacsTheme(null) {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .background(JetpacsTheme.colors.background)
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                JetpacsEditorToolbarFixture()
+                JetpacsEditor(
+                    state = rememberTextFieldState("السطر الأول\nالسطر الثاني\nالسطر الثالث"),
+                    lineNumbers = true,
+                    lineLimits = TextFieldLineLimits.MultiLine(4, 5),
+                )
+            }
+        }
+    }
+}
+
 /** Deterministic first-slice gallery shared by all baseline configurations. */
 @Composable
 private fun JetpacsComponentsGallery() {
@@ -227,6 +302,43 @@ private fun JetpacsTextFieldGallery() {
                 label = "One-time secret",
                 placeholder = "Never retained",
                 leadingDecoration = { JetpacsFieldGlyph("lock") },
+            )
+        }
+    }
+}
+
+/** Local-editor states that are deterministic and contain no synchronized data. */
+@Composable
+private fun JetpacsEditorGallery() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            JetpacsEditorToolbarFixture()
+            JetpacsEditor(
+                state = rememberTextFieldState(
+                    "; Local editor\n(defun greet (name)\n  (message \"Hello %s\" name))\n",
+                ),
+                lineNumbers = true,
+                outputTransformation = JetpacsSyntaxOutputTransformation(
+                    "elisp",
+                    JetpacsTheme.syntax,
+                ),
+                lineLimits = TextFieldLineLimits.MultiLine(5, 6),
+            )
+            JetpacsEditor(
+                state = rememberTextFieldState("Read-only notes stay selectable."),
+                readOnly = true,
+                lineLimits = TextFieldLineLimits.MultiLine(2, 3),
+            )
+            JetpacsEditor(
+                state = rememberTextFieldState("Chromeless scratch buffer"),
+                chromeless = true,
+                lineLimits = TextFieldLineLimits.MultiLine(2, 3),
             )
         }
     }
