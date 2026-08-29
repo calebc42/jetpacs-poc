@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 5 automated and connected gates complete; manual device acceptance pending
+Status: Phase 5 complete; Phase 6 implementation active
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -423,11 +423,12 @@ changes from editable to read-only semantics without losing its text.
 
 The verified APK and 115-file managed Elisp tree were deployed through
 `tools/onboard-tablet.sh`. Emacs and the Companion reconnected, and the live
-**Synchronized / Live** fixture is visible in READY with its process-volatile
-buffer and Save action. Concurrent IME/Emacs reconciliation, physical
-disconnect/reconnect variants, rotation, removal/re-addition, process restart,
-and assistive-technology behavior remain the manual device acceptance gate;
-Phase 5 is not closed until those checks are reported complete.
+**Synchronized / Live** fixture was left visible in READY with its
+process-volatile buffer and Save action. On 2026-08-28 the user reported that
+all five manual checks passed: concurrent IME/Emacs reconciliation, physical
+disconnect and both reconnect paths, rotation in READY and offline, editor
+removal/re-addition, process restart, and assistive-technology interaction.
+That report closes Phase 5; Phase 6 is next.
 
 ## Phase 6: completion, annotations, and tooling
 

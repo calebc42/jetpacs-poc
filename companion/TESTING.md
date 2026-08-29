@@ -159,8 +159,9 @@ Live** and verify the in-memory buffer, not a local draft:
 The Phase 5 automated, screenshot, and five connected suites passed on the
 Pixel Tablet on 2026-08-28. The reviewed APK and 115-file managed Elisp tree
 were redeployed, Emacs and the Companion reconnected, and the live synchronized
-fixture was left visible in READY. The five interaction checks above remain
-manual acceptance evidence and must not be inferred from instrumentation.
+fixture was left visible in READY. The user subsequently reported that all five
+interaction checks above passed. That report is the manual acceptance evidence;
+it is not inferred from instrumentation. Phase 5 is complete.
 
 `espresso-core` is pinned directly to the stable
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older
