@@ -6,6 +6,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.SemanticsMatcher
@@ -24,6 +25,7 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.calebc42.ebp.wire.CompletionNarrowing
@@ -35,7 +37,11 @@ import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ebpSemantics
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
+import com.calebc42.jetpacs.renderer.model.CompletionCandidate
 import com.calebc42.jetpacs.renderer.model.CompletionOffer
+import com.calebc42.jetpacs.renderer.model.DiagnosticRange
+import com.calebc42.jetpacs.renderer.model.DiagnosticSet
+import com.calebc42.jetpacs.renderer.model.EldocLine
 import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
 import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
 import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
@@ -425,7 +431,7 @@ class JetpacsComponentsSemanticsTest {
             SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "sync-editor"),
         )
         compose.mainClock.advanceTimeBy(200)
-        compose.runOnIdle { assertEquals(0, context.completionRequests) }
+        compose.runOnIdle { assertEquals(1, context.completionRequests) }
         editor.performTextInput("!")
         compose.onNodeWithText("Save").performClick()
         compose.runOnIdle {
@@ -448,8 +454,100 @@ class JetpacsComponentsSemanticsTest {
         compose.runOnIdle {
             assertEquals(listOf("!"), context.editorEdits)
             assertEquals(1, context.actions.size)
-            assertEquals(0, context.completionRequests)
+            assertEquals(2, context.completionRequests)
         }
+    }
+
+    @Test
+    fun synchronizedToolingIsAccessibleCurrentAndOccurrenceScoped() {
+        val context = RecordingContext()
+        val key = "doc:catalog" to "sync"
+        context.editorMirrors.value = mapOf(
+            key to EditorMirror("pri", 3, 3, 3, sequence = 4, epoch = 1),
+        )
+        context.editorAnnotations.value = mapOf(
+            key to EditorAnnotationState(
+                diagnostics = DiagnosticSet(
+                    session = "session",
+                    sequence = 4,
+                    text = "pri",
+                    diagnostics = listOf(DiagnosticRange(0, 3, "error", "Incomplete call")),
+                ),
+                eldoc = EldocLine("session", 4, "Fallback documentation"),
+                epoch = 1,
+            ),
+        )
+        context.completionOffers.value = mapOf(
+            key to CompletionOffer(
+                prefix = "pri",
+                candidates = listOf(
+                    CompletionCandidate("print", "built-in", "print()", "function"),
+                ),
+                session = "session",
+                sequence = 4,
+                cursor = 3,
+                epoch = 9,
+            ),
+        )
+        context.completionOfferViews.value = mapOf(
+            key to CompletionOfferView("pri", "", active = true),
+        )
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"editor","id":"sync","document":"doc:catalog",
+              "value":"authored","complete":true,"syntax":"elisp",
+              "toolbar":[{"label":"Indent","command":"indent-region"}]
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsEditorRenderer.render(
+                    node,
+                    context,
+                    Modifier
+                        .testTag("sync-tooling")
+                        .ebpSemantics(node) { context.dispatchAction(it) },
+                )
+            }
+        }
+
+        val editor = compose.onNode(
+            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "sync-tooling"),
+        )
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
+        editor.assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.Error,
+            "Incomplete call",
+        ))
+        compose.onNodeWithContentDescription("Error: Incomplete call").assertIsDisplayed()
+        val candidate = compose.onNodeWithContentDescription("print, built-in, function")
+        candidate.assertHasClickAction().performClick()
+        candidate.performSemanticsAction(SemanticsActions.OnLongClick)
+        compose.runOnIdle {
+            assertEquals(listOf("print" to "print()"), context.completionSelections)
+            assertEquals(listOf(0 to 9L), context.candidateDocumentRequests)
+            context.candidateDocuments.value = mapOf(
+                key to CandidateDocument(0, "Print documentation.", 9),
+            )
+        }
+        compose.onNodeWithText("Print documentation.").assertIsDisplayed()
+
+        compose.onNodeWithText("Indent").performClick()
+        compose.runOnIdle {
+            assertEquals(
+                EditorCommandCall("indent-region", cursor = 3, start = 3, end = 3),
+                context.editorCommands.single(),
+            )
+            context.editorConnectionPhase.value = EditorConnectionPhase.OFFLINE
+        }
+        compose.onAllNodes(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.ContentDescription,
+                listOf("print, built-in, function"),
+            ),
+        ).assertCountEquals(0)
+        compose.onNodeWithText("Indent").assertIsNotEnabled()
+        compose.onAllNodes(hasSetTextAction()).assertCountEquals(0)
     }
 
     @Test
@@ -571,6 +669,13 @@ class JetpacsComponentsSemanticsTest {
         ).assertIsFocused()
     }
 
+    private data class EditorCommandCall(
+        val command: String,
+        val cursor: Int,
+        val start: Int,
+        val end: Int,
+    )
+
     private class RecordingContext : ComposeExtensionRenderContext, RendererEditorHost {
         override val surface = "app:test"
         override val path = "root"
@@ -599,6 +704,9 @@ class JetpacsComponentsSemanticsTest {
         val events = mutableListOf<String>()
         val scopedChildren = mutableListOf<Pair<JsonObject, Int>>()
         val editorEdits = mutableListOf<String>()
+        val completionSelections = mutableListOf<Pair<String, String>>()
+        val candidateDocumentRequests = mutableListOf<Pair<Int, Long>>()
+        val editorCommands = mutableListOf<EditorCommandCall>()
         var completionRequests = 0
 
         override fun dispatchAction(
@@ -637,14 +745,18 @@ class JetpacsComponentsSemanticsTest {
             editorId: String,
             label: String,
             insert: String,
-        ) = Unit
+        ) {
+            completionSelections += label to insert
+        }
 
         override fun requestCandidateDocument(
             document: String,
             editorId: String,
             index: Int,
             epoch: Long,
-        ) = Unit
+        ) {
+            candidateDocumentRequests += index to epoch
+        }
 
         override fun publishEditorEdit(
             document: String,
@@ -675,7 +787,14 @@ class JetpacsComponentsSemanticsTest {
             cursorUtf16: Int,
             selectionStartUtf16: Int,
             selectionEndUtf16: Int,
-        ) = Unit
+        ) {
+            editorCommands += EditorCommandCall(
+                command,
+                cursorUtf16,
+                selectionStartUtf16,
+                selectionEndUtf16,
+            )
+        }
 
         @Composable
         override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) = Unit

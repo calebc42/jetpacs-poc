@@ -53,8 +53,11 @@ focused, and RTL states. The six text-field references join the five original
 component references. Six local-editor references add compact/expanded widths,
 dark mode, 1.5× text, focus/read-only, syntax with logical line numbers,
 toolbar/chromeless presentation, and RTL gutter placement. One synchronized
-reference adds the compact offline and stale status rows. All 18 references
-live under `renderer/jetpacs/src/screenshotTestDebug/reference/`.
+reference adds the compact offline and stale status rows. Five Phase 6
+references add compact and expanded completion/documentation layouts, dark
+mode, 1.5× text, RTL, authoritative syntax roles, diagnostics, eldoc, and
+toolbar-command presentation. All 23 references live under
+`renderer/jetpacs/src/screenshotTestDebug/reference/`.
 
 The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp by
 400/500/1000 dp), a dark 610×500 configuration, and 1.5× font scale at
@@ -62,6 +65,14 @@ The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp b
 `renderer/material3/src/screenshotTestDebug/reference/`. The gallery uses
 fixed strings, no clock, network, device state, animation clock, or EBP
 session.
+
+The model and Compose unit suites also time and allocation-sample syntax and
+fontification projection at 1, 4, 16, and 64 KiB after warmup. The Phase 6
+baseline recorded 64 KiB medians of 657,842 ns / 952,128 allocated bytes for
+local syntax and 906,675 ns / 50,352 allocated bytes for authoritative
+fontification. Every 4× size step remained below the 8× time ceiling and both
+64 KiB runs remained well below two seconds. These deterministic JVM checks
+guard growth trends; they are not device-frame benchmarks.
 
 Update references only after reviewing the rendered change:
 
@@ -104,7 +115,11 @@ descendant preservation, autofocus, normalized text entry, exact ordinary
 action dispatch after `state.changed`, safe-admission clearing, volatile
 password capture/erasure, Editor save/value dispatch, toolbar edits, read-only
 inertness, offline text retention, synchronized action refusal, and a single
-editable Editor owner. The first Material class checks
+editable Editor owner. Its Phase 6 cases additionally pin one READY editable
+owner and none while offline, bounded completion visibility, stable selection
+and documentation indices, lazy documentation, diagnostic error/status
+semantics, occurrence-time command selection, and immediate offline tooling
+removal. The first Material class checks
 its receiver-owned catalog and single-choice components. A third case mounts a
 Material `OutlinedTextField` beside the custom Styles host;
 that is the device regression for keeping Material3's binary ABI compatible
@@ -163,6 +178,40 @@ fixture was left visible in READY. The user subsequently reported that all five
 interaction checks above passed. That report is the manual acceptance evidence;
 it is not inferred from instrumentation. Phase 5 is complete.
 
+For the Phase 6 live gate, open **Jetpacs Components → Editor**, scroll to
+**Synchronized / Live**, and verify the real process-volatile Emacs Lisp
+fixture:
+
+1. Put the caret after the final `jpc`. Confirm a bounded candidate list
+   appears; choose one candidate once and verify exactly its insertion reaches
+   the buffer without a duplicate edit or caret jump.
+2. Long-press a visible candidate. Confirm its documentation appears only
+   after the long press, remains scrollable and attached to that row, then
+   disappears when further typing narrows the row away or replaces the offer.
+3. Confirm Elisp syntax colors are present. Move the collapsed caret onto the
+   seeded diagnostic and confirm its error message is announced and shown in
+   preference to eldoc; move elsewhere and confirm current eldoc appears.
+   Type a small and then a larger edit while a fresh Emacs batch is pending;
+   text, caret, and selection must not jump.
+4. Select a non-empty region and activate **Indent selection** once. Confirm
+   Emacs changes exactly that occurrence-time region once. Disconnect Emacs
+   and confirm candidates, documentation, diagnostics/eldoc, and command
+   actions disappear or become inert while the retained editor is read-only;
+   reconnect and confirm a fresh READY session restores tooling.
+5. With TalkBack and then Switch Access, confirm the editor is one named
+   editable control, each completion and toolbar item is a separate labeled
+   action, the error is announced, documentation can be requested, and focus
+   can leave the editor. Repeat candidate selection and the command with a
+   hardware keyboard, pointer, and touch; rotate once and confirm ordinary
+   editing and selection remain healthy. Restore all changed settings.
+
+The Phase 6 automated gate, all 23 Jetpacs plus 11 unchanged Material
+references, and all five connected suites passed on the Pixel Tablet on
+2026-08-28. The reviewed APK and 115-file managed Elisp tree were redeployed,
+Emacs and the Companion reconnected, and **Synchronized / Live** was left
+visible in READY. Manual acceptance above remains pending and must be recorded
+from the user's observations rather than inferred from instrumentation.
+
 `espresso-core` is pinned directly to the stable
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older
 transitive Espresso cannot initialize on Android 17/API 37.
@@ -175,7 +224,9 @@ transitive Espresso cannot initialize on Android 17/API 37.
   :renderer:compose:testDebugUnitTest \
   :renderer:compose:compileDebugAndroidTestKotlin \
   :renderer:jetpacs:testDebugUnitTest \
+  :renderer:jetpacs:compileDebugAndroidTestKotlin \
   :renderer:material3:testDebugUnitTest \
+  :renderer:material3:compileDebugAndroidTestKotlin \
   :app:testDebugUnitTest \
   :app:assembleDebug \
   :renderer:jetpacs:validateDebugScreenshotTest \

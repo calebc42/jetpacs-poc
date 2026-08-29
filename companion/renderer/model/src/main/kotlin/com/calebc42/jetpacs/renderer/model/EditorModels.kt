@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.renderer.model
 
+import com.calebc42.ebp.wire.CompletionNarrowing
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -104,6 +105,47 @@ data class CandidateDocument(
     val epoch: Long,
 )
 
+/**
+ * Narrow one active completion offer without losing its original wire indices.
+ *
+ * A pristine offer is displayed as authored. Once the user has extended its
+ * prefix, the renderer uses the same receiver-local predicate that the host
+ * will re-prove before emitting an accepted completion delta.
+ */
+fun narrowedCompletionCandidates(
+    candidates: List<CompletionCandidate>,
+    active: Boolean,
+    extendedPrefix: String,
+    extension: String,
+    narrowing: CompletionNarrowing,
+): List<IndexedValue<CompletionCandidate>> = when {
+    !active -> emptyList()
+    extension.isEmpty() -> candidates.withIndex().toList()
+    else -> candidates.withIndex().filter { (_, candidate) ->
+        when (narrowing) {
+            CompletionNarrowing.STRICT ->
+                candidate.label.startsWith(extendedPrefix) ||
+                    candidate.insert.startsWith(extendedPrefix)
+            CompletionNarrowing.CONTAINS ->
+                candidate.label.contains(extendedPrefix) ||
+                    candidate.insert.contains(extendedPrefix)
+        }
+    }
+}
+
+/**
+ * Whether lazy candidate documentation still belongs to a visible offer row.
+ *
+ * Documentation is session presentation state. An epoch change, narrowing the
+ * row away, or an empty degradation result all hide it immediately.
+ */
+fun candidateDocumentVisible(
+    document: CandidateDocument?,
+    offerEpoch: Long,
+    visibleWireIndices: Collection<Int>,
+): Boolean = document != null && document.epoch == offerEpoch &&
+    document.index in visibleWireIndices && document.text.isNotEmpty()
+
 /** One UTF-16 text splice: replace [start, start + deleted) with [inserted]. */
 data class Utf16TextSplice(
     val start: Int,
@@ -184,6 +226,40 @@ fun shiftFontifyRuns(
             }
         }
     }
+}
+
+/**
+ * Resolve the authoritative fontification applicable to [source].
+ *
+ * Exact text uses the batch directly. One bounded local edit shifts unaffected
+ * runs; a larger or incompatible edit returns null so a renderer can use its
+ * client-side syntax fallback while Emacs computes a fresh batch.
+ */
+fun currentFontifyRuns(fontify: FontifySet?, source: String): List<FontifyRun>? {
+    if (fontify == null) return null
+    val splice = utf16TextSplice(fontify.text, source) ?: return fontify.runs
+    return if (splice.deleted + splice.inserted.length <= FONTIFY_SHIFT_MAX_EDIT) {
+        shiftFontifyRuns(fontify.runs, splice)
+    } else {
+        null
+    }
+}
+
+/** Diagnostics are usable only against the exact text their offsets index. */
+fun currentDiagnostics(
+    diagnostics: DiagnosticSet?,
+    source: String,
+): List<DiagnosticRange>? = diagnostics
+    ?.takeIf { it.text == source }
+    ?.diagnostics
+
+/** Return eldoc only while the rendered mirror still has its exact sequence and text. */
+fun currentEldoc(
+    eldoc: EldocLine?,
+    mirror: EditorMirror?,
+    source: String,
+): EldocLine? = eldoc?.takeIf {
+    mirror != null && it.sequence == mirror.sequence && mirror.text == source
 }
 
 /** Parse a validated `fontify.show` batch against [text]. */

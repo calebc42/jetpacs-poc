@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 5 complete; Phase 6 implementation active
+Status: Phase 6 implemented; tablet manual acceptance pending
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -445,6 +445,52 @@ After synchronization is correct, add:
 
 Transport models remain neutral. Jetpacs and Glasspane resolve the same role
 names through their independent palettes.
+
+### Phase 6 implementation outcome
+
+The shared renderer model now owns completion narrowing with stable wire
+indices, candidate-document epoch visibility, bounded stale-fontification
+shifting, exact-text diagnostic applicability, and exact mirror-sequence eldoc
+applicability. Both Material and Jetpacs consume those helpers, so the new
+presentation did not introduce another completion, annotation, or command
+protocol.
+
+An opted-in Jetpacs synchronized editor requests completion only while its
+shared binding admits actions. It renders at most 12 inline candidates, omits
+decoration for an absent or unknown kind, dispatches one selected candidate
+through the existing stale-offer gate, and fetches documentation only on an
+explicit long press. Documentation disappears when its row, offer epoch, or
+text disappears. The list and its documentation remain siblings of the sole
+editable semantics owner.
+
+Authoritative fontification resolves every fixed contract role through the
+private Jetpacs palette. Exact diagnostics add offset-preserving decoration and
+the first current error to the editor semantics; the diagnostic at a collapsed
+caret takes status precedence over sequence-and-text-current eldoc. While a
+fresh authoritative batch is pending, one bounded local edit shifts unaffected
+fontification and larger drift falls back to the existing local syntax
+projection. Toolbar commands capture the occurrence-time active selection and
+still traverse the shared READY/session admission path. Compose Styles add
+only non-animated completion, documentation, and status visuals; modifiers and
+controllers retain gestures, focus, semantics, caret, selection, and layout.
+
+The catalog's process-volatile synchronized Emacs Lisp buffer now enables the
+real completion, font-lock, Flymake, eldoc, and command riders. It keeps Eglot
+disabled and supplies a deterministic buffer-local CAPF with candidate kinds
+and a disposable lazy-documentation buffer. The fixture creates no file or
+offline draft, and release destroys both buffers and unregisters its kind
+projection.
+
+The EBP validator, deterministic 10,000-case replay, warning-as-error Elisp
+compilation, full ERT suite, broad Kotlin/APK gate, all 23 Jetpacs and 11
+unchanged Material screenshot references, and all five connected suites pass.
+Post-warmup 64 KiB medians were 0.658 ms and 952,128 allocated bytes for local
+syntax projection, and 0.907 ms and 50,352 allocated bytes for authoritative
+fontification; every 4x input step stayed below the 8x time ceiling. The
+reviewed APK and 115-file managed Elisp tree were deployed to the Pixel Tablet,
+Emacs and the Companion were relaunched and reconnected, and the synchronized
+fixture was left visible in READY. Phase 6 remains open only for the documented
+manual interaction and assistive-technology acceptance pass.
 
 ## Styles and theming boundary
 

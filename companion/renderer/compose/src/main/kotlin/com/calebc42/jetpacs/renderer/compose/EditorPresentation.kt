@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.semantics.isEditable
+import androidx.compose.ui.semantics.error
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.input.ImeAction
@@ -85,8 +86,11 @@ class EditorBinding internal constructor(
      * synchronized lifecycle transition can override its static `read_only`
      * projection without clearing the field's text and selection actions.
      */
-    fun fieldModifier(modifier: Modifier): Modifier = Modifier
-        .semantics { isEditable = fieldEditable }
+    fun fieldModifier(modifier: Modifier, errorMessage: String? = null): Modifier = Modifier
+        .semantics {
+            isEditable = fieldEditable
+            errorMessage?.takeIf { it.isNotEmpty() }?.let(::error)
+        }
         .then(modifier)
         .focusRequester(focusRequester)
 

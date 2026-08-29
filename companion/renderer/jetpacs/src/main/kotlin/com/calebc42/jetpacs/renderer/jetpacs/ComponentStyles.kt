@@ -168,6 +168,50 @@ object JetpacsComponentStyles {
         )
     }
 
+    /** Bounded inline completion surface that remains attached to editor layout. */
+    val editorCompletionList = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(tokens.spacing.unit)
+    }
+
+    /** One independently focusable completion row; behavior stays in modifiers. */
+    val editorCompletionItem = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        hovered { background(tokens.colors.selectedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { background(tokens.colors.pressedSurface) }
+    }
+
+    /** Non-interactive plain-text candidate documentation peek. */
+    val editorCandidateDocument = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+    }
+
+    /** Diagnostic or eldoc status below the sole editable semantics owner. */
+    val editorToolingStatus = Style {
+        fillWidth()
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.unit,
+        )
+    }
+
     /** Compact, non-animated toolbar item with a full platform touch target. */
     val editorToolbarItem = Style {
         shape(tokens.shapes.control)

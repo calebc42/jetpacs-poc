@@ -19,7 +19,17 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.calebc42.ebp.wire.CompletionNarrowing
+import com.calebc42.ebp.wire.CompletionOfferView
+import com.calebc42.jetpacs.renderer.model.CandidateDocument
+import com.calebc42.jetpacs.renderer.model.CompletionCandidate
+import com.calebc42.jetpacs.renderer.model.CompletionOffer
+import com.calebc42.jetpacs.renderer.model.DiagnosticRange
+import com.calebc42.jetpacs.renderer.model.DiagnosticSet
+import com.calebc42.jetpacs.renderer.model.EldocLine
 import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
+import com.calebc42.jetpacs.renderer.model.FontifyRun
+import com.calebc42.jetpacs.renderer.model.FontifySet
 import com.android.tools.screenshot.PreviewTest
 
 @PreviewTest
@@ -258,6 +268,42 @@ private fun JetpacsSynchronizedEditorStates() {
     }
 }
 
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 920)
+@Preview(name = "expanded", widthDp = 900, heightDp = 720)
+@Composable
+private fun JetpacsEditorToolingAcrossWidths() {
+    JetpacsEditorToolingGallery()
+}
+
+@PreviewTest
+@Preview(
+    name = "dark",
+    widthDp = 400,
+    heightDp = 920,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun JetpacsEditorToolingDark() {
+    JetpacsEditorToolingGallery()
+}
+
+@PreviewTest
+@Preview(name = "large-text", widthDp = 400, heightDp = 1120, fontScale = 1.5f)
+@Composable
+private fun JetpacsEditorToolingLargeText() {
+    JetpacsEditorToolingGallery()
+}
+
+@PreviewTest
+@Preview(name = "rtl", widthDp = 400, heightDp = 920)
+@Composable
+private fun JetpacsEditorToolingRtl() {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        JetpacsEditorToolingGallery()
+    }
+}
+
 /** Deterministic first-slice gallery shared by all baseline configurations. */
 @Composable
 private fun JetpacsComponentsGallery() {
@@ -370,6 +416,94 @@ private fun JetpacsEditorGallery() {
                 state = rememberTextFieldState("Chromeless scratch buffer"),
                 chromeless = true,
                 lineLimits = TextFieldLineLimits.MultiLine(2, 3),
+            )
+        }
+    }
+}
+
+/** Deterministic authoritative annotations, status, completion, and lazy docs. */
+@Composable
+private fun JetpacsEditorToolingGallery() {
+    ProvideJetpacsTheme(null) {
+        val text = "(defun print-value (value)\n  (message \"%s\" value))"
+        val functionStart = text.indexOf("print-value")
+        val warningStart = text.lastIndexOf("value")
+        val fontify = FontifySet(
+            session = "fixture",
+            sequence = 4,
+            text = text,
+            runs = listOf(
+                FontifyRun(1, 6, "keyword"),
+                FontifyRun(functionStart, functionStart + "print-value".length, "function"),
+            ),
+        )
+        val diagnostic = DiagnosticRange(
+            warningStart,
+            warningStart + "value".length,
+            "warning",
+            "Value may be unused",
+        )
+        val diagnostics = DiagnosticSet(
+            session = "fixture",
+            sequence = 4,
+            text = text,
+            diagnostics = listOf(diagnostic),
+        )
+        val diagnosticColors = JetpacsDiagnosticColors(
+            error = JetpacsTheme.colors.error,
+            warning = JetpacsTheme.syntax.number,
+            info = JetpacsTheme.colors.accent,
+            hint = JetpacsTheme.colors.mutedContent,
+        )
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BasicText("AUTHORITATIVE TOOLING", style = JetpacsTheme.typography.panelLabel)
+            JetpacsEditorToolbarFixture()
+            JetpacsEditor(
+                state = rememberTextFieldState(text),
+                lineNumbers = true,
+                outputTransformation = JetpacsAnnotationOutputTransformation(
+                    fontify,
+                    diagnostics,
+                    "elisp",
+                    JetpacsTheme.syntax,
+                    diagnosticColors,
+                ),
+                lineLimits = TextFieldLineLimits.MultiLine(4, 5),
+            )
+            JetpacsEditorToolingStatus(diagnostic, null, diagnosticColors)
+            JetpacsEditorCompletion(
+                offer = CompletionOffer(
+                    prefix = "pri",
+                    candidates = listOf(
+                        CompletionCandidate("print", "built-in", "print()", "function"),
+                        CompletionCandidate("printf", "function", "printf()", "method"),
+                        CompletionCandidate("priority", "variable", "priority", "variable"),
+                    ),
+                    session = "fixture",
+                    sequence = 4,
+                    cursor = 3,
+                    epoch = 7,
+                ),
+                view = CompletionOfferView("pri", "", active = true),
+                document = CandidateDocument(
+                    index = 0,
+                    text = "Print a formatted value to the current output stream.",
+                    epoch = 7,
+                ),
+                narrowing = CompletionNarrowing.STRICT,
+                onSelect = {},
+                onRequestDocument = { _, _ -> },
+            )
+            JetpacsEditorToolingStatus(
+                diagnostic = null,
+                eldoc = EldocLine("fixture", 4, "message: (message FORMAT &rest ARGS)"),
+                diagnosticColors = diagnosticColors,
             )
         }
     }

@@ -19,6 +19,7 @@
 (require 'jetpacs-chrome)
 (require 'jetpacs-apps)
 (require 'ebp-sync)
+(require 'ebp-complete)
 
 (defconst jetpacs-component-catalog-owner "jpcatalog"
   "Owner of the Jetpacs Components catalog surface and actions.")
@@ -71,11 +72,14 @@
   "Canonical editor node identifier for the synchronization fixture.")
 
 (defconst jetpacs-component-catalog--sync-seed
-  "; Synchronized Jetpacs buffer\n(message \"Edit either side\")\n"
+  "; Synchronized Jetpacs tooling\n(defun jpcatalog-demo ()\n  (message \"%s\" undefined-value))\n\njpc"
   "Initial non-secret text for the synchronization fixture.")
 
 (defvar jetpacs-component-catalog--sync-buffer nil
   "Process-volatile buffer backing the synchronized Editor demonstration.")
+
+(defvar jetpacs-component-catalog--completion-doc-buffer nil
+  "Process-volatile documentation buffer for the catalog completion fixture.")
 
 (defvar jetpacs-component-catalog--sync-save-count 0
   "Number of synchronized Editor save actions accepted this session.")
@@ -339,22 +343,81 @@ nodes inside BODY may therefore select installed Jetpacs core overrides."
             :label "Message"
             :snippet "(message \"${input:Text}\")")))))
 
+(defconst jetpacs-component-catalog--completion-candidates
+  '("jpcatalog-print" "jpcatalog-process" "jpcatalog-preview")
+  "Deterministic candidates offered alongside the buffer's real Elisp CAPFs.")
+
+(defun jetpacs-component-catalog--completion-annotation (candidate)
+  "Return the catalog annotation for one completion CANDIDATE."
+  (ignore candidate)
+  "catalog function")
+
+(defun jetpacs-component-catalog--completion-kind (candidate)
+  "Return the contract category for one completion CANDIDATE."
+  (ignore candidate)
+  'function)
+
+(defun jetpacs-component-catalog--completion-document (candidate)
+  "Return a volatile documentation buffer for completion CANDIDATE."
+  (unless (buffer-live-p jetpacs-component-catalog--completion-doc-buffer)
+    (setq jetpacs-component-catalog--completion-doc-buffer
+          (generate-new-buffer " *Jetpacs completion documentation*")))
+  (with-current-buffer jetpacs-component-catalog--completion-doc-buffer
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (format "%s is a deterministic catalog completion.\n\n\
+Long-press documentation travels through edit.candidate.doc and is never \
+fetched for an unselected row."
+                      (substring-no-properties candidate))))
+    (current-buffer)))
+
+(defun jetpacs-component-catalog--completion-at-point ()
+  "Offer deterministic catalog candidates at a `jpc' symbol prefix."
+  (when-let* ((bounds (bounds-of-thing-at-point 'symbol))
+              (beg (car bounds))
+              (prefix (buffer-substring-no-properties beg (point)))
+              ((string-prefix-p "jpc" prefix)))
+    (list beg (cdr bounds) jetpacs-component-catalog--completion-candidates
+          :annotation-function
+          #'jetpacs-component-catalog--completion-annotation
+          :company-kind #'jetpacs-component-catalog--completion-kind
+          :company-doc-buffer
+          #'jetpacs-component-catalog--completion-document)))
+
+(defun jetpacs-component-catalog--eldoc (callback)
+  "Return deterministic eldoc for the catalog's synchronized buffer."
+  (ignore callback)
+  (when (thing-at-point 'symbol)
+    "jpcatalog-demo: synchronized completion, diagnostics, and commands"))
+
+(defun jetpacs-component-catalog--sync-toolbar ()
+  "Return the synchronized fixture's safe editor command toolbar."
+  (list (jetpacs-toolbar-item
+         :label "Indent selection" :icon "format_indent_increase"
+         :command "indent-region")))
+
 (defun jetpacs-component-catalog--ensure-sync-buffer ()
   "Return the catalog's process-volatile synchronized buffer.
-The fixture deliberately disables every Phase 6 rider before attachment; it
-tests only the normative text, caret, selection, and session lifecycle path."
+The fixture uses real synchronization, completion, font-lock, Flymake, and
+eldoc riders without visiting a file or starting an external language server."
   (unless (buffer-live-p jetpacs-component-catalog--sync-buffer)
     (setq jetpacs-component-catalog--sync-buffer
           (generate-new-buffer " *Jetpacs synchronized editor*"))
     (with-current-buffer jetpacs-component-catalog--sync-buffer
       (insert jetpacs-component-catalog--sync-seed)
+      (delay-mode-hooks (emacs-lisp-mode))
+      (goto-char (point-max))
       (set-buffer-modified-p nil)
       (setq buffer-undo-list nil)
       (setq-local buffer-auto-save-file-name nil)
       (setq-local ebp-sync-eglot nil)
-      (setq-local ebp-sync-diagnostics nil)
-      (setq-local ebp-sync-fontify nil)
-      (setq-local ebp-sync-eldoc nil)))
+      (setq-local ebp-sync-diagnostics t)
+      (setq-local ebp-sync-fontify t)
+      (setq-local ebp-sync-eldoc t)
+      (add-hook 'completion-at-point-functions
+                #'jetpacs-component-catalog--completion-at-point nil t)
+      (add-hook 'eldoc-documentation-functions
+                #'jetpacs-component-catalog--eldoc nil t)))
   jetpacs-component-catalog--sync-buffer)
 
 (defun jetpacs-component-catalog--sync-value ()
@@ -372,6 +435,11 @@ tests only the normative text, caret, selection, and session lifecycle path."
 (defun jetpacs-component-catalog--on-ready (client)
   "Attach the in-memory catalog fixture to READY CLIENT when admitted."
   (when (jetpacs-component-catalog--sync-available-p client)
+    (ebp-complete-set-editor-kinds
+     jetpacs-component-catalog--sync-document
+     jetpacs-component-catalog--sync-editor-id
+     (and (jetpacs-client)
+          (jetpacs-feature-advertised-p "editor.candidate_kind" :app)))
     (condition-case err
         (ebp-sync-attach
          client
@@ -389,10 +457,21 @@ tests only the normative text, caret, selection, and session lifecycle path."
       (ignore-errors (ebp-sync-detach))
       (set-buffer-modified-p nil))
     (kill-buffer jetpacs-component-catalog--sync-buffer))
-  (setq jetpacs-component-catalog--sync-buffer nil))
+  (when (buffer-live-p jetpacs-component-catalog--completion-doc-buffer)
+    (kill-buffer jetpacs-component-catalog--completion-doc-buffer))
+  (ebp-complete-set-editor-kinds
+   jetpacs-component-catalog--sync-document
+   jetpacs-component-catalog--sync-editor-id nil)
+  (setq jetpacs-component-catalog--sync-buffer nil
+        jetpacs-component-catalog--completion-doc-buffer nil))
 
 (defun jetpacs-component-catalog--sync-panel ()
   "Build the admitted synchronized Editor panel or an honest fallback."
+  (ebp-complete-set-editor-kinds
+   jetpacs-component-catalog--sync-document
+   jetpacs-component-catalog--sync-editor-id
+   (and (jetpacs-client)
+        (jetpacs-feature-advertised-p "editor.candidate_kind" :app)))
   (jetpacs-component-panel
    "SYNCHRONIZED / LIVE"
    (if (jetpacs-component-catalog--sync-available-p)
@@ -402,14 +481,16 @@ tests only the normative text, caret, selection, and session lifecycle path."
          :document jetpacs-component-catalog--sync-document
          :value (jetpacs-component-catalog--sync-value)
          :on-save (jetpacs-action "jpcatalog.sync-editor-save")
-         :min-lines 5 :max-lines 8 :line-numbers t)
+         :min-lines 5 :max-lines 8 :line-numbers t
+         :syntax "elisp" :complete t
+         :toolbar (jetpacs-component-catalog--sync-toolbar))
         (jetpacs-text
          (format "Saves: %d · latest: %s"
                  jetpacs-component-catalog--sync-save-count
                  (or jetpacs-component-catalog--last-sync-preview "—"))
          :style "caption")
         (jetpacs-text
-         "Disconnect keeps the visible value but makes this field read-only; reconnect opens a fresh session without an offline draft."
+         "Type after the final jpc for completion; long-press a row for documentation. Move onto a diagnostic for its message, or select text and run Indent selection. Disconnect makes every synchronized tool inert."
          :style "caption"))
      (list
       (jetpacs-text
@@ -478,10 +559,10 @@ tests only the normative text, caret, selection, and session lifecycle path."
        :value "Borderless local scratch surface"
        :chromeless t :min-lines 2 :max-lines 3)))
     (jetpacs-component-panel
-     "LATER TIERS"
+     "SYNCHRONIZED TOOLING"
      (list
       (jetpacs-text
-       "Completion, authoritative diagnostics, eldoc, and editor commands remain Phase 6 work; this synchronized fixture enables none of those riders."
+       "Phase 6 uses the same Emacs completion, font-lock, Flymake, eldoc, and command paths as ordinary synchronized documents. Jetpacs owns only their scoped presentation."
        :style "caption")))
     (jetpacs-component-catalog--code-panel
      "(jetpacs-editor \"draft\"\n  :value \"(message \\\"Jetpacs\\\")\"\n  :on-save (jetpacs-action \"app.save\")\n  :syntax \"elisp\" :line-numbers t\n  :publish-state t)"

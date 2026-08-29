@@ -289,8 +289,19 @@ importing Material. A synchronized binding exposes opening, ready, composing,
 awaiting-reconciliation, stale, offline-read-only, and closed phases. Only
 READY admits ordinary edits, saves, Enter, completion, or commands; an active
 composition may finish before a pending remote mirror is adopted atomically.
-Jetpacs deliberately does not request or present completion, authoritative
-annotations, eldoc, or editor commands until Phase 6.
+Jetpacs presents the shared synchronized-editor tooling without adding another
+protocol or host. Completion is requested only for an opted-in READY editor;
+the bounded inline list preserves original wire indices through local
+narrowing, and candidate documentation is fetched lazily and remains tied to
+the visible offer epoch. Authoritative fontification uses the contract's fixed
+roles, exact-text diagnostics provide both decoration and error semantics, and
+eldoc appears only against the matching mirror sequence and text. A bounded
+single local edit may shift still-applicable fontification while the local
+syntax projection supplies the fallback. Toolbar commands capture the active
+selection at occurrence time and still pass through the shared host's READY
+and session gates. These additions are non-animated Jetpacs presentation;
+caret, selection, text layout, synchronization, and command policy remain in
+their existing owners.
 
 The application bridge projects authenticated wire state into that neutral
 lifecycle. Transport loss retains only the process-volatile displayed text and

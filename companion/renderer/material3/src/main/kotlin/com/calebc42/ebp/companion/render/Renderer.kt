@@ -98,9 +98,6 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.companion.MaterialRendererHost
-import com.calebc42.jetpacs.renderer.model.CompletionCandidate
-import com.calebc42.jetpacs.renderer.model.CandidateDocument
-import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
@@ -110,6 +107,9 @@ import com.calebc42.jetpacs.renderer.compose.keyboardAction
 import com.calebc42.jetpacs.renderer.compose.MaskVisualTransformation
 import com.calebc42.jetpacs.renderer.compose.rememberLegacyTextInputAdapter
 import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.jetpacs.renderer.model.candidateDocumentVisible
+import com.calebc42.jetpacs.renderer.model.currentEldoc
+import com.calebc42.jetpacs.renderer.model.narrowedCompletionCandidates
 import com.calebc42.jetpacs.renderer.model.RendererActionContext
 import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
 import com.calebc42.jetpacs.renderer.model.RendererActionRequest
@@ -1058,6 +1058,8 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         val all by ctx.bridge.editorAnnotations.collectAsState()
         all[document to id]
     }
+    val editorMirrors by ctx.bridge.editorMirrors.collectAsState()
+    val editorMirror = editorMirrors[document to id]
     val diagColors = DiagnosticColors(
         error = MaterialTheme.colorScheme.error,
         warning = Color(0xFFC08A00),
@@ -1171,7 +1173,9 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 value.text,
                 value.selectionStartUtf16,
             )
-            val eldoc = annotations?.eldoc?.text?.takeIf { it.isNotEmpty() }
+            val eldoc = currentEldoc(annotations?.eldoc, editorMirror, value.text)
+                ?.text
+                ?.takeIf { it.isNotEmpty() }
             if (caretDiag != null || eldoc != null) {
                 Row(verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
@@ -1238,7 +1242,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             // discards invalid replies whole — so a long-press names the
             // candidate Emacs retained at that index, never the row's
             // screen slot after narrowing shifted it.
-            val visible = narrowedWithWireIndex(
+            val visible = narrowedCompletionCandidates(
                 offer.candidates, offerView.active, offerView.extendedPrefix,
                 offerView.ext, ctx.bridge.completionNarrowing)
                 .take(MAX_VISIBLE_COMPLETIONS)
@@ -1299,7 +1303,7 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             // Rendered verbatim per §16.4: raw markdown punctuation from
             // a markdown-mode-less device Emacs displays as typed.
             val doc = candidateDocs[document to id]
-            if (doc != null && candidateDocVisible(doc, offer.epoch,
+            if (doc != null && candidateDocumentVisible(doc, offer.epoch,
                     visible.map { it.index })) {
                 Text(doc.text,
                     style = MaterialTheme.typography.bodySmall.copy(
@@ -1321,48 +1325,6 @@ private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                         })
                         .padding(horizontal = 12.dp, vertical = 4.dp))
             }
-        }
-    }
-}
-
-/** Amendment #171 display narrowing with WIRE indices preserved (R5): a
- * row that survives filter keeps its ORIGINAL index into the offer's
- * candidate list, because `edit.candidate.doc` names candidates by wire
- * position and narrowing must not renumber them under the user's
- * finger. A pristine offer (empty ext) is the base path and displays
- * unfiltered — the predicate never applies to it (the emit-time re-proof
- * in the engine stays the normative gate either way). */
-/** R5's three-condition show gate for the doc panel, pure so each
- * condition is a killable mutant (no Compose test rig exists here): the
- * doc belongs to the CURRENT offer epoch, its row is still among the
- * VISIBLE wire indices after narrowing, and it is non-empty — "" is the
- * universal degradation arm (every picker candidate, word-fallback
- * candidate, timeout, latch collision, and failure), so an empty doc
- * shows NO panel, exactly the eldoc row's own takeIf guard. */
-internal fun candidateDocVisible(
-    doc: CandidateDocument?,
-    offerEpoch: Long,
-    visibleIndices: List<Int>,
-): Boolean = doc != null && doc.epoch == offerEpoch &&
-    doc.index in visibleIndices && doc.text.isNotEmpty()
-
-internal fun narrowedWithWireIndex(
-    candidates: List<CompletionCandidate>,
-    active: Boolean,
-    extendedPrefix: String,
-    ext: String,
-    narrowing: CompletionNarrowing,
-): List<IndexedValue<CompletionCandidate>> = when {
-    !active -> emptyList()
-    ext.isEmpty() -> candidates.withIndex().toList()
-    else -> candidates.withIndex().filter { (_, c) ->
-        when (narrowing) {
-            CompletionNarrowing.STRICT ->
-                c.label.startsWith(extendedPrefix) ||
-                    c.insert.startsWith(extendedPrefix)
-            CompletionNarrowing.CONTAINS ->
-                c.label.contains(extendedPrefix) ||
-                    c.insert.contains(extendedPrefix)
         }
     }
 }

@@ -10,6 +10,8 @@ import androidx.compose.foundation.style.MutableStyleState
 import androidx.compose.foundation.style.styleable
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -20,6 +22,9 @@ import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalNodeOverride
 import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.jetpacs.renderer.compose.rememberEditorBinding
 import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
+import com.calebc42.jetpacs.renderer.model.currentDiagnostics
+import com.calebc42.jetpacs.renderer.model.currentEldoc
+import com.calebc42.jetpacs.renderer.model.diagnosticAt
 import kotlinx.serialization.json.JsonObject
 
 /** Jetpacs-scoped presentation override for canonical local and synchronized editors. */
@@ -34,17 +39,66 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
         context: ComposeNodeRenderContext,
         modifier: Modifier,
     ) {
-        // Completion, annotations, and editor commands remain Phase 6. The
-        // shared binding still owns text synchronization, but this renderer
-        // does not start a completion request it cannot yet present.
-        val binding = rememberEditorBinding(node, context, requestCompletion = false)
+        val binding = rememberEditorBinding(node, context)
         val presentation = binding.presentation
+        val document = presentation.document
+        val editorKey = document?.let { it to presentation.id }
+        val annotationMap by context.editorHost.editorAnnotations.collectAsState()
+        val annotations = editorKey?.let(annotationMap::get)
+        val mirrors by context.editorHost.editorMirrors.collectAsState()
+        val mirror = editorKey?.let(mirrors::get)
+        val offers by context.editorHost.completionOffers.collectAsState()
+        val offerViews by context.editorHost.completionOfferViews.collectAsState()
+        val candidateDocuments by context.editorHost.candidateDocuments.collectAsState()
+        val offer = editorKey?.takeIf {
+            presentation.complete && binding.actionsEnabled
+        }?.let(offers::get)
+        val offerView = editorKey?.let(offerViews::get)
+        val candidateDocument = editorKey?.let(candidateDocuments::get)
         val syntaxColors = JetpacsTheme.syntax
-        val outputTransformation = remember(presentation.syntax, syntaxColors) {
-            presentation.syntax?.takeIf { presentation.document == null }?.let {
-                JetpacsSyntaxOutputTransformation(it, syntaxColors)
+        val componentColors = JetpacsTheme.colors
+        val diagnosticColors = remember(componentColors, syntaxColors) {
+            JetpacsDiagnosticColors(
+                error = componentColors.error,
+                warning = syntaxColors.number,
+                info = componentColors.accent,
+                hint = componentColors.mutedContent,
+            )
+        }
+        val outputTransformation = remember(
+            document,
+            presentation.syntax,
+            syntaxColors,
+            diagnosticColors,
+            annotations?.epoch,
+        ) {
+            if (document != null) {
+                JetpacsAnnotationOutputTransformation(
+                    annotations?.fontify,
+                    annotations?.diagnostics,
+                    presentation.syntax.orEmpty(),
+                    syntaxColors,
+                    diagnosticColors,
+                )
+            } else {
+                presentation.syntax?.let { JetpacsSyntaxOutputTransformation(it, syntaxColors) }
             }
         }
+        val value = binding.controller.snapshot()
+        val collapsedSelection = value.selectionStartUtf16 == value.selectionEndUtf16
+        val caretDiagnostic = if (collapsedSelection) {
+            diagnosticAt(
+                annotations?.diagnostics,
+                value.text,
+                value.selectionEndUtf16,
+            )
+        } else {
+            null
+        }
+        val applicableDiagnostics = currentDiagnostics(annotations?.diagnostics, value.text)
+        val accessibleError = applicableDiagnostics
+            ?.firstOrNull { it.severity == "error" }
+            ?.message
         Column(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -54,13 +108,29 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                     items = toolbar,
                     controller = binding.controller,
                     dispatch = { context.action(it) },
-                    onCommand = {},
+                    onCommand = { command ->
+                        if (document != null && binding.actionsEnabled) {
+                            val occurrence = binding.controller.snapshot()
+                            context.editorHost.dispatchEditorCommand(
+                                surface = context.surface,
+                                document = document,
+                                editorId = presentation.id,
+                                command = command,
+                                cursorUtf16 = occurrence.selectionEndUtf16,
+                                selectionStartUtf16 = occurrence.selectionStartUtf16,
+                                selectionEndUtf16 = occurrence.selectionEndUtf16,
+                            )
+                        }
+                    },
                     enabled = binding.actionsEnabled,
                 )
             }
             JetpacsEditor(
                 state = binding.controller.state,
-                modifier = binding.fieldModifier(modifier.fillMaxWidth()),
+                modifier = binding.fieldModifier(
+                    modifier.fillMaxWidth(),
+                    errorMessage = accessibleError,
+                ),
                 enabled = presentation.enabled,
                 readOnly = binding.effectiveReadOnly,
                 lineNumbers = presentation.lineNumbers,
@@ -71,8 +141,39 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                 onKeyboardAction = { binding.enter() },
                 lineLimits = presentation.lineLimits,
             )
+            if (document != null && collapsedSelection) {
+                JetpacsEditorToolingStatus(
+                    diagnostic = caretDiagnostic,
+                    eldoc = currentEldoc(annotations?.eldoc, mirror, value.text),
+                    diagnosticColors = diagnosticColors,
+                )
+            }
             binding.syncPhase?.let { phase ->
                 JetpacsEditorSyncStatus(phase)
+            }
+            if (offer != null && offerView != null) {
+                JetpacsEditorCompletion(
+                    offer = offer,
+                    view = offerView,
+                    document = candidateDocument,
+                    narrowing = context.editorHost.completionNarrowing,
+                    onSelect = { candidate ->
+                        context.editorHost.selectEditorCompletion(
+                            document,
+                            presentation.id,
+                            candidate.label,
+                            candidate.insert,
+                        )
+                    },
+                    onRequestDocument = { wireIndex, offerEpoch ->
+                        context.editorHost.requestCandidateDocument(
+                            document,
+                            presentation.id,
+                            wireIndex,
+                            offerEpoch,
+                        )
+                    },
+                )
             }
             if (presentation.onSave != null) {
                 JetpacsAction(

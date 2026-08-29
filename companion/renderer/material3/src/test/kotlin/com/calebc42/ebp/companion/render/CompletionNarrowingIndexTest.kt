@@ -7,6 +7,8 @@ package com.calebc42.ebp.companion.render
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.jetpacs.renderer.model.CandidateDocument
 import com.calebc42.jetpacs.renderer.model.CompletionCandidate
+import com.calebc42.jetpacs.renderer.model.candidateDocumentVisible
+import com.calebc42.jetpacs.renderer.model.narrowedCompletionCandidates
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -25,7 +27,7 @@ class CompletionNarrowingIndexTest {
 
     @Test
     fun strictNarrowingKeepsWireIndices() {
-        val r = narrowedWithWireIndex(candidates, true, "xa", "a",
+        val r = narrowedCompletionCandidates(candidates, true, "xa", "a",
             CompletionNarrowing.STRICT)
         assertEquals(listOf(0, 2, 3), r.map { it.index })
         assertEquals("xaa", r[0].value.label)
@@ -35,7 +37,7 @@ class CompletionNarrowingIndexTest {
 
     @Test
     fun containsNarrowingKeepsWireIndices() {
-        val r = narrowedWithWireIndex(candidates, true, "ab", "b",
+        val r = narrowedCompletionCandidates(candidates, true, "ab", "b",
             CompletionNarrowing.CONTAINS)
         assertEquals(listOf(2), r.map { it.index })
     }
@@ -45,14 +47,14 @@ class CompletionNarrowingIndexTest {
         // The R4 pin holds through the R5 rewrite: an empty ext is the
         // base path — no predicate applies, whatever the prefix looks
         // like (Emacs tables are not prefix engines).
-        val r = narrowedWithWireIndex(candidates, true, "xa", "",
+        val r = narrowedCompletionCandidates(candidates, true, "xa", "",
             CompletionNarrowing.STRICT)
         assertEquals(listOf(0, 1, 2, 3), r.map { it.index })
     }
 
     @Test
     fun inactiveOfferShowsNothing() {
-        assertTrue(narrowedWithWireIndex(candidates, false, "", "",
+        assertTrue(narrowedCompletionCandidates(candidates, false, "", "",
             CompletionNarrowing.STRICT).isEmpty())
     }
 
@@ -61,13 +63,13 @@ class CompletionNarrowingIndexTest {
     @Test
     fun docPanelShowsOnlyForTheCurrentEpochsVisibleRow() {
         val doc = CandidateDocument(2, "Prints.", 7L)
-        assertTrue(candidateDocVisible(doc, 7L, listOf(0, 2, 3)))
+        assertTrue(candidateDocumentVisible(doc, 7L, listOf(0, 2, 3)))
         // A stale fetch or a fresh offer: epoch mismatch hides it.
-        assertTrue(!candidateDocVisible(doc, 8L, listOf(0, 2, 3)))
+        assertTrue(!candidateDocumentVisible(doc, 8L, listOf(0, 2, 3)))
         // The offer survived a qualifying extension (same epoch) but
         // narrowing dropped the documented row off screen.
-        assertTrue(!candidateDocVisible(doc, 7L, listOf(0, 3)))
-        assertTrue(!candidateDocVisible(null, 7L, listOf(2)))
+        assertTrue(!candidateDocumentVisible(doc, 7L, listOf(0, 3)))
+        assertTrue(!candidateDocumentVisible(null, 7L, listOf(2)))
     }
 
     @Test
@@ -76,6 +78,6 @@ class CompletionNarrowingIndexTest {
         // timeout, latch collision, and failure — not a rare case; a
         // panel for it would be indistinguishable from a regression.
         val empty = CandidateDocument(2, "", 7L)
-        assertTrue(!candidateDocVisible(empty, 7L, listOf(2)))
+        assertTrue(!candidateDocumentVisible(empty, 7L, listOf(2)))
     }
 }

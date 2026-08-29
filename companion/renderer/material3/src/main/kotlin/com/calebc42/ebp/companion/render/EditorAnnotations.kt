@@ -13,10 +13,9 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextDecoration
 import com.calebc42.jetpacs.renderer.model.DiagnosticSet
-import com.calebc42.jetpacs.renderer.model.FONTIFY_SHIFT_MAX_EDIT
 import com.calebc42.jetpacs.renderer.model.FontifySet
-import com.calebc42.jetpacs.renderer.model.shiftFontifyRuns
-import com.calebc42.jetpacs.renderer.model.utf16TextSplice
+import com.calebc42.jetpacs.renderer.model.currentDiagnostics
+import com.calebc42.jetpacs.renderer.model.currentFontifyRuns
 
 /** The contract's fixed syntax roles resolved by this Material palette. */
 val SYNTAX_ROLES = listOf(
@@ -102,16 +101,7 @@ fun annotationSpans(
 ): List<AnnotatedString.Range<SpanStyle>> {
     val length = source.length
     val output = mutableListOf<AnnotatedString.Range<SpanStyle>>()
-    val runs = fontify?.let { batch ->
-        when (val splice = utf16TextSplice(batch.text, source)) {
-            null -> batch.runs
-            else -> if (splice.deleted + splice.inserted.length <= FONTIFY_SHIFT_MAX_EDIT) {
-                shiftFontifyRuns(batch.runs, splice)
-            } else {
-                null
-            }
-        }
-    }
+    val runs = currentFontifyRuns(fontify, source)
     if (runs != null) {
         for (run in runs) {
             val style = roleStyle(run.role, colors) ?: continue
@@ -122,8 +112,8 @@ fun annotationSpans(
     } else if (language.isNotEmpty()) {
         output += highlightSpans(language, source, colors)
     }
-    if (diagnostics != null && diagnostics.text == source) {
-        for (diagnostic in diagnostics.diagnostics) {
+    currentDiagnostics(diagnostics, source)?.let { current ->
+        for (diagnostic in current) {
             val start = diagnostic.start.coerceIn(0, length)
             val end = diagnostic.end.coerceIn(start, length)
             if (end > start) {
