@@ -1,6 +1,6 @@
 # Jetpacs text-editing plan
 
-Status: Phase 3 complete; Phase 4 is next
+Status: Adversarial review complete; Phase 4 next
 Date: 2026-08-28
 
 ## Outcome and ownership
@@ -291,8 +291,10 @@ connected controller, scoped-dispatch, and nine-case Jetpacs semantics suites
 pass. The verified APK and 115-file Elisp tree were installed on the Pixel
 Tablet through `tools/onboard-tablet.sh`; the reconnected live accessibility
 tree exposes the Jetpacs Components **Text Field** page and its editable
-controls. Manual TalkBack, Switch Access, hardware-keyboard, and rotation
-exploration remain human acceptance checks rather than automated evidence.
+controls. The developer subsequently completed and passed the prescribed
+TalkBack, Switch Access, hardware-keyboard, pointer, touch, rotation, restart,
+offline-refusal, ordinary-submit, and secure-field manual acceptance checks;
+the audit records these separately as user-reported evidence.
 
 ## Phase 4: implement the local `JetpacsEditor`
 

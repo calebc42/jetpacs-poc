@@ -2,8 +2,7 @@
 
 Date: 2026-08-28
 
-Status: **CODE REMEDIATION VERIFIED — Phase 4 remains blocked on the physical
-accessibility acceptance gate**
+Status: **ADVERSARIAL REVIEW COMPLETE — Phase 4 may begin**
 
 Reviewed superproject range: 2255493..4e0e3a1
 
@@ -41,12 +40,15 @@ caught by a connected test, and the post-fix forced-GC heap contains zero
 copies of the canary. No confirmed Critical, High, or Medium code finding
 remains open on 46ea511.
 
-Phase 4 still must not begin. The required physical human TalkBack, Switch
-Access, hardware-keyboard, pointer, and touch acceptance was not available.
-That is an uncompleted exit criterion, not a confirmed product defect. The
-focused remediation evidence and the exact remaining gate are recorded below.
-docs/PLAN-jetpacs-text-editing.md therefore is not advanced to “adversarial
-review complete; Phase 4 next.”
+The remaining physical acceptance gate was subsequently completed by the
+developer on the reviewed build. The developer reported that every prescribed
+TalkBack, Switch Access, hardware-keyboard, pointer, touch, rotation, restart,
+disconnect, reconnect, offline-refusal, ordinary-submit, and secure-field check
+passed. The result is user-reported manual evidence rather than independently
+captured automation; that distinction is preserved in the device-gate section.
+No Critical, High, or Medium finding remains open, so Phase 4 may begin and
+docs/PLAN-jetpacs-text-editing.md advances to “adversarial review complete;
+Phase 4 next.”
 
 ## Scope, authority, and method
 
@@ -150,7 +152,7 @@ is not a claim about an untested path.
 | jetpacs.scope contributes no layout, semantics, state, interaction, or descendant merge | docs/ARCHITECTURE-POC3.md:254-258 | companion/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsRenderer.kt:55-64 | Connected semantics tree has no scope owner; verified |
 | Only generated Core Node Set members are initially override-eligible | docs/ARCHITECTURE-POC3.md:63-70 | ComposeCoreOverrideRegistry | Registry rejection tests pass for editor/downstream/invented nodes; verified |
 | Jetpacs renderer remains Material-free; Material remains default elsewhere | docs/ARCHITECTURE-POC3.md:45-72, 107-113 | companion/renderer/jetpacs/build.gradle.kts and composition root | Dependency mutation failed JetpacsRendererBoundaryTest; both renderer suites/screenshots passed |
-| One editable semantics owner; labels/errors/enabled/password/max length are projected without removing hardware actions | ebp/SPEC.md:2795-2839; docs/ARCHITECTURE-POC3.md:250-252, 300-310 | shared semantics + Jetpacs field | Nine connected Jetpacs semantics tests and eight Material/scoped tests pass; manual tree inspection agrees; TalkBack/Switch Access remain unverified |
+| One editable semantics owner; labels/errors/enabled/password/max length are projected without removing hardware actions | ebp/SPEC.md:2795-2839; docs/ARCHITECTURE-POC3.md:250-252, 300-310 | shared semantics + Jetpacs field | Nine connected Jetpacs semantics tests and eight Material/scoped tests pass; manual tree inspection agrees; developer reports the prescribed TalkBack and Switch Access checks passed |
 | Decorations, mask, syntax, and Styles are presentation-only; caret/selection/text layout do not animate | ebp/SPEC.md:2804-2848; plan Styles boundary | :renderer:compose and :renderer:jetpacs | Value/capture tests and source/dependency audit pass; mask performance fails the review threshold |
 | Existing Material pixels and all new Jetpacs references remain stable | Phase plan screenshot gates | screenshot tests | Both validators pass without updates; six new field references manually inspected |
 
@@ -519,10 +521,11 @@ actions. jetpacs.scope was absent as a semantic owner. Styles and experimental
 APIs remain downstream in :renderer:jetpacs, and no Material import or
 dependency is present there.
 
-TalkBack and Switch Access were disabled in the saved tablet configuration.
-Automation cannot establish spoken announcement order or switch-scanning
-usability, so the requested service-level pass remains **unverified**. The
-connected semantics assertions are not a substitute for that human gate.
+TalkBack and Switch Access were disabled during the automated capture described
+above, so that capture alone could not establish spoken announcement order or
+switch-scanning usability. The developer subsequently enabled each service and
+reported that the prescribed human service-level checks passed; this is manual
+acceptance evidence, not an automated semantics assertion.
 
 ## Device gate
 
@@ -589,10 +592,24 @@ between catalog and hub owners; the normal Apps path worked. This was not tied
 to the Phase 0–3 text-editing range and was not promoted to a finding without a
 focused reproduction/provenance check.
 
-Physical human TalkBack, Switch Access, touch, pointer, and hardware-keyboard
-acceptance was not available. Touch, mouse, and keyboard paths were driven by
-device automation; those results must not be represented as the requested
-human accessibility pass.
+The initial device session did not include physical human TalkBack, Switch
+Access, touch, pointer, and hardware-keyboard acceptance. After the remediation
+review, the developer completed the remaining checklist on the reviewed build
+and reported all checks passed. In particular, the reported result covered:
+
+- ordinary edit, selection-handle, copy, clear, paste, and one-shot submit;
+- submission of the current ordinary value followed by clearing only after
+  admission;
+- offline drop/refusal preserving the field, submit count, and empty queue,
+  with no replay after reconnect;
+- the secure-field path, including the required non-disclosure and count-only
+  catalog observations;
+- TalkBack and Switch Access operation; hardware keyboard, pointer, and touch;
+  rotation, restart, disconnect, reconnect, and restoration of changed device
+  settings.
+
+These observations are explicitly user-reported manual evidence. They were not
+reconstructed from automation output or independently recorded by this audit.
 
 ## Refuted candidates and verified-correct areas
 
@@ -685,9 +702,9 @@ At discovery, Phase 4 was blocked until:
    answer.
 
 Those code conditions were necessary but not sufficient. The review plan also
-requires the physical human accessibility/input acceptance described in the
-current gate decision below. docs/PLAN-jetpacs-text-editing.md must not advance
-until both sets of conditions are satisfied.
+required the physical human accessibility/input acceptance described in the
+device gate. The developer has now reported that acceptance complete with no
+defect found, satisfying the final condition.
 
 ## Remediation and focused skeptic re-review
 
@@ -964,12 +981,12 @@ Original remediation-gate items 1 through 6 are satisfied on 65a0b12 and
 and focused-review clean. There is no surviving confirmed or unverified
 potentially Critical/High code candidate.
 
-Phase 4 nevertheless remains blocked because the requested physical human
-TalkBack and Switch Access pass, together with human touch, pointer, and
-hardware-keyboard acceptance, was not available. Automation and semantics
-tests are evidence, but they cannot prove announcement order or switch-scanning
-usability. Once that physical acceptance is performed and no defect is found,
-the remaining gate can close and docs/PLAN-jetpacs-text-editing.md can advance.
+The developer subsequently completed the requested physical human TalkBack and
+Switch Access pass together with touch, pointer, hardware-keyboard, lifecycle,
+offline, and secure-field acceptance, and reported every check passed. Because
+all code remediation and focused-review items are satisfied and the final human
+gate has no reported defect, the Phase 0–3 adversarial review is complete and
+Phase 4 is unblocked.
 
 ## Artifact hygiene
 
