@@ -10,12 +10,12 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
-import com.calebc42.jetpacs.renderer.compose.SyntaxRole
-import com.calebc42.jetpacs.renderer.compose.projectSyntaxSpans
-import com.calebc42.jetpacs.renderer.model.DiagnosticSet
-import com.calebc42.jetpacs.renderer.model.FontifySet
-import com.calebc42.jetpacs.renderer.model.currentDiagnostics
-import com.calebc42.jetpacs.renderer.model.currentFontifyRuns
+import com.calebc42.ebp.renderer.compose.SyntaxRole
+import com.calebc42.ebp.renderer.compose.projectSyntaxSpans
+import com.calebc42.ebp.renderer.model.DiagnosticSet
+import com.calebc42.ebp.renderer.model.FontifySet
+import com.calebc42.ebp.renderer.model.currentDiagnostics
+import com.calebc42.ebp.renderer.model.currentFontifyRuns
 
 /** Jetpacs-private severity colors for synchronized editor diagnostics. */
 internal data class JetpacsDiagnosticColors(

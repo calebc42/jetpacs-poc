@@ -42,7 +42,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.calebc42.ebp.wire.ToolbarEdit
 import com.calebc42.ebp.wire.ToolbarEdits
-import com.calebc42.jetpacs.renderer.compose.EditorController
+import com.calebc42.ebp.renderer.compose.EditorController
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive

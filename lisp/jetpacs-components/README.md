@@ -11,6 +11,13 @@ The first public builders are:
 ```elisp
 (jetpacs-component-action LABEL ON-TAP :enabled BOOL)
 (jetpacs-component-choice ID LABEL CHECKED ON-CHANGE :enabled BOOL)
+(jetpacs-component-tab LABEL VALUE)
+(jetpacs-component-tabs ID OPTIONS VALUE ON-CHANGE
+                        :enabled BOOL :scrollable BOOL :pinned BOOL
+                        :variant VARIANT)
+(jetpacs-component-section LABEL VALUE LEVEL)
+(jetpacs-component-section-navigator ID SECTIONS VALUE ON-CHANGE
+                                     :enabled BOOL :pinned BOOL)
 (jetpacs-component-panel LABEL CHILDREN)
 (jetpacs-component-scope CHILDREN)
 ```
@@ -28,6 +35,24 @@ The first public builders are:
   the foundational API; there is no duplicate Jetpacs text node or builder.
 - Choice publishes `state.changed` before dispatching `ON-CHANGE`, with the
   same next boolean supplied through the ordinary action value path.
+- Tabs is controlled: `OPTIONS` is a non-empty list of closed tab objects with
+  unique non-empty string values, and `VALUE` must name one of them. The
+  receiver injects the selected string into `ON-CHANGE`; the next authored
+  document remains the authority for selection. `VARIANT` is `"fixed"`,
+  `"scrollable"`, `"navigator"`, or `"adaptive"`. When present it derives
+  the compatibility `scrollable` member (`false` for fixed, `true` otherwise),
+  and a contradictory explicitly supplied `SCROLLABLE` is rejected. When
+  `VARIANT` is absent, the legacy `SCROLLABLE` behavior is unchanged.
+- A Section is a closed, untyped option object with a non-empty label and
+  value plus an integer hierarchy `LEVEL` from 1 through 6. Section Navigator
+  emits those objects under its `options` wire member, requires unique values,
+  and is controlled by one selected `VALUE`. The selected value is injected
+  into `ON-CHANGE`; command scrolling remains application-owned. Levels may
+  skip numbers because they describe hierarchy rather than impose a tree.
+- `PINNED` on Tabs or Section Navigator asks a directly containing
+  `lazy_column` to keep the navigator visible while its other items scroll.
+  True requires that direct parent; absent or false renders the component
+  ordinarily under any otherwise valid parent.
 
 Applications must declare `:requires-extensions '("jetpacs.components")`.
 Existing receivers that do not advertise it keep the app outside its builders

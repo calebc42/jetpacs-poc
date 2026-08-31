@@ -21,15 +21,15 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
-import com.calebc42.jetpacs.renderer.model.CandidateDocument
-import com.calebc42.jetpacs.renderer.model.CompletionCandidate
-import com.calebc42.jetpacs.renderer.model.CompletionOffer
-import com.calebc42.jetpacs.renderer.model.DiagnosticRange
-import com.calebc42.jetpacs.renderer.model.DiagnosticSet
-import com.calebc42.jetpacs.renderer.model.EldocLine
-import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
-import com.calebc42.jetpacs.renderer.model.FontifyRun
-import com.calebc42.jetpacs.renderer.model.FontifySet
+import com.calebc42.ebp.renderer.model.CandidateDocument
+import com.calebc42.ebp.renderer.model.CompletionCandidate
+import com.calebc42.ebp.renderer.model.CompletionOffer
+import com.calebc42.ebp.renderer.model.DiagnosticRange
+import com.calebc42.ebp.renderer.model.DiagnosticSet
+import com.calebc42.ebp.renderer.model.EldocLine
+import com.calebc42.ebp.renderer.model.EditorSyncPhase
+import com.calebc42.ebp.renderer.model.FontifyRun
+import com.calebc42.ebp.renderer.model.FontifySet
 import com.android.tools.screenshot.PreviewTest
 
 @PreviewTest
@@ -73,6 +73,85 @@ private fun JetpacsComponentsFocusAndHover() {
         ) {
             JetpacsActionFocusFixture("Keyboard focus")
             JetpacsChoiceHoverFixture("Pointer hover")
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 280)
+@Preview(name = "expanded", widthDp = 900, heightDp = 280)
+@Composable
+private fun JetpacsTabsAcrossWidths() {
+    JetpacsTabsGallery()
+}
+
+@PreviewTest
+@Preview(
+    name = "dark",
+    widthDp = 400,
+    heightDp = 280,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun JetpacsTabsDark() {
+    JetpacsTabsGallery()
+}
+
+@PreviewTest
+@Preview(name = "large-text", widthDp = 400, heightDp = 360, fontScale = 1.5f)
+@Composable
+private fun JetpacsTabsLargeText() {
+    JetpacsTabsGallery()
+}
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 520)
+@Preview(name = "expanded", widthDp = 900, heightDp = 520)
+@Preview(name = "large-text", widthDp = 400, heightDp = 640, fontScale = 1.5f)
+@Preview(
+    name = "dark",
+    widthDp = 400,
+    heightDp = 520,
+    uiMode = Configuration.UI_MODE_NIGHT_YES,
+)
+@Composable
+private fun JetpacsNavigationModes() {
+    JetpacsNavigationGallery()
+}
+
+@PreviewTest
+@Preview(name = "rtl", widthDp = 400, heightDp = 520)
+@Composable
+private fun JetpacsNavigationModesRtl() {
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
+        JetpacsNavigationGallery()
+    }
+}
+
+@PreviewTest
+@Preview(name = "long-popup", widthDp = 400, heightDp = 440)
+@Composable
+private fun JetpacsNavigatorPopupOpen() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsNavigatorPopupContent(
+                options = (1..20).map {
+                    JetpacsNavigatorOption(
+                        label = "Authored destination $it",
+                        value = "destination-$it",
+                        accessibleLabel = "Authored destination $it",
+                    )
+                },
+                value = "destination-11",
+                semantics = JetpacsNavigatorSemantics.Tabs,
+                enabled = true,
+                onOptionClick = {},
+            )
         }
     }
 }
@@ -323,6 +402,94 @@ private fun JetpacsComponentsGallery() {
                 BasicText("Ready", style = JetpacsTheme.typography.choice)
                 JetpacsAction("Nested action", onClick = {})
             }
+        }
+    }
+}
+
+/** Fixed and scrollable Tabs variants shared by visual-regression previews. */
+@Composable
+private fun JetpacsTabsGallery() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BasicText("FIXED", style = JetpacsTheme.typography.panelLabel)
+            JetpacsTabs(
+                options = listOf(
+                    JetpacsTabOption("Preview", "preview"),
+                    JetpacsTabOption("Visual", "visual"),
+                    JetpacsTabOption("Lisp", "lisp"),
+                    JetpacsTabOption("Source", "source"),
+                ),
+                value = "visual",
+                onValueChange = {},
+            )
+            BasicText("SCROLLABLE", style = JetpacsTheme.typography.panelLabel)
+            JetpacsTabs(
+                options = listOf(
+                    JetpacsTabOption("Overview", "overview"),
+                    JetpacsTabOption("Anatomy", "anatomy"),
+                    JetpacsTabOption("Behavior", "behavior"),
+                    JetpacsTabOption("Accessibility", "accessibility"),
+                    JetpacsTabOption("Examples", "examples"),
+                ),
+                value = "accessibility",
+                onValueChange = {},
+                scrollable = true,
+            )
+        }
+    }
+}
+
+/** Long peer-view and document navigation fixtures for adaptive regression. */
+@Composable
+private fun JetpacsNavigationGallery() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            BasicText("NAVIGATOR TABS", style = JetpacsTheme.typography.panelLabel)
+            JetpacsTabs(
+                options = listOf(
+                    JetpacsTabOption("Overview", "overview"),
+                    JetpacsTabOption("Anatomy", "anatomy"),
+                    JetpacsTabOption("Behavior", "behavior"),
+                    JetpacsTabOption("Accessibility", "accessibility"),
+                    JetpacsTabOption("Examples", "examples"),
+                ),
+                value = "accessibility",
+                onValueChange = {},
+                variant = JetpacsTabVariant.Navigator,
+            )
+            BasicText("ADAPTIVE TABS", style = JetpacsTheme.typography.panelLabel)
+            JetpacsTabs(
+                options = (1..12).map {
+                    JetpacsTabOption("Long authored view $it", "view-$it")
+                },
+                value = "view-7",
+                onValueChange = {},
+                variant = JetpacsTabVariant.Adaptive,
+            )
+            BasicText("SECTION NAVIGATOR", style = JetpacsTheme.typography.panelLabel)
+            JetpacsSectionNavigator(
+                options = listOf(
+                    JetpacsSectionOption("Overview", "overview", 1),
+                    JetpacsSectionOption("Install", "install", 2),
+                    JetpacsSectionOption("Linux", "linux", 3),
+                    JetpacsSectionOption("API", "api", 1),
+                    JetpacsSectionOption("Functions", "functions", 2),
+                ),
+                value = "linux",
+                onValueChange = {},
+            )
         }
     }
 }

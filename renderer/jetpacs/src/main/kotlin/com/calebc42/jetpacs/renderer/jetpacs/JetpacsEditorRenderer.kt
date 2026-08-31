@@ -18,13 +18,13 @@ import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
-import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalNodeOverride
-import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
-import com.calebc42.jetpacs.renderer.compose.rememberEditorBinding
-import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
-import com.calebc42.jetpacs.renderer.model.currentDiagnostics
-import com.calebc42.jetpacs.renderer.model.currentEldoc
-import com.calebc42.jetpacs.renderer.model.diagnosticAt
+import com.calebc42.ebp.renderer.compose.ComposeCanonicalNodeOverride
+import com.calebc42.ebp.renderer.compose.ComposeNodeRenderContext
+import com.calebc42.ebp.renderer.compose.rememberEditorBinding
+import com.calebc42.ebp.renderer.model.EditorSyncPhase
+import com.calebc42.ebp.renderer.model.currentDiagnostics
+import com.calebc42.ebp.renderer.model.currentEldoc
+import com.calebc42.ebp.renderer.model.diagnosticAt
 import kotlinx.serialization.json.JsonObject
 
 /** Jetpacs-scoped presentation override for canonical local and synchronized editors. */

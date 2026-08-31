@@ -1,5 +1,3 @@
-// POC 3 keeps the proven wire/app pair intact and grows architecture-template
-// style core modules around the future standalone kotlin-ebp library.
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
@@ -15,17 +13,13 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ebp-companion"
+rootProject.name = "jetpacs-components"
 include(":ebp-kmp")
+project(":ebp-kmp").projectDir = file("../ebp-poc/ebp-kmp/ebp-kmp")
 include(":wire")
-include(":app")
-include(":core:model")
-include(":core:database")
-include(":core:ebp-store")
-include(":core:data")
-include(":core:navigation")
-include(":core:testing")
+project(":wire").projectDir = file("../ebp-poc/ebp-kmp/wire")
 include(":renderer:model")
+project(":renderer:model").projectDir = file("../ebp-poc/ebp-compose/renderer/model")
 include(":renderer:compose")
+project(":renderer:compose").projectDir = file("../ebp-poc/ebp-compose/renderer/compose")
 include(":renderer:jetpacs")
-include(":renderer:material3")

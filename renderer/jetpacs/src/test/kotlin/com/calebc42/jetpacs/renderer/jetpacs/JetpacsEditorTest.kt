@@ -2,7 +2,7 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.ui.graphics.Color
-import com.calebc42.jetpacs.renderer.model.EditorSyncPhase
+import com.calebc42.ebp.renderer.model.EditorSyncPhase
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.Assert.assertArrayEquals

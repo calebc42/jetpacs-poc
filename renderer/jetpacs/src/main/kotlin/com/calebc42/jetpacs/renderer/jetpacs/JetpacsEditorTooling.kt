@@ -34,13 +34,13 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
-import com.calebc42.jetpacs.renderer.model.CandidateDocument
-import com.calebc42.jetpacs.renderer.model.CompletionCandidate
-import com.calebc42.jetpacs.renderer.model.CompletionOffer
-import com.calebc42.jetpacs.renderer.model.DiagnosticRange
-import com.calebc42.jetpacs.renderer.model.EldocLine
-import com.calebc42.jetpacs.renderer.model.candidateDocumentVisible
-import com.calebc42.jetpacs.renderer.model.narrowedCompletionCandidates
+import com.calebc42.ebp.renderer.model.CandidateDocument
+import com.calebc42.ebp.renderer.model.CompletionCandidate
+import com.calebc42.ebp.renderer.model.CompletionOffer
+import com.calebc42.ebp.renderer.model.DiagnosticRange
+import com.calebc42.ebp.renderer.model.EldocLine
+import com.calebc42.ebp.renderer.model.candidateDocumentVisible
+import com.calebc42.ebp.renderer.model.narrowedCompletionCandidates
 
 /** Maximum completion rows rendered on one bounded editor surface. */
 internal const val MAX_VISIBLE_JETPACS_COMPLETIONS = 12

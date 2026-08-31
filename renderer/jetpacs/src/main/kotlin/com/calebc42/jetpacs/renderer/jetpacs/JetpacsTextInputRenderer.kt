@@ -8,13 +8,13 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalNodeOverride
-import com.calebc42.jetpacs.renderer.compose.ComposeNodeRenderContext
-import com.calebc42.jetpacs.renderer.compose.MaskVisualTransformation
-import com.calebc42.jetpacs.renderer.compose.keyboardAction
-import com.calebc42.jetpacs.renderer.compose.rememberLegacyTextInputAdapter
-import com.calebc42.jetpacs.renderer.compose.rememberTextInputBinding
-import com.calebc42.jetpacs.renderer.model.ActionHandoff
+import com.calebc42.ebp.renderer.compose.ComposeCanonicalNodeOverride
+import com.calebc42.ebp.renderer.compose.ComposeNodeRenderContext
+import com.calebc42.ebp.renderer.compose.MaskVisualTransformation
+import com.calebc42.ebp.renderer.compose.keyboardAction
+import com.calebc42.ebp.renderer.compose.rememberLegacyTextInputAdapter
+import com.calebc42.ebp.renderer.compose.rememberTextInputBinding
+import com.calebc42.ebp.renderer.model.ActionHandoff
 import kotlinx.serialization.json.JsonObject
 
 /** Jetpacs-scoped presentation override for canonical EBP `text_input`. */

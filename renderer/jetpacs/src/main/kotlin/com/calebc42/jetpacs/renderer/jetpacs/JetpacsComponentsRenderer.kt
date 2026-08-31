@@ -7,9 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
-import com.calebc42.jetpacs.renderer.compose.ComposeNodeExtension
-import com.calebc42.jetpacs.renderer.model.RendererContribution
+import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
+import com.calebc42.ebp.renderer.model.RendererContribution
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -52,6 +52,8 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
                     }
                 }
             }
+            "jetpacs.section_navigator" -> RenderSectionNavigator(node, context, modifier)
+            "jetpacs.tabs" -> RenderTabs(node, context, modifier)
             "jetpacs.scope" -> {
                 // An invisible selection boundary: no layout, modifier,
                 // semantics, state, or interaction owner is introduced.
@@ -93,6 +95,90 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
                 val value = JsonPrimitive(next)
                 context.state(id, value)
                 context.action(node["on_change"] as? JsonObject, value)
+            },
+            modifier = modifier,
+        )
+    }
+
+    @Composable
+    private fun RenderTabs(
+        node: JsonObject,
+        context: ComposeExtensionRenderContext,
+        modifier: Modifier,
+    ) {
+        val options = (node["options"] as? JsonArray)
+            ?.mapNotNull { element ->
+                val option = element as? JsonObject ?: return@mapNotNull null
+                val label = (option["label"] as? JsonPrimitive)
+                    ?.takeIf { it.isString }
+                    ?.content
+                    ?: return@mapNotNull null
+                val value = (option["value"] as? JsonPrimitive)
+                    ?.takeIf { it.isString }
+                    ?.content
+                    ?: return@mapNotNull null
+                JetpacsTabOption(label, value)
+            }
+            .orEmpty()
+        val value = (node["value"] as? JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.content
+            .orEmpty()
+        val scrollable = node.boolean("scrollable", false)
+        val variant = (node["variant"] as? JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.content
+
+        JetpacsTabs(
+            options = options,
+            value = value,
+            enabled = node.boolean("enabled", true),
+            scrollable = scrollable,
+            variant = resolveJetpacsTabVariant(variant, scrollable),
+            onValueChange = { next ->
+                context.action(node["on_change"] as? JsonObject, JsonPrimitive(next))
+            },
+            modifier = modifier,
+        )
+    }
+
+    @Composable
+    private fun RenderSectionNavigator(
+        node: JsonObject,
+        context: ComposeExtensionRenderContext,
+        modifier: Modifier,
+    ) {
+        val options = (node["options"] as? JsonArray)
+            ?.mapNotNull { element ->
+                val option = element as? JsonObject ?: return@mapNotNull null
+                val label = (option["label"] as? JsonPrimitive)
+                    ?.takeIf { it.isString }
+                    ?.content
+                    ?: return@mapNotNull null
+                val value = (option["value"] as? JsonPrimitive)
+                    ?.takeIf { it.isString }
+                    ?.content
+                    ?: return@mapNotNull null
+                val level = (option["level"] as? JsonPrimitive)
+                    ?.takeIf { !it.isString }
+                    ?.content
+                    ?.toIntOrNull()
+                    ?.takeIf { it in 1..6 }
+                    ?: return@mapNotNull null
+                JetpacsSectionOption(label, value, level)
+            }
+            .orEmpty()
+        val value = (node["value"] as? JsonPrimitive)
+            ?.takeIf { it.isString }
+            ?.content
+            .orEmpty()
+
+        JetpacsSectionNavigator(
+            options = options,
+            value = value,
+            enabled = node.boolean("enabled", true),
+            onValueChange = { next ->
+                context.action(node["on_change"] as? JsonObject, JsonPrimitive(next))
             },
             modifier = modifier,
         )

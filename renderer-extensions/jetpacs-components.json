@@ -6,14 +6,18 @@
     "jetpacs.action",
     "jetpacs.choice",
     "jetpacs.panel",
-    "jetpacs.scope"
+    "jetpacs.scope",
+    "jetpacs.section_navigator",
+    "jetpacs.tabs"
   ],
   "targets": {
     "app": [
       "jetpacs.action",
       "jetpacs.choice",
       "jetpacs.panel",
-      "jetpacs.scope"
+      "jetpacs.scope",
+      "jetpacs.section_navigator",
+      "jetpacs.tabs"
     ],
     "dialog": [],
     "notification": []
@@ -34,6 +38,14 @@
     "jetpacs.scope": {
       "required": ["children"],
       "optional": []
+    },
+    "jetpacs.section_navigator": {
+      "required": ["id", "options", "value", "on_change"],
+      "optional": ["enabled", "pinned"]
+    },
+    "jetpacs.tabs": {
+      "required": ["id", "options", "value", "on_change"],
+      "optional": ["enabled", "scrollable", "pinned", "variant"]
     }
   },
   "stateful_when_present": {
@@ -43,5 +55,37 @@
     "jetpacs.action": ["label"],
     "jetpacs.choice": ["label"],
     "jetpacs.panel": ["label"]
+  },
+  "selection_options": {
+    "jetpacs.section_navigator": {
+      "options_member": "options",
+      "selection_member": "value",
+      "label_member": "label",
+      "value_member": "value",
+      "required_option_members": {
+        "level": "integer-1-6"
+      },
+      "optional_option_members": {}
+    },
+    "jetpacs.tabs": {
+      "options_member": "options",
+      "selection_member": "value",
+      "label_member": "label",
+      "value_member": "value"
+    }
+  },
+  "true_requires_parent": {
+    "jetpacs.section_navigator": {
+      "member": "pinned",
+      "parent_types": ["lazy_column"]
+    },
+    "jetpacs.tabs": {
+      "member": "pinned",
+      "parent_types": ["lazy_column"]
+    }
+  },
+  "lazy_column_sticky_members": {
+    "jetpacs.section_navigator": "pinned",
+    "jetpacs.tabs": "pinned"
   }
 }

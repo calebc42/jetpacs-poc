@@ -1,23 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.renderer.jetpacs
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
+import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelectable
+import androidx.compose.ui.test.assertIsSelected
+import androidx.compose.ui.test.assertWidthIsAtLeast
+import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
@@ -25,30 +37,32 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
+import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.SafeAdmissionEvidence
 import com.calebc42.ebp.wire.ScalarPos
 import com.calebc42.ebp.wire.UnsafeAdmissionReason
-import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRenderContext
-import com.calebc42.jetpacs.renderer.compose.ebpSemantics
-import com.calebc42.jetpacs.renderer.model.ActionHandoff
-import com.calebc42.jetpacs.renderer.model.CandidateDocument
-import com.calebc42.jetpacs.renderer.model.CompletionCandidate
-import com.calebc42.jetpacs.renderer.model.CompletionOffer
-import com.calebc42.jetpacs.renderer.model.DiagnosticRange
-import com.calebc42.jetpacs.renderer.model.DiagnosticSet
-import com.calebc42.jetpacs.renderer.model.EldocLine
-import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
-import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
-import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
-import com.calebc42.jetpacs.renderer.model.EditorMirror
-import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
-import com.calebc42.jetpacs.renderer.model.RendererEditorHost
-import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
+import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.compose.ebpSemantics
+import com.calebc42.ebp.renderer.model.ActionHandoff
+import com.calebc42.ebp.renderer.model.CandidateDocument
+import com.calebc42.ebp.renderer.model.CompletionCandidate
+import com.calebc42.ebp.renderer.model.CompletionOffer
+import com.calebc42.ebp.renderer.model.DiagnosticRange
+import com.calebc42.ebp.renderer.model.DiagnosticSet
+import com.calebc42.ebp.renderer.model.EldocLine
+import com.calebc42.ebp.renderer.model.EditorAnnotationState
+import com.calebc42.ebp.renderer.model.EditorConnectionPhase
+import com.calebc42.ebp.renderer.model.EditorEditOutcome
+import com.calebc42.ebp.renderer.model.EditorMirror
+import com.calebc42.ebp.renderer.model.RendererActionOutcome
+import com.calebc42.ebp.renderer.model.RendererEditorHost
+import com.calebc42.ebp.renderer.model.RendererVolatileSecret
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
@@ -119,6 +133,287 @@ class JetpacsComponentsSemanticsTest {
             assertEquals(context.states.single().second, context.actions.single().second)
         }
         compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun tabsAreControlledTabTargetsAndDispatchOnlyTheAuthoredValue() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"jetpacs.tabs","id":"projection","value":"preview",
+              "options":[
+                {"label":"Preview","value":"preview"},
+                {"label":"Visual","value":"visual"},
+                {"label":"Lisp","value":"lisp"},
+                {"label":"Source","value":"source"}
+              ],
+              "on_change":{"action":"catalog.projection.change"}
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsComponentsRenderer.render(node, context, Modifier)
+            }
+        }
+
+        val tabRole = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        val preview = compose.onNodeWithText("Preview")
+            .assert(tabRole)
+            .assertIsSelectable()
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        compose.runOnIdle {
+            assertTrue(context.actions.isEmpty())
+            assertTrue(context.states.isEmpty())
+        }
+
+        val source = compose.onNodeWithText("Source")
+            .assert(tabRole)
+            .assertIsNotSelected()
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsActions.RequestFocus))
+            .performClick()
+
+        val previewBounds = preview.getUnclippedBoundsInRoot()
+        val sourceBounds = source.getUnclippedBoundsInRoot()
+        assertEquals(
+            previewBounds.right - previewBounds.left,
+            sourceBounds.right - sourceBounds.left,
+        )
+
+        compose.runOnIdle {
+            assertEquals(1, context.actions.size)
+            assertEquals("catalog.projection.change", context.actionNames.single())
+            assertEquals(JsonPrimitive("source"), context.actions.single().second)
+            assertTrue(context.states.isEmpty())
+        }
+        // Controlled selection changes only when Emacs authors a new value.
+        source.assertIsNotSelected()
+        compose.onAllNodes(tabRole).assertCountEquals(4)
+        compose.onAllNodes(hasClickAction()).assertCountEquals(4)
+    }
+
+    @Test
+    fun disabledTabsExposeDisabledTabSemantics() {
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsTabs(
+                    options = listOf(
+                        JetpacsTabOption("Preview", "preview"),
+                        JetpacsTabOption("Source", "source"),
+                    ),
+                    value = "preview",
+                    onValueChange = {},
+                    enabled = false,
+                    scrollable = true,
+                )
+            }
+        }
+
+        compose.onNodeWithText("Preview")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
+            .assertIsSelected()
+            .assertIsNotEnabled()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(72.dp)
+        compose.onNodeWithText("Source")
+            .assertIsNotSelected()
+            .assertIsNotEnabled()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(72.dp)
+    }
+
+    @Test
+    fun navigatorTabsUseOneControlledActionPathAndFocusTheAuthoredSelection() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"jetpacs.tabs","id":"long-tabs","value":"accessibility",
+              "variant":"navigator","scrollable":true,
+              "options":[
+                {"label":"Overview","value":"overview"},
+                {"label":"Anatomy","value":"anatomy"},
+                {"label":"Behavior","value":"behavior"},
+                {"label":"Accessibility","value":"accessibility"},
+                {"label":"Examples","value":"examples"}
+              ],
+              "on_change":{"action":"catalog.tab.change"}
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsComponentsRenderer.render(node, context, Modifier)
+            }
+        }
+
+        compose.onNodeWithContentDescription("Accessibility, 4 of 5")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.Role,
+                Role.DropdownList,
+            ))
+            .performClick()
+        compose.onNodeWithContentDescription("Accessibility, tab 4 of 5")
+            .assertIsSelected()
+            .assertIsFocused()
+            .performKeyInput { pressKey(Key.DirectionDown) }
+        compose.onNodeWithContentDescription("Examples, tab 5 of 5")
+            .assertIsFocused()
+            .performClick()
+
+        compose.runOnIdle {
+            assertEquals(listOf("catalog.tab.change"), context.actionNames)
+            assertEquals(JsonPrimitive("examples"), context.actions.single().second)
+            assertTrue(context.states.isEmpty())
+        }
+        // The authored value remains selected until Emacs publishes a replacement.
+        compose.onNodeWithContentDescription("Accessibility, 4 of 5")
+            .assertIsDisplayed()
+            .assertIsFocused()
+    }
+
+    @Test
+    fun sectionNavigatorUsesBreadcrumbSemanticsAndBoundedDestinations() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{
+              "t":"jetpacs.section_navigator","id":"outline","value":"install",
+              "options":[
+                {"label":"Overview","value":"overview","level":1},
+                {"label":"Install","value":"install","level":2},
+                {"label":"Linux","value":"linux","level":3},
+                {"label":"API","value":"api","level":1}
+              ],
+              "on_change":{"action":"catalog.section.change"}
+            }""",
+        ) as JsonObject
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsComponentsRenderer.render(node, context, Modifier)
+            }
+        }
+
+        compose.onNodeWithContentDescription("Previous section").assertIsEnabled()
+        compose.onNodeWithContentDescription("Next section").assertIsEnabled()
+        compose.onNodeWithContentDescription("Overview › Install, 2 of 4")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.Role,
+                Role.DropdownList,
+            ))
+            .performClick()
+        compose.onNodeWithContentDescription(
+            "Overview › Install › Linux, heading level 3, 3 of 4",
+        )
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .performClick()
+
+        compose.runOnIdle {
+            assertEquals(listOf("catalog.section.change"), context.actionNames)
+            assertEquals(JsonPrimitive("linux"), context.actions.single().second)
+            assertTrue(context.states.isEmpty())
+        }
+    }
+
+    @Test
+    fun scrollableTabsRevealAnExternallyAuthoredSelection() {
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsTabs(
+                    options = (1..10).map { JetpacsTabOption("Option $it", "$it") },
+                    value = "10",
+                    onValueChange = {},
+                    modifier = Modifier.width(160.dp),
+                    variant = JetpacsTabVariant.Scrollable,
+                )
+            }
+        }
+
+        compose.onNodeWithText("Option 10").assertIsDisplayed().assertIsSelected()
+    }
+
+    @Test
+    fun fixedTabsFallBackBeforeTargetsShrinkBelowThePlatformMinimum() {
+        var requestedValue: String? = null
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsTabs(
+                    options = (1..5).map { JetpacsTabOption("Option $it", "$it") },
+                    value = "5",
+                    onValueChange = { requestedValue = it },
+                    modifier = Modifier.width(180.dp),
+                    variant = JetpacsTabVariant.Fixed,
+                )
+            }
+        }
+
+        compose.onNodeWithText("Option 5")
+            .assertIsDisplayed()
+            .assertIsSelected()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(72.dp)
+        compose.onNodeWithText("Option 4")
+            .assertIsDisplayed()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(72.dp)
+            .performClick()
+        compose.runOnIdle { assertEquals("4", requestedValue) }
+        // The caller remains the sole selection authority.
+        compose.onNodeWithText("Option 5").assertIsSelected()
+        compose.onNodeWithText("Option 4").assertIsNotSelected()
+    }
+
+    @Test
+    fun fixedTabsKeepMinimumTargetsUnderUnboundedHorizontalConstraints() {
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                Row(Modifier.horizontalScroll(rememberScrollState())) {
+                    JetpacsTabs(
+                        options = listOf(
+                            JetpacsTabOption("A", "a"),
+                            JetpacsTabOption("B", "b"),
+                            JetpacsTabOption("C", "c"),
+                        ),
+                        value = "a",
+                        onValueChange = {},
+                        variant = JetpacsTabVariant.Fixed,
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithText("A")
+            .assertIsDisplayed()
+            .assertWidthIsAtLeast(48.dp)
+        compose.onNodeWithText("B").assertWidthIsAtLeast(48.dp)
+        compose.onNodeWithText("C").assertWidthIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun adaptiveTabsRouteLargeAuthoredSetsDirectlyToNavigator() {
+        val optionCount = MAX_MEASURED_ADAPTIVE_TAB_OPTIONS + 1
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsTabs(
+                    options = (1..optionCount).map {
+                        JetpacsTabOption("Option $it", "$it")
+                    },
+                    value = "13",
+                    onValueChange = {},
+                    modifier = Modifier.width(2_000.dp),
+                    variant = JetpacsTabVariant.Adaptive,
+                )
+            }
+        }
+
+        compose.onNodeWithContentDescription("Option 13, 13 of $optionCount")
+            .assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.Role,
+                Role.DropdownList,
+            ))
+            .assertIsDisplayed()
+        compose.onAllNodes(
+            SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab),
+        ).assertCountEquals(0)
     }
 
     @Test

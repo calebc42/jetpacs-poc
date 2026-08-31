@@ -89,6 +89,99 @@ object JetpacsComponentStyles {
         contentPadding(tokens.spacing.panel)
     }
 
+    /** Page-free projection strip; selection behavior remains in [JetpacsTabs]. */
+    val tabs = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+    }
+
+    /** One state-aware tab in the controlled projection strip. */
+    val tab = Style {
+        background(tokens.colors.surface)
+        contentPadding(
+            // Fixed rows must keep four common projection labels readable at
+            // enlarged font scales; the tab itself remains the 48dp target.
+            horizontal = tokens.spacing.unit,
+            vertical = tokens.spacing.controlVertical,
+        )
+        selected { animate { background(tokens.colors.selectedSurface) } }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Selected marker kept separate so tab labels remain stable during animation. */
+    val tabIndicator = Style {
+        shape(tokens.shapes.indicator)
+        background(tokens.colors.accent)
+    }
+
+    /** Shared inline layout for controlled tab and section navigators. */
+    val navigator = Style {
+        fillWidth()
+        background(tokens.colors.surface)
+    }
+
+    /** Previous and Next controls retain a full target in every input mode. */
+    val navigatorButton = Style {
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** The selected-value trigger for the bounded option popup. */
+    val navigatorSelector = Style {
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        selected { background(tokens.colors.selectedSurface) }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Window-bounded popup shared by peer-view and document navigation. */
+    val navigatorPopup = Style {
+        shape(tokens.shapes.panel)
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+    }
+
+    /** One keyed popup destination with state-aware focus and selection. */
+    val navigatorPopupItem = Style {
+        fillWidth()
+        background(tokens.colors.surface)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        selected { background(tokens.colors.selectedSurface) }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Inspectable outline navigator container; behavior remains controlled. */
+    val sectionNavigator = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+    }
+
     val textFieldOutlined = Style {
         fillWidth()
         shape(tokens.shapes.control)

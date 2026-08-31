@@ -19,15 +19,17 @@
     ("jetpacs.action" ("label" "on_tap") ("enabled"))
     ("jetpacs.choice" ("checked" "id" "label" "on_change") ("enabled"))
     ("jetpacs.panel" ("children" "label") ())
-    ("jetpacs.scope" ("children") ()))
+    ("jetpacs.scope" ("children") ())
+    ("jetpacs.section_navigator" ("id" "on_change" "options" "value") ("enabled" "pinned"))
+    ("jetpacs.tabs" ("id" "on_change" "options" "value") ("enabled" "pinned" "scrollable" "variant")))
   "Jetpacs Components node schemas as (TYPE REQUIRED OPTIONAL).")
 
 (defconst jetpacs-components-target-node-types
   '(
-    (app . ("jetpacs.action" "jetpacs.choice" "jetpacs.panel" "jetpacs.scope"))
+    (app . ("jetpacs.action" "jetpacs.choice" "jetpacs.panel" "jetpacs.scope" "jetpacs.section_navigator" "jetpacs.tabs"))
     (dialog . ())
     (notification . ()))
-  "Jetpacs Components node types supported by each Jetpacs target.")
+  "Jetpacs Components node types supported by each renderer target.")
 
 (provide 'jetpacs-components-vocabulary)
 ;;; jetpacs-components-vocabulary.el ends here

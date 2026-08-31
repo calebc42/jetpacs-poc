@@ -2,3 +2,6 @@
 01 {"checked":false,"id":"catalog-choice","label":"Mirror updates","on_change":{"action":"catalog.choice"},"t":"jetpacs.choice"}
 02 {"children":[{"t":"text","text":"Ready"}],"label":"STATUS","t":"jetpacs.panel"}
 03 {"children":[{"t":"text","text":"Ready"}],"t":"jetpacs.scope"}
+04 {"id":"catalog-projection","on_change":{"action":"catalog.projection.change"},"options":[{"label":"Preview","value":"preview"},{"label":"Visual","value":"visual"},{"label":"Lisp","value":"lisp"},{"label":"Source","value":"source"}],"pinned":false,"scrollable":false,"t":"jetpacs.tabs","value":"preview","variant":"fixed"}
+05 {"children":[{"id":"sticky-projection","on_change":{"action":"catalog.projection.change"},"options":[{"label":"Preview","value":"preview"},{"label":"Source","value":"source"}],"pinned":true,"scrollable":true,"t":"jetpacs.tabs","value":"preview","variant":"navigator"}],"t":"lazy_column"}
+06 {"children":[{"id":"catalog-outline","on_change":{"action":"catalog.section.change"},"options":[{"label":"Introduction","level":1,"value":"introduction"},{"label":"Configuration","level":2,"value":"configuration"},{"label":"Examples","level":2,"value":"examples"}],"pinned":true,"t":"jetpacs.section_navigator","value":"introduction"}],"t":"lazy_column"}

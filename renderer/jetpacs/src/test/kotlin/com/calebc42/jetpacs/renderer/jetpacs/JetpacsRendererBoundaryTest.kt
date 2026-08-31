@@ -10,10 +10,9 @@ class JetpacsRendererBoundaryTest {
     private fun moduleDirectory(): File {
         var directory: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
         while (directory != null) {
-            listOf(
-                File(directory, "renderer/jetpacs"),
-                File(directory, "companion/renderer/jetpacs"),
-            ).firstOrNull { File(it, "build.gradle.kts").isFile }?.let { return it }
+            File(directory, "renderer/jetpacs")
+                .takeIf { File(it, "build.gradle.kts").isFile }
+                ?.let { return it }
             directory = directory.parentFile
         }
         error("renderer/jetpacs not found")
