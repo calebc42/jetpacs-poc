@@ -1,2 +1,14 @@
-llm-poc/
-llm-poc/
+/archives/
+/jetpacs/
+/ebp-poc/*
+!/ebp-poc/README.md
+/.gradle/
+/.idea/
+/local.properties
+/glasspane-material3/
+/glasspane.pre-repository-split-20260831/
+/glasspane/
+/jetpacs-authoring/
+/jetpacs-automations/
+/jetpacs-component-catalog/
+/jetpacs-components/
