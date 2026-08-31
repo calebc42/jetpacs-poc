@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.ebp.companion
 
-import com.calebc42.ebp.companion.render.GLASSPANE_MATERIAL3_EXTENSION
+import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_EXTENSION
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -38,6 +41,25 @@ class CompanionRendererTest {
             owned,
             CompanionRenderer.NODE_VOCABULARY.extensions
                 .getValue(JETPACS_COMPONENTS_EXTENSION),
+        )
+        assertEquals(
+            JETPACS_COMPONENTS_SELECTION_OPTIONS,
+            CompanionRenderer.NODE_VOCABULARY.selectionOptions,
+        )
+        assertEquals(
+            JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT,
+            CompanionRenderer.NODE_VOCABULARY.trueRequiresParent,
+        )
+        assertEquals(
+            JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS,
+            CompanionRenderer.composeConfiguration.pinnedNodeMembers,
+        )
+        assertEquals(
+            mapOf(
+                "jetpacs.section_navigator" to "pinned",
+                "jetpacs.tabs" to "pinned",
+            ),
+            JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS,
         )
         assertEquals(owned, CompanionRenderer.composeConfiguration.extensions.nodeTypes)
         assertEquals(

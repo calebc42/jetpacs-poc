@@ -32,7 +32,7 @@
 ;; probe finding nothing does not complain.  Now the hook carries it and
 ;; the membership is assertable.  What did NOT change is which file may
 ;; write the add-hook: an `ebp-' file may not name a `jetpacs-' symbol at
-;; all, and the delineation guard loads `emacs/ebp-org.el' alone to prove
+;; all, and the delineation guard loads upstream `ebp-org.el' alone to prove
 ;; it, so the registration is HERE or it is nowhere.
 
 ;; Consequence, deliberate and recorded in the plan: requiring

@@ -40,6 +40,30 @@ abstract class StageOnboardingAssets : DefaultTask() {
     abstract val emacsDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
+    abstract val ebpElDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val ebpOrgDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val glasspaneMaterial3Dir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val jetpacsComponentsDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val jetpacsAuthoringDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val jetpacsAutomationsDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val jetpacsComponentCatalogDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val glasspaneDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
     abstract val orgDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
@@ -88,6 +112,19 @@ abstract class StageOnboardingAssets : DefaultTask() {
             }
     }
 
+    private fun copyElispSources(source: File, destination: File) {
+        source.walkTopDown()
+            .onEnter { directory ->
+                directory.name !in setOf(".git", "docs", "test", "__pycache__")
+            }
+            .filter { file -> file.isFile && file.extension == "el" }
+            .forEach { file ->
+                val target = File(destination, file.relativeTo(source).path)
+                target.parentFile.mkdirs()
+                file.copyTo(target, overwrite = true)
+            }
+    }
+
     @org.gradle.api.tasks.TaskAction
     fun stage() {
         val out = outputDir.get().asFile
@@ -95,6 +132,36 @@ abstract class StageOnboardingAssets : DefaultTask() {
         val kit = File(out, "jetpacs-onboarding")
         val payload = File(kit, "payload")
         copyDistribution(emacsDir.get().asFile, File(payload, "emacs"))
+        copyElispSources(ebpElDir.get().asFile, File(payload, "emacs"))
+        copyElispSources(ebpOrgDir.get().asFile, File(payload, "emacs"))
+        val apps = File(payload, "emacs/apps")
+        val material = glasspaneMaterial3Dir.get().asFile
+        copyElispSources(
+            File(material, "glasspane-material3"),
+            File(apps, "glasspane-material3"),
+        )
+        copyElispSources(File(material, "m3-catalog"), File(apps, "m3-catalog"))
+        File(material, "jetpacs-m3-catalog.el").copyTo(
+            File(apps, "m3-catalog/jetpacs-m3-catalog.el"),
+            overwrite = true,
+        )
+        copyElispSources(
+            jetpacsComponentsDir.get().asFile,
+            File(apps, "jetpacs-components"),
+        )
+        copyElispSources(
+            jetpacsAuthoringDir.get().asFile,
+            File(apps, "jetpacs-authoring"),
+        )
+        copyElispSources(
+            jetpacsAutomationsDir.get().asFile,
+            File(apps, "jetpacs-automations"),
+        )
+        copyElispSources(
+            jetpacsComponentCatalogDir.get().asFile,
+            File(apps, "jetpacs-component-catalog"),
+        )
+        copyElispSources(glasspaneDir.get().asFile, File(apps, "glasspane"))
         copyDistribution(orgDir.get().asFile, File(payload, "org"))
         copyDistribution(examplesDir.get().asFile, File(payload, "examples/python"))
         initFile.get().asFile.copyTo(File(payload, "init.el"), overwrite = true)
@@ -118,6 +185,16 @@ androidComponents {
             StageOnboardingAssets::class,
         ) {
             emacsDir.set(repo.dir("emacs"))
+            ebpElDir.set(repo.dir("../ebp-poc/ebp.el/lisp"))
+            ebpOrgDir.set(repo.dir("../ebp-poc/ebp-org/lisp"))
+            glasspaneMaterial3Dir.set(repo.dir("../glasspane-material3/lisp"))
+            jetpacsComponentsDir.set(
+                repo.dir("../jetpacs-components/lisp/jetpacs-components"),
+            )
+            jetpacsAuthoringDir.set(repo.dir("../jetpacs-authoring/lisp"))
+            jetpacsAutomationsDir.set(repo.dir("../jetpacs-automations/lisp"))
+            jetpacsComponentCatalogDir.set(repo.dir("../jetpacs-component-catalog/lisp"))
+            glasspaneDir.set(repo.dir("../glasspane"))
             orgDir.set(repo.dir("org"))
             examplesDir.set(repo.dir("device/py"))
             initFile.set(repo.file("device/init.el"))

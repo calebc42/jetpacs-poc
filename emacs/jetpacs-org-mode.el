@@ -177,7 +177,7 @@ NOW is an Emacs time value and defaults to `current-time'."
                        :title (or (alist-get 'headline item)
                                   "Org reminder")
                        :body (concat hm
-                                     (when-let ((type
+                                     (when-let* ((type
                                                  (alist-get 'type item)))
                                        (concat " · " type))))
                  reminders)))))))

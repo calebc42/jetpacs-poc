@@ -175,7 +175,7 @@ Registration order is stable when replacing an existing ID."
               (if (jetpacs-reader-active-p path) 'editor 'reader)))
         (condition-case err
             (progn
-              (when-let ((transition
+              (when-let* ((transition
                           (jetpacs-reader-adapter-transition adapter)))
                 (funcall transition path presentation))
               (jetpacs-reader-state-set path :presentation presentation)

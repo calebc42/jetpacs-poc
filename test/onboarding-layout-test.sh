@@ -2,6 +2,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+EBP_EL_ROOT="${EBP_EL_DIR:-$REPO_ROOT/../ebp-poc/ebp.el}"
 INSTALLER="$REPO_ROOT/tools/onboard-provision-remote.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT
@@ -36,7 +37,7 @@ make_payload() {
   local payload="$1"
   mkdir -p "$payload/emacs" "$payload/org/org-mode-walkthrough" \
            "$payload/examples/python" "$payload/bootstrap"
-  cp "$REPO_ROOT/emacs/ebp.el" "$payload/emacs/ebp.el"
+  cp "$EBP_EL_ROOT/lisp/ebp.el" "$payload/emacs/ebp.el"
   cp "$REPO_ROOT/emacs/jetpacs-files.el" "$payload/emacs/jetpacs-files.el"
   cp "$REPO_ROOT/org/org-mode-walkthrough/orgro-manual.org" \
      "$payload/org/org-mode-walkthrough/orgro-manual.org"

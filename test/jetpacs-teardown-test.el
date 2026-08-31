@@ -3,7 +3,7 @@
 ;;; Commentary:
 
 ;; The JA-2b exit gate (docs/PLAN-jetpacs-apps.md, B2/G5).  Loads
-;; test/ebp-wire-test.el for the loopback harness, so it MUST run under
+;; ebp.el's ebp-wire-test.el for the loopback harness, so it MUST run under
 ;; the "^jetpacs-teardown-" selector (loading the harness defines its
 ;; whole suite too).  The W10 test is the one that fails against the
 ;; old callback-less remove path and passes with the send-remove fix.

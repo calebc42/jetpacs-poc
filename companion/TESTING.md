@@ -1,6 +1,6 @@
 # Companion testing
 
-Run commands below from `llm-poc-3/companion`. Gradle needs the configured JDK
+Run commands below from `jetpacs/companion`. Gradle needs the configured JDK
 and Android SDK; it writes only normal Gradle/build outputs plus screenshot
 references when the explicit update task is used.
 
@@ -56,8 +56,15 @@ toolbar/chromeless presentation, and RTL gutter placement. One synchronized
 reference adds the compact offline and stale status rows. Five Phase 6
 references add compact and expanded completion/documentation layouts, dark
 mode, 1.5× text, RTL, authoritative syntax roles, diagnostics, eldoc, and
-toolbar-command presentation. All 23 references live under
+toolbar-command presentation. Four Tabs references cover compact and expanded
+widths, dark mode, and 1.5× text. All 27 reviewed references live under
 `renderer/jetpacs/src/screenshotTestDebug/reference/`.
+
+The navigation screenshot source additionally exercises the fixed, scrollable,
+navigator, and measured adaptive Tabs presentations; hierarchical Section
+Navigator; RTL; large text; and an open bounded popup. New references for
+those previews stay intentionally absent until their rendered outputs have
+been reviewed; do not use the update task merely to make validation green.
 
 The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp by
 400/500/1000 dp), a dark 610×500 configuration, and 1.5× font scale at
@@ -65,6 +72,11 @@ The deterministic Material gallery covers a 3×3 window matrix (400/610/900 dp b
 `renderer/material3/src/screenshotTestDebug/reference/`. The gallery uses
 fixed strings, no clock, network, device state, animation clock, or EBP
 session.
+
+The Material catalog projection preview additionally covers its four-tab strip
+at compact and expanded widths, dark mode, and 1.5× text. Those four candidate
+references remain intentionally absent until their rendered outputs have been
+reviewed; do not run the update task merely to make validation green.
 
 The model and Compose unit suites also time and allocation-sample syntax and
 fontification projection at 1, 4, 16, and 64 KiB after warmup. The Phase 6
@@ -90,19 +102,22 @@ With one authorized device connected:
 
 ```sh
 ./gradlew :renderer:compose:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.compose.EditingControllersInstrumentedTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EditingControllersInstrumentedTest
 
 ./gradlew :renderer:jetpacs:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsSemanticsTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.companion.ui.JetpacsComponentsSemanticsTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.glasspane.material3.ui.JetpacsComponentsSemanticsTest
+
+./gradlew :renderer:compose:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EbpSemanticsTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.compose.EbpSemanticsTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.glasspane.material3.ScopedCoreOverrideDispatchTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.companion.render.ScopedCoreOverrideDispatchTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.glasspane.material3.LazyColumnPinnedTest
 ```
 
 The shared editing class enters normalized text through a real
@@ -132,6 +147,10 @@ exactly once and retains one click target.
 Material fallback outside scope, extension-node ownership inside scope,
 universal semantics on the interaction-owning overridden node, the invisible
 scope boundary, and app-to-dialog admission isolation.
+`LazyColumnPinnedTest` checks configured sticky geometry, fail-closed raw
+members, keyed pixel retention while a live snapshot inserts earlier content
+and enables pinning, and command-scroll placement below the active sticky
+header.
 
 These tests do not replace manual TalkBack/Switch Access checks on the target
 tablet. Verify pane announcements, heading navigation, collection position,
@@ -239,7 +258,7 @@ accessibility-service boundaries still needs its focused device flow.
 
 ## Tablet deployment
 
-After the broad and connected gates pass, return to the `llm-poc-3` root and
+After the broad and connected gates pass, return to the `jetpacs` root and
 refresh both the Companion APK and managed Elisp tree through the repository's
 one-command path:
 

@@ -137,6 +137,10 @@ remain in the private Emacs/Termux home on Android.")
 (require 'jetpacs-tablist)
 (require 'jetpacs-package-browser)
 (require 'jetpacs-settings)
+;; Optional applet runtimes are discovered from installed packages. The
+;; Jetpacs composition root may activate them, but the host does not own or
+;; require their source.
+(require 'jetpacs-automation-runtime nil t)
 (require 'jetpacs-customize)
 (require 'jetpacs-project)
 (require 'jetpacs-sql)
@@ -145,10 +149,9 @@ remain in the private Emacs/Termux home on Android.")
 (require 'jetpacs-hypertext)
 ;; …and the apps.
 (require 'jetpacs-theme)
-;; Optional appearance provider and the renderer-primitives demo are Jetpacs
-;; satellites, independent of whichever downstream app is currently loaded.
-(require 'jetpacs-ef-themes)
-(jetpacs-ef-themes-register)
+;; The renderer-primitives demo is a Jetpacs satellite.  Optional Modus-family
+;; providers are contributed through `jetpacs-modus-register-theme-provider'
+;; by their downstream owner; Jetpacs does not name or load those integrations.
 (require 'jetpacs-gallery)
 (jetpacs-gallery-register)
 (require 'jetpacs-clip)
@@ -174,11 +177,15 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; `jetpacs-defapp' registration, so its "Material 3" destination composes
 ;; into every dock.
 ;; Reach it there, from the Apps button, or M-x jetpacs-m3-catalog.
-(require 'jetpacs-m3-catalog)
+(require 'jetpacs-m3-catalog nil t)
 ;; Jetpacs Components is a separate reference for the emerging Foundation-only
 ;; Jetpacs design language.  Its app is visible only when the connected
 ;; Companion positively advertises `jetpacs.components'.
-(require 'jetpacs-component-catalog)
+(require 'jetpacs-component-catalog nil t)
+;; Automations is the GUI-over-Lisp workflow editor.  Its runtime was loaded
+;; above before any connection can replay durable trigger events; this package
+;; contributes only the separate app surface and editor projections.
+(require 'jetpacs-automations nil t)
 ;; The live editor loop (parity P1), and the `ebp-' half of the stack:
 ;; wire and Emacs only, no node vocabulary.  Buffer sync with its
 ;; riders, then the capf completion server answering `edit.complete' —
@@ -447,7 +454,8 @@ the hub forward without creating a competing client."
    :token (ebp-decode-pairing-token jetpacs-pairing-token)
    :wants '("theme" "presentation.toast" "presentation.snackbar"
             "surfaces.dialog" "surfaces.notification"
-            "reminders.owner" "offline.wake" "editor.sync")
+            "reminders.owner" "offline.wake" "editor.sync"
+            "triggers" "capabilities")
    :receipt-file (expand-file-name "receipts.sqlite"
                                    jetpacs-var-directory)
    :ready-function #'jetpacs-ready-landing))

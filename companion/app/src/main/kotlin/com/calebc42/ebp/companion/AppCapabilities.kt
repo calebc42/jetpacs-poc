@@ -10,8 +10,8 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.os.VibrationEffect
 import android.os.VibratorManager
-import com.calebc42.ebp.companion.render.arrOrNull
-import com.calebc42.ebp.companion.render.longByValue
+import com.calebc42.ebp.renderer.model.arrOrNull
+import com.calebc42.ebp.renderer.model.longByValue
 import com.calebc42.ebp.wire.CapabilityHandler
 import com.calebc42.ebp.wire.CapabilityOutcome
 import kotlinx.serialization.json.JsonArray

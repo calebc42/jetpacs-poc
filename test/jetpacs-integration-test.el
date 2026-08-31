@@ -329,7 +329,7 @@ hook, and every other suite lacks the module.
 
 `ebp-org-reset' is the one that proves the tier rule.  The engine may
 not name a `jetpacs-' symbol — the delineation guard loads
-`emacs/ebp-org.el' alone and fails on the first one — so the
+the upstream `ebp-org.el' alone and fails on the first one — so the
 registration belongs to the jetpacs-side shim `jetpacs-org.el', and
 this is the assertion that the shim actually made it."
   (should (memq #'jetpacs-async-reset jetpacs-reset-functions))

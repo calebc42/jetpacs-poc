@@ -1,8 +1,8 @@
 # Chrome vocabulary and functional contracts — v4 (v1 ratified 2026-07-28; v2 ratified with the chrome-polish rescope; v3's two-pole section ratified 2026-08-14, the S7 seam; v4's full-bar form + drawer-injection rule ratified 2026-08-15, the PARA plan)
 
 *v2 change: element names are now the **Material 3 component names**, 1:1
-(m3.material.io; `material3` 1.4.0 per
-`lookup-tables/M3-COMPONENT-LOOKUP.org`).  The functional contracts are
+(m3.material.io; `material3` 1.4.0 per Glasspane Material's
+`docs/lookup-tables/M3-COMPONENT-LOOKUP.org`).  The functional contracts are
 unchanged — they are the Emacs-side discipline M3 does not provide.  Scope:
 the Jetpacs base layer — docstrings, user-facing docs, commit messages, and
 the conventions base apps follow.  The EBP wire names (SPEC §17.6) are frozen

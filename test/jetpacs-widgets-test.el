@@ -25,6 +25,11 @@
   (file-name-directory (or load-file-name buffer-file-name))
   "Directory holding this test file (repo `test/').")
 
+(defvar jetpacs-test--glasspane-material3-dir
+  (or (getenv "GLASSPANE_MATERIAL3_DIR")
+      (expand-file-name "../../glasspane-material3" jetpacs-test--dir))
+  "Canonical Glasspane Material 3 checkout.")
+
 (defun jetpacs-test--golden-map (name)
   "Return a hash of INDEX-STRING -> RAW-JSON from `ebp/goldens/NAME.golden'."
   (let ((h (make-hash-table :test 'equal)))
@@ -46,8 +51,8 @@
   (let ((h (make-hash-table :test 'equal)))
     (with-temp-buffer
       (insert-file-contents
-       (expand-file-name "../renderer-extensions/glasspane-material3.golden"
-                         jetpacs-test--dir))
+       (expand-file-name "renderer-extensions/glasspane-material3.golden"
+                         jetpacs-test--glasspane-material3-dir))
       (goto-char (point-min))
       (while (not (eobp))
         (unless (looking-at-p "^[[:space:]]*$")
@@ -61,7 +66,7 @@
   "Parse `ebp/contract.json' as an alist (symbol keys, list arrays)."
   (with-temp-buffer
     (insert-file-contents
-     (expand-file-name "../ebp/contract.json" jetpacs-test--dir))
+     (expand-file-name "../../ebp-poc/ebp/contract.json" jetpacs-test--dir))
     (json-parse-buffer :object-type 'alist :array-type 'list)))
 
 ;;;; Byte-parity: ActionDescriptor / builtin vectors (widgets.golden 61-71, 100-101)
@@ -232,6 +237,11 @@
                  (list (jetpacs-text "1") (jetpacs-text "2"))
                  :id "tabs1" :initial 1 :on-change (jetpacs-action "demo.tab")
                  :pager-only :json-false :scrollable t))
+      (chk "104" (jetpacs-tab-selector
+                   (mapcar #'jetpacs-tab-item
+                           '("Preview" "Visual" "Lisp" "Source"))
+                   0 (jetpacs-action "catalog.projection")
+                   :id "projection-tabs" :style "secondary"))
       (chk "34" (jetpacs-table
                  (list (jetpacs-table-row 'header (jetpacs-table-cell (list (jetpacs-span "H"))))
                        (jetpacs-table-row 'data (jetpacs-table-cell (list (jetpacs-span "v"))
@@ -270,6 +280,15 @@
   (should-error (jetpacs-tabs '() '()))
   (should-error (jetpacs-tabs (list (jetpacs-tab-item "A")) (list (jetpacs-text "1"))
                               :initial 1))
+  ;; tab_selector: controlled, non-empty, and selected must index items.
+  (should-error (jetpacs-tab-selector nil 0 (jetpacs-action "demo.tab")))
+  (should-error (jetpacs-tab-selector (list (jetpacs-tab-item "A")) 1
+                                      (jetpacs-action "demo.tab")))
+  (should (equal (plist-get
+                  (jetpacs-tab-selector (list (jetpacs-tab-item "A")) 0
+                                        (jetpacs-action "demo.tab"))
+                  :t)
+                 "tab_selector"))
   ;; table row kind + collapsible header
   (should-error (jetpacs-table-row 'footer (jetpacs-table-cell (list (jetpacs-span "x")))))
   (should-error (jetpacs-collapsible "s" "not-a-node")))
@@ -745,15 +764,15 @@
 
 (ert-deftest jetpacs-widgets/profile-gating ()
   "jetpacs-check-profile / -node-types gate emitted types to the target (§16.2)."
-  ;; EBP remains the 48-node base; the selected design layer contributes five.
-  (should (= (length jetpacs-app-node-types) 48))
+  ;; EBP is the 49-node base; the selected design layer contributes five.
+  (should (= (length jetpacs-app-node-types) 49))
   (should (= (length jetpacs-dialog-node-types) 32))
   (should (= (length jetpacs-notification-node-types) 6))
   (should (equal (sort (copy-sequence jetpacs-app-node-types) #'string<)
                  (sort (copy-sequence jetpacs-node-types) #'string<)))
   (should (= (length (append jetpacs-app-node-types
                              (jetpacs-renderer-target-node-types 'app)))
-             53))
+             54))
   ;; post-audit: a data key named "t" inside opaque args/meta is NOT a node type
   (should (jetpacs-check-profile
            (jetpacs-button "Go" (jetpacs-action "foo.bar" :args '(:t "note"))) 'app))
@@ -1143,7 +1162,7 @@ case is the sharp one (0 is truthy, so a presence-only check let it pass)."
 ;; check is future work.
 
 (ert-deftest jetpacs-widgets/catalog-node-types ()
-  "The 48-type EBP catalog stays in lockstep with `contract.json'.
+  "The 49-type EBP catalog stays in lockstep with `contract.json'.
 Renderer-owned schemas are tested against their own manifests."
   (should (equal jetpacs-node-types
                  (alist-get 'node_types (jetpacs-test--contract)))))

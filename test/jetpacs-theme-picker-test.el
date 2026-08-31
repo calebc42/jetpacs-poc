@@ -6,9 +6,8 @@
 ;; §3 step 3, reversing FOUNDATION-GAPS #8): the coverage moved here
 ;; from test/glasspane-test.el WITH the module, because it exercises the
 ;; scaffold alone — every provider is a lambda and every action name a
-;; plain string (the "ef." spellings below are data, kept from the
-;; first instantiation).  The ef assertions proper — jetpacs-ef-themes
-;; instantiating this scaffold — remain in the historical regression suite.
+;; plain generic string.  Assertions for concrete theme-family adapters live
+;; with the downstream applet that owns each adapter.
 
 (require 'ert)
 (require 'cl-lib)
@@ -19,9 +18,9 @@
 `jetpacs-surface' + universal width/height, the preview's modus-5.0
 gate, light/dark grouping with the active-theme marker, the mirror
 note both ways, and the customize cross-link — every node through the
-canonical wire encoding."
+  canonical wire encoding."
   (should (equal (jetpacs-theme-picker-display-name
-                  "ef-" (intern "ef-melissa-dark"))
+                  "family-" (intern "family-melissa-dark"))
                  "Melissa Dark"))
   ;; Swatch: nil-safe, circle surface, dp via universal attrs.
   (should-not (jetpacs-theme-picker--swatch nil))
@@ -40,45 +39,45 @@ canonical wire encoding."
     (cl-letf (((symbol-function 'modus-themes-activate) (lambda (&rest _))))
       (should (= (length (jetpacs-theme-picker-preview color-fn 'any)) 3))))
   ;; Grouping, the active marker, and the load-action args plist.
-  (let* ((day (intern "ef-day")) (night (intern "ef-night"))
+  (let* ((day (intern "family-day")) (night (intern "family-night"))
          (section (jetpacs-theme-picker-themes-section
                    (list day night) day
                    :dark-p-fn (lambda (theme) (eq theme night))
                    :display-fn #'symbol-name
                    :color-fn (lambda (&rest _) nil)
-                   :load-action "ef.load"))
+                   :load-action "derived.load"))
          (json (jetpacs-node->canonical-json
                 (apply #'jetpacs-column section))))
     (should (= (length section) 4))          ; Light hdr, day, Dark hdr, night
     (should (string-search "\"title\":\"Light\"" json))
     (should (string-search "\"title\":\"Dark\"" json))
     (should (string-search "check_circle" json))
-    (should (string-search "\"theme\":\"ef-night\"" json))
+    (should (string-search "\"theme\":\"family-night\"" json))
     ;; The active theme's card is not re-loadable.
-    (should-not (string-search "\"theme\":\"ef-day\"" json)))
+    (should-not (string-search "\"theme\":\"family-day\"" json)))
   ;; Mirror note both ways; the provider supplies its current mode.
   (should (string-search "Mirroring"
                          (jetpacs-node->canonical-json
-                          (jetpacs-theme-picker-mirror-note "ef.mirror"
+                          (jetpacs-theme-picker-mirror-note "derived.mirror"
                                                             'mirror))))
   (let ((json (jetpacs-node->canonical-json
-               (jetpacs-theme-picker-mirror-note "ef.mirror" 'system))))
+               (jetpacs-theme-picker-mirror-note "derived.mirror" 'system))))
     (should (string-search "Mirror on phone" json))
-    (should (string-search "\"action\":\"ef.mirror\"" json)))
+    (should (string-search "\"action\":\"derived.mirror\"" json)))
   ;; Current-card none arm, and the customize cross-link.
-  (should (string-search "No ef theme active"
+  (should (string-search "No derived theme active"
                          (jetpacs-node->canonical-json
                           (jetpacs-theme-picker-current-card
                            nil
                            :display-fn #'symbol-name
                            :dark-p-fn #'ignore
                            :color-fn #'ignore
-                           :mirror-action "ef.mirror"
+                           :mirror-action "derived.mirror"
                            :theme-mode 'system
-                           :none-label "No ef theme active"))))
+                           :none-label "No derived theme active"))))
   (let ((json (jetpacs-node->canonical-json
-               (jetpacs-theme-picker-more-link "ef-themes"))))
+               (jetpacs-theme-picker-more-link "derived-themes"))))
     (should (string-search "\"action\":\"customize.show\"" json))
-    (should (string-search "\"group\":\"ef-themes\"" json))))
+    (should (string-search "\"group\":\"derived-themes\"" json))))
 
 ;;; jetpacs-theme-picker-test.el ends here

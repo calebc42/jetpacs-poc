@@ -53,16 +53,16 @@ import androidx.navigation3.runtime.NavBackStack
 import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.serialization.NavBackStackSerializer
 import androidx.navigation3.ui.NavDisplay
-import com.calebc42.ebp.companion.render.RenderNode
-import com.calebc42.ebp.companion.render.chromeBackDescriptor
-import com.calebc42.ebp.companion.ui.JetpacsCatalogAction
-import com.calebc42.ebp.companion.ui.JetpacsChoiceRow
+import com.calebc42.glasspane.material3.RenderNode
+import com.calebc42.glasspane.material3.chromeBackDescriptor
+import com.calebc42.glasspane.material3.ui.JetpacsCatalogAction
+import com.calebc42.glasspane.material3.ui.JetpacsChoiceRow
 import com.calebc42.jetpacs.core.navigation.JetpacsNavKey
 import com.calebc42.jetpacs.core.navigation.openPresentJetpacsSurface
 import com.calebc42.jetpacs.core.navigation.pushJetpacsDestination
 import com.calebc42.jetpacs.core.navigation.reconcileJetpacsBackStack
-import com.calebc42.jetpacs.renderer.model.RendererActionContext
-import com.calebc42.jetpacs.renderer.model.RendererActionRequest
+import com.calebc42.ebp.renderer.model.RendererActionContext
+import com.calebc42.ebp.renderer.model.RendererActionRequest
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 

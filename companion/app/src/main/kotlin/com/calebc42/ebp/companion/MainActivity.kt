@@ -25,9 +25,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.calebc42.ebp.companion.render.EbpTheme
-import com.calebc42.ebp.companion.render.RenderDialogRoot
-import com.calebc42.ebp.companion.render.RenderPieMenu
+import com.calebc42.glasspane.material3.EbpTheme
+import com.calebc42.glasspane.material3.RenderDialogRoot
+import com.calebc42.glasspane.material3.RenderPieMenu
 import com.calebc42.jetpacs.renderer.jetpacs.ProvideJetpacsTheme
 import kotlinx.serialization.json.JsonObject
 
@@ -115,7 +115,7 @@ private fun ConfirmHost(bridge: DeviceBridge) {
             icon = p.icon?.let {
                 {
                     androidx.compose.material3.Icon(
-                        com.calebc42.ebp.companion.render.IconMap.get(it),
+                        com.calebc42.glasspane.material3.IconMap.get(it),
                         contentDescription = null)
                 }
             },

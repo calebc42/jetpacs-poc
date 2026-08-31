@@ -806,7 +806,7 @@ fallback."
                              (lambda (c)
                                (jetpacs-hypertext--collapse-ws
                                 (jetpacs-buffer-scalar-text
-                                 (dom-texts c ""))))
+                                 (dom-inner-text c))))
                              cells))))
            trs))
          (widths (delete-dups (mapcar (lambda (r)

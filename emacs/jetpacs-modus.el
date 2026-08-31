@@ -13,6 +13,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'seq)
 (require 'jetpacs-widgets)
 (require 'jetpacs-surfaces)
@@ -33,6 +34,41 @@
 (defvar modus-themes-to-rotate)
 (defvar modus-themes-to-toggle)
 (defvar jetpacs-theme-mode)
+
+;;;; Modus-family provider registry
+
+(defvar jetpacs-modus-theme-provider-links nil
+  "Ordered list of (ORDER BUILDER . OWNER) Modus-family provider rows.
+BUILDER is a nullary node builder.  This registry extends the Theme screen
+without making Jetpacs name an optional downstream theme package.  Providers
+belong here only when their themes implement the Modus semantic palette API.")
+
+(defun jetpacs-modus-unregister-theme-provider (builder)
+  "Remove every Theme-screen provider row registered with BUILDER."
+  (setq jetpacs-modus-theme-provider-links
+        (cl-remove builder jetpacs-modus-theme-provider-links :key #'cadr)))
+
+(defun jetpacs-modus-register-theme-provider (order builder)
+  "Register Modus-family provider row BUILDER at numeric ORDER.
+Registration is idempotent by BUILDER.  When called inside
+`with-jetpacs-owner', retain that owner with the contribution so tooling can
+attribute the row to the downstream app that supplies it."
+  (unless (numberp order)
+    (signal 'wrong-type-argument (list 'numberp order)))
+  (unless (functionp builder)
+    (signal 'wrong-type-argument (list 'functionp builder)))
+  (jetpacs-modus-unregister-theme-provider builder)
+  (setq jetpacs-modus-theme-provider-links
+        (sort (cons (cons order
+                          (cons builder
+                                (bound-and-true-p jetpacs-current-owner)))
+                    jetpacs-modus-theme-provider-links)
+              (lambda (a b) (< (car a) (car b))))))
+
+(defun jetpacs-modus--theme-provider-nodes ()
+  "Build the registered Modus-family provider rows in display order."
+  (mapcar (lambda (entry) (funcall (cadr entry)))
+          jetpacs-modus-theme-provider-links))
 
 ;;;; Modus queries (version-adaptive; public — JA-10's screen substrate)
 
@@ -172,13 +208,8 @@ fine — there is a user at the keyboard."
                         (jetpacs-modus--actions-row))
                   (jetpacs-modus--themes-section current)
                   (jetpacs-modus--style-section)
-                  (list
-                   (jetpacs-chrome-row "Ef Themes"
-                                       :subtitle "Pick, preview, and tune"
-                                       :icon "colorize"
-                                       :on-tap (jetpacs-action "ef.show")
-                                       :key "jetpacs-ef-themes-link")
-                   (jetpacs-theme-picker-more-link "modus-themes")))))))
+                  (jetpacs-modus--theme-provider-nodes)
+                  (list (jetpacs-theme-picker-more-link "modus-themes")))))))
 
 (defun jetpacs-modus--view (back)
   (jetpacs-chrome-screen
@@ -190,7 +221,7 @@ fine — there is a user at the keyboard."
    :back back))
 
 (defun jetpacs-modus--reload (&rest _)
-  (when-let ((theme (jetpacs-modus-current)))
+  (when-let* ((theme (jetpacs-modus-current)))
     (when (fboundp 'modus-themes-load-theme)
       (ignore-errors (modus-themes-load-theme theme)))))
 

@@ -4,8 +4,8 @@ package com.calebc42.ebp.companion
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
 import com.calebc42.ebp.wire.UnsafeAdmissionReason
-import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
-import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
+import com.calebc42.ebp.renderer.model.RendererActionOutcome
+import com.calebc42.ebp.renderer.model.RendererVolatileSecret
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean

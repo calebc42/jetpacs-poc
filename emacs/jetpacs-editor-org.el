@@ -111,7 +111,7 @@ SPEC 19 positions are whole-document offsets, so a narrowed document
 must not pretend to be synchronized.  The reader transition has
 already downgraded Files; this body presents exactly the accessible
 subtree and records its Emacs-owned splice identity for the save gate."
-  (when-let ((buffer (get-file-buffer path)))
+  (when-let* ((buffer (get-file-buffer path)))
     (with-current-buffer buffer
       (when (and (not (jetpacs-reader-active-p path))
                  (buffer-narrowed-p))

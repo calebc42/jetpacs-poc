@@ -35,8 +35,8 @@
 ;;
 ;; Per-theme previews gate on `modus-themes-activate' — the modus 5.0
 ;; palette machinery that resolving a NON-current theme's colors needs;
-;; derivative families built on that API (ef-themes 2.0+) get previews
-;; for free, and older providers degrade to clean name-only rows.
+;; derivative families built on that API get previews for free, and older
+;; providers degrade to clean name-only rows.
 
 ;;; Code:
 

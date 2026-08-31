@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-"""Generate emacs/jetpacs-vocabulary.el from ebp/contract.json (format 10).
+"""Generate emacs/jetpacs-vocabulary.el from ../ebp-poc/ebp/contract.json.
 
 The sibling of tools/gen-vocabulary.py, which does the same for the
 Companion's Vocabulary.kt.  Same W0 rule: wire vocabulary is generated from
 the authored contract, never hand-maintained; a drift test re-reads
 contract.json and fails if the committed generated file disagrees.
 
-SCOPE.  This projects the per-node schema plus the universal Semantics
-envelope, nested schemas, enums, limits, accessible-name order, and default
-node-derived semantics.  These values must not acquire handwritten twins in
-the authoring layer.  Run from the llm-poc-3 root:
+SCOPE.  This projects the per-node schema plus field types, the universal
+Semantics envelope, nested schemas, enums, limits, accessible-name order,
+default node-derived semantics, ActionDescriptor metadata, and the Editor
+toolbar vocabulary.  These values must not acquire handwritten twins in the
+authoring layer.  Run from the Jetpacs repository root:
 
     python3 tools/gen-jetpacs-vocabulary.py
 
@@ -20,7 +21,9 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-contract = json.loads((ROOT / "ebp" / "contract.json").read_text(encoding="utf-8"))
+contract = json.loads(
+    (ROOT.parent / "ebp-poc" / "ebp" / "contract.json").read_text(encoding="utf-8")
+)
 
 OUT = ROOT / "emacs" / "jetpacs-vocabulary.el"
 
@@ -93,6 +96,22 @@ default_semantic_rows = [
 enum_rows = [
     f'    ("{name}" . ({el_strings(values)}))'
     for name, values in contract["enums"].items()
+]
+field_type_rows = [
+    f'    ({el_value(name)} . {el_value(field_type)})'
+    for name, field_type in contract["field_types"].items()
+]
+
+actions = contract["actions"]
+action_schema_rows = [
+    f'    ({el_value(name)} '
+    f':required ({el_strings(row["required"])}) '
+    f':optional ({el_strings(row["optional"])}))'
+    for name, row in actions["schema"].items()
+]
+action_injection_rows = [
+    f'    ({el_value(hook)} . ({el_strings(members)}))'
+    for hook, members in actions["injections"].items()
 ]
 
 body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-binding: t; -*-
@@ -173,6 +192,46 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
   '(
 {chr(10).join(enum_rows)})
   "Contract-projected enum values keyed by their qualified field name.")
+
+(defconst jetpacs-field-types
+  '(
+{chr(10).join(field_type_rows)})
+  "Contract-projected wire field names and their declared value types.")
+
+(defconst jetpacs-action-hook-keys
+  '({el_strings(actions["hook_keys"])})
+  "Contract-projected Node members which accept an ActionDescriptor.")
+
+(defconst jetpacs-action-descriptor-fields
+  '({el_strings(actions["descriptor_fields"])})
+  "Contract-projected fields named by the ActionDescriptor envelope.")
+
+(defconst jetpacs-action-offline-policies
+  '({el_strings(actions["offline_policies"])})
+  "Contract-projected remote-action offline policy vocabulary.")
+
+(defconst jetpacs-action-offline-default
+  {el_value(actions["offline_default"])}
+  "Contract-projected offline policy used when the member is absent.")
+
+(defconst jetpacs-action-descriptor-schema
+  '(
+{chr(10).join(action_schema_rows)})
+  "Contract-projected closed schemas for remote and builtin actions.
+Each row is (KIND :required (MEMBER...) :optional (MEMBER...)).")
+
+(defconst jetpacs-action-injections
+  '(
+{chr(10).join(action_injection_rows)})
+  "Contract-projected receiver-injected arguments keyed by action hook.")
+
+(defconst jetpacs-action-open-surface-feature
+  {el_value(actions["open_surface_feature"])}
+  "Feature required by the ActionDescriptor `open_surface' member.")
+
+(defconst jetpacs-toolbar-contract
+  '{el_plist(contract["toolbar"])}
+  "Contract-projected Editor toolbar operation and placeholder vocabulary.")
 
 (defconst jetpacs-text-input-contract
   '{el_plist(contract["text_input_schema"])}

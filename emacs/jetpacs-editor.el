@@ -138,7 +138,7 @@ non-nil extension function receives the edited PATH."
 Errors deliberately propagate into Files' save gate: swallowing an Org
 Crypt failure would permit cleartext persistence."
   (dolist (adapter (jetpacs-editor-adapters-for path))
-    (when-let ((fn (jetpacs-editor-adapter-before-save adapter)))
+    (when-let* ((fn (jetpacs-editor-adapter-before-save adapter)))
       (funcall fn path buffer))))
 
 (defun jetpacs-editor-install ()

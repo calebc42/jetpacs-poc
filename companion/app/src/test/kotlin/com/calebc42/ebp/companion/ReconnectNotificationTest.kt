@@ -2,7 +2,7 @@
 package com.calebc42.ebp.companion
 
 import com.calebc42.ebp.wire.SessionState
-import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
+import com.calebc42.ebp.renderer.model.EditorConnectionPhase
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

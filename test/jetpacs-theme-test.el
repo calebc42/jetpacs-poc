@@ -142,6 +142,30 @@ and :tag both ship (they drive meta lines and org tags)."
     (should-not (jetpacs-modus-dark-p 'modus-operandi))
     (should (jetpacs-modus-dark-p 'modus-vivendi))))
 
+(ert-deftest jetpacs-theme/modus-provider-registry-is-owned-and-idempotent ()
+  "A downstream Modus-family provider contributes without a core dependency."
+  (let ((jetpacs-modus-theme-provider-links nil)
+        (builder (lambda ()
+                   (jetpacs-chrome-row
+                    "Derived themes"
+                    :on-tap (jetpacs-action "derived.show")
+                    :key "derived-themes"))))
+    (with-jetpacs-owner "downstream.theme-app"
+      (jetpacs-modus-register-theme-provider 20 builder)
+      (jetpacs-modus-register-theme-provider 20 builder))
+    (should (= 1 (length jetpacs-modus-theme-provider-links)))
+    (should (equal (cddr (car jetpacs-modus-theme-provider-links))
+                   "downstream.theme-app"))
+    (let ((json (jetpacs-node->canonical-json
+                 (car (jetpacs-modus--theme-provider-nodes)))))
+      (should (string-search "Derived themes" json))
+      (should (string-search "derived.show" json)))
+    (should (string-search
+             "Derived themes"
+             (jetpacs-node->canonical-json (jetpacs-modus--body))))
+    (jetpacs-modus-unregister-theme-provider builder)
+    (should-not jetpacs-modus-theme-provider-links)))
+
 ;;;; The mode matrix
 
 (ert-deftest jetpacs-theme/frame-args-mode-matrix ()

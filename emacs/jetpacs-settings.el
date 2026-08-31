@@ -503,7 +503,7 @@ through their submit action instead."
    :on-tap (jetpacs-action "settings.emacs"))
   (jetpacs-settings-register-hub-entry
    "theme" :order 30 :icon "palette"
-   :title "Theme" :subtitle "Mode, Modus, and ef-themes"
+   :title "Theme" :subtitle "Mode and Modus-family themes"
    :on-tap (jetpacs-action "modus.show")))
 
 (jetpacs-defaction "settings.set" #'jetpacs-settings--action-set

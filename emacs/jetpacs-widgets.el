@@ -46,14 +46,14 @@
   '("text" "rich_text" "icon" "image" "date_stamp" "section_header"
     "empty_state" "progress" "badge" "row" "column" "flow_row" "box"
     "surface" "lazy_column" "variant_host" "spacer" "divider" "card" "collapsible"
-    "reorderable_list" "tabs" "table" "button" "icon_button" "chip"
+    "reorderable_list" "tabs" "tab_selector" "table" "button" "icon_button" "chip"
     "menu" "text_input" "editor" "checkbox" "switch"
     "enum_list" "date_button" "time_button" "slider" "chart" "canvas"
     "month_grid" "scaffold" "tooltip" "pane_scaffold"
     "navigation_rail" "search_bar" "dropdown" "segmented_button"
     "carousel" "button_group"
     "lazy_grid")
-  "The 48 implementation-neutral EBP node types (`contract.json').")
+  "The 49 implementation-neutral EBP node types (`contract.json').")
 
 (defun jetpacs-register-renderer-extension (extension schema targets)
   "Install renderer EXTENSION with SCHEMA and target-node TARGETS.
@@ -801,8 +801,8 @@ roles, not a gate.  Attribute validation uses the looser `jetpacs--check-color'
 
 ;;;; Canonical serialization
 ;;
-;; Test / regeneration only -- NOT the live push path (that is jsonrpc.el
-;; inside ebp.el).  Reproduces the goldens' own formula, `json.dumps(obj,
+;; Inspection / test / regeneration only -- NOT the live push path (that is
+;; jsonrpc.el inside ebp.el).  Reproduces the goldens' own formula, `json.dumps(obj,
 ;; sort_keys=True, separators=(",",":"), ensure_ascii=False)'
 ;; (ebp/validate.py), so builder output can be compared byte-for-byte to
 ;; `ebp/goldens/'.  Emacs `json-serialize' is already compact and emits
@@ -1519,6 +1519,41 @@ standard offset."
                    :style style
                    :indicator indicator
                    :id id)))
+
+(cl-defun jetpacs-tab-selector (items selected on-change &key scrollable id
+                                      style indicator)
+  "A controlled tab strip selecting externally authored content.
+ITEMS are `jetpacs-tab-item' objects and must be non-empty.  SELECTED is
+their authored zero-based selected index.  ON-CHANGE receives the activated
+index as `args.value'; this node owns no page children and retains no hidden
+content.  SCROLLABLE, ID, STYLE, and INDICATOR match `jetpacs-tabs'."
+  (let ((count (length items)))
+    (when (zerop count)
+      (error "jetpacs-tab-selector: items must be non-empty (SPEC 17.3)"))
+    (jetpacs-check-integer selected ":selected" 0 (1- count))
+    (jetpacs-check-descriptor on-change ":on-change")
+    (when scrollable (jetpacs-check-bool scrollable ":scrollable"))
+    (when id (jetpacs-check-identifier id ":id"))
+    (when style
+      (setq style (jetpacs-check-enum style jetpacs--tab-styles ":style")))
+    (when indicator
+      (let ((kind (plist-get indicator :kind))
+            (color (plist-get indicator :color))
+            (inset (plist-get indicator :inset)))
+        (setq kind (jetpacs-check-enum kind '("underline" "outline")
+                                        ":indicator :kind"))
+        (when color (jetpacs--check-color color))
+        (when inset (jetpacs--check-number inset ":indicator :inset" 0 nil))
+        (setq indicator (jetpacs-make-node nil :kind kind :color color
+                                            :inset inset))))
+    (jetpacs-make-node "tab_selector"
+                       :items (vconcat items)
+                       :selected selected
+                       :on_change on-change
+                       :scrollable scrollable
+                       :id id
+                       :style style
+                       :indicator indicator)))
 
 (cl-defun jetpacs-table-cell (spans &key on-tap on-long-tap)
   "A table cell {spans, on_tap?, on_long_tap?} (SPEC §17.3).
@@ -3201,7 +3236,7 @@ as a single list."
 
 (defconst jetpacs-layout-node-types
   '("flow_row" "surface" "lazy_column" "card" "collapsible"
-    "reorderable_list" "tabs" "table" "pane_scaffold"
+    "reorderable_list" "tabs" "tab_selector" "table" "pane_scaffold"
     "carousel" "button_group"
     "lazy_grid" "variant_host")
   "The §17.3 non-core layout node types (reference app profile).")

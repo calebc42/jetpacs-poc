@@ -1,28 +1,31 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.ebp.companion
 
-import com.calebc42.ebp.companion.render.GLASSPANE_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
-import com.calebc42.ebp.companion.render.GLASSPANE_MATERIAL3_EXTENSION
-import com.calebc42.ebp.companion.render.GLASSPANE_MATERIAL3_NODE_SCHEMA
-import com.calebc42.ebp.companion.render.GLASSPANE_MATERIAL3_STATEFUL_WHEN_PRESENT
-import com.calebc42.ebp.companion.render.NodeSupport
+import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
+import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_EXTENSION
+import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_NODE_SCHEMA
+import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_STATEFUL_WHEN_PRESENT
+import com.calebc42.glasspane.material3.NodeSupport
 import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
 import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.ebp.wire.NodeVocabulary
-import com.calebc42.jetpacs.renderer.compose.ComposeExtensionRegistry
-import com.calebc42.jetpacs.renderer.compose.ComposeCanonicalOverrideRegistry
-import com.calebc42.jetpacs.renderer.compose.ComposeRendererConfiguration
-import com.calebc42.jetpacs.renderer.compose.CoreComposeContribution
+import com.calebc42.ebp.renderer.compose.ComposeExtensionRegistry
+import com.calebc42.ebp.renderer.compose.ComposeCanonicalOverrideRegistry
+import com.calebc42.ebp.renderer.compose.ComposeRendererConfiguration
+import com.calebc42.ebp.renderer.compose.CoreComposeContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_AT_LEAST_ONE_NON_EMPTY
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_EXTENSION
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsEditorRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsTextInputRenderer
-import com.calebc42.jetpacs.renderer.model.RendererProfile
-import com.calebc42.jetpacs.renderer.model.RendererRegistry
+import com.calebc42.ebp.renderer.model.RendererProfile
+import com.calebc42.ebp.renderer.model.RendererRegistry
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -60,6 +63,8 @@ object CompanionRenderer {
             JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT,
         atLeastOneNonEmpty = GLASSPANE_MATERIAL3_AT_LEAST_ONE_NON_EMPTY +
             JETPACS_COMPONENTS_AT_LEAST_ONE_NON_EMPTY,
+        selectionOptions = JETPACS_COMPONENTS_SELECTION_OPTIONS,
+        trueRequiresParent = JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT,
         extensions = extensionOwners,
     )
 
@@ -99,6 +104,7 @@ object CompanionRenderer {
         dialogNodeTypes = dialogProfile.nodeTypes,
         appExtensions = appProfile.extensions,
         dialogExtensions = dialogProfile.extensions,
+        pinnedNodeMembers = JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS,
         extensions = ComposeExtensionRegistry(listOf(JetpacsComponentsRenderer)),
         canonicalOverrides = ComposeCanonicalOverrideRegistry(
             listOf(JetpacsTextInputRenderer, JetpacsEditorRenderer),

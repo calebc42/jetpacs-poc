@@ -50,6 +50,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
+JETPACS_PROJECTS_ROOT="$(cd "$REPO_ROOT/../.." >/dev/null 2>&1 && pwd)"
+JETPACS_POC_ROOT="$(cd "$REPO_ROOT/.." >/dev/null 2>&1 && pwd)"
 
 usage() {
   cat >&2 <<EOF
@@ -568,6 +570,19 @@ ${TYPE_CHUNK}-char chunks)"
 
 PROVISION_OUTPUT=""
 
+stage_elisp_tree() {
+  local source="$1" destination="$2" label="$3"
+  [ -d "$source" ] || die "$label source is missing: $source"
+  ssh_run "mkdir -p $destination" \
+    || die "could not create payload directory for $label"
+  log "staging $label"
+  tar -C "$source" --exclude='.git' --exclude='docs' --exclude='test' \
+    --exclude='*.elc' --exclude='.#*' --exclude='*~' --exclude='#*#' \
+    --exclude='__pycache__' -czf - . \
+    | ssh_run "tar -C $destination -xzf -" \
+    || die "tar of $label to the device failed"
+}
+
 phase_provision() {
   local stage='.cache/jetpacs-onboard' payload
   payload="$stage/payload"
@@ -601,11 +616,33 @@ $payload/examples/python $payload/bootstrap" \
   # directory the same login shell enters fine -- no AVC logged, owner
   # and 0700 modes correct. The stage is fresh, so renamed modules cannot
   # linger; the device-side installer swaps the distribution subtrees.
-    log "staging emacs/ (whole tree, apps/ and spike/ included)"
-    tar -C "$REPO_ROOT/emacs" --exclude='*.elc' --exclude='.#*' \
-      --exclude='*~' --exclude='#*#' --exclude='__pycache__' -czf - . \
-      | ssh_run "tar -C $payload/emacs -xzf -" \
-      || die "tar of emacs/ to the device failed"
+    stage_elisp_tree "$REPO_ROOT/emacs" "$payload/emacs" \
+      "Jetpacs Emacs host"
+    stage_elisp_tree "$JETPACS_PROJECTS_ROOT/ebp.el/lisp" "$payload/emacs" \
+      "ebp.el"
+    stage_elisp_tree "$JETPACS_PROJECTS_ROOT/ebp-org/lisp" "$payload/emacs" \
+      "ebp-org"
+    stage_elisp_tree \
+      "$JETPACS_POC_ROOT/glasspane-material3/lisp/glasspane-material3" \
+      "$payload/emacs/apps/glasspane-material3" "Glasspane Material 3 API"
+    stage_elisp_tree \
+      "$JETPACS_POC_ROOT/glasspane-material3/lisp/m3-catalog" \
+      "$payload/emacs/apps/m3-catalog" "Material 3 catalog"
+    ssh_run "cat > $payload/emacs/apps/m3-catalog/jetpacs-m3-catalog.el" \
+      < "$JETPACS_POC_ROOT/glasspane-material3/lisp/jetpacs-m3-catalog.el" \
+      || die "transfer of the Material 3 catalog entry failed"
+    stage_elisp_tree \
+      "$JETPACS_POC_ROOT/jetpacs-components/lisp/jetpacs-components" \
+      "$payload/emacs/apps/jetpacs-components" "Jetpacs Components"
+    stage_elisp_tree "$JETPACS_POC_ROOT/jetpacs-authoring/lisp" \
+      "$payload/emacs/apps/jetpacs-authoring" "Jetpacs authoring"
+    stage_elisp_tree "$JETPACS_POC_ROOT/jetpacs-automations/lisp" \
+      "$payload/emacs/apps/jetpacs-automations" "Jetpacs Automations"
+    stage_elisp_tree "$JETPACS_POC_ROOT/jetpacs-component-catalog/lisp" \
+      "$payload/emacs/apps/jetpacs-component-catalog" \
+      "Jetpacs Component Catalog"
+    stage_elisp_tree "$JETPACS_POC_ROOT/glasspane" \
+      "$payload/emacs/apps/glasspane" "Glasspane"
 
     log "staging device/py/ as managed examples/python/"
     tar -C "$REPO_ROOT/device/py" -czf - . \

@@ -276,7 +276,7 @@ link still tappable through `emacs.buffer.act'."
                          path))
                    ((string-match-p "\\`http://" path) nil)
                    ((equal kind "attachment:")
-                    (when-let ((expanded
+                    (when-let* ((expanded
                                 (ignore-errors (org-attach-expand path))))
                       (jetpacs-org-render--data-uri expanded)))
                    (t (jetpacs-org-render--data-uri path)))))

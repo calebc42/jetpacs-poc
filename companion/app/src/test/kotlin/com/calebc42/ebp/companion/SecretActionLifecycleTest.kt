@@ -3,8 +3,8 @@ package com.calebc42.ebp.companion
 
 import com.calebc42.ebp.wire.SafeAdmissionEvidence
 import com.calebc42.ebp.wire.UnsafeAdmissionReason
-import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
-import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
+import com.calebc42.ebp.renderer.model.RendererActionOutcome
+import com.calebc42.ebp.renderer.model.RendererVolatileSecret
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals

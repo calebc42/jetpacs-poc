@@ -3,6 +3,35 @@
 set -e
 cd "$(dirname "$0")/.."
 
+jetpacs_root=$(pwd)
+EBP_SPEC_DIR=${EBP_SPEC_DIR:-"$jetpacs_root/../ebp-poc/ebp"}
+EBP_EL_DIR=${EBP_EL_DIR:-"$jetpacs_root/../ebp-poc/ebp.el"}
+EBP_ORG_DIR=${EBP_ORG_DIR:-"$jetpacs_root/../ebp-poc/ebp-org"}
+EBP_KMP_DIR=${EBP_KMP_DIR:-"$jetpacs_root/../ebp-poc/ebp-kmp"}
+EBP_COMPOSE_DIR=${EBP_COMPOSE_DIR:-"$jetpacs_root/../ebp-poc/ebp-compose"}
+GLASSPANE_MATERIAL3_DIR=${GLASSPANE_MATERIAL3_DIR:-"$jetpacs_root/../glasspane-material3"}
+JETPACS_COMPONENTS_DIR=${JETPACS_COMPONENTS_DIR:-"$jetpacs_root/../jetpacs-components"}
+JETPACS_AUTHORING_DIR=${JETPACS_AUTHORING_DIR:-"$jetpacs_root/../jetpacs-authoring"}
+JETPACS_AUTOMATIONS_DIR=${JETPACS_AUTOMATIONS_DIR:-"$jetpacs_root/../jetpacs-automations"}
+JETPACS_COMPONENT_CATALOG_DIR=${JETPACS_COMPONENT_CATALOG_DIR:-"$jetpacs_root/../jetpacs-component-catalog"}
+GLASSPANE_DIR=${GLASSPANE_DIR:-"$jetpacs_root/../glasspane"}
+export EBP_SPEC_DIR EBP_EL_DIR EBP_ORG_DIR EBP_KMP_DIR EBP_COMPOSE_DIR
+export GLASSPANE_MATERIAL3_DIR JETPACS_COMPONENTS_DIR JETPACS_AUTHORING_DIR
+export JETPACS_AUTOMATIONS_DIR JETPACS_COMPONENT_CATALOG_DIR
+export GLASSPANE_DIR
+
+for dependency in \
+  "$EBP_SPEC_DIR/contract.json" \
+  "$EBP_EL_DIR/lisp/ebp.el" \
+  "$EBP_ORG_DIR/lisp/ebp-org.el" \
+  "$EBP_KMP_DIR/wire/build.gradle.kts" \
+  "$EBP_COMPOSE_DIR/renderer/model/build.gradle.kts"; do
+  test -r "$dependency" || {
+    echo "workspace dependency missing: $dependency" >&2
+    exit 2
+  }
+done
+
 # The workspace may contain ignored developer bytecode.  Every suite must read
 # the current source without deleting or overwriting those unrelated artifacts.
 # All invocations below start with `emacs -Q --batch'; consume that common
@@ -12,23 +41,34 @@ emacs() {
     shift 2
   fi
   command emacs -Q --batch --eval '(setq load-prefer-newer t)' \
-    -L emacs/apps/glasspane-material3 "$@"
+    -L "$EBP_EL_DIR/lisp" \
+    -L "$EBP_ORG_DIR/lisp" \
+    -L "$JETPACS_AUTHORING_DIR/lisp" \
+    -L "$GLASSPANE_MATERIAL3_DIR/lisp/glasspane-material3" \
+    -L "$GLASSPANE_MATERIAL3_DIR/lisp/m3-catalog" \
+    -L "$GLASSPANE_MATERIAL3_DIR/lisp" \
+    -L "$JETPACS_COMPONENTS_DIR/lisp/jetpacs-components" \
+    -L "$JETPACS_AUTOMATIONS_DIR/lisp" \
+    -L "$JETPACS_COMPONENT_CATALOG_DIR/lisp" \
+    -L "$GLASSPANE_DIR" "$@"
 }
 
-# Renderer extensions are renderer-owned, but their Kotlin and Elisp endpoint
-# projections still have one manifest authority.  Exercise the generic CLI on
-# a synthetic extension, then prove the installed Glasspane projections are
-# current without rewriting the worktree.
-python3 tools/gen-vocabulary.py --check
-python3 tools/gen-jetpacs-vocabulary.py --check
-python3 test/test_renderer_extension_generator.py
-python3 tools/gen-renderer-extension-vocabulary.py --check
-python3 tools/gen-renderer-extension-vocabulary.py \
-  renderer-extensions/jetpacs-components.json \
-  --kotlin-output companion/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsVocabulary.kt \
-  --kotlin-package com.calebc42.jetpacs.renderer.jetpacs \
-  --elisp-output emacs/apps/jetpacs-components/jetpacs-components-vocabulary.el \
+# Upstream and extension owners gate their own source. Jetpacs then runs the
+# integration suites against those exact neighboring working trees.
+EBP_SPEC_DIR="$EBP_SPEC_DIR" "$EBP_EL_DIR/test/run-tests.sh"
+EBP_EL_DIR="$EBP_EL_DIR" "$EBP_ORG_DIR/test/run-tests.sh"
+"$JETPACS_AUTHORING_DIR/test/run-tests.sh"
+"$GLASSPANE_MATERIAL3_DIR/test/run-tests.sh"
+"$JETPACS_COMPONENTS_DIR/test/run-tests.sh"
+"$JETPACS_AUTOMATIONS_DIR/test/run-tests.sh"
+"$JETPACS_COMPONENT_CATALOG_DIR/test/run-tests.sh"
+
+python3 "$EBP_KMP_DIR/tools/gen-vocabulary.py" \
+  --spec-dir "$EBP_SPEC_DIR" \
+  --output "$EBP_KMP_DIR/wire/src/jvmMain/kotlin/com/calebc42/ebp/wire/Vocabulary.kt" \
   --check
+python3 tools/gen-jetpacs-vocabulary.py --check
+python3 "$EBP_COMPOSE_DIR/test/test_renderer_extension_generator.py"
 
 # Amendment #181: one deterministic 10,000-case corpus must agree across the
 # Python reference receiver, Kotlin receiver (the wire suite), and public
@@ -53,13 +93,13 @@ bash test/onboarding-layout-test.sh
 # (:58-66) records from the other direction: its predecessor was a
 # hand-kept 16-name list that silently omitted jetpacs-modus.el, so
 # "unguarded" was the default for anything added later.  Coverage here is
-# derived from emacs/ebp*.el and the count is asserted, so a new ebp file
+# derived from the canonical ebp.el checkout and the count is asserted, so a new file
 # is guarded the day it lands and a glob that matches nothing cannot pass
 # by saying nothing.
 ebp_guard_count=0
-for f in emacs/ebp*.el; do
+for f in "$EBP_EL_DIR"/lisp/ebp*.el; do
   EBP_GUARD_FEATURE="$(basename "$f" .el)" \
-  emacs -Q --batch -L emacs --eval '
+  emacs -Q --batch -L "$EBP_EL_DIR/lisp" --eval '
 (progn
   (require (intern (getenv "EBP_GUARD_FEATURE")))
   (let (offenders)
@@ -81,7 +121,7 @@ for f in emacs/ebp*.el; do
   ebp_guard_count=$((ebp_guard_count + 1))
 done
 if [ "$ebp_guard_count" -lt 5 ]; then
-  echo "delineation guard: emacs/ebp*.el matched $ebp_guard_count files, expected at least 5" >&2
+  echo "delineation guard: ebp.el/lisp/ebp*.el matched $ebp_guard_count files, expected at least 5" >&2
   exit 1
 fi
 
@@ -111,7 +151,7 @@ emacs -Q --batch -L emacs \
                      (expand-file-name
                       (concat (file-name-nondirectory file) \"c\")
                       \"$jetpacs_compile_dest\"))))" \
-  -f batch-byte-compile emacs/ebp.el
+  -f batch-byte-compile "$EBP_EL_DIR/lisp/ebp.el"
 
 # Same guard for EVERY application-layer module. A glob, not a list: the
 # previous hand-kept 16-name list silently omitted jetpacs-modus.el, and a
@@ -119,16 +159,11 @@ emacs -Q --batch -L emacs \
 # docstring-quote bug class this guard exists for would then reach a device.
 # ebp.el compiles twice (here and above); two seconds buys never maintaining
 # the list again.
-# The glob covers emacs/apps/*/ too: a Tier-1 app that modularizes into a
-# subdirectory (the M3 catalog is 42 files) must not escape the guard by
-# living one level down.
-for f in emacs/*.el emacs/apps/*/*.el; do
-  emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
-    -L emacs/apps/glasspane-material3 \
-    -L emacs/apps/jetpacs-components \
-    -L emacs/apps/jetpacs-component-catalog \
-    -L ../glasspane \
-    -L emacs/apps/ef-themes \
+# Extracted app owners run their warning-as-error compile gates above.  This
+# local glob covers Jetpacs foundation plus its packaged-app manifest, the only
+# application source still owned by this checkout.
+for f in emacs/*.el emacs/apps/packaged-apps/*.el; do
+  emacs -Q --batch -L emacs \
     --eval "(progn
                (setq load-prefer-newer t)
                (setq byte-compile-error-on-warn t)
@@ -142,15 +177,27 @@ done
 
 # Storage-independent SPEC 14.4 receipt/work contract and its built-in
 # Emacs 30.1 SQLite backend.  No Jetpacs or ebp.el dependency.
-emacs -Q --batch -L emacs -l test/ebp-store-test.el \
+emacs -Q --batch -L emacs -l "$EBP_EL_DIR/test/ebp-store-test.el" \
   -f ert-run-tests-batch-and-exit
 
-emacs -Q --batch -L emacs -l test/ebp-wire-test.el \
+# GUI-over-Lisp Automations: inert one-form reader and closed interpreter;
+# separate durable inbox/frozen revisions; Inspector/Tree/Lisp projections.
+emacs -Q --batch -L emacs -l "$JETPACS_AUTOMATIONS_DIR/test/jetpacs-automation-model-test.el" \
+  -f ert-run-tests-batch-and-exit
+
+emacs -Q --batch -L emacs -l "$JETPACS_AUTOMATIONS_DIR/test/jetpacs-automation-runtime-test.el" \
+  -f ert-run-tests-batch-and-exit
+
+emacs -Q --batch -L emacs \
+  -l "$JETPACS_AUTOMATIONS_DIR/test/jetpacs-automations-test.el" \
+  -f ert-run-tests-batch-and-exit
+
+emacs -Q --batch -L emacs -l "$EBP_EL_DIR/test/ebp-wire-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # Section 19 buffer bridge on built-in track-changes.el (PLAN-poc1-parity
 # P1); Jetpacs-agnostic like ebp.el itself.
-emacs -Q --batch -L emacs -l test/ebp-sync-test.el \
+emacs -Q --batch -L emacs -l "$EBP_EL_DIR/test/ebp-sync-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # JA-4 exit gate: the org engine — refs/tokens (D-4), resolve guards,
@@ -160,7 +207,14 @@ emacs -Q --batch -L emacs -l test/ebp-sync-test.el \
 # with the pure ones iff its process loads no application layer.  This
 # one asserts that about itself (ebp-org-suite-loads-no-application-
 # layer), so the rule is checked rather than remembered.
-emacs -Q --batch -L emacs -l test/ebp-org-test.el \
+emacs -Q --batch -L emacs -l "$EBP_ORG_DIR/test/ebp-org-test.el" \
+  -f ert-run-tests-batch-and-exit
+
+# Generated authoring metadata: field kinds, ActionDescriptor policy, and
+# Editor toolbar vocabulary retain the exact Elisp shapes from contract.json.
+emacs -Q --batch -L emacs \
+  --eval '(setq load-prefer-newer t)' \
+  -l test/jetpacs-vocabulary-authoring-test.el \
   -f ert-run-tests-batch-and-exit
 
 # Application-layer builder suite (jetpacs-widgets; requires ebp, so it is
@@ -238,7 +292,7 @@ bash test/package-vc-install-test.sh
 # ebp-complete.el is wire-and-Emacs only, but this suite also pins
 # jetpacs-connect's fboundp seam, so it loads the application layer and
 # belongs down here rather than with the ebp-agnostic suites above.
-emacs -Q --batch -L emacs -l test/ebp-complete-test.el \
+emacs -Q --batch -L emacs -l test/jetpacs-ebp-complete-integration-test.el \
   -f ert-run-tests-batch-and-exit
 
 # JA-1 theme + modus exit gate (docs/PLAN-jetpacs-apps.md).
@@ -247,8 +301,8 @@ emacs -Q --batch -L emacs -l test/jetpacs-theme-test.el \
 
 # The promoted theme-picker scaffold (PLAN-jetpacs-debt-and-scaffold §3
 # step 3, reversing FOUNDATION-GAPS #8): scaffold-alone coverage, moved
-# from the glasspane suite with the module; the ef instantiation stays
-# there.
+# from the downstream suite with the scaffold; concrete provider
+# instantiations stay with their owning applets.
 emacs -Q --batch -L emacs -l test/jetpacs-theme-picker-test.el \
   -f ert-run-tests-batch-and-exit
 
@@ -262,7 +316,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-clip-test.el \
 
 # JA-2 teardown exit gate (selector mandatory: the loopback harness file
 # defines its own suite too).
-emacs -Q --batch -L emacs -l test/ebp-wire-test.el -l test/jetpacs-teardown-test.el \
+emacs -Q --batch -L emacs -l "$EBP_EL_DIR/test/ebp-wire-test.el" -l test/jetpacs-teardown-test.el \
   --eval '(ert-run-tests-batch-and-exit "^jetpacs-teardown-")'
 
 # JA-2 buffer-view host exit gate.
@@ -383,13 +437,18 @@ emacs -Q --batch -L emacs -l test/jetpacs-launcher-test.el \
 # drill host, device adding its teardown sweep — is tested by no other
 # suite, so deleting it is green everywhere else.  Selector-scoped: the
 # loopback harness file defines its own suite too.
-emacs -Q --batch -L emacs -l test/ebp-wire-test.el -l test/jetpacs-integration-test.el \
+emacs -Q --batch -L emacs -l "$EBP_EL_DIR/test/ebp-wire-test.el" -l test/jetpacs-integration-test.el \
   --eval '(ert-run-tests-batch-and-exit "^jetpacs-integration-")'
 
 # Phase A cross-file seams + the comint P1s.  Several of these regress by
 # HANGING rather than failing (a prompt reached inside a dispatch extent),
 # so this suite is the one that must never be skipped.
 emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
+  -f ert-run-tests-batch-and-exit
+
+# Shared exact-source projection used by the catalog viewers: authored forms,
+# honest loaded-function/unavailable fallbacks, and bounded output.
+emacs -Q --batch -L emacs -l "$JETPACS_AUTHORING_DIR/test/jetpacs-elisp-source-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # Glasspane Material 3 Catalog exit gate: the upstream
@@ -399,17 +458,27 @@ emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
 # exercises this much of the builder surface at once.  It also holds the
 # Material version pin: the toml is read off disk and asserted equal to
 # `jetpacs-m3-material-version', so the two move unanimously or go red.
-emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
+emacs -Q --batch -L emacs \
   --eval '(setq load-prefer-newer t)' \
-  -l test/jetpacs-m3-catalog-test.el \
+  -l "$GLASSPANE_MATERIAL3_DIR/test/jetpacs-m3-catalog-test.el" \
   -f ert-run-tests-batch-and-exit
 
-# Jetpacs' Foundation-only design extension and its separate catalog: public
-# builders, JSON false, canonical IR, app gating, screen builds, and the real
-# action/state loop.
-emacs -Q --batch -L emacs -L emacs/apps/jetpacs-components \
-  -L emacs/apps/jetpacs-component-catalog \
-  -l test/jetpacs-component-catalog-test.el \
+# Jetpacs' Foundation-only design extension and its separate catalog: the
+# closed inert authoring model, trace/arm policy, four projections, public
+# builders, app gating, screen builds, and the real action/state loop.
+emacs -Q --batch -L emacs \
+  --eval '(setq load-prefer-newer t)' \
+  -l "$JETPACS_COMPONENT_CATALOG_DIR/test/jetpacs-component-authoring-test.el" \
+  -f ert-run-tests-batch-and-exit
+
+emacs -Q --batch -L emacs \
+  --eval '(setq load-prefer-newer t)' \
+  -l "$JETPACS_COMPONENT_CATALOG_DIR/test/jetpacs-component-catalog-actions-test.el" \
+  -f ert-run-tests-batch-and-exit
+
+emacs -Q --batch -L emacs \
+  --eval '(setq load-prefer-newer t)' \
+  -l "$JETPACS_COMPONENT_CATALOG_DIR/test/jetpacs-component-catalog-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # The shared Elisp REPL loop (jetpacs-repl.el): the loop the device
@@ -423,8 +492,8 @@ emacs -Q --batch -L emacs -l test/jetpacs-repl-test.el \
 # The Catalog Playground (jetpacs-m3-repl.el): the REPL-over-one-sample
 # whose print step is a rendering — the placement pin (a duplicate
 # :sheet fails silently) and the override blast radius.
-emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
-  -l test/jetpacs-m3-repl-test.el \
+emacs -Q --batch -L emacs \
+  -l "$GLASSPANE_MATERIAL3_DIR/test/jetpacs-m3-repl-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # Glasspane is now a separately owned downstream applet at ../glasspane.
@@ -434,7 +503,7 @@ emacs -Q --batch -L emacs -L emacs/apps/m3-catalog \
 
 # Icon lint: SPEC 17.1's placeholder degrade means a misspelled icon
 # never fails at runtime — this is the only gate that catches a typo.
-# Ground truth is the generated docs/lookup-tables/M3-ICON-REFERENCE.org
-# (regenerate with generate-icon-table.py after a dependency bump).
+# Ground truth is Glasspane Material's generated M3-ICON-REFERENCE.org
+# (regenerate in that repository after a dependency bump).
 emacs -Q --batch -l test/jetpacs-icon-lint-test.el \
   -f ert-run-tests-batch-and-exit

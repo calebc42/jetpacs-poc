@@ -8,10 +8,11 @@
 // with onboarding). Not a secret and not a deployment configuration.
 package com.calebc42.ebp.companion
 
-import com.calebc42.ebp.companion.render.ImageCache
-import com.calebc42.ebp.companion.render.RetainedPresentationIncarnationTracker
-import com.calebc42.ebp.companion.render.objOrNull
-import com.calebc42.ebp.companion.render.stringOr
+import com.calebc42.glasspane.material3.ImageCache
+import com.calebc42.glasspane.material3.MaterialRendererHost
+import com.calebc42.glasspane.material3.RetainedPresentationIncarnationTracker
+import com.calebc42.ebp.renderer.model.objOrNull
+import com.calebc42.ebp.renderer.model.stringOr
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.ActionAdmissionOutcome
@@ -27,21 +28,21 @@ import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.ebp.wire.Utf16Pos
 import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
 import com.calebc42.ebp.wire.utf16PosIn
-import com.calebc42.jetpacs.renderer.model.ActionHandoff
-import com.calebc42.jetpacs.renderer.model.CandidateDocument
-import com.calebc42.jetpacs.renderer.model.CompletionCandidate
-import com.calebc42.jetpacs.renderer.model.CompletionOffer
-import com.calebc42.jetpacs.renderer.model.EditorAnnotationState
-import com.calebc42.jetpacs.renderer.model.EditorConnectionPhase
-import com.calebc42.jetpacs.renderer.model.EditorEditOutcome
-import com.calebc42.jetpacs.renderer.model.EditorMirror
-import com.calebc42.jetpacs.renderer.model.RendererActionContext
-import com.calebc42.jetpacs.renderer.model.RendererActionOutcome
-import com.calebc42.jetpacs.renderer.model.RendererActionRequest
-import com.calebc42.jetpacs.renderer.model.RendererVolatileSecret
-import com.calebc42.jetpacs.renderer.model.parseDiagnostics
-import com.calebc42.jetpacs.renderer.model.parseEldoc
-import com.calebc42.jetpacs.renderer.model.parseFontify
+import com.calebc42.ebp.renderer.model.ActionHandoff
+import com.calebc42.ebp.renderer.model.CandidateDocument
+import com.calebc42.ebp.renderer.model.CompletionCandidate
+import com.calebc42.ebp.renderer.model.CompletionOffer
+import com.calebc42.ebp.renderer.model.EditorAnnotationState
+import com.calebc42.ebp.renderer.model.EditorConnectionPhase
+import com.calebc42.ebp.renderer.model.EditorEditOutcome
+import com.calebc42.ebp.renderer.model.EditorMirror
+import com.calebc42.ebp.renderer.model.RendererActionContext
+import com.calebc42.ebp.renderer.model.RendererActionOutcome
+import com.calebc42.ebp.renderer.model.RendererActionRequest
+import com.calebc42.ebp.renderer.model.RendererVolatileSecret
+import com.calebc42.ebp.renderer.model.parseDiagnostics
+import com.calebc42.ebp.renderer.model.parseEldoc
+import com.calebc42.ebp.renderer.model.parseFontify
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -304,11 +305,11 @@ class DeviceBridge(
             // SPEC 4.5/17.2: the three image limits are REQUIRED whenever image
             // is advertised — the same constants the loader enforces (no drift).
             put("max_image_bytes",
-                com.calebc42.ebp.companion.render.ImageLoader.MAX_IMAGE_BYTES)
+                com.calebc42.glasspane.material3.ImageLoader.MAX_IMAGE_BYTES)
             put("max_decoded_image_bytes",
-                com.calebc42.ebp.companion.render.ImageLoader.MAX_DECODED_IMAGE_BYTES)
+                com.calebc42.glasspane.material3.ImageLoader.MAX_DECODED_IMAGE_BYTES)
             put("max_image_pixels",
-                com.calebc42.ebp.companion.render.ImageLoader.MAX_IMAGE_PIXELS)
+                com.calebc42.glasspane.material3.ImageLoader.MAX_IMAGE_PIXELS)
             // SPEC 4.5/17.5: REQUIRED whenever chart/canvas are advertised.
             put("max_chart_points", 4096)
             put("max_canvas_ops", 4096)
@@ -1395,8 +1396,8 @@ class DeviceBridge(
             // snackbar leaves the screen; the reply is a socket write, so it
             // marshals through the dispatch executor like every other
             // UI-originated engine call.
-            com.calebc42.ebp.companion.render.SnackbarRaises.flow.value =
-                com.calebc42.ebp.companion.render.SnackbarRaises.Raise(
+            com.calebc42.glasspane.material3.SnackbarRaises.flow.value =
+                com.calebc42.glasspane.material3.SnackbarRaises.Raise(
                     message, action, duration) { outcome ->
                     dispatchExecutor.execute { respond(outcome) }
                 }
