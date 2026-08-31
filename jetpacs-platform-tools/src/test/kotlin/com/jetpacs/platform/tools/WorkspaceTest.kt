@@ -8,8 +8,46 @@ import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 
 class WorkspaceTest {
+    @Test
+    fun `workbench ignores legacy Jetpacs layout decoys`() {
+        val root = createTempDirectory("jetpacs-platform-tools-canonical-layout")
+        val specification = Files.createDirectories(root.resolve("ebp-poc/ebp"))
+        specification.resolve("SPEC.md").writeText("# EBP")
+        specification.resolve("contract.json").writeText(
+            """{"protocol_version":3,"spec_version":"test","contract_format":1,"reference_api_version":"test"}""",
+        )
+        Files.createDirectories(root.resolve("ebp-poc/ebp.el/lisp"))
+            .resolve("ebp.el")
+            .writeText("(provide 'ebp)")
+        Files.createDirectories(root.resolve("jetpacs/emacs"))
+            .resolve("jetpacs-surfaces.el")
+            .writeText("(provide 'jetpacs-surfaces)")
+        Files.createDirectories(root.resolve("jetpacs/companion"))
+            .resolve("settings.gradle.kts")
+            .writeText("include(\":canonical\")")
+
+        Files.createDirectories(root.resolve("emacs"))
+            .resolve("jetpacs-surfaces.el")
+            .writeText("(provide 'legacy-surfaces)")
+        Files.createDirectories(root.resolve("companion"))
+            .resolve("settings.gradle.kts")
+            .writeText("include(\":legacy\")")
+
+        val workbench = JetpacsWorkbench(Workspace.open(root))
+        val doctor = workbench.doctor()
+        val overview = workbench.projectOverview()
+
+        assertContains(doctor, "jetpacs/emacs/jetpacs-surfaces.el")
+        assertContains(doctor, "jetpacs/companion/settings.gradle.kts")
+        assertContains(overview, ":canonical")
+        assertFalse(overview.contains(":legacy"))
+
+        root.toFile().deleteRecursively()
+    }
+
     @Test
     fun `source discovery excludes stale worktrees and archives`() {
         val root = createTempDirectory("jetpacs-platform-tools-source-discovery")

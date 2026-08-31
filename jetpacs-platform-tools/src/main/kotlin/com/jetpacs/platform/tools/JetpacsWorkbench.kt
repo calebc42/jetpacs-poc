@@ -43,14 +43,8 @@ internal class JetpacsWorkbench(internal val workspace: Workspace) {
             "EBP contract" to workspace.firstExisting("ebp-poc/ebp/contract.json"),
             "EBP specification" to workspace.firstExisting("ebp-poc/ebp/SPEC.md"),
             "Emacs endpoint" to workspace.firstExisting("ebp-poc/ebp.el/lisp/ebp.el"),
-            "Jetpacs surface API" to workspace.firstExisting(
-                "emacs/jetpacs-surfaces.el",
-                "jetpacs/emacs/jetpacs-surfaces.el",
-            ),
-            "Companion settings" to workspace.firstExisting(
-                "companion/settings.gradle.kts",
-                "jetpacs/companion/settings.gradle.kts",
-            ),
+            "Jetpacs surface API" to workspace.firstExisting("jetpacs/emacs/jetpacs-surfaces.el"),
+            "Companion settings" to workspace.firstExisting("jetpacs/companion/settings.gradle.kts"),
         )
         val missing = checks.filter { it.second == null }
         return buildString {
@@ -82,7 +76,7 @@ internal class JetpacsWorkbench(internal val workspace: Workspace) {
             counts[path.extension.lowercase()] = (counts[path.extension.lowercase()] ?: 0) + 1
             total += 1
         }
-        val settings = workspace.firstExisting("companion/settings.gradle.kts", "jetpacs/companion/settings.gradle.kts")
+        val settings = workspace.firstExisting("jetpacs/companion/settings.gradle.kts")
         val modules = settings?.let { moduleNames(workspace.readText(it)) }.orEmpty()
         val contract = contractDocument()
         val orgCount = workspace.orgSourceRoot?.let { orgRoot ->
