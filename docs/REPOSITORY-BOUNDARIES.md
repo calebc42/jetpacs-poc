@@ -78,6 +78,13 @@ The following are module seams, not repository seams:
 - historical audits and cross-repository architecture plans.  History may
   describe several owners without becoming source authority for any of them.
 
+The Android product uses the Kotlin namespace and application ID
+`com.calebc42.jetpacs.companion`. Protocol implementation code consumed from
+`ebp-kmp` remains under `com.calebc42.ebp.*`; the application must not claim
+that upstream namespace. The former `com.calebc42.ebp.companion` application
+ID is not upgrade-compatible and should be uninstalled separately on devices
+that still have the POC-era package.
+
 Ad-hoc patch scripts, rejected patches, editor backups, bytecode, and build
 outputs are working-tree artifacts, not repository candidates.  Extraction
 must preserve them without promoting them to source authority.

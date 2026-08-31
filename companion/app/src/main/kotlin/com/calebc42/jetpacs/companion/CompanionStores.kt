@@ -4,7 +4,7 @@
 // receiver (alarm, boot, tap) share one in-memory instance per file — two
 // instances over one backing file would tear each other's snapshots. All
 // accessors are lazy and idempotent; Context is only used for filesDir.
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.content.Context
 import android.provider.Settings

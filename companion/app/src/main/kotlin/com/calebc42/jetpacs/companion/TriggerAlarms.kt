@@ -3,9 +3,9 @@
 // alarms across a device reboot or an app force-stop, and the wall clock can be
 // moved, so time triggers are (re)armed from the firing service's schedule at
 // every relevant moment: a triggers.set that changed them, a fire that advanced
-// a repeat, process start (EbpApplication), reboot, and a time/timezone change.
+// a repeat, process start (JetpacsApplication), reboot, and a time/timezone change.
 // Boot triggers fire from BootReceiver once per boot generation (SPEC 21.5).
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.app.AlarmManager
 import android.app.PendingIntent
@@ -66,7 +66,7 @@ class TimeAlarmReceiver : BroadcastReceiver() {
 /**
  * SPEC 21.5: a reboot clears alarms and increments the boot generation; a
  * time/timezone change moves the wall clock. Re-establish reminders + time
- * alarms from the durable stores (idempotent with EbpApplication's own cold-
+ * alarms from the durable stores (idempotent with JetpacsApplication's own cold-
  * start re-arm), and on boot fire the `boot` triggers once (generation-gated in
  * the runtime), on a timezone change the `timezone.changed` triggers.
  */

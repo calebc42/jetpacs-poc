@@ -24,8 +24,8 @@
          does NOT stop device-to-device transfer, so the rules file below
          excludes that channel too. -->
     <application
-        android:name=".EbpApplication"
-        android:label="EBP Companion"
+        android:name=".JetpacsApplication"
+        android:label="Jetpacs Companion"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">

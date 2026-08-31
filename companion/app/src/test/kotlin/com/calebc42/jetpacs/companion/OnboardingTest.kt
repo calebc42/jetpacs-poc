@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

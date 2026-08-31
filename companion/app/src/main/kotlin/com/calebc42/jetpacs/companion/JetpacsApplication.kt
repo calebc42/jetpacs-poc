@@ -9,7 +9,7 @@
 // MainActivity, so an alarm cold-start revived triggers but left Emacs
 // unreachable, and every rotation built a second bridge that lost the bind
 // race while the first pushed into a destroyed Activity (audit P2-1).
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.app.ActivityManager
 import android.app.Application
@@ -22,7 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 import java.util.concurrent.atomic.AtomicLong
 
-class EbpApplication : Application() {
+class JetpacsApplication : Application() {
 
     // Process-owned presentation state: the bridge writes, any Activity
     // observes. An Activity is a pure renderer of these flows — no bridge

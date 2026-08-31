@@ -66,7 +66,7 @@ through the real engine and measures the chunked alternative.
 ## Removal
 
 ```
-git rm -r companion/app/src/test/kotlin/com/calebc42/ebp/companion/spike
+git rm -r companion/app/src/test/kotlin/com/calebc42/jetpacs/companion/spike
 # spike(kotlin): remove — measurement recorded in PLAN-refound RF-4a
 ```
 

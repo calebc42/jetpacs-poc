@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // W4 host, RF-0.5a shape: a PURE OBSERVER of the process-owned bridge.
-// EbpApplication constructs and starts the bridge and owns every
+// JetpacsApplication constructs and starts the bridge and owns every
 // presentation flow; this Activity only renders them. Rotation recreates
 // the Activity freely — the bridge, its socket, and the accepted state
 // never notice. Chrome, apps, and the shell arrive with later rungs.
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -43,13 +43,13 @@ class MainActivity : ComponentActivity() {
                 arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 0)
         }
         // RF-0.5a: the bridge and every presentation flow are process-owned
-        // (EbpApplication). SPEC 14.4's surface-ID-travels-with-spec pairing
+        // (JetpacsApplication). SPEC 14.4's surface-ID-travels-with-spec pairing
         // and 18.1's one-outstanding-dialog rule live where the state does.
         enableEdgeToEdge()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.isNavigationBarContrastEnforced = false
         }
-        val app = application as EbpApplication
+        val app = application as JetpacsApplication
         val bridge = app.bridge
         setContent {
             // SPEC 18.4: mirror the pushed palette (colors/dark), or the native
@@ -147,7 +147,7 @@ private fun PieMenuHost(
 
 @androidx.compose.runtime.Composable
 private fun DialogHost(
-    flow: kotlinx.coroutines.flow.StateFlow<EbpApplication.DialogShow?>,
+    flow: kotlinx.coroutines.flow.StateFlow<JetpacsApplication.DialogShow?>,
     bridge: DeviceBridge,
 ) {
     val dialog by flow.collectAsState()

@@ -9,7 +9,7 @@
 // spike-elisp measured on the live vault (586 notes; full row mean 524 B,
 // p95 581, max 679, no tail) — the repo is public and vault content stays out
 // of it. Timings print with a SPIKE prefix; read them from the test XML.
-package com.calebc42.ebp.companion.spike
+package com.calebc42.jetpacs.companion.spike
 
 import com.calebc42.glasspane.material3.NodeSupport
 import com.calebc42.ebp.wire.CompanionConfig

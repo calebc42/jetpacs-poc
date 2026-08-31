@@ -275,7 +275,7 @@ adbs() { adb -s "$SERIAL" "$@"; }
 
 COMPANION_DIR="$REPO_ROOT/companion"
 COMPANION_APK="$COMPANION_DIR/app/build/outputs/apk/debug/app-debug.apk"
-COMPANION_PACKAGE="com.calebc42.ebp.companion"
+COMPANION_PACKAGE="com.calebc42.jetpacs.companion"
 COMPANION_VERSION=""
 
 phase_companion_build() {
@@ -290,7 +290,7 @@ phase_companion_build() {
 
 phase_companion_install() {
   local install_output
-  log "reinstalling the Companion APK with existing app data preserved"
+  log "installing or updating the Jetpacs Companion APK"
   install_output="$(adbs install -r "$COMPANION_APK")" \
     || die "adb could not install the Companion APK"
   case "$install_output" in
@@ -729,7 +729,7 @@ phase_verify() {
   printf '  device serial          : %s\n' "$SERIAL" >&2
   printf '  action                 : %s\n' "$ACTION" >&2
   if [ "$ACTION" = install ]; then
-    printf '  Companion APK          : %s  [version %s, app data preserved]\n' \
+    printf '  Companion APK          : %s  [version %s]\n' \
       "$COMPANION_PACKAGE" "$COMPANION_VERSION" >&2
   fi
   printf '  Vault mode             : %s\n' "$VAULT_MODE" >&2
@@ -766,7 +766,7 @@ phase_verify() {
       echo "REMAINING:" >&2
       echo "  1. Grant Emacs 'All files' access if the Vault is /sdcard." >&2
       echo "  2. Force-stop and relaunch org.gnu.emacs, then open the" >&2
-      echo "     EBP Companion. Emacs reads the private early-init redirect," >&2
+      echo "     Jetpacs Companion. Emacs reads the private early-init redirect," >&2
       echo "     then the private init and managed root above. User content" >&2
       echo "     opens from the Vault; .emacs.d never lives there." >&2
       if [ -n "$legacy" ]; then

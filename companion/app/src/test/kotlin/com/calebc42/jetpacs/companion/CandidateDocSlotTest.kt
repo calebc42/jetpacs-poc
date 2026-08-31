@@ -5,7 +5,7 @@
 // android.content.Context, and every slot-state mutant (stale publish,
 // dropped reissue, never-freed slot, double-issue across offer death)
 // would be unkillable through it (R5 review F18).
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

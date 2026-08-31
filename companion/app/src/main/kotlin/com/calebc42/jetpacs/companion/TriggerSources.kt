@@ -5,7 +5,7 @@
 // battery.level (a sticky broadcast, so registering seeds the baseline
 // immediately); screen/power/etc. attach identically — register a receiver,
 // update `current`, and forward the sample. The runtime decides admission.
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.content.BroadcastReceiver
 import android.content.Context

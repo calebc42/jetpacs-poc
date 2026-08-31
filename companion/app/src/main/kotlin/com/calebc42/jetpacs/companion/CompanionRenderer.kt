@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
 import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_EXTENSION

@@ -7,11 +7,11 @@ plugins {
 }
 
 android {
-    namespace = "com.calebc42.ebp.companion"
+    namespace = "com.calebc42.jetpacs.companion"
     compileSdk = 37
 
     defaultConfig {
-        applicationId = "com.calebc42.ebp.companion"
+        applicationId = "com.calebc42.jetpacs.companion"
         minSdk = 36
         targetSdk = 37
         versionCode = 1

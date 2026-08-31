@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 /**
  * SPEC 19.3 (amendment #172, R5): one editor's one-outstanding

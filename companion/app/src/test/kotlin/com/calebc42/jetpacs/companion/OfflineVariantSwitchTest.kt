@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import com.calebc42.ebp.wire.PersistedDraft
 import com.calebc42.ebp.wire.PersistedRecord

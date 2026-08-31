@@ -15,7 +15,7 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "ebp-companion"
+rootProject.name = "jetpacs-companion"
 include(":ebp-kmp")
 include(":wire")
 include(":app")

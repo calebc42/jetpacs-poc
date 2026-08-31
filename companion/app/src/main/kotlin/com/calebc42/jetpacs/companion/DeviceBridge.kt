@@ -6,7 +6,7 @@
 // W4 SMOKE SCOPE: the pairing is the SPEC 9.3 known-answer credentials so
 // the desktop can drive the device before the pairing UI exists (arrives
 // with onboarding). Not a secret and not a deployment configuration.
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import com.calebc42.glasspane.material3.ImageCache
 import com.calebc42.glasspane.material3.MaterialRendererHost
@@ -250,7 +250,7 @@ class DeviceBridge(
     private val triggers = CompanionStores.triggers(appContext)
     // SPEC 21: the device-lifetime firing service (process-wide). This engine
     // attaches to it as the LiveSession in its constructor; the sources feed it
-    // directly (EbpApplication), independent of any connection.
+    // directly (JetpacsApplication), independent of any connection.
     private val firing = CompanionStores.firing(appContext)
     @Volatile private var current: Socket? = null
     /** Exact engine-to-socket ownership used by password deadline aborts. */
@@ -268,7 +268,7 @@ class DeviceBridge(
         get() = _editorConnectionPhase
 
     private val config = CompanionConfig(
-        serverName = "ebp-companion",
+        serverName = "jetpacs-companion",
         serverVersion = "0.1.0-w4",
         pairings = mapOf(
             JETPACS_PAIRING_ID to EbpAuth.decodePairingToken(JETPACS_PAIRING_TOKEN),

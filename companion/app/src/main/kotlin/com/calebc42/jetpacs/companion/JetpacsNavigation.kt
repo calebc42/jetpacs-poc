@@ -1,5 +1,5 @@
 @file:Suppress("OPT_IN_USAGE", "OPT_IN_USAGE_ERROR")
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.content.Context
 import android.widget.Toast
@@ -76,7 +76,7 @@ import kotlinx.serialization.json.JsonObject
 @Suppress("OPT_IN_USAGE")
 @Composable
 internal fun JetpacsNavHost(
-    app: EbpApplication,
+    app: JetpacsApplication,
     bridge: DeviceBridge,
     onboardingRequired: Boolean,
     onOnboardingComplete: () -> Unit,

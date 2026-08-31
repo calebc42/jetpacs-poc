@@ -4,7 +4,7 @@
 // closed Args: it performs the bounded platform operation and returns the
 // exact catalog Result, or a typed refusal. The wire library owns the
 // contract; this file owns only the platform touch.
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.content.ClipboardManager
 import android.content.Context

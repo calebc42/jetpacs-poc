@@ -1,4 +1,4 @@
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import androidx.compose.ui.tooling.preview.Devices
 import androidx.compose.ui.tooling.preview.Preview

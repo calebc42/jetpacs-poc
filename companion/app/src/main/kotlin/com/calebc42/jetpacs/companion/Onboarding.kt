@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.ebp.companion
+package com.calebc42.jetpacs.companion
 
 import android.content.ClipData
 import android.content.ClipboardManager
@@ -280,7 +280,7 @@ internal fun WaitingForEmacs(onRepair: () -> Unit) {
     ) {
         Text("Waiting for Emacs", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "The EBP Companion is listening on 127.0.0.1:8765.",
+            "Jetpacs Companion is listening on 127.0.0.1:8765.",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
         )
