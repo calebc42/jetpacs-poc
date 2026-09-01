@@ -63,8 +63,10 @@
   (let* ((dir (make-temp-file "jetpacs-org-search" t))
          (first (expand-file-name "a.org" dir))
          (second (expand-file-name "b.org" dir))
+         (outside (make-temp-file "jetpacs-org-search-outside" nil ".org"))
          (org-directory dir)
          (org-agenda-files (list second first))
+         (org-agenda-text-search-extra-files (list outside))
          (org-todo-keywords '((sequence "TODO" "NEXT" "|" "DONE")))
          (ebp-org-roots (list dir)))
     (unwind-protect
@@ -73,6 +75,7 @@
                         nil 'silent)
           (write-region "* NEXT Beta garden :home:\nAnother needle.\n" nil second
                         nil 'silent)
+          (write-region "* Outside secret\nneedle\n" nil outside nil 'silent)
           (ebp-org-cache-invalidate)
           (let ((text (jetpacs-org-mode-search-items "needle" 'text 10))
                 (match (jetpacs-org-mode-search-items "+work" 'match 10)))
@@ -90,12 +93,74 @@
                         :type 'user-error)
           (should-error (jetpacs-org-mode-search-items "x" 'unknown 10)
                         :type 'user-error))
-      (dolist (file (list first second))
+      (dolist (file (list first second outside))
         (when-let* ((buffer (find-buffer-visiting file)))
           (with-current-buffer buffer (set-buffer-modified-p nil))
           (kill-buffer buffer)))
+      (when (file-exists-p outside) (delete-file outside))
       (delete-directory dir t)
       (ebp-org-cache-invalidate))))
+
+(ert-deftest jetpacs-org-custom-views-advertise-only-compatible-commands ()
+  "Only bounded, scope-safe, context-free built-in commands are projected."
+  (let ((org-agenda-custom-commands
+         '(("s" "Needles" search "private matcher")
+           ("t" "Work TODOs" tags-todo "+work")
+           ("x" "Other scope" search "x"
+            ((org-agenda-files '("/tmp/outside.org"))))
+           ("f" "Function" ignore "")
+           ("b" "Composite" ((agenda "") (alltodo "")))
+           ("p" . "Prefix")))
+        (org-agenda-custom-commands-contexts
+         '(("t" ((in-mode . "org-mode"))))))
+    (let ((views (jetpacs-org-mode-custom-views)))
+      (should (= (length views) 1))
+      (should (equal (plist-get (car views) :label) "Needles"))
+      (should (equal (plist-get (car views) :kind) "search"))
+      (should (string-prefix-p "org-custom-view-"
+                               (plist-get (car views) :id)))
+      (should-not (string-search "private matcher"
+                                 (prin1-to-string views))))))
+
+(ert-deftest jetpacs-org-custom-view-runs-native-command-in-canonical-scope ()
+  "An opaque view preserves Org ordering and cannot search extra files."
+  (let* ((dir (make-temp-file "jetpacs-org-custom-view" t))
+         (inside (expand-file-name "inside.org" dir))
+         (outside (make-temp-file "jetpacs-org-custom-outside" nil ".org"))
+         (org-directory dir)
+         (org-agenda-files (list inside))
+         (org-agenda-text-search-extra-files (list outside))
+         (org-agenda-custom-commands
+          '(("s" "Needle view" search "needle"
+             ((org-agenda-sorting-strategy '(alpha-up))))))
+         (org-agenda-custom-commands-contexts nil)
+         (ebp-org-roots (list dir)))
+    (unwind-protect
+        (progn
+          (write-region "* Beta\nneedle\n* Alpha\nneedle\n" nil inside
+                        nil 'silent)
+          (write-region "* Outside secret\nneedle\n" nil outside
+                        nil 'silent)
+          (let* ((view (car (jetpacs-org-mode-custom-views)))
+                 (id (plist-get view :id))
+                 (items (jetpacs-org-mode-custom-view-items id 10)))
+            (should (equal (mapcar (lambda (row)
+                                     (alist-get 'headline row))
+                                   items)
+                           '("Alpha" "Beta")))
+            (should-not (string-search outside (prin1-to-string items)))
+            (should (= (length
+                        (jetpacs-org-mode-custom-view-items id 1))
+                       1))
+            (setq org-agenda-custom-commands nil)
+            (should-error (jetpacs-org-mode-custom-view-items id 10)
+                          :type 'ebp-org-unresolved)))
+      (dolist (file (list inside outside))
+        (when-let* ((buffer (find-buffer-visiting file)))
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)))
+      (when (file-exists-p outside) (delete-file outside))
+      (delete-directory dir t))))
 
 (ert-deftest jetpacs-org-reminders-horizon-dedupe-and-id-shape ()
   "Only in-horizon timed rows arm, with one owner-shaped id per instant."

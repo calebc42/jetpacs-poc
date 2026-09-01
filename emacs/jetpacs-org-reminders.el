@@ -58,6 +58,21 @@ ordered, durable-set cutover ceremony.")
 (defconst jetpacs-org-mode--search-buffer "*Jetpacs Org Mode Search*"
   "Private Org Agenda buffer used by the canonical search projection.")
 
+(defconst jetpacs-org-mode-custom-view-limit 64
+  "Maximum compatible Org custom agenda commands exposed as saved views.")
+
+(defconst jetpacs-org-mode-custom-view-scan-limit 256
+  "Maximum custom agenda definitions inspected for compatible saved views.")
+
+(defconst jetpacs-org-mode--custom-view-types
+  '(agenda agenda* alltodo stuck todo search tags tags-todo)
+  "Built-in single-command agenda types representable as a flat saved view.")
+
+(defconst jetpacs-org-mode--custom-view-forbidden-settings
+  '(org-agenda-files org-agenda-text-search-extra-files
+    org-agenda-buffer-name org-agenda-buffer-tmp-name org-agenda-sticky)
+  "Custom-command settings that could escape or hide the canonical projection.")
+
 ;;;; Canonical agenda extraction
 
 (defun jetpacs-org-mode--agenda-scope ()
@@ -91,6 +106,19 @@ SPAN and START-DAY have the same meaning as in Org Agenda.  This public read
 seam lets downstream applets present the one foundation-owned extraction
 without depending on its private worker or introducing another agenda engine.")
 
+(defun jetpacs-org-mode--canonical-search-scope ()
+  "Return the canonical, contained files eligible for a search projection."
+  (delete-dups
+   (delq nil
+         (mapcar #'ebp-org-file-allowed-p
+                 (jetpacs-org-mode--agenda-scope)))))
+
+(defun jetpacs-org-mode--record-in-scope-p (record files)
+  "Return non-nil when neutral agenda RECORD belongs to canonical FILES."
+  (when-let* ((file (alist-get 'file record))
+              (allowed (ebp-org-file-allowed-p file)))
+    (and (member allowed files) t)))
+
 (defun jetpacs-org-mode--search-record-at-point ()
   "Return the neutral Org search record on the current agenda line.
 Return nil when the line is an agenda heading rather than an Org hit."
@@ -123,12 +151,13 @@ Return nil when the line is an agenda heading rather than an Org hit."
 MODE is `text', which delegates to `org-search-view' (including its native
 phrase, Boolean, and brace-regexp syntax), or `match', which delegates to
 `org-tags-view' and therefore accepts standard Org match syntax."
-  (let ((files (sort (copy-sequence (jetpacs-org-mode--agenda-scope))
+  (let ((files (sort (jetpacs-org-mode--canonical-search-scope)
                      #'string-lessp)))
     (when files
       (let ((org-agenda-files files)
             (org-agenda-buffer-name jetpacs-org-mode--search-buffer)
             (org-agenda-buffer-tmp-name jetpacs-org-mode--search-buffer)
+            (org-agenda-text-search-extra-files nil)
             (org-agenda-sticky nil)
             (inhibit-redisplay t)
             records
@@ -136,15 +165,20 @@ phrase, Boolean, and brace-regexp syntax), or `match', which delegates to
         (unwind-protect
             (save-window-excursion
               (let ((org-agenda-window-setup 'current-window))
-                (ebp-org--with-clamped-io
-                  (pcase mode
-                    ('text (org-search-view nil query))
-                    ('match (org-tags-view nil query))))
+                (pcase mode
+                  ('text
+                   (ebp-org-call-with-clamped-io
+                    #'org-search-view nil query))
+                  ('match
+                   (ebp-org-call-with-clamped-io
+                    #'org-tags-view nil query)))
                 (with-current-buffer jetpacs-org-mode--search-buffer
                   (goto-char (point-min))
                   (while (not (eobp))
                     (when-let* ((record
                                  (jetpacs-org-mode--search-record-at-point))
+                                ((jetpacs-org-mode--record-in-scope-p
+                                  record files))
                                 (key (cons (alist-get 'file record)
                                            (alist-get 'pos record)))
                                 ((not (member key seen))))
@@ -184,8 +218,146 @@ syntax.  LIMIT defaults to `jetpacs-org-mode-search-result-limit'."
     (user-error "Unsupported Org search mode: %s" mode))
   (unless (and (integerp limit) (<= 1 limit 512))
     (user-error "Search limit must be between 1 and 512"))
-  (ebp-org-with-cache 'org-mode (list 'search mode query limit)
+  (ebp-org-with-cache 'org-mode (list 'scoped-search mode query limit)
     (jetpacs-org-mode--search-items-1 query mode limit)))
+
+;;;; Compatible Org custom agenda views
+
+(defun jetpacs-org-mode--custom-view-settings-p (settings)
+  "Return non-nil when custom agenda SETTINGS preserve projection scope."
+  (and (listp settings)
+       (cl-every
+        (lambda (binding)
+          (and (consp binding)
+               (symbolp (car binding))
+               (not (memq (car binding)
+                          jetpacs-org-mode--custom-view-forbidden-settings))))
+        settings)))
+
+(defun jetpacs-org-mode--contextual-custom-view-keys ()
+  "Return keys whose Org custom-command meaning depends on desktop context."
+  (let (keys)
+    (dolist (rule org-agenda-custom-commands-contexts)
+      (when (and (consp rule) (stringp (car rule)))
+        (push (car rule) keys)
+        (when (stringp (cadr rule)) (push (cadr rule) keys))))
+    (delete-dups keys)))
+
+(defun jetpacs-org-mode--custom-view-compatible-p (entry contextual-keys)
+  "Return non-nil when normalized custom agenda ENTRY is context-free.
+CONTEXTUAL-KEYS contains commands whose meaning depends on the desktop buffer."
+  (and (proper-list-p entry)
+       (<= 4 (length entry) 6)
+       (stringp (car entry))
+       (<= 1 (length (car entry)) 32)
+       (not (member (car entry) contextual-keys))
+       (or (null (nth 1 entry)) (stringp (nth 1 entry)))
+       (memq (nth 2 entry) jetpacs-org-mode--custom-view-types)
+       (stringp (nth 3 entry))
+       (<= (length (nth 3 entry)) 512)
+       (listp (nth 4 entry))
+       (<= (length (or (nth 4 entry) nil)) 64)
+       (jetpacs-org-mode--custom-view-settings-p (nth 4 entry))))
+
+(defun jetpacs-org-mode--custom-view-id (entry)
+  "Return a stable opaque saved-view id for custom agenda ENTRY."
+  (let ((print-length nil)
+        (print-level nil)
+        (print-circle t))
+    (concat "org-custom-view-"
+            (substring (secure-hash 'sha256 (prin1-to-string entry)) 0 32))))
+
+(defun jetpacs-org-mode--custom-view-label (entry)
+  "Return a bounded display label for custom agenda ENTRY."
+  (let ((description (nth 1 entry)))
+    (truncate-string-to-width
+     (if (and (stringp description) (not (string-blank-p description)))
+         description
+       (format "Org %s view" (symbol-name (nth 2 entry))))
+     120 nil nil t)))
+
+(defun jetpacs-org-mode--custom-view-entries ()
+  "Return bounded compatible `org-agenda-custom-commands' entries."
+  (condition-case err
+      (let ((contextual
+             (jetpacs-org-mode--contextual-custom-view-keys)))
+        (seq-take
+         (cl-remove-if-not
+          (lambda (entry)
+            (jetpacs-org-mode--custom-view-compatible-p
+             entry contextual))
+          (org-agenda-normalize-custom-commands
+           (seq-take org-agenda-custom-commands
+                     jetpacs-org-mode-custom-view-scan-limit)))
+         jetpacs-org-mode-custom-view-limit))
+    (error
+     (message "jetpacs-org-mode: custom views unavailable (%s)" (car err))
+     nil)))
+
+(defun jetpacs-org-mode-custom-views ()
+  "Return presentation-safe compatible Org custom agenda view descriptors.
+Each descriptor contains an opaque `:id', a display `:label', and a built-in
+`:kind'.  Agenda keys, match expressions, settings, functions, and file names
+remain private to Emacs."
+  (mapcar
+   (lambda (entry)
+     (list :id (jetpacs-org-mode--custom-view-id entry)
+           :label (jetpacs-org-mode--custom-view-label entry)
+           :kind (symbol-name (nth 2 entry))))
+   (jetpacs-org-mode--custom-view-entries)))
+
+(defun jetpacs-org-mode--resolve-custom-view (view-id)
+  "Return the current compatible custom agenda entry for opaque VIEW-ID."
+  (unless (stringp view-id) (signal 'ebp-org-refused (list 'invalid-view)))
+  (or (cl-find view-id (jetpacs-org-mode--custom-view-entries)
+               :key #'jetpacs-org-mode--custom-view-id :test #'equal)
+      (signal 'ebp-org-unresolved nil)))
+
+(defun jetpacs-org-mode-custom-view-items (view-id &optional limit)
+  "Run opaque compatible Org custom VIEW-ID and return at most LIMIT records.
+The command is resolved again at execution, so configuration drift makes a
+queued action stale.  Native Org command settings and ordering are preserved,
+while every returned row is rechecked against the canonical agenda scope."
+  (setq limit (or limit jetpacs-org-mode-search-result-limit))
+  (unless (and (integerp limit) (<= 1 limit 512))
+    (user-error "Custom view limit must be between 1 and 512"))
+  (let* ((entry (copy-tree
+                 (jetpacs-org-mode--resolve-custom-view view-id)))
+         (key (car entry))
+         (files (sort (jetpacs-org-mode--canonical-search-scope)
+                      #'string-lessp)))
+    (when files
+      (let ((org-agenda-files files)
+            (org-agenda-text-search-extra-files nil)
+            (org-agenda-custom-commands (list entry))
+            (org-agenda-custom-commands-contexts nil)
+            (org-agenda-buffer-name jetpacs-org-mode--search-buffer)
+            (org-agenda-buffer-tmp-name jetpacs-org-mode--search-buffer)
+            (org-agenda-sticky nil)
+            (inhibit-redisplay t)
+            records
+            seen)
+        (unwind-protect
+            (save-window-excursion
+              (let ((org-agenda-window-setup 'current-window))
+                (ebp-org-call-with-clamped-io #'org-agenda nil key)
+                (with-current-buffer jetpacs-org-mode--search-buffer
+                  (goto-char (point-min))
+                  (while (and (< (length records) limit) (not (eobp)))
+                    (when-let* ((record
+                                 (jetpacs-org-mode--search-record-at-point))
+                                ((jetpacs-org-mode--record-in-scope-p
+                                  record files))
+                                (record-key
+                                 (cons (alist-get 'file record)
+                                       (alist-get 'pos record)))
+                                ((not (member record-key seen))))
+                      (push record-key seen)
+                      (push record records))
+                    (forward-line 1)))))
+          (when-let* ((buffer (get-buffer jetpacs-org-mode--search-buffer)))
+            (kill-buffer buffer)))
+        (nreverse records)))))
 
 (defun jetpacs-org-mode--agenda-items-1 (span start-day)
   "Uncached worker for `jetpacs-org-mode--agenda-items'."

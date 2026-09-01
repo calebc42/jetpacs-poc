@@ -131,3 +131,14 @@ inspect that tuple at
 `jetpacs-reader-org--present-followed-destination`, then inspect
 `jetpacs-files-current-edit-context`; no parallel link parser or hidden route
 table exists.
+
+## Org custom saved views
+
+`jetpacs-org-mode-custom-views` projects compatible built-in single commands
+from `org-agenda-custom-commands` as bounded descriptors containing only an
+opaque id, label, and kind. `jetpacs-org-mode-custom-view-items` resolves that
+id against current configuration and runs the exact native Org command.
+Context-dependent, function-backed, composite, and scope-overriding commands
+are omitted because a generic flat applet view cannot faithfully or safely
+represent them. Final rows are rechecked against the canonical local agenda
+scope; custom keys, match expressions, settings, and paths remain in Emacs.
