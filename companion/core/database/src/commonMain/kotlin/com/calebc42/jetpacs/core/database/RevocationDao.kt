@@ -161,6 +161,10 @@ abstract class RevocationDao {
         eraseSurfaceState(pairingId)
         eraseQueueState(pairingId)
         eraseIssuedEventIds(pairingId)
+        eraseReminderState(pairingId)
+        eraseTriggerState(pairingId)
+        eraseThemeState(pairingId)
+        erasePlatformEffects(pairingId)
         check(resetRuntime(pairingId) == 1) { "Pairing runtime is missing" }
         return true
     }
@@ -228,6 +232,18 @@ abstract class RevocationDao {
 
     @Query("DELETE FROM issued_event_ids WHERE pairing_id = :pairingId")
     protected abstract suspend fun eraseIssuedEventIds(pairingId: String): Int
+
+    @Query("DELETE FROM reminders WHERE pairing_id = :pairingId")
+    protected abstract suspend fun eraseReminderState(pairingId: String): Int
+
+    @Query("DELETE FROM trigger_registrations WHERE pairing_id = :pairingId")
+    protected abstract suspend fun eraseTriggerState(pairingId: String): Int
+
+    @Query("DELETE FROM pairing_themes WHERE pairing_id = :pairingId")
+    protected abstract suspend fun eraseThemeState(pairingId: String): Int
+
+    @Query("DELETE FROM platform_effects WHERE pairing_id = :pairingId")
+    protected abstract suspend fun erasePlatformEffects(pairingId: String): Int
 
     @Query(
         """

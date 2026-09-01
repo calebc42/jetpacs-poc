@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// W4 host, RF-0.5a shape: a PURE OBSERVER of the process-owned bridge.
-// JetpacsApplication constructs and starts the bridge and owns every
-// presentation flow; this Activity only renders them. Rotation recreates
-// the Activity freely — the bridge, its socket, and the accepted state
-// never notice. Chrome, apps, and the shell arrive with later rungs.
+// W4 host, RF-0.5a shape: a PURE OBSERVER of process-owned state.
+// JetpacsApplication constructs the bridge and owns every presentation flow;
+// the user-enabled best-effort FGS starts it. Rotation recreates the Activity
+// freely without constructing another store, actor, or listener.
 package com.calebc42.jetpacs.companion
 
 import android.os.Bundle
@@ -46,10 +45,11 @@ class MainActivity : ComponentActivity() {
         // (JetpacsApplication). SPEC 14.4's surface-ID-travels-with-spec pairing
         // and 18.1's one-outstanding-dialog rule live where the state does.
         enableEdgeToEdge()
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
-            window.isNavigationBarContrastEnforced = false
-        }
+        window.isNavigationBarContrastEnforced = false
         val app = application as JetpacsApplication
+        // First visible launch opts into the best-effort background bridge.
+        // The service owns the listener and its durable enabled flag.
+        JetpacsBridgeService.enable(this)
         val bridge = app.bridge
         setContent {
             // SPEC 18.4: mirror the pushed palette (colors/dark), or the native

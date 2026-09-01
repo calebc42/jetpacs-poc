@@ -3,17 +3,21 @@ package com.calebc42.jetpacs.core.ebpstore
 
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyInfo
+import android.security.keystore.KeyProtection
 import android.security.keystore.KeyProperties
 import com.calebc42.ebp.wire.PairingId
 import java.security.InvalidAlgorithmParameterException
 import java.security.KeyStore
+import java.security.MessageDigest
 import java.security.ProviderException
 import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
+import javax.crypto.Mac
 import javax.crypto.SecretKey
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -22,6 +26,9 @@ import kotlinx.serialization.json.JsonObject
 private const val ANDROID_KEY_STORE = "AndroidKeyStore"
 private const val AES_GCM_TRANSFORMATION = "AES/GCM/NoPadding"
 private const val PAYLOAD_KEY_SIZE_BITS = 256
+private const val CREDENTIAL_KEY_SIZE_BITS = 128
+private const val DUMMY_CREDENTIAL_ALIAS =
+    "com.calebc42.jetpacs.ebp.pairing.v1.unknown.credential-hmac-sha256"
 
 /**
  * Reserved Android key names, not evidence that either key was provisioned.
@@ -67,15 +74,80 @@ data class ProvisionedAndroidPayloadKey(
     init { require(alias.isNotBlank()) }
 }
 
+/** Proof that a pairing credential is present behind AndroidKeyStore. */
+data class ProvisionedAndroidCredentialKey(
+    val pairingId: PairingId,
+    val alias: String,
+) {
+    init { require(alias.isNotBlank()) }
+}
+
 /**
- * Idempotently provisions the non-exportable, pairing-local payload key.
- *
- * Credential onboarding is intentionally not guessed here. An AndroidKeyStore
- * generated HMAC key could not be exported to Emacs, while importing the real
- * shared credential requires an explicit onboarding/rotation design. Until
- * that next slice exists, callers must not treat [ensureKey] as completion of
- * the pairing credential lifecycle or store a raw credential in Room.
+ * Imports the shared 16-octet EBP credential into a non-exportable
+ * AndroidKeyStore HMAC handle. The caller remains responsible for erasing its
+ * transient input buffer immediately after this suspending call returns.
  */
+class AndroidKeyStoreCredentialProvisioner(
+    private val aliasPolicy: AndroidPairingKeyAliasPolicy =
+        VersionedAndroidPairingAliasPolicy,
+) {
+    suspend fun ensureKey(
+        pairingId: PairingId,
+        credential: ByteArray,
+    ): ProvisionedAndroidCredentialKey = withContext(Dispatchers.IO) {
+        require(credential.size * 8 == CREDENTIAL_KEY_SIZE_BITS) {
+            "EBP pairing credential must contain 128 bits"
+        }
+        val alias = aliasPolicy.aliasesFor(pairingId).credentialKeyAlias
+        synchronized(CREDENTIAL_PROVISIONING_LOCK) {
+            importHmacKeyIfAbsent(alias, credential)
+            val key = requireCompatibleHmacKey(
+                loadHmacKey(alias),
+                CREDENTIAL_KEY_SIZE_BITS,
+            )
+            requireHmacKeyMatches(key, credential)
+        }
+        ProvisionedAndroidCredentialKey(pairingId, alias)
+    }
+
+    /** Fixed provider-local key used for indistinguishable unknown-ID proofs. */
+    suspend fun ensureDummyKey(): String = withContext(Dispatchers.IO) {
+        synchronized(CREDENTIAL_PROVISIONING_LOCK) {
+            val expected = ByteArray(16)
+            importHmacKeyIfAbsent(DUMMY_CREDENTIAL_ALIAS, expected)
+            val key = requireCompatibleHmacKey(
+                loadHmacKey(DUMMY_CREDENTIAL_ALIAS),
+                CREDENTIAL_KEY_SIZE_BITS,
+            )
+            requireHmacKeyMatches(key, expected)
+        }
+        DUMMY_CREDENTIAL_ALIAS
+    }
+
+    private companion object {
+        val CREDENTIAL_PROVISIONING_LOCK = Any()
+    }
+}
+
+/** Operation-only signer; the key bytes never leave AndroidKeyStore. */
+class AndroidKeyStoreHmacSigner(
+    private val alias: String,
+) {
+    init { require(alias.isNotBlank()) }
+
+    fun hmacSha256(message: ByteArray): ByteArray {
+        val key = requireCompatibleHmacKey(
+            loadHmacKey(alias),
+            CREDENTIAL_KEY_SIZE_BITS,
+        )
+        return Mac.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256).run {
+            init(key)
+            doFinal(message)
+        }
+    }
+}
+
+/** Idempotently provisions the non-exportable, pairing-local payload key. */
 class AndroidKeyStorePayloadKeyProvisioner(
     private val aliasPolicy: AndroidPairingKeyAliasPolicy =
         VersionedAndroidPairingAliasPolicy,
@@ -97,7 +169,7 @@ class AndroidKeyStorePayloadKeyProvisioner(
                     }
                 }
                 val key = requireCompatiblePayloadKey(loadPayloadKey(alias))
-                // KeyInfo has no randomized-encryption accessor in API 36.
+                // KeyInfo has no randomized-encryption accessor on our API 34 floor.
                 requireProviderGeneratedEncryptionIv(key)
             }
             ProvisionedAndroidPayloadKey(pairingId, alias)
@@ -187,6 +259,81 @@ private fun generatePayloadKey(alias: String) {
     }
 }
 
+private fun importHmacKeyIfAbsent(alias: String, credential: ByteArray) {
+    require(alias.isNotBlank()) { "credential key alias must not be blank" }
+    val keyStore = loadAndroidKeyStore()
+    if (keyStore.containsAlias(alias)) return
+    val imported = credential.copyOf()
+    try {
+        keyStore.setEntry(
+            alias,
+            KeyStore.SecretKeyEntry(
+                SecretKeySpec(imported, KeyProperties.KEY_ALGORITHM_HMAC_SHA256),
+            ),
+            KeyProtection.Builder(KeyProperties.PURPOSE_SIGN)
+                .setDigests(KeyProperties.DIGEST_SHA256)
+                .setUserAuthenticationRequired(false)
+                .build(),
+        )
+    } finally {
+        imported.fill(0)
+    }
+}
+
+private fun loadHmacKey(alias: String): SecretKey {
+    require(alias.isNotBlank()) { "credential key alias must not be blank" }
+    val key = loadAndroidKeyStore().getKey(alias, null)
+        ?: error("AndroidKeyStore credential key does not exist: $alias")
+    check(key is SecretKey) { "AndroidKeyStore alias is not a secret key: $alias" }
+    return key
+}
+
+private fun requireCompatibleHmacKey(
+    key: SecretKey,
+    expectedSizeBits: Int,
+): SecretKey {
+    check(key.algorithm.equals(KeyProperties.KEY_ALGORITHM_HMAC_SHA256, ignoreCase = true)) {
+        "Pairing credential key must use HmacSHA256"
+    }
+    val keyInfo = SecretKeyFactory.getInstance(key.algorithm, ANDROID_KEY_STORE)
+        .getKeySpec(key, KeyInfo::class.java) as KeyInfo
+    check(keyInfo.keySize == expectedSizeBits) {
+        "Pairing credential key must be $expectedSizeBits bits"
+    }
+    check(keyInfo.purposes == KeyProperties.PURPOSE_SIGN) {
+        "Pairing credential key has incompatible purposes"
+    }
+    check(keyInfo.digests.contentEquals(arrayOf(KeyProperties.DIGEST_SHA256))) {
+        "Pairing credential key must permit only SHA-256"
+    }
+    check(!keyInfo.isUserAuthenticationRequired) {
+        "Pairing credential key must remain usable by the background bridge"
+    }
+    check(
+        Mac.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256).run {
+            init(key)
+            doFinal(byteArrayOf(0)).size
+        } == 32,
+    ) { "Pairing credential key failed its HMAC-SHA256 probe" }
+    return key
+}
+
+/** Detect an existing compatible-shaped alias provisioned with another token. */
+private fun requireHmacKeyMatches(key: SecretKey, expectedCredential: ByteArray) {
+    val challenge = "Jetpacs EBP credential alias check v1".encodeToByteArray()
+    val actual = Mac.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256).run {
+        init(key)
+        doFinal(challenge)
+    }
+    val expected = Mac.getInstance(KeyProperties.KEY_ALGORITHM_HMAC_SHA256).run {
+        init(SecretKeySpec(expectedCredential, KeyProperties.KEY_ALGORITHM_HMAC_SHA256))
+        doFinal(challenge)
+    }
+    check(MessageDigest.isEqual(actual, expected)) {
+        "AndroidKeyStore credential alias contains a different pairing token"
+    }
+}
+
 private fun loadPayloadKey(alias: String): SecretKey {
     require(alias.isNotBlank()) { "payload key alias must not be blank" }
     val key = loadAndroidKeyStore().getKey(alias, null)
@@ -223,7 +370,7 @@ private fun requireCompatiblePayloadKey(key: SecretKey): SecretKey {
 }
 
 /**
- * API 36's KeyInfo does not expose KeyGenParameterSpec's randomized-encryption
+ * API 34's KeyInfo does not expose KeyGenParameterSpec's randomized-encryption
  * requirement. Probe the negative capability without encrypting: a compatible
  * AndroidKeyStore key must reject every caller-supplied encryption IV.
  */

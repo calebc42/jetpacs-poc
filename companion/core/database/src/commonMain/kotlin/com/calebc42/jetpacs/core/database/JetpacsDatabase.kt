@@ -15,6 +15,13 @@ import androidx.room3.RoomDatabaseConstructor
         SurfaceDraftEntity::class,
         QueueEventEntity::class,
         IssuedEventIdEntity::class,
+        ReminderEntity::class,
+        ReminderReceiptEntity::class,
+        TriggerRegistrationEntity::class,
+        TriggerRuntimeEntity::class,
+        PairingThemeEntity::class,
+        PlatformEffectEntity::class,
+        AppRuntimeEntity::class,
     ],
     version = 1,
     exportSchema = true,
@@ -30,6 +37,14 @@ abstract class JetpacsDatabase : RoomDatabase() {
     abstract fun queueEventDao(): QueueEventDao
 
     abstract fun issuedEventIdDao(): IssuedEventIdDao
+
+    abstract fun reminderDao(): ReminderDao
+
+    abstract fun triggerDao(): TriggerDao
+
+    abstract fun themeAndEffectDao(): ThemeAndEffectDao
+
+    abstract fun appRuntimeDao(): AppRuntimeDao
 }
 
 @Suppress("NO_ACTUAL_FOR_EXPECT")

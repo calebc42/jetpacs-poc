@@ -4,8 +4,8 @@
 # gate recorded in the RF-1a status note.
 #
 # Documented exclusions (no silent caps):
-#   - device/instrumented tests stay manual (the smoke library in
-#     test/smoke-*.el runs against real hardware over adb);
+#   - renderer/accessibility device suites stay manual; the API 34 production
+#     composition smoke now runs below as a managed-device gate;
 #   - RF-1b (Robolectric render snapshots) and RF-1c (the
 #     cross-implementation loopback job) are later rungs.
 #
@@ -84,6 +84,7 @@ jobs:
             :core:testing:jvmTest \
             :app:testDebugUnitTest \
             :app:lintDebug \
+            :app:lintRelease \
             :app:assembleDebug \
             :app:assembleRelease \
             --console=plain
@@ -93,6 +94,30 @@ jobs:
           name: ebp-companion-debug-apk
           path: companion/app/build/outputs/apk/debug/*.apk
           retention-days: 14
+
+  api34-device:
+    name: Android 14 managed-device gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Room, Keystore, manifest, and app smoke on API 34
+        working-directory: companion
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:pixel2Api34DebugAndroidTest --console=plain
 
   spec:
     name: spec (validate.py + I1)

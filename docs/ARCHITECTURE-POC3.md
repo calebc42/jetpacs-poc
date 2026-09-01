@@ -8,6 +8,14 @@ platform primitives are pinned in
 supersede the original fork-forward cache adapter and the historical lock-hoist
 KMP runbook.
 
+As of 2026-08-31 the Android production composition is Room-only and has an
+Android 14/API 34 floor. `JetpacsApplication` owns one clean `jetpacs.db`, one
+Room durable store, one bounded command actor, and one bridge. A user-enabled
+`specialUse` FGS owns the listener on a best-effort basis; its notification is
+an enabled-policy indicator, never proof that the process or Emacs connection
+is alive. Legacy JSON/prototype databases are quarantined and never read or
+deleted.
+
 ## Non-negotiable boundaries
 
 EBP is Jetpacs-agnostic. Its Emacs implementation uses built-in Emacs
@@ -134,7 +142,8 @@ session must not erase Emacs' accepted-event evidence.
 - Every durable record derived from Emacs is partitioned by pairing identity.
 - Room stores surfaces/tombstones/stale metadata/current views, input drafts,
   queue counters/events/clock state, reminders/receipts, trigger
-  registrations/runtime, themes, import state, and revocation cleanup state.
+  registrations/runtime, themes, idempotent platform effects, app bridge
+  policy, and revocation cleanup state.
 - Surface acceptance, draft reconciliation, queue dedupe/counter admission,
   reminder receipt handling, trigger runtime plus event admission, and pairing
   revocation use explicit Room transactions.
@@ -191,8 +200,8 @@ after the pending rebase without changing cache semantics.
 
 ### Historical Step 1 — preparatory scaffold and device proof
 
-The original five-module scaffold, revision/tombstone prototype, rebase, Android
-16 floor, Room KMP/device proof, CI gates, and toolchain verification are useful
+The original five-module scaffold, revision/tombstone prototype, rebase, former
+high API floor, Room KMP/device proof, CI gates, and toolchain verification are useful
 preparatory evidence. They are not the final persistence architecture.
 
 Run bundled-SQLite DAO and repository integration tests on the KMP JVM target.
@@ -229,7 +238,7 @@ already committed before it exists. Move destination ownership to a saveable
 Nav 3 back stack only after the Room store cutover. A catalog destination
 selects a cached EBP surface; it does not define the catalog.
 
-The complete work packages, schema, transaction matrix, import policy, and
+The complete work packages, schema, transaction matrix, clean-cutover policy, and
 cutover gates live in `PLAN-room3-rebuild.md`.
 
 ### Receiver component styling and accessibility
@@ -359,8 +368,10 @@ findings an explicit gate:
 
 - Gradle wrapper, AGP, Kotlin, KSP, and Compose compiler compatibility,
   including a verified distribution checksum for the selected wrapper.
-- Android 16/API 36 and 36.1 behavior changes, lifecycle, background work,
-  permissions, edge-to-edge, security, accessibility, and adaptive layouts.
+- Android 14/API 34 floor behavior plus current target-SDK behavior through
+  API 37: lifecycle, foreground services/background starts, exact-alarm
+  fallback, permissions, edge-to-edge, security, accessibility, and adaptive
+  layouts.
 - Current Android Jetpack guidance for repository/state-holder boundaries,
   lifecycle-aware collection, testing, and dependency injection.
 - Compose Multiplatform source-set ownership, immutable/stable UI state,

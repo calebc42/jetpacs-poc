@@ -12,13 +12,24 @@ android {
 
     defaultConfig {
         applicationId = "com.calebc42.jetpacs.companion"
-        minSdk = 36
+        minSdk = 34
         targetSdk = 37
         versionCode = 1
         versionName = "0.1.0-w4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
+    testOptions {
+        managedDevices {
+            localDevices {
+                create("pixel2Api34") {
+                    device = "Pixel 2"
+                    apiLevel = 34
+                    systemImageSource = "aosp"
+                }
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -211,10 +222,14 @@ androidComponents {
 }
 
 dependencies {
+    implementation(projects.ebpKmp)
     implementation(projects.wire)
     implementation(projects.renderer.material3)
     implementation(projects.renderer.jetpacs)
     implementation(projects.core.navigation)
+    implementation(projects.core.database)
+    implementation(projects.core.ebpStore)
+    implementation(libs.androidx.room3.runtime)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
     implementation(platform(libs.androidx.compose.bom))

@@ -33,15 +33,16 @@ again.
    evidence that an event was accepted.
 4. **Room is Jetpacs' single durable application store.** It contains cached
    accepted EBP presentation state, the outbound event queue, trigger/reminder
-   state, and revocation progress. POC 2 JSON files remain a migration oracle,
-   not a second live store.
+   state, and revocation progress. POC 2 JSON files remain untouched quarantine,
+   not an import source or second live store.
 5. **The protocol runtime has one ordered writer.** A bounded coroutine actor
    owns state transitions and Room transactions. A dedicated reader only
    decodes/demultiplexes and a dedicated writer only emits frames. No database
    transaction or actor command waits for peer I/O.
 6. **Android component lifetime is explicit.** `Application` is a composition
    root, not the owner of a permanent listener. The bridge lifecycle and its
-   Android 16 startup/foreground-service policy are an exit gate.
+   Android 14 floor and current target-SDK foreground-service policy are an
+   exit gate.
 7. **The Kotlin protocol and renderer models are separate seams.** The future
    `kotlin-ebp` ends at validated typed protocol data and transaction commands.
    A target-neutral renderer model normalizes that data for Compose,
@@ -246,7 +247,8 @@ and upstream-facing EBP code uses no private JSON-RPC/timer internals.
 - Add the suspending transaction SPI and rollback-capable in-memory store.
 - Replace monitor/executor ownership with a caller-scoped bounded coroutine
   actor and ordered outbound channel.
-- Put file import, JCA crypto, Java I/O/time/DNS, Android transport, and other
+- Keep frozen file compatibility readers in tests; put JCA crypto, Java
+  I/O/time/DNS, Android transport, and other
   platform behavior behind adapters instead of mechanical expect/actual locks.
 - Compile a non-JVM target as the permanent common-code purity gate.
 
@@ -259,11 +261,11 @@ actor, database, or peer response.
 - Replace the one-table prototype with a new version-1 database containing
   pairing partitions, surfaces/tombstones/views/stale state, drafts, outbound
   events and counters, reminders/receipts, triggers/runtime/effect progress,
-  themes, imports, and revocation cleanup.
+  themes, idempotent platform effects, and revocation cleanup.
 - Implement `RoomEbpDurableStore` in `:core:ebp-store`; Room revision and
   admission logic never lives in `:core:data`.
 - Port vertical slices in this order: pairing/revocation, surfaces/drafts,
-  outbox/replay, reminders, triggers/effects, themes/import.
+  outbox/replay, reminders, triggers/effects, and themes.
 - Test each transaction against memory, in-memory Room, reopened file-backed
   Room, and a connected Android device with fault injection.
 - Keep tokens in Keystore, preferences in DataStore, images in a pairing-keyed
@@ -278,9 +280,9 @@ platform effect precedes commit.
 - Reduce `EbpApplication` to the application container/composition root.
 - Introduce a lifecycle-owned bridge service with a `SupervisorJob`, reader,
   actor, writer, and explicit session generation.
-- Decide and test the Android 16 foreground-service category/start policy
-  before declaring it in the manifest; do not assume a permanent listener is
-  automatically permitted.
+- Test the Android 14/API 34 floor and the current target-SDK foreground-service
+  category/start policy. The user-enabled `specialUse` service is best effort;
+  its notification must not claim a live process or connection.
 - Make alarms, notifications, widget updates, image deletion, and other
   platform work post-commit idempotent effects with reconciliation.
 - Use WorkManager only for deferrable retryable work and AlarmManager for exact

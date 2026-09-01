@@ -39,10 +39,10 @@ version adapter and a 30.1 test.
 | Durable Jetpacs application state | Room 3 KMP | One pairing-partitioned Room store; explicit transactions, schema export, migrations, reopen/device/fault tests. UI never writes protocol state. |
 | Outgoing durable delivery | Room 3 transactional outbox | Stable EventId, sequence, payload, expiry/dedupe/capacity/runtime updates commit before first send. Delete only after a permanent peer disposition. |
 | Secrets | Android Keystore-backed credential adapter | Tokens and reusable encryption keys do not enter Room or logs. Use separate aliases for authentication and sensitive queued payloads. |
-| Preferences | DataStore | User/product preferences are not protocol state and do not enter Room tables. |
-| Long-lived runtime ownership | Android service plus structured coroutines | `Application` is composition root only. Reader, bounded actor, writer, and reconciliation scopes have explicit owners and cancellation. Validate Android 16 foreground-service category/start policy first. |
+| Preferences | DataStore for future settings; schema-v1 `app_runtime` for the bridge switch | User/product preferences are not pairing-authored protocol state. The current user-enabled bridge policy is a device-local singleton, never pairing data. |
+| Long-lived runtime ownership | Android service plus structured coroutines | `Application` is composition root only. Reader, bounded actor, writer, and reconciliation scopes have explicit owners and cancellation. Android 14/API 34 is the floor; the user-enabled `specialUse` FGS remains best effort and its notification is not liveness evidence. |
 | Serialized mutation ordering | `Channel<Command>` coroutine actor | Do not port POC 2 synchronized monitors/executors or invent `WireLock`. No transaction or actor command waits for socket/platform work. |
-| Deferrable retryable work | WorkManager | Use for reconciliation/import/cleanup/update work, not the live socket or exact-time alarms. |
+| Deferrable retryable work | WorkManager | Use for reconciliation/cleanup/update work, not the live socket or exact-time alarms. |
 | Exact scheduling | AlarmManager with capability checks | Commit registration/receipt first, invoke platform API afterward, and reconcile on boot/permission changes. |
 | Lifecycle UI collection | ViewModel `StateFlow`, lifecycle-aware Compose collection | Follow local architecture-samples state-holder/repository pattern. No process-global raw `JsonObject` UI flows. |
 | Navigation | Navigation 3 local recipes | `rememberNavBackStack`, saveable state and ViewModel decorators, identifiers-only `NavKey`, predictive-back/device tests. Do not copy the template's custom unmanaged Navigator. |

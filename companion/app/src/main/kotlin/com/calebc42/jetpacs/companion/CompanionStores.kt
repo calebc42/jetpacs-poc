@@ -1,27 +1,37 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Process-wide durable stores. This object is the ONLY constructor of the
-// file-backed instances, so DeviceBridge and any cold-started manifest
-// receiver (alarm, boot, tap) share one in-memory instance per file — two
-// instances over one backing file would tear each other's snapshots. All
-// accessors are lazy and idempotent; Context is only used for filesDir.
 package com.calebc42.jetpacs.companion
 
 import android.content.Context
 import android.provider.Settings
 import com.calebc42.ebp.wire.DurableQueue
-import com.calebc42.ebp.wire.FileQueueStore
-import com.calebc42.ebp.wire.FileReminderBacking
-import com.calebc42.ebp.wire.FileSurfaceBacking
-import com.calebc42.ebp.wire.FileTriggerBacking
+import com.calebc42.ebp.wire.EbpActorOverloaded
+import com.calebc42.ebp.wire.EbpCommandActor
 import com.calebc42.ebp.wire.LiveSession
+import com.calebc42.ebp.wire.PairingId
 import com.calebc42.ebp.wire.ReminderStore
 import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.ebp.wire.TriggerFiringService
 import com.calebc42.ebp.wire.TriggerStore
 import com.calebc42.ebp.wire.jsonStringSet
-import java.io.File
+import com.calebc42.jetpacs.core.ebpstore.RoomEbpDurableStore
+import java.util.concurrent.atomic.AtomicReference
 
-object CompanionStores {
+/**
+ * Process-owned compatibility projections over one Room EBP store.
+ *
+ * The Android application is the sole constructor. No production code opens
+ * a file-backed store, and every mutation is admitted through [commandActor].
+ */
+class CompanionStores(
+    context: Context,
+    private val durableStore: RoomEbpDurableStore,
+    private val pairingId: PairingId,
+    val commandActor: EbpCommandActor,
+) {
+    private val app = context.applicationContext
+    private val nowMs = System::currentTimeMillis
+    private val triggerOccurrence = RoomTriggerOccurrenceCoordinator(durableStore, pairingId)
+    private val platformEffects = PlatformEffectReconciler(app, durableStore, pairingId, nowMs)
 
     @Volatile private var queueInstance: DurableQueue? = null
     @Volatile private var surfacesInstance: SurfaceStore? = null
@@ -29,131 +39,117 @@ object CompanionStores {
     @Volatile private var triggersInstance: TriggerStore? = null
     @Volatile private var firingInstance: TriggerFiringService? = null
     @Volatile private var sourcesInstance: TriggerSources? = null
+    @Volatile private var themeInstance: RoomThemeStore? = null
 
-    private val liveSessionRef = java.util.concurrent.atomic.AtomicReference<LiveSession?>()
+    private val liveSessionRef = AtomicReference<LiveSession?>()
 
-    /** The current live engine, or null when disconnected. A cold receiver
-     * (reminder tap/alarm) routes queue/wake events durably regardless and a
-     * drop live only through this slot (SPEC 15.1). Newest-wins (SPEC 5.2). */
     val liveSession: LiveSession? get() = liveSessionRef.get()
 
-    /** SPEC 5.2: a connection publishes itself as the live session. */
-    fun setLiveSession(s: LiveSession) { liveSessionRef.set(s) }
-
-    /** Clear only if still this exact session — a superseded connection's
-     * teardown must not null out the newer session (the lost-update race).
-     * Returns whether THIS call cleared it: the same verdict gates the
-     * teardown's wipe of the shared display maps (R5 review). */
-    fun clearLiveSession(s: LiveSession): Boolean =
-        liveSessionRef.compareAndSet(s, null)
-
-    const val MAX_EVENT_BYTES = 262_144L
-    // SPEC 14.1: matches DeviceBridge's advertised max_field_bytes.
-    const val MAX_FIELD_BYTES = 65_536L
-    // SPEC 4.5/19.4: matches DeviceBridge's advertised max_editor_bytes.
-    const val MAX_EDITOR_BYTES = 65_536L
-
-    /** SPEC 21.2: every firing + cold-event route runs on this single background
-     * thread, NEVER the Android main thread — an admitted occurrence may deliver
-     * live (a loopback socket write, which throws NetworkOnMainThreadException on
-     * the main thread) and persists records / runs on_fire (file + platform I/O).
-     * A single thread also serializes all firing behind one writer. */
-    val firingExecutor: java.util.concurrent.ExecutorService by lazy {
-        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
-            Thread(r, "ebp-firing").apply { isDaemon = true }
-        }
+    fun setLiveSession(session: LiveSession) {
+        liveSessionRef.set(session)
     }
 
-    /** SPEC 15: the durable queue survives process and device restarts. */
-    fun queue(ctx: Context): DurableQueue =
-        queueInstance ?: synchronized(this) {
-            queueInstance ?: DurableQueue(
-                FileQueueStore(File(ctx.filesDir, "ebp-queue.json")),
-                256, 8_388_608).also { queueInstance = it }
-        }
+    fun clearLiveSession(session: LiveSession): Boolean =
+        liveSessionRef.compareAndSet(session, null)
 
-    /** SPEC 13.1/15.1: surface histories + tombstones + drafts survive. */
-    fun surfaces(ctx: Context): SurfaceStore =
-        surfacesInstance ?: synchronized(this) {
-            surfacesInstance ?: SurfaceStore(64, 4096,
-                maxCaptureFields = 64,
-                // SPEC 4.5/17.5: enforced at validation when chart/canvas are
-                // advertised — must match DeviceBridge's advertised limits.
-                maxChartPoints = 4096, maxCanvasOps = 4096,
-                // SPEC 17.1: gate each target to exactly what it advertises, so
-                // an app-only type in a dialog/notification degrades (§16.2).
-                appNodeTypes = CompanionRenderer.APP_NODE_TYPES,
-                notificationNodeTypes =
-                    CompanionRenderer.NOTIFICATION_NODE_TYPES,
-                appBuiltins = CompanionRenderer.APP_BUILTINS,
-                notificationBuiltins =
-                    CompanionRenderer.NOTIFICATION_BUILTINS,
-                appFeatures = CompanionRenderer.APP_FEATURES,
-                notificationFeatures =
-                    CompanionRenderer.NOTIFICATION_FEATURES,
-                nodeVocabulary =
-                    CompanionRenderer.NODE_VOCABULARY,
-                backing = FileSurfaceBacking(File(ctx.filesDir, "ebp-surfaces.json"))
-            ).also { surfacesInstance = it }
-        }
+    /** Eager bootstrap on the composition root's IO dispatcher. */
+    internal fun initializeProductionProjections() {
+        queue()
+        surfaces()
+        reminders()
+        triggers()
+        theme()
+    }
 
-    /** SPEC 18.6: reminder sets + fired receipts survive. */
-    fun reminders(ctx: Context): ReminderStore =
-        remindersInstance ?: synchronized(this) {
-            remindersInstance ?: ReminderStore(
-                FileReminderBacking(File(ctx.filesDir, "ebp-reminders.json"))
-            ).also { remindersInstance = it }
-        }
+    /** Submit one bounded process mutation without creating another writer. */
+    fun submit(block: suspend () -> Unit): Boolean = try {
+        commandActor.trySubmit(block)
+        true
+    } catch (_: EbpActorOverloaded) {
+        false
+    }
 
-    /** SPEC 21.1: trigger registrations + runtime records survive. */
-    fun triggers(ctx: Context): TriggerStore =
-        triggersInstance ?: synchronized(this) {
-            triggersInstance ?: TriggerStore(
-                FileTriggerBacking(File(ctx.filesDir, "ebp-triggers.json"))
-            ).also { triggersInstance = it }
-        }
+    fun queue(): DurableQueue = queueInstance ?: synchronized(this) {
+        queueInstance ?: DurableQueue(
+            RoomQueueStore(durableStore, pairingId, triggerOccurrence),
+            256,
+            8_388_608,
+        ).also { queueInstance = it }
+    }
 
-    /** SPEC 21: the device-lifetime firing service over the durable stores.
-     * Fires regardless of a live socket; a live engine attaches as its
-     * LiveSession. Wired with the platform state provider + on_fire executors. */
-    fun firing(ctx: Context): TriggerFiringService {
+    fun surfaces(): SurfaceStore = surfacesInstance ?: synchronized(this) {
+        surfacesInstance ?: SurfaceStore(
+            64,
+            4096,
+            maxCaptureFields = 64,
+            maxChartPoints = 4096,
+            maxCanvasOps = 4096,
+            appNodeTypes = CompanionRenderer.APP_NODE_TYPES,
+            notificationNodeTypes = CompanionRenderer.NOTIFICATION_NODE_TYPES,
+            appBuiltins = CompanionRenderer.APP_BUILTINS,
+            notificationBuiltins = CompanionRenderer.NOTIFICATION_BUILTINS,
+            appFeatures = CompanionRenderer.APP_FEATURES,
+            notificationFeatures = CompanionRenderer.NOTIFICATION_FEATURES,
+            nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
+            backing = RoomSurfaceBacking(durableStore, pairingId, nowMs),
+        ).also { surfacesInstance = it }
+    }
+
+    fun reminders(): ReminderStore = remindersInstance ?: synchronized(this) {
+        remindersInstance ?: ReminderStore(
+            RoomReminderBacking(durableStore, pairingId, nowMs),
+        ).also { remindersInstance = it }
+    }
+
+    fun triggers(): TriggerStore = triggersInstance ?: synchronized(this) {
+        triggersInstance ?: TriggerStore(
+            RoomTriggerBacking(durableStore, pairingId, triggerOccurrence),
+        ).also { triggersInstance = it }
+    }
+
+    internal fun theme(): RoomThemeStore = themeInstance ?: synchronized(this) {
+        themeInstance ?: RoomThemeStore(durableStore, pairingId, nowMs)
+            .also { themeInstance = it }
+    }
+
+    suspend fun reconcilePlatformEffects() = platformEffects.drain()
+
+    fun firing(): TriggerFiringService {
         firingInstance?.let { return it }
-        val app = ctx.applicationContext
         return synchronized(this) {
             firingInstance ?: TriggerFiringService(
-                triggers(app), queue(app), MAX_EVENT_BYTES,
+                triggers(),
+                queue(),
+                MAX_EVENT_BYTES,
                 triggerCaps = jsonStringSet(AppCapabilities.deviceReport(), "trigger_caps"),
                 capabilityHandler = AppCapabilities.handler(app, 65_536),
-                bootGeneration = { bootGeneration(app) },
-            ).also { svc ->
-                svc.stateProvider = { type -> triggerSources(app).currentState(type) }
-                svc.notifyListener = { notify -> Notifications.postTrigger(app, notify) }
-                // SPEC 21.5: a triggers.set that changed time.* entries re-arms
-                // the platform alarms for the new schedule.
-                svc.onTimeScheduleChanged = { TriggerAlarms.reschedule(app) }
-                firingInstance = svc
+                bootGeneration = { bootGeneration() },
+                occurrenceTransaction = triggerOccurrence,
+            ).also { service ->
+                service.stateProvider = { type -> triggerSources().currentState(type) }
+                service.notifyListener = { notify -> Notifications.postTrigger(app, notify) }
+                service.onTimeScheduleChanged = { TriggerAlarms.reschedule(app, this) }
+                firingInstance = service
             }
         }
     }
 
-    /** SPEC 21.5: the current device boot generation. Settings.Global.BOOT_COUNT
-     * increments once per boot; a `boot` trigger fires at most once per value.
-     * Null (unavailable) leaves boot ungated — the receiver is the sole guard. */
-    private fun bootGeneration(ctx: Context): String? = runCatching {
-        Settings.Global.getString(ctx.contentResolver, Settings.Global.BOOT_COUNT)
+    private fun bootGeneration(): String? = runCatching {
+        Settings.Global.getString(app.contentResolver, Settings.Global.BOOT_COUNT)
     }.getOrNull()
 
-    /** SPEC 21: platform trigger sources, feeding the firing service (which the
-     * lambda resolves lazily, breaking the source<->service cycle). */
-    fun triggerSources(ctx: Context): TriggerSources {
+    fun triggerSources(): TriggerSources {
         sourcesInstance?.let { return it }
-        val app = ctx.applicationContext
         return synchronized(this) {
             sourcesInstance ?: TriggerSources(app) { type, sample ->
-                // SPEC 21.2: never fire on the main thread (the battery receiver's
-                // onReceive) — a live delivery would socket-write there.
-                firingExecutor.execute { firing(app).observeSample(type, sample) }
+                submit { firing().observeSample(type, sample) }
             }.also { sourcesInstance = it }
         }
+    }
+
+    companion object {
+        const val MAX_EVENT_BYTES = 262_144L
+        const val MAX_FIELD_BYTES = 65_536L
+        const val MAX_EDITOR_BYTES = 65_536L
     }
 }

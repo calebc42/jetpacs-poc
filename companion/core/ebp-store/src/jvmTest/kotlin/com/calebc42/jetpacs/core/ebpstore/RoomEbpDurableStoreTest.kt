@@ -15,7 +15,12 @@ import com.calebc42.ebp.wire.DurableDraft
 import com.calebc42.ebp.wire.DurableOutboxEvent
 import com.calebc42.ebp.wire.DurableOutboxPolicy
 import com.calebc42.ebp.wire.DurablePairing
+import com.calebc42.ebp.wire.DurablePlatformEffect
+import com.calebc42.ebp.wire.DurableReminder
+import com.calebc42.ebp.wire.DurableReminderReceipt
 import com.calebc42.ebp.wire.DurableSurfaceRecord
+import com.calebc42.ebp.wire.DurableTheme
+import com.calebc42.ebp.wire.DurableTriggerRegistration
 import com.calebc42.ebp.wire.EbpWriteTransaction
 import com.calebc42.ebp.wire.EventId
 import com.calebc42.ebp.wire.IssuedEventId
@@ -25,6 +30,7 @@ import com.calebc42.ebp.wire.PairingFence
 import com.calebc42.ebp.wire.PairingId
 import com.calebc42.ebp.wire.PairingRuntime
 import com.calebc42.ebp.wire.PutDraftCommand
+import com.calebc42.ebp.wire.RecordReminderFiredCommand
 import com.calebc42.ebp.wire.RevokePairingStateCommand
 import com.calebc42.ebp.wire.RevokePairingStateResult
 import com.calebc42.ebp.wire.SurfaceLimits
@@ -33,6 +39,7 @@ import com.calebc42.ebp.wire.activatePairing
 import com.calebc42.ebp.wire.admitOutbox
 import com.calebc42.ebp.wire.applySurface
 import com.calebc42.ebp.wire.putDraft
+import com.calebc42.ebp.wire.recordReminderFired
 import com.calebc42.ebp.wire.revokePairingState
 import com.calebc42.jetpacs.core.database.IssuedEventIdEntity
 import com.calebc42.jetpacs.core.database.JetpacsDatabase
@@ -442,6 +449,212 @@ class RoomEbpDurableStoreTest {
 
             expectIllegalState { fixture.store.restore(pairing) }
             expectIllegalState { fixture.store.write(pairing) { pairing() } }
+        }
+    }
+
+    @Test
+    fun reminderTriggerThemeAndEffectSurviveReopenAndRevocationErasesThem() = runTest {
+        val directory = Files.createTempDirectory("jetpacs-ebp-store-domains-")
+        val path = directory.resolve("domains.db")
+        val pairing = pairingId('6')
+        var fixture: Fixture? = null
+
+        try {
+            fixture = fileFixture(path)
+            activate(fixture.store, pairing, createdAtMs = 1)
+            val reminderPayload = buildJsonObject {
+                put("id", "r1")
+                put("at_ms", 20)
+                put("title", "Room")
+            }
+            fixture.store.write(pairing) {
+                putReminder(DurableReminder("agenda", "r1", 20, 0, reminderPayload))
+                putReminderReceipt(DurableReminderReceipt("agenda", "r1", 20, 21))
+                putTrigger(
+                    DurableTriggerRegistration(
+                        identity = "device",
+                        triggerId = "t1",
+                        authoredOrdinal = 0,
+                        entry = buildJsonObject { put("id", "t1") },
+                        canonicalIdentity = "canonical-t1",
+                        throttleFloorMs = 22,
+                        scheduleAnchorMs = 10,
+                    ),
+                )
+                putTheme(DurableTheme(buildJsonObject { put("dark", true) }, 23))
+                putPlatformEffect(
+                    DurablePlatformEffect(
+                        effectId = "effect-1",
+                        kind = "notification.reminder",
+                        payload = reminderPayload,
+                        dedupeKey = "reminder:agenda:r1:20",
+                        createdAtMs = 21,
+                    ),
+                )
+            }
+            fixture.database.close()
+            fixture = null
+
+            fixture = fileFixture(path)
+            val restored = fixture.store.restore(pairing)
+            assertEquals(listOf("r1"), restored.reminders.map { it.reminderId })
+            assertEquals(listOf(20L), restored.reminderReceipts.map { it.atMs })
+            assertEquals(22L, restored.triggers.single().throttleFloorMs)
+            assertEquals(true, restored.theme?.payload?.get("dark")?.let {
+                (it as JsonPrimitive).content.toBooleanStrict()
+            })
+            assertEquals(listOf("effect-1"), restored.platformEffects.map { it.effectId })
+
+            assertTrue(
+                fixture.store.revokePairingState(
+                    RevokePairingStateCommand(pairing, fencedAtMs = 30),
+                ) is RevokePairingStateResult.Revoked,
+            )
+            val revoked = fixture.store.restore(pairing)
+            assertTrue(revoked.reminders.isEmpty())
+            assertTrue(revoked.reminderReceipts.isEmpty())
+            assertTrue(revoked.triggers.isEmpty())
+            assertNull(revoked.theme)
+            assertTrue(revoked.platformEffects.isEmpty())
+        } finally {
+            fixture?.database?.close()
+            directory.toFile().deleteRecursively()
+        }
+    }
+
+    @Test
+    fun platformEffectIdentityAndDedupeArePairingScoped() = runTest {
+        withFixture { fixture ->
+            val first = pairingId('1')
+            val second = pairingId('2')
+            activate(fixture.store, first)
+            activate(fixture.store, second)
+            val shared = DurablePlatformEffect(
+                effectId = "shared-effect",
+                kind = "notification.reminder",
+                payload = buildJsonObject { put("title", "Scoped") },
+                dedupeKey = "shared-dedupe",
+                createdAtMs = 1,
+            )
+
+            fixture.store.write(first) { putPlatformEffect(shared) }
+            fixture.store.write(second) { putPlatformEffect(shared) }
+
+            assertEquals(
+                listOf(shared),
+                fixture.store.restore(first).platformEffects,
+            )
+            assertEquals(
+                listOf(shared),
+                fixture.store.restore(second).platformEffects,
+            )
+        }
+    }
+
+    @Test
+    fun queuedTriggerOccurrenceCommitsAndRollsBackAsOneRoomTransaction() = runTest {
+        withFixture { fixture ->
+            val pairing = pairingId('5')
+            val id = eventId('5')
+            activate(fixture.store, pairing)
+            val originalTrigger = DurableTriggerRegistration(
+                identity = "device",
+                triggerId = "battery-low",
+                authoredOrdinal = 0,
+                entry = buildJsonObject { put("id", "battery-low") },
+                canonicalIdentity = "battery-low:v1",
+                throttleFloorMs = 10,
+            )
+            val event = eventCommand(pairing, id, triggerIdentity = "device")
+                .toDurableEvent(queueSequence = 1)
+
+            fixture.store.replaceOutboxState(
+                pairingId = pairing,
+                events = listOf(event),
+                nextQueueSequence = 2,
+                effectiveClockHighWaterMs = 10,
+                triggerRegistrations = listOf(originalTrigger),
+            )
+            fixture.store.restore(pairing).let { committed ->
+                assertEquals(listOf(event), committed.outbox)
+                assertEquals(10L, committed.triggers.single().throttleFloorMs)
+            }
+
+            // Remove the queue row but retain its issued-id guard, exactly as a
+            // delivered occurrence does.
+            fixture.store.replaceOutboxState(
+                pairingId = pairing,
+                events = emptyList(),
+                nextQueueSequence = 2,
+                effectiveClockHighWaterMs = 10,
+            )
+            val replacementTrigger = originalTrigger.copy(throttleFloorMs = 99)
+            expectIllegalState {
+                fixture.store.replaceOutboxState(
+                    pairingId = pairing,
+                    events = listOf(event.copy(queueSequence = 2)),
+                    nextQueueSequence = 3,
+                    effectiveClockHighWaterMs = 10,
+                    triggerRegistrations = listOf(replacementTrigger),
+                )
+            }
+
+            // EventId reuse fails after the Room transaction has begun. Its
+            // attempted queue insert and trigger-runtime update both roll back.
+            fixture.store.restore(pairing).let { rolledBack ->
+                assertTrue(rolledBack.outbox.isEmpty())
+                assertEquals(2L, rolledBack.runtime.nextQueueSequence)
+                assertEquals(10L, rolledBack.triggers.single().throttleFloorMs)
+            }
+        }
+    }
+
+    @Test
+    fun reminderReceiptRollsBackWhenItsPresentationEffectCannotCommit() = runTest {
+        withFixture { fixture ->
+            val pairing = pairingId('4')
+            activate(fixture.store, pairing)
+            val payload = buildJsonObject {
+                put("id", "r1")
+                put("at_ms", 20)
+                put("title", "Room")
+            }
+            fixture.store.write(pairing) {
+                putReminder(DurableReminder("agenda", "r1", 20, 0, payload))
+                putPlatformEffect(
+                    DurablePlatformEffect(
+                        effectId = "prior-effect",
+                        kind = "notification.reminder",
+                        payload = payload,
+                        dedupeKey = "reminder:agenda:r1:20",
+                        createdAtMs = 20,
+                    ),
+                )
+            }
+
+            expectIllegalState {
+                fixture.store.recordReminderFired(
+                    RecordReminderFiredCommand(
+                        pairingId = pairing,
+                        owner = "agenda",
+                        reminderId = "r1",
+                        atMs = 20,
+                        firedAtMs = 21,
+                        presentationEffect = DurablePlatformEffect(
+                            effectId = "conflicting-effect-id",
+                            kind = "notification.reminder",
+                            payload = payload,
+                            dedupeKey = "reminder:agenda:r1:20",
+                            createdAtMs = 21,
+                        ),
+                    ),
+                )
+            }
+
+            fixture.store.restore(pairing).let { restored ->
+                assertTrue(restored.reminderReceipts.isEmpty())
+                assertEquals(listOf("prior-effect"), restored.platformEffects.map { it.effectId })
+            }
         }
     }
 

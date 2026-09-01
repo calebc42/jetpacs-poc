@@ -10,8 +10,8 @@ kotlin {
 
     android {
         namespace = "com.calebc42.jetpacs.core.model"
-        compileSdk = 36
-        minSdk = 36
+        compileSdk = 37
+        minSdk = 34
         withHostTestBuilder {}
     }
 

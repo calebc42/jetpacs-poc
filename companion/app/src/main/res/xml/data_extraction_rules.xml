@@ -2,29 +2,15 @@
 <!--
   Back up nothing, transfer nothing.
 
-  Everything this app persists lives in filesDir and is one of two things:
-  an OUTBOX of events owed to one specific Emacs pairing, or a CACHE of state
-  that Emacs re-pushes on the next session. Emacs is the source of truth; the
-  Companion is downstream of it. So there is no file here whose restoration
-  onto a different device is correct:
+  Production protocol state lives in the pairing-partitioned Room database and
+  is one of two things: an OUTBOX of events owed to one specific Emacs pairing,
+  or a CACHE of state that Emacs can re-push. Restoring it onto another device
+  could redeliver actions, duplicate fired reminders, restore device-specific
+  trigger history, or make fresh surface revisions look stale.
 
-    ebp-queue.json      SPEC 15    — events awaiting replay. Restored on a new
-                                     device, it re-delivers taps, form submits,
-                                     and notification actions that the original
-                                     device already delivered. This is the
-                                     at-most-once violation W8 was built to
-                                     prevent and device-verified.
-    ebp-reminders.json  SPEC 18.6  — reminder sets plus FIRED RECEIPTS. Losing
-                                     or duplicating a receipt re-fires a
-                                     reminder that already fired.
-    ebp-triggers.json   SPEC 21.1  — registrations, throttle floors, and
-                                     boot/interval baselines. These are
-                                     statements about THIS device's history;
-                                     they are meaningless on another.
-    ebp-surfaces.json   SPEC 13.1  — surface histories, tombstones, drafts.
-                                     Carries revision numbers that would make a
-                                     fresh session's updates look stale.
-    ebp-theme.json      SPEC 18.4  — a pure cache; Emacs re-sends it.
+  Pre-cutover JSON stores and the disposable prototype database are quarantined:
+  production code neither reads nor deletes them. Transfer must not resurrect
+  those stale stores either.
 
   The exclusions are BLANKET by domain rather than per-filename on purpose: a
   store added later is then covered by default. An opt-in list would silently

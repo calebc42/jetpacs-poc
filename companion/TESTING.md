@@ -39,6 +39,40 @@ gutter indexing, and the no-Material dependency boundary. Experimental Compose
 Styles opt-in exists only in the two downstream design renderer modules, never
 in EBP, `:renderer:model`, or `:renderer:compose`.
 
+## Room-only composition and Android 14 floor
+
+Run the JVM persistence and production compilation gates with:
+
+```sh
+./gradlew \
+  :ebp-kmp:jvmTest \
+  :wire:jvmTest \
+  :core:database:jvmTest \
+  :core:ebp-store:jvmTest \
+  :app:testDebugUnitTest \
+  :app:lintDebug \
+  :app:lintRelease \
+  :app:assembleDebug \
+  :app:assembleRelease
+```
+
+The Room suite includes reopen, revocation, reminder/effect, and fault-injected
+queue-plus-trigger rollback coverage. Production source must contain no
+`FileQueueStore`, `FileSurfaceBacking`, `FileReminderBacking`, or
+`FileTriggerBacking` caller.
+
+The Android 14 managed-device gate is:
+
+```sh
+./gradlew :app:pixel2Api34DebugAndroidTest
+```
+
+That task installs an API 34 AOSP image and runs the production composition
+smoke: it requires exactly API 34, opens the clean Room database, verifies the
+ACTIVE pairing and distinct credential/payload Keystore aliases, and checks
+that the `specialUse` foreground service is private. CI runs this as the
+`api34-device` job with KVM enabled.
+
 ## Screenshot references
 
 ```sh

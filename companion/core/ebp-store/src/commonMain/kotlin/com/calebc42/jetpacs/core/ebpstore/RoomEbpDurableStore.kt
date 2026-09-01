@@ -9,10 +9,17 @@ import com.calebc42.ebp.wire.DurableOutboxEvent
 import com.calebc42.ebp.wire.DurableOutboxIndexEntry
 import com.calebc42.ebp.wire.DurableOutboxPolicy
 import com.calebc42.ebp.wire.DurablePairing
+import com.calebc42.ebp.wire.DurablePlatformEffect
+import com.calebc42.ebp.wire.DurablePlatformEffectState
+import com.calebc42.ebp.wire.DurableReminder
+import com.calebc42.ebp.wire.DurableReminderReceipt
 import com.calebc42.ebp.wire.DurableSnapshot
 import com.calebc42.ebp.wire.DurableSurfaceRecord
+import com.calebc42.ebp.wire.DurableTheme
+import com.calebc42.ebp.wire.DurableTriggerRegistration
 import com.calebc42.ebp.wire.EbpDurableStore
 import com.calebc42.ebp.wire.EbpWriteTransaction
+import com.calebc42.ebp.wire.EVENT_ID_RETENTION_FLOOR_MS
 import com.calebc42.ebp.wire.EventId
 import com.calebc42.ebp.wire.IssuedEventId
 import com.calebc42.ebp.wire.PairingFence
@@ -26,10 +33,17 @@ import com.calebc42.jetpacs.core.database.JetpacsDatabase
 import com.calebc42.jetpacs.core.database.PairingPartitionEntity
 import com.calebc42.jetpacs.core.database.PairingRevocationEntity
 import com.calebc42.jetpacs.core.database.PairingRuntimeEntity
+import com.calebc42.jetpacs.core.database.PairingThemeEntity
+import com.calebc42.jetpacs.core.database.PlatformEffectEntity
 import com.calebc42.jetpacs.core.database.QueueEventEntity
 import com.calebc42.jetpacs.core.database.QueueEventVersionRow
 import com.calebc42.jetpacs.core.database.SurfaceDraftEntity
 import com.calebc42.jetpacs.core.database.SurfaceRecordEntity
+import com.calebc42.jetpacs.core.database.ReminderEntity
+import com.calebc42.jetpacs.core.database.ReminderReceiptEntity
+import com.calebc42.jetpacs.core.database.TriggerRegistrationEntity
+import com.calebc42.jetpacs.core.database.TriggerRuntimeEntity
+import com.calebc42.jetpacs.core.database.TriggerWithRuntime
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.serialization.json.Json
@@ -59,6 +73,15 @@ class RoomEbpDurableStore(
                     it.copy(payloadEnvelope = it.payloadEnvelope.copyOf())
                 },
                 issuedEventIds = database.issuedEventIdDao().getIssuedEventIds(pairingId.value),
+                reminders = database.reminderDao().getReminders(pairingId.value),
+                reminderReceipts = database.reminderDao().getReceipts(pairingId.value, null),
+                triggers = database.triggerDao().getTriggers(pairingId.value, null),
+                theme = database.themeAndEffectDao().getTheme(pairingId.value),
+                platformEffects = database.themeAndEffectDao().getEffects(
+                    pairingId.value,
+                    DurablePlatformEffectState.entries.map { it.name },
+                    Int.MAX_VALUE,
+                ),
             )
         }
 
@@ -90,6 +113,11 @@ class RoomEbpDurableStore(
             drafts = raw.drafts.map { it.toDurableDraft(json) },
             outbox = decodedOutbox,
             issuedEventIds = raw.issuedEventIds.map { it.toIssuedEventId() },
+            reminders = raw.reminders.map { it.toDurableReminder(json) },
+            reminderReceipts = raw.reminderReceipts.map { it.toDurableReminderReceipt() },
+            triggers = raw.triggers.map { it.toDurableTrigger(json) },
+            theme = raw.theme?.toDurableTheme(json),
+            platformEffects = raw.platformEffects.map { it.toDurablePlatformEffect(json) },
         )
     }
 
@@ -141,6 +169,152 @@ class RoomEbpDurableStore(
                 currentCoroutineContext().ensureActive()
                 // Re-read, decode/seal outside Room, then rerun the effect-free reducer.
             }
+        }
+    }
+
+    /**
+     * Persist the process projection used by the current synchronous wire
+     * runtime as one encrypted Room transaction. Encryption and generation
+     * allocation happen before Room's writer is acquired; the transaction
+     * revalidates the active partition and then replaces only the outbox rows,
+     * its counters, and newly issued EventId guards.
+     *
+     * This narrow bridge can disappear when the wire runtime consumes the
+     * suspending SPI directly. It deliberately does not expose DAOs or
+     * plaintext envelopes to the Android composition root.
+     */
+    suspend fun replaceOutboxState(
+        pairingId: PairingId,
+        events: List<DurableOutboxEvent>,
+        nextQueueSequence: Long,
+        effectiveClockHighWaterMs: Long,
+        triggerRegistrations: List<DurableTriggerRegistration>? = null,
+    ) {
+        require(nextQueueSequence >= 1)
+        requireEbpTimestamp(effectiveClockHighWaterMs, "effectiveClockHighWaterMs")
+        require(events == events.sortedBy { it.queueSequence }) {
+            "Outbox events must be supplied in queue order"
+        }
+        require(events.map { it.queueSequence }.toSet().size == events.size) {
+            "Outbox queue sequences must be unique"
+        }
+        require(events.map { it.eventId }.toSet().size == events.size) {
+            "Outbox EventIds must be unique"
+        }
+        require(events.none { it.queueSequence >= nextQueueSequence }) {
+            "nextQueueSequence must be above every retained event"
+        }
+        triggerRegistrations?.let { triggers ->
+            require(triggers.map { it.identity to it.triggerId }.toSet().size == triggers.size) {
+                "Trigger identities must be unique within a replacement"
+            }
+            require(
+                triggers.map { it.identity to it.authoredOrdinal }.toSet().size == triggers.size,
+            ) { "Trigger authored ordinals must be unique within an identity" }
+            require(triggers.all { it.authoredOrdinal >= 0 }) {
+                "Trigger authored ordinals must be non-negative"
+            }
+        }
+
+        val aliases = checkNotNull(aliasResolver.resolve(pairingId)) {
+            "Pairing aliases must be provisioned before outbox persistence"
+        }
+        val sealed = events.map { event ->
+            val generation = generationSource.next()
+            require(STORAGE_GENERATION.matches(generation)) {
+                "StorageGenerationSource returned an invalid generation"
+            }
+            val metadata = event.toEnvelopeMetadata(pairingId, generation)
+            val envelope = envelopeCodec.encode(
+                payload = event.payload,
+                metadata = metadata,
+                payloadKeyAlias = aliases.payloadKeyAlias,
+            ).copyOf()
+            require(envelope.isNotEmpty()) {
+                "OutboxPayloadEnvelopeCodec returned an empty envelope"
+            }
+            SealedOutboxState(event, metadata, envelope)
+        }
+
+        database.withWriteTransaction {
+            val pairingState = database.readPairingStateRows(pairingId)
+            val pairing = pairingState.validatedPairing(pairingId)
+            check(pairing?.fence == PairingFence.ACTIVE) {
+                "Outbox persistence requires an active pairing"
+            }
+            val partition = checkNotNull(pairingState.partition)
+            check(partition.credentialKeyAlias == aliases.credentialKeyAlias)
+            check(partition.payloadKeyAlias == aliases.payloadKeyAlias)
+
+            // A queued trigger occurrence and the runtime record which consumes
+            // its throttle/one-shot eligibility are one crash-consistent fact.
+            // Callers which are not admitting a trigger leave this projection
+            // untouched by passing null.
+            triggerRegistrations?.let { triggers ->
+                database.triggerDao().deleteTriggers(pairingId.value, null)
+                triggers.forEach { trigger ->
+                    database.triggerDao().upsertRegistration(
+                        trigger.toRegistrationEntity(pairingId, json),
+                    )
+                    database.triggerDao().upsertRuntime(trigger.toRuntimeEntity(pairingId))
+                }
+            }
+
+            val previouslyQueuedIds = database.queueEventDao()
+                .getEventIndex(pairingId.value)
+                .mapTo(mutableSetOf()) { it.eventId }
+            database.queueEventDao().deleteAllEvents(pairingId.value)
+            sealed.forEach { prepared ->
+                database.queueEventDao().insertEventRow(
+                    prepared.event.toEntity(
+                        pairingId,
+                        prepared.metadata,
+                        prepared.envelope.copyOf(),
+                    ),
+                )
+                val prior = database.issuedEventIdDao().getIssuedEventId(
+                    pairingId.value,
+                    prepared.event.eventId.value,
+                )
+                if (prior == null) {
+                    database.issuedEventIdDao().insertIssuedEventId(
+                        IssuedEventId(
+                            eventId = prepared.event.eventId,
+                            issuedAtMs = prepared.event.occurredAtMs,
+                            reusableAfterMs = prepared.event.occurredAtMs +
+                                EVENT_ID_RETENTION_FLOOR_MS,
+                        ).toEntity(pairingId),
+                    )
+                } else if (prepared.event.eventId.value !in previouslyQueuedIds) {
+                    check(effectiveClockHighWaterMs >= prior.reusableAfterEpochMs) {
+                        "EventId was reused before its retention floor"
+                    }
+                    database.issuedEventIdDao().deleteIssuedEventId(
+                        pairingId.value,
+                        prepared.event.eventId.value,
+                    )
+                    database.issuedEventIdDao().insertIssuedEventId(
+                        IssuedEventId(
+                            eventId = prepared.event.eventId,
+                            issuedAtMs = prepared.event.occurredAtMs,
+                            reusableAfterMs = prepared.event.occurredAtMs +
+                                EVENT_ID_RETENTION_FLOOR_MS,
+                        ).toEntity(pairingId),
+                    )
+                }
+            }
+            val runtime = checkNotNull(pairingState.runtime).toPairingRuntime()
+            check(
+                database.pairingDao().updateRuntime(
+                    runtime.copy(
+                        nextQueueSequence = nextQueueSequence,
+                        effectiveClockHighWaterMs = maxOf(
+                            runtime.effectiveClockHighWaterMs,
+                            effectiveClockHighWaterMs,
+                        ),
+                    ).toEntity(pairingId),
+                ) == 1,
+            ) { "Pairing runtime changed during outbox persistence" }
         }
     }
 
@@ -210,6 +384,12 @@ class RoomEbpDurableStore(
     }
 }
 
+private data class SealedOutboxState(
+    val event: DurableOutboxEvent,
+    val metadata: OutboxEnvelopeMetadata,
+    val envelope: ByteArray,
+)
+
 private data class PairingStateRows(
     val partition: PairingPartitionEntity?,
     val revocation: PairingRevocationEntity?,
@@ -275,6 +455,11 @@ private data class RawRestore(
     val drafts: List<SurfaceDraftEntity>,
     val outbox: List<QueueEventEntity>,
     val issuedEventIds: List<IssuedEventIdEntity>,
+    val reminders: List<ReminderEntity>,
+    val reminderReceipts: List<ReminderReceiptEntity>,
+    val triggers: List<TriggerWithRuntime>,
+    val theme: PairingThemeEntity?,
+    val platformEffects: List<PlatformEffectEntity>,
 ) {
     fun requireConsistentOwnedState() {
         if (pairingState.partition?.state == PairingPartitionEntity.REVOKING) {
@@ -283,6 +468,11 @@ private data class RawRestore(
                     drafts.isEmpty() &&
                     outbox.isEmpty() &&
                     issuedEventIds.isEmpty() &&
+                    reminders.isEmpty() &&
+                    reminderReceipts.isEmpty() &&
+                    triggers.isEmpty() &&
+                    theme == null &&
+                    platformEffects.isEmpty() &&
                     pairingState.runtime?.toPairingRuntime() == PairingRuntime(),
             ) { "A REVOKING partition must contain only reset runtime state" }
             return
@@ -293,7 +483,12 @@ private data class RawRestore(
                 surfaces.isEmpty() &&
                 drafts.isEmpty() &&
                 outbox.isEmpty() &&
-                issuedEventIds.isEmpty(),
+                issuedEventIds.isEmpty() &&
+                reminders.isEmpty() &&
+                reminderReceipts.isEmpty() &&
+                triggers.isEmpty() &&
+                theme == null &&
+                platformEffects.isEmpty(),
         ) { "Pairing-owned rows cannot survive without a pairing partition" }
     }
 }
@@ -607,6 +802,132 @@ private class RoomWriteScope(
         database.issuedEventIdDao().deleteAllIssuedEventIds(pairingId.value)
     }
 
+    override suspend fun reminders(owner: String?): List<DurableReminder> {
+        checkOpen()
+        val rows = if (owner == null) database.reminderDao().getReminders(pairingId.value)
+        else database.reminderDao().getReminders(pairingId.value, owner)
+        return rows.map { it.toDurableReminder(json) }
+    }
+
+    override suspend fun putReminder(reminder: DurableReminder) {
+        checkOpen(); requireActivePairing()
+        database.reminderDao().upsertReminder(reminder.toEntity(pairingId, json))
+    }
+
+    override suspend fun deleteReminder(owner: String, reminderId: String) {
+        checkOpen(); requireActivePairing()
+        database.reminderDao().deleteReminder(pairingId.value, owner, reminderId)
+    }
+
+    override suspend fun deleteReminders(owner: String?) {
+        checkOpen(); requireActivePairing()
+        database.reminderDao().deleteReminders(pairingId.value, owner)
+    }
+
+    override suspend fun reminderReceipts(owner: String?): List<DurableReminderReceipt> {
+        checkOpen()
+        return database.reminderDao().getReceipts(pairingId.value, owner)
+            .map { it.toDurableReminderReceipt() }
+    }
+
+    override suspend fun putReminderReceipt(receipt: DurableReminderReceipt) {
+        checkOpen(); requireActivePairing()
+        val current = database.reminderDao().getReminders(pairingId.value, receipt.owner)
+            .firstOrNull { it.reminderId == receipt.reminderId }
+        require(current?.atEpochMs == receipt.atMs) {
+            "Reminder receipt requires its current reminder tuple"
+        }
+        database.reminderDao().insertReceipt(receipt.toEntity(pairingId))
+    }
+
+    override suspend fun deleteReminderReceipt(owner: String, reminderId: String, atMs: Long) {
+        checkOpen(); requireActivePairing()
+        database.reminderDao().deleteReceipt(pairingId.value, owner, reminderId, atMs)
+    }
+
+    override suspend fun deleteReminderReceipts(owner: String?) {
+        checkOpen(); requireActivePairing()
+        database.reminderDao().deleteReceipts(pairingId.value, owner)
+    }
+
+    override suspend fun triggers(identity: String?): List<DurableTriggerRegistration> {
+        checkOpen()
+        return database.triggerDao().getTriggers(pairingId.value, identity)
+            .map { it.toDurableTrigger(json) }
+    }
+
+    override suspend fun putTrigger(trigger: DurableTriggerRegistration) {
+        checkOpen(); requireActivePairing()
+        database.triggerDao().upsertRegistration(trigger.toRegistrationEntity(pairingId, json))
+        database.triggerDao().upsertRuntime(trigger.toRuntimeEntity(pairingId))
+    }
+
+    override suspend fun deleteTrigger(identity: String, triggerId: String) {
+        checkOpen(); requireActivePairing()
+        database.triggerDao().deleteTrigger(pairingId.value, identity, triggerId)
+    }
+
+    override suspend fun deleteTriggers(identity: String?) {
+        checkOpen(); requireActivePairing()
+        database.triggerDao().deleteTriggers(pairingId.value, identity)
+    }
+
+    override suspend fun theme(): DurableTheme? {
+        checkOpen()
+        return database.themeAndEffectDao().getTheme(pairingId.value)?.toDurableTheme(json)
+    }
+
+    override suspend fun putTheme(theme: DurableTheme) {
+        checkOpen(); requireActivePairing()
+        database.themeAndEffectDao().upsertTheme(theme.toEntity(pairingId, json))
+    }
+
+    override suspend fun deleteTheme() {
+        checkOpen(); requireActivePairing()
+        database.themeAndEffectDao().deleteTheme(pairingId.value)
+    }
+
+    override suspend fun platformEffects(
+        states: Set<DurablePlatformEffectState>,
+        limit: Int,
+    ): List<DurablePlatformEffect> {
+        checkOpen(); require(limit > 0)
+        if (states.isEmpty()) return emptyList()
+        return database.themeAndEffectDao().getEffects(
+            pairingId.value,
+            states.map { it.name },
+            limit,
+        ).map { it.toDurablePlatformEffect(json) }
+    }
+
+    override suspend fun platformEffect(effectId: String): DurablePlatformEffect? {
+        checkOpen()
+        return database.themeAndEffectDao().getEffect(pairingId.value, effectId)
+            ?.toDurablePlatformEffect(json)
+    }
+
+    override suspend fun putPlatformEffect(effect: DurablePlatformEffect) {
+        checkOpen(); requireActivePairing()
+        val duplicate = database.themeAndEffectDao().getEffectByDedupeKey(
+            pairingId.value,
+            effect.dedupeKey,
+        )
+        require(duplicate == null || duplicate.effectId == effect.effectId) {
+            "platform effect dedupe key already exists"
+        }
+        database.themeAndEffectDao().upsertEffect(effect.toEntity(pairingId, json))
+    }
+
+    override suspend fun deletePlatformEffect(effectId: String) {
+        checkOpen(); requireActivePairing()
+        database.themeAndEffectDao().deleteEffect(pairingId.value, effectId)
+    }
+
+    override suspend fun deleteAllPlatformEffects() {
+        checkOpen(); requireActivePairing()
+        database.themeAndEffectDao().deleteEffects(pairingId.value)
+    }
+
     private fun requirePreparation(value: PreparedOutboxAdmission): RoomOutboxPreparation {
         check(value === preparation) { "Prepared capability belongs to another write" }
         return checkNotNull(preparation)
@@ -823,6 +1144,110 @@ private fun IssuedEventId.toEntity(pairingId: PairingId) = IssuedEventIdEntity(
     issuedAtEpochMs = issuedAtMs,
     reusableAfterEpochMs = reusableAfterMs,
 )
+
+private fun ReminderEntity.toDurableReminder(json: Json) = DurableReminder(
+    owner = owner,
+    reminderId = reminderId,
+    atMs = atEpochMs,
+    authoredOrdinal = authoredOrdinal,
+    payload = json.decodeObject(payloadJson),
+)
+
+private fun DurableReminder.toEntity(pairingId: PairingId, json: Json) = ReminderEntity(
+    pairingId = pairingId.value,
+    owner = owner,
+    reminderId = reminderId,
+    atEpochMs = atMs,
+    authoredOrdinal = authoredOrdinal,
+    payloadJson = json.encodeObject(payload),
+)
+
+private fun ReminderReceiptEntity.toDurableReminderReceipt() = DurableReminderReceipt(
+    owner = owner,
+    reminderId = reminderId,
+    atMs = atEpochMs,
+    firedAtMs = firedAtEpochMs,
+)
+
+private fun DurableReminderReceipt.toEntity(pairingId: PairingId) = ReminderReceiptEntity(
+    pairingId = pairingId.value,
+    owner = owner,
+    reminderId = reminderId,
+    atEpochMs = atMs,
+    firedAtEpochMs = firedAtMs,
+)
+
+private fun TriggerWithRuntime.toDurableTrigger(json: Json) = DurableTriggerRegistration(
+    identity = identity,
+    triggerId = triggerId,
+    authoredOrdinal = authoredOrdinal,
+    entry = json.decodeObject(entryJson),
+    canonicalIdentity = canonicalIdentity,
+    throttleFloorMs = throttleFloorEpochMs,
+    oneShotCompleted = oneShotCompleted,
+    scheduleAnchorMs = scheduleAnchorEpochMs,
+    lastFireFloorMs = lastFireFloorEpochMs,
+    bootGeneration = bootGeneration,
+)
+
+private fun DurableTriggerRegistration.toRegistrationEntity(pairingId: PairingId, json: Json) =
+    TriggerRegistrationEntity(
+        pairingId = pairingId.value,
+        identity = identity,
+        triggerId = triggerId,
+        authoredOrdinal = authoredOrdinal,
+        entryJson = json.encodeObject(entry),
+        canonicalIdentity = canonicalIdentity,
+    )
+
+private fun DurableTriggerRegistration.toRuntimeEntity(pairingId: PairingId) =
+    TriggerRuntimeEntity(
+        pairingId = pairingId.value,
+        identity = identity,
+        triggerId = triggerId,
+        throttleFloorEpochMs = throttleFloorMs,
+        oneShotCompleted = oneShotCompleted,
+        scheduleAnchorEpochMs = scheduleAnchorMs,
+        lastFireFloorEpochMs = lastFireFloorMs,
+        bootGeneration = bootGeneration,
+    )
+
+private fun PairingThemeEntity.toDurableTheme(json: Json) = DurableTheme(
+    payload = json.decodeObject(payloadJson),
+    acceptedAtMs = acceptedAtEpochMs,
+)
+
+private fun DurableTheme.toEntity(pairingId: PairingId, json: Json) = PairingThemeEntity(
+    pairingId = pairingId.value,
+    payloadJson = json.encodeObject(payload),
+    acceptedAtEpochMs = acceptedAtMs,
+)
+
+private fun PlatformEffectEntity.toDurablePlatformEffect(json: Json) = DurablePlatformEffect(
+    effectId = effectId,
+    kind = kind,
+    payload = json.decodeObject(payloadJson),
+    dedupeKey = dedupeKey,
+    state = DurablePlatformEffectState.valueOf(state),
+    createdAtMs = createdAtEpochMs,
+    attemptCount = attemptCount,
+    claimedAtMs = claimedAtEpochMs,
+    completedAtMs = completedAtEpochMs,
+)
+
+private fun DurablePlatformEffect.toEntity(pairingId: PairingId, json: Json) =
+    PlatformEffectEntity(
+        effectId = effectId,
+        pairingId = pairingId.value,
+        kind = kind,
+        payloadJson = json.encodeObject(payload),
+        dedupeKey = dedupeKey,
+        state = state.name,
+        createdAtEpochMs = createdAtMs,
+        attemptCount = attemptCount,
+        claimedAtEpochMs = claimedAtMs,
+        completedAtEpochMs = completedAtMs,
+    )
 
 private fun String.toDurablePolicy() = when (this) {
     QueueEventEntity.POLICY_QUEUE -> DurableOutboxPolicy.QUEUE

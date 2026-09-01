@@ -24,9 +24,16 @@ unit; a rung lands only with its exit gate green.
 Interleave W2 with W4/W5 client work as device access allows; the ladder
 orders gates, not calendar.
 
-## Port manifest (from the divergence map)
+## Historical reuse assessment (from the divergence map)
 
-**Kotlin port-safe:** all `Sdui*.kt` renderers, `ThemeBridge`,
+This assessment records the expected adaptation risk when it was written; it
+is not an allowlist. Code from any POC may be copied, cherry-picked, merged,
+ported, or adapted. Reused code must be audited against the current normative
+EBP specification and current architecture. If desired protocol behavior is
+not normatively defined, amend the specification and align its contract
+projection, goldens, and affected conformance tests before relying on it.
+
+**Lower-risk Kotlin reuse candidates:** all `Sdui*.kt` renderers, `ThemeBridge`,
 `SyntaxHighlight`, `IconMap`, `RadialMenu`, `ReorderableList`,
 `NotificationRenderer`, widget/tile chrome, `EmacsWaker`,
 `DeviceCapabilities` (unwrap results), app module. **Keep-logic:**
@@ -34,17 +41,19 @@ orders gates, not calendar.
 concept, `TriggerHost` gate/interpolation logic, `StateSampler`,
 `CalendarTriggers`.
 
-**elisp port-safe:** every ABOVE-BOUNDARY module (org layer, files, shell,
-demo, settings, apps, satellites) and WIRE-ADJACENT builders (widgets,
-hypertext, buffer, keymap, sections, results, tablist, spec, source,
+**Lower-risk Elisp reuse candidates:** every ABOVE-BOUNDARY module (org layer,
+files, shell, demo, settings, apps, satellites) and WIRE-ADJACENT builders
+(widgets, hypertext, buffer, keymap, sections, results, tablist, spec, source,
 async, comint); `jetpacs-lint` re-pointed at format 6; `build-contract` /
 `build-bundle` pattern retained.
 
-**Must-rebuild (never port):** poc-v1 `jetpacs.el` transport/auth,
+**Higher-risk reuse candidates:** poc-v1 `jetpacs.el` transport/auth,
 `jetpacs-sync.el` message layer, `jetpacs-minibuffer.el` dialog layer,
 `jetpacs-complete.el` direction, Kotlin `JetpacsAuth`,
 `JetpacsConnection`, `ActionReceiver`/queue schema, `JetpacsDialogState`,
-`EditorSync` message layer.
+`EditorSync` message layer. Their older designs were expected to require more
+adaptation at the protocol boundary; this classification does not prohibit
+reusing any part of them.
 
 ## Spec-feedback loop
 

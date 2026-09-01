@@ -32,35 +32,44 @@ accessibility contract. Jetpacs authors the envelope with
 `jetpacs-with-semantics`, `jetpacs-semantic-collection`,
 `jetpacs-semantic-collection-item`, and `jetpacs-semantic-action`.
 
-## Lineage and walls
+## Lineage and reusable sources
+
+The tags below are immutable historical snapshots, not code-use boundaries.
+Code from every lineage may be copied, cherry-picked, merged, ported, or
+adapted. Its lineage does not establish correctness: every reused part must be
+built and verified against the current normative
+`../ebp-poc/ebp/SPEC.md`. When desired protocol behavior is not defined there,
+expand the normative rules and align the contract projection, goldens, and
+affected conformance tests before treating the implementation as compliant.
 
 - **`poc/v1`** — the immutable first-PoC tag, closed by its divergence-map
-  audit. It is guidance and organ donor: inspect it with `git show`, port from
-  it, and do not merge it.
+  audit and retained as reusable implementation evidence.
 - **`poc/v2`** — the immutable POC 2 tag, closed at
   the end of the M3 catalog sprint and cherry-picked commit-for-commit into
-  this branch. Like poc-v1 it is now reference, not a merge source.
+  this branch.
 - **`poc/v3-pre-split`** — the last committed POC 3 snapshot before the
   multi-repository extraction working tree.
 - **`slop-fork/main`** (this standalone repository) — the current Room-first
   architecture carrying the ported POC 2 sprint and repository split.
-- **`main`** — the clean-room hand-rebuild track. Sealed from both
-  slop-fork lines; nothing here is merged there and nothing there is read
-  from here.
+- **`main`** — the spec-driven implementation track. It may reuse code from
+  any of the preceding lineages under the same conformance rule.
 
 ## Rules of construction
 
 1. **The spec remains the cross-platform contract.** First prove required
-   behavior in implementation and backend contracts against the current spec.
-   Then audit any mismatch: repair the implementation when the spec already
-   covers it, or expand the spec only in language- and platform-agnostic terms.
+   behavior against the current spec. Repair the implementation when the spec
+   already covers a mismatch. When desired cross-platform behavior is missing,
+   expand the normative spec in language- and platform-agnostic terms, align
+   its projection and conformance witnesses, and then conform the
+   implementation.
 2. **Conformance before features.** A rung lands only with its `ebp`
    fixtures green: the wire Goldens (`../ebp-poc/ebp/goldens/wire/` incl. the §9.3
    known-answer vector), the frame/widget/hypertext corpora, and the §24.6
    adversarial vectors that apply to the rung.
-3. **Port, don't rewrite, above the boundary.** Modules classified
-   port-safe in the divergence map come across as ports with vocabulary
-   updates only. Rewriting them is scope creep.
+3. **Reuse by fitness, not lineage.** Any earlier implementation is eligible
+   for reuse. Prefer adapting code that already fits the current specification
+   and architecture; treat historical divergence maps and port manifests as
+   audit guidance, never as reuse allowlists or prohibitions.
 4. **The POC contract is authored in `../ebp-poc/ebp/`.** This repo generates its wire
    vocabulary from `../ebp-poc/ebp/contract.json` and byte-compares its projection
    back (the poc-v1 drift machinery pattern is kept).

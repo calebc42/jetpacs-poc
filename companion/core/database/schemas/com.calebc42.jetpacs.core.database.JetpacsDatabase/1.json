@@ -2,7 +2,7 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "10285bf1a83b0fe8d7d8ef08d955336d",
+    "identityHash": "47a78b19acca2d6bb93fb86b421065f3",
     "entities": [
       {
         "tableName": "pairing_partitions",
@@ -601,11 +601,487 @@
             ]
           }
         ]
+      },
+      {
+        "tableName": "reminders",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pairing_id` TEXT NOT NULL, `owner` TEXT NOT NULL, `reminder_id` TEXT NOT NULL, `at_epoch_ms` INTEGER NOT NULL, `authored_ordinal` INTEGER NOT NULL, `payload_json` TEXT NOT NULL, PRIMARY KEY(`pairing_id`, `owner`, `reminder_id`), FOREIGN KEY(`pairing_id`) REFERENCES `pairing_partitions`(`pairing_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "pairingId",
+            "columnName": "pairing_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reminderId",
+            "columnName": "reminder_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMs",
+            "columnName": "at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authoredOrdinal",
+            "columnName": "authored_ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pairing_id",
+            "owner",
+            "reminder_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reminders_pairing_id_owner_authored_ordinal",
+            "unique": false,
+            "columnNames": [
+              "pairing_id",
+              "owner",
+              "authored_ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reminders_pairing_id_owner_authored_ordinal` ON `${TABLE_NAME}` (`pairing_id`, `owner`, `authored_ordinal`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "pairing_partitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "pairing_id"
+            ],
+            "referencedColumns": [
+              "pairing_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "reminder_receipts",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pairing_id` TEXT NOT NULL, `owner` TEXT NOT NULL, `reminder_id` TEXT NOT NULL, `at_epoch_ms` INTEGER NOT NULL, `fired_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`pairing_id`, `owner`, `reminder_id`, `at_epoch_ms`), FOREIGN KEY(`pairing_id`, `owner`, `reminder_id`) REFERENCES `reminders`(`pairing_id`, `owner`, `reminder_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "pairingId",
+            "columnName": "pairing_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "owner",
+            "columnName": "owner",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "reminderId",
+            "columnName": "reminder_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "atEpochMs",
+            "columnName": "at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "firedAtEpochMs",
+            "columnName": "fired_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pairing_id",
+            "owner",
+            "reminder_id",
+            "at_epoch_ms"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_reminder_receipts_pairing_id_owner_reminder_id",
+            "unique": false,
+            "columnNames": [
+              "pairing_id",
+              "owner",
+              "reminder_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_reminder_receipts_pairing_id_owner_reminder_id` ON `${TABLE_NAME}` (`pairing_id`, `owner`, `reminder_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "reminders",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "pairing_id",
+              "owner",
+              "reminder_id"
+            ],
+            "referencedColumns": [
+              "pairing_id",
+              "owner",
+              "reminder_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "trigger_registrations",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pairing_id` TEXT NOT NULL, `identity` TEXT NOT NULL, `trigger_id` TEXT NOT NULL, `authored_ordinal` INTEGER NOT NULL, `entry_json` TEXT NOT NULL, `canonical_identity` TEXT NOT NULL, PRIMARY KEY(`pairing_id`, `identity`, `trigger_id`), FOREIGN KEY(`pairing_id`) REFERENCES `pairing_partitions`(`pairing_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "pairingId",
+            "columnName": "pairing_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identity",
+            "columnName": "identity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerId",
+            "columnName": "trigger_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "authoredOrdinal",
+            "columnName": "authored_ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "entryJson",
+            "columnName": "entry_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "canonicalIdentity",
+            "columnName": "canonical_identity",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pairing_id",
+            "identity",
+            "trigger_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_trigger_registrations_pairing_id_identity_authored_ordinal",
+            "unique": false,
+            "columnNames": [
+              "pairing_id",
+              "identity",
+              "authored_ordinal"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_trigger_registrations_pairing_id_identity_authored_ordinal` ON `${TABLE_NAME}` (`pairing_id`, `identity`, `authored_ordinal`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "pairing_partitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "pairing_id"
+            ],
+            "referencedColumns": [
+              "pairing_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "trigger_runtime",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pairing_id` TEXT NOT NULL, `identity` TEXT NOT NULL, `trigger_id` TEXT NOT NULL, `throttle_floor_epoch_ms` INTEGER, `one_shot_completed` INTEGER NOT NULL, `schedule_anchor_epoch_ms` INTEGER, `last_fire_floor_epoch_ms` INTEGER, `boot_generation` TEXT, PRIMARY KEY(`pairing_id`, `identity`, `trigger_id`), FOREIGN KEY(`pairing_id`, `identity`, `trigger_id`) REFERENCES `trigger_registrations`(`pairing_id`, `identity`, `trigger_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "pairingId",
+            "columnName": "pairing_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "identity",
+            "columnName": "identity",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerId",
+            "columnName": "trigger_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "throttleFloorEpochMs",
+            "columnName": "throttle_floor_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "oneShotCompleted",
+            "columnName": "one_shot_completed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "scheduleAnchorEpochMs",
+            "columnName": "schedule_anchor_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "lastFireFloorEpochMs",
+            "columnName": "last_fire_floor_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "bootGeneration",
+            "columnName": "boot_generation",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pairing_id",
+            "identity",
+            "trigger_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_trigger_runtime_pairing_id_identity_trigger_id",
+            "unique": false,
+            "columnNames": [
+              "pairing_id",
+              "identity",
+              "trigger_id"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_trigger_runtime_pairing_id_identity_trigger_id` ON `${TABLE_NAME}` (`pairing_id`, `identity`, `trigger_id`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "trigger_registrations",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "pairing_id",
+              "identity",
+              "trigger_id"
+            ],
+            "referencedColumns": [
+              "pairing_id",
+              "identity",
+              "trigger_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "pairing_themes",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pairing_id` TEXT NOT NULL, `payload_json` TEXT NOT NULL, `accepted_at_epoch_ms` INTEGER NOT NULL, PRIMARY KEY(`pairing_id`), FOREIGN KEY(`pairing_id`) REFERENCES `pairing_partitions`(`pairing_id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "pairingId",
+            "columnName": "pairing_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "acceptedAtEpochMs",
+            "columnName": "accepted_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pairing_id"
+          ]
+        },
+        "foreignKeys": [
+          {
+            "table": "pairing_partitions",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "pairing_id"
+            ],
+            "referencedColumns": [
+              "pairing_id"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "platform_effects",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`pairing_id` TEXT NOT NULL, `effect_id` TEXT NOT NULL, `kind` TEXT NOT NULL, `payload_json` TEXT NOT NULL, `dedupe_key` TEXT NOT NULL, `state` TEXT NOT NULL, `created_at_epoch_ms` INTEGER NOT NULL, `attempt_count` INTEGER NOT NULL, `claimed_at_epoch_ms` INTEGER, `completed_at_epoch_ms` INTEGER, PRIMARY KEY(`pairing_id`, `effect_id`))",
+        "fields": [
+          {
+            "fieldPath": "pairingId",
+            "columnName": "pairing_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "effectId",
+            "columnName": "effect_id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "kind",
+            "columnName": "kind",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "payloadJson",
+            "columnName": "payload_json",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dedupeKey",
+            "columnName": "dedupe_key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "state",
+            "columnName": "state",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "createdAtEpochMs",
+            "columnName": "created_at_epoch_ms",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "attemptCount",
+            "columnName": "attempt_count",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "claimedAtEpochMs",
+            "columnName": "claimed_at_epoch_ms",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "completedAtEpochMs",
+            "columnName": "completed_at_epoch_ms",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "pairing_id",
+            "effect_id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_platform_effects_pairing_id_state_created_at_epoch_ms",
+            "unique": false,
+            "columnNames": [
+              "pairing_id",
+              "state",
+              "created_at_epoch_ms"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_platform_effects_pairing_id_state_created_at_epoch_ms` ON `${TABLE_NAME}` (`pairing_id`, `state`, `created_at_epoch_ms`)"
+          },
+          {
+            "name": "index_platform_effects_pairing_id_dedupe_key",
+            "unique": true,
+            "columnNames": [
+              "pairing_id",
+              "dedupe_key"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_platform_effects_pairing_id_dedupe_key` ON `${TABLE_NAME}` (`pairing_id`, `dedupe_key`)"
+          }
+        ]
+      },
+      {
+        "tableName": "app_runtime",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`singleton_id` INTEGER NOT NULL, `background_bridge_enabled` INTEGER NOT NULL, PRIMARY KEY(`singleton_id`))",
+        "fields": [
+          {
+            "fieldPath": "singletonId",
+            "columnName": "singleton_id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "backgroundBridgeEnabled",
+            "columnName": "background_bridge_enabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "singleton_id"
+          ]
+        }
       }
     ],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '10285bf1a83b0fe8d7d8ef08d955336d')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, '47a78b19acca2d6bb93fb86b421065f3')"
     ]
   }
 }

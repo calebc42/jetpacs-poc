@@ -18,7 +18,7 @@ import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.ActionAdmissionOutcome
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.CompanionConfig
-import com.calebc42.ebp.wire.EbpAuth
+import com.calebc42.ebp.wire.CompanionProofProvider
 import com.calebc42.ebp.wire.EditorSeed
 import com.calebc42.ebp.wire.EditorSession
 import com.calebc42.ebp.wire.InputDisplay
@@ -47,16 +47,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
@@ -208,6 +208,8 @@ internal class AuthenticatedConnectionTracker<T : Any> {
 
 class DeviceBridge(
     private val appContext: android.content.Context,
+    private val stores: CompanionStores,
+    private val proofProvider: CompanionProofProvider,
     /** SPEC 14.4: the shown surface's ID travels with its spec, so an
      * event names the surface the action actually occurred in. */
     private val onSurfaceChanged: (String, JsonObject?) -> Unit,
@@ -236,22 +238,21 @@ class DeviceBridge(
     private val onOpenSettings: () -> Unit = {},
 ) : MaterialRendererHost {
 
+    internal val context: android.content.Context get() = appContext
+
     // SPEC 13.1/15.1/18.6: the durable stores are process-wide singletons
     // (CompanionStores), shared with cold-started manifest receivers.
-    // `store` is lazy because SurfaceStore's init reads and revalidates the
-    // whole surfaces file, and since RF-0.5a this constructor runs in
-    // Application.onCreate on the main thread at every process start —
-    // including broadcast-only cold starts that never render a surface.
-    // First touch is on a bridge/connection thread (serve(), listeners),
-    // the same place the cached-theme read already lives.
-    val store by lazy { CompanionStores.surfaces(appContext) }
-    val queue = CompanionStores.queue(appContext)
-    private val reminders = CompanionStores.reminders(appContext)
-    private val triggers = CompanionStores.triggers(appContext)
+    // The composition root initializes these projections from Room on its IO
+    // dispatcher before exposing this bridge, so these lookups cannot turn
+    // Application.onCreate into a main-thread database read.
+    val store by lazy { stores.surfaces() }
+    val queue = stores.queue()
+    private val reminders = stores.reminders()
+    private val triggers = stores.triggers()
     // SPEC 21: the device-lifetime firing service (process-wide). This engine
-    // attaches to it as the LiveSession in its constructor; the sources feed it
-    // directly (JetpacsApplication), independent of any connection.
-    private val firing = CompanionStores.firing(appContext)
+    // attaches to it as the LiveSession in its constructor; cold receivers and
+    // the FGS-owned sources feed it independently of any connection.
+    private val firing = stores.firing()
     @Volatile private var current: Socket? = null
     /** Exact engine-to-socket ownership used by password deadline aborts. */
     private val engineTransports = ConcurrentHashMap<CompanionEngine, Socket>()
@@ -270,9 +271,8 @@ class DeviceBridge(
     private val config = CompanionConfig(
         serverName = "jetpacs-companion",
         serverVersion = "0.1.0-w4",
-        pairings = mapOf(
-            JETPACS_PAIRING_ID to EbpAuth.decodePairingToken(JETPACS_PAIRING_TOKEN),
-        ),
+        pairings = emptyMap(),
+        proofProvider = proofProvider,
         supportedCapabilities = setOf("theme", "surfaces.dialog", "presentation.toast",
             "presentation.snackbar",
             "presentation.pie-menu", "reminders.owner", "surfaces.notification",
@@ -331,31 +331,17 @@ class DeviceBridge(
         capabilityHandler = AppCapabilities.handler(appContext, 65_536),
     )
 
-    // SPEC 18.4: the theme survives disconnects and process restarts — like a
-    // cached surface, the device keeps looking like your Emacs while it is away.
-    private val themeFile = File(appContext.filesDir, "ebp-theme.json")
+    private fun loadTheme(): JsonObject? = stores.theme().load()
 
-    // C6: a PERSISTENCE read, so it parses with the plain lenient parser and
-    // never with the wire's strict frame parser — an `ebp-theme.json` written
-    // by a pre-upgrade (org.json) build must still load. The catch below
-    // already covers the new failure kinds (SerializationException,
-    // IllegalArgumentException, and the cast's ClassCastException).
-    private fun loadTheme(): JsonObject? =
-        try {
-            if (themeFile.exists())
-                Json.parseToJsonElement(themeFile.readText()) as JsonObject
-            else null
-        } catch (e: Exception) { null }
+    private fun saveTheme(payload: JsonObject) = stores.theme().replace(payload)
 
-    private fun saveTheme(payload: JsonObject) {
-        try {
-            val tmp = File(themeFile.parentFile, "ebp-theme.json.tmp")
-            tmp.writeText(payload.toString())
-            tmp.renameTo(themeFile) // atomic swap; a torn write never survives
-        } catch (e: Exception) { /* best-effort; a lost theme re-syncs next run */ }
-    }
+    private val running = AtomicBoolean(false)
+    @Volatile private var listenerServer: ServerSocket? = null
+    @Volatile private var listenerThread: Thread? = null
 
-    fun start() = thread(name = "ebp-bridge", isDaemon = true) {
+    fun start() {
+        if (!running.compareAndSet(false, true)) return
+        listenerThread = thread(name = "ebp-bridge", isDaemon = true) {
         // Deliver the cached theme before any session so a reconnecting device
         // renders in the mirrored palette immediately (§18.4 persistence).
         runCatching { loadTheme()?.let { onTheme(it) } }
@@ -389,13 +375,14 @@ class DeviceBridge(
         // in the kernel backlog forever (awaiting-nonce on the client) with no
         // `ebp-conn` thread to service them.  Own each listener with `use` and
         // recreate it after a transient bind/accept failure instead.
-        while (!Thread.currentThread().isInterrupted) {
+        while (running.get() && !Thread.currentThread().isInterrupted) {
             try {
                 ServerSocket().use { server ->
+                    listenerServer = server
                     server.reuseAddress = true
                     // SPEC 5.2: bind only a loopback interface.
                     server.bind(InetSocketAddress("127.0.0.1", 8765))
-                    while (true) {
+                    while (running.get()) {
                         val socket = server.accept()
                         val generation = acceptedConnectionGeneration.incrementAndGet()
                         // SPEC 5.2: one session at a time; the newcomer
@@ -435,6 +422,7 @@ class DeviceBridge(
                 Thread.currentThread().interrupt()
                 return@thread
             } catch (e: Exception) {
+                if (!running.get()) return@thread
                 // Closing the owned ServerSocket above prevents an orphaned
                 // bound port. A short retry keeps process startup and a
                 // transient accept failure from making reconnect impossible.
@@ -445,20 +433,37 @@ class DeviceBridge(
                     Thread.currentThread().interrupt()
                     return@thread
                 }
+            } finally {
+                listenerServer = null
             }
         }
+        }
+    }
+
+    /** Stop the listener and current transport; the FGS owns restart policy. */
+    fun stop() {
+        if (!running.compareAndSet(true, false)) return
+        listenerServer?.runCatching { close() }
+        current?.runCatching { close() }
+        listenerThread?.interrupt()
+        val generation = acceptedConnectionGeneration.incrementAndGet()
+        variantEngineRoute.advanceTo(generation) { engine ->
+            engine.close("background bridge disabled")
+        }
+        listenerThread = null
     }
 
     private val variantEngineRoute = VariantEngineRoute<CompanionEngine>()
     private val engine: CompanionEngine? get() = variantEngineRoute.current()
 
-    // Renderer hooks arrive on the Compose main thread; socket writes are
-    // prohibited there (NetworkOnMainThreadException). One dispatch thread
-    // also preserves SPEC 14.6 state-before-action ordering by itself.
-    private val dispatchExecutor =
-        java.util.concurrent.Executors.newSingleThreadExecutor { r ->
-            Thread(r, "ebp-dispatch").apply { isDaemon = true }
+    // Renderer, receiver, trigger, and socket entry points all share the same
+    // bounded process actor. The Executor facade keeps the renderer host API
+    // synchronous without creating a second writer.
+    private val dispatchExecutor = Executor { command ->
+        if (!stores.submit { command.run() }) {
+            onQueueProblem("command actor overloaded")
         }
+    }
 
 
     // SPEC 14.1 `confirm`: the descriptor asks the Companion to have the user
@@ -1474,7 +1479,7 @@ class DeviceBridge(
         // SPEC 18.6: reconcile platform alarms with the accepted set (cancel
         // removed, arm new/changed non-fired).
         engine.reminderListener = { owner, newSet, priorSet ->
-            Notifications.scheduleReminders(appContext, owner, newSet, priorSet)
+            Notifications.scheduleReminders(appContext, stores, owner, newSet, priorSet)
         }
         engine.dialogListener = { id, spec -> onDialogChanged(id, spec) }
         // SPEC 19.4 (T2/LD-5): every inbound edit.apply republishes the
@@ -1526,7 +1531,7 @@ class DeviceBridge(
         // before UI dispatch can observe this engine and before any welcome
         // bytes can be read from the peer.
         if (!variantEngineRoute.activate(generation, engine) {
-                CompanionStores.setLiveSession(it)
+                stores.setLiveSession(it)
             }) {
             engineTransports.remove(engine)
             engine.close("superseded before activation")
@@ -1546,7 +1551,9 @@ class DeviceBridge(
             while (engine.state != SessionState.CLOSED) {
                 val n = input.read(buffer)
                 if (n < 0) break
-                engine.feed(buffer, 0, n)
+                kotlinx.coroutines.runBlocking {
+                    stores.commandActor.execute { engine.feed(buffer, 0, n) }
+                }
                 if (engine === variantEngineRoute.current()) {
                     _editorConnectionPhase.value = editorConnectionPhaseOf(engine.state)
                 }
@@ -1564,14 +1571,18 @@ class DeviceBridge(
             // next session's replay is never wedged (review P0). LD-18:
             // best-effort — a throw here must not skip clearLiveSession and
             // socket.close(), which would leak the FD and park a dead engine.
-            runCatching { engine.close("transport closed") }
+            runCatching {
+                kotlinx.coroutines.runBlocking {
+                    stores.commandActor.execute { engine.close("transport closed") }
+                }
+            }
             // Atomic compare-and-clear FIRST: only if a newer connection
             // has not already superseded this one in the slot (SPEC 5.2
             // newest-wins) — and the shared display maps are wiped ONLY
             // on that same verdict (R5 review: they are process-wide,
             // so a superseded connection's delayed teardown was erasing
             // the successor session's mirrors, offers, and docs).
-            val wasCurrentSession = CompanionStores.clearLiveSession(engine)
+            val wasCurrentSession = stores.clearLiveSession(engine)
             if (wasCurrentSession) {
                 // SPEC 19 closes the WIRE sessions. The rendered snapshot is
                 // deliberately retained only in process memory so a cached

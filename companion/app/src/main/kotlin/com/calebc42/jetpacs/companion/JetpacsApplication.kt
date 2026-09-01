@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Process-lifetime bootstrap (SPEC 21, RF-0.5a). The firing service, trigger
-// sources, durable recovery, AND the loopback listener come up on process
-// start regardless of MainActivity — so triggers fire, throttle survives,
-// pending-local occurrences resolve, and Emacs can dial in, even when the
-// companion UI was never opened (a cold start from an alarm or a boot
-// receiver). Before RF-0.5a the socket was the one process-lifetime concern
-// this bootstrap omitted (audit P1-4): the listener was merely *started* from
-// MainActivity, so an alarm cold-start revived triggers but left Emacs
-// unreachable, and every rotation built a second bridge that lost the bind
-// race while the first pushed into a destroyed Activity (audit P2-1).
+// Process-lifetime composition root (SPEC 21, RF-0.5a). It constructs exactly
+// one Room store, command actor, and bridge. The user-enabled foreground
+// service owns bridge/listener lifetime; alarms and receivers can still use
+// the same actor and durable projections without claiming a live connection.
 package com.calebc42.jetpacs.companion
 
 import android.app.ActivityManager
@@ -79,6 +73,9 @@ class JetpacsApplication : Application() {
 
     lateinit var bridge: DeviceBridge
         private set
+    lateinit var container: JetpacsProcessContainer
+        private set
+    val stores: CompanionStores get() = container.stores
 
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -90,23 +87,14 @@ class JetpacsApplication : Application() {
         val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
         com.calebc42.glasspane.material3.ImageCache.configure(
             am.memoryClass.toLong() * 1024 * 1024 / 8)
-        val firing = CompanionStores.firing(this)
-        // SPEC 21.2: resolve anything a crash left mid-transaction first.
-        firing.recover()
-        // Sticky sources seed the current state; then baseline silently so a
-        // change that happened while dead does not fire (SPEC 21.5).
-        CompanionStores.triggerSources(this).start()
-        firing.armAllBaselines()
-        // SPEC 18.6/21.5: a cold start (after force-stop or reboot) lost the
-        // platform alarms — re-arm reminders + time triggers from durable state.
-        Notifications.rearmAllReminders(this)
-        TriggerAlarms.reschedule(this)
-        // RF-0.5a: the listener last, after durable recovery, so the first
-        // session to dial sees recovered state. Toasts ride the main looper
-        // with the application context — the bridge's callbacks reference
-        // only this process singleton, never an Activity.
+        container = JetpacsProcessContainer.create(this)
+        // The best-effort FGS owns listener lifetime. This process root constructs the
+        // bridge once, but does not claim that process existence means the
+        // listener or an Emacs session is alive.
         bridge = DeviceBridge(
             this,
+            stores = container.stores,
+            proofProvider = container.proofProvider,
             onSurfaceChanged = { surface, spec ->
                 appSurfaces.publish(surface, spec)
             },
@@ -137,6 +125,5 @@ class JetpacsApplication : Application() {
             },
             onOpenSurface = ::requestSurfaceOpen,
             onOpenSettings = { _settingsOpen.value = true })
-        bridge.start()
     }
 }

@@ -1,6 +1,54 @@
 # POC 3 Room 3 rebuild plan
 
-Status: accepted Android persistence subplan, revised 2026-08-03.
+Status: accepted Android persistence plan; Room-only composition/API 34 cutover
+implemented 2026-08-31. The native-suspending wire migration remains a later
+refinement described below.
+
+## Implemented production cutover (2026-08-31)
+
+- Android 14/API 34 is the minimum across the app, KMP store/wire artifact,
+  Foundation renderer, Glasspane Material renderer, and Jetpacs renderer.
+- `JetpacsApplication` constructs one new `jetpacs.db`, one
+  `RoomEbpDurableStore`, one bounded `EbpCommandActor`, and one bridge. The
+  production graph has no `File*Backing` or JSON-store caller.
+- The POC credential is imported transiently into an operation-only
+  AndroidKeyStore HMAC handle; Room retains only purpose-separated aliases.
+- Surfaces/drafts, queue/EventId guards, reminders/receipts, triggers/runtime,
+  theme, platform effects, revocation state, and the user-enabled bridge policy
+  are in schema v1. Queue payloads are AES-GCM sealed with a distinct Keystore
+  key.
+- A queue/wake trigger occurrence commits its queue projection and consumed
+  trigger runtime together. A reminder fire commits its receipt and idempotent
+  notification work together; cold-start reconciliation reclaims incomplete
+  notification work.
+- A user-enabled `specialUse` foreground service owns the loopback listener as
+  a best-effort availability hint. Its notification explicitly does not claim
+  that the process or Emacs connection is alive.
+- Exact alarms use `SCHEDULE_EXACT_ALARM` when granted and
+  `setAndAllowWhileIdle` otherwise. API 34 has a dedicated managed-device CI
+  smoke gate for Room, Keystore, and the private FGS declaration.
+- Old JSON stores and the disposable prototype database are neither read nor
+  deleted. Emacs re-pushes authoritative state into the clean database.
+
+The current `RoomStoreBackings` file is a deliberately narrow compatibility
+adapter for `:wire`'s synchronous whole-snapshot APIs. It runs only behind the
+single actor and all projections are initialized on the composition root's I/O
+dispatcher, but it still blocks while awaiting Room and therefore is not the
+final native-suspending shape described under the coroutine model.
+
+## Grove incorporation decision
+
+Grove remains an Elisp-applet/UI reference, not a source of Jetpacs backend
+architecture. Its JSON repositories, search model, application navigation, and
+domain-specific Kotlin stay out of the platform. The reusable Android host
+pattern adopted in this cutover is capability-checked exact-alarm scheduling
+with an inexact Doze-capable fallback. The foreground bridge service is likewise
+a Jetpacs platform capability with deliberately honest best-effort semantics.
+
+Reusable visual vocabulary continues to belong in the EBP core profiles or the
+`jetpacs.components` Foundation extension so Grove can consume it from Elisp.
+Glance is the next separate renderer/profile slice over the same Room
+projections; it is not coupled to this storage cutover.
 
 This plan supersedes the fork-forward cache adapter described by the original
 POC 3 scaffold. POC 3 is a clean rebuild of Jetpacs around Room 3. It preserves
@@ -206,11 +254,10 @@ separate key and alias; keys are never reused across purposes.
 | `queue_events` | `(pairing_id, queue_seq)` key, pairing-local unique EventId, encrypted complete payload, plaintext byte count, policy, expiry, dedupe key, pending-local state, and trigger attribution. In-flight and replay-pause state are runtime-only. |
 | `reminders` | `(pairing_id, owner, reminder_id)` key, `at_ms`, authored order, and complete normalized payload. Alarm/notification identities include the pairing. |
 | `reminder_receipts` | Pairing/owner/id/`at_ms` fired tuple. An unchanged tuple preserves it; removal or changed `at_ms` erases it. |
-| `trigger_registrations` | `(pairing_id, trigger_id)` key, authored order, normalized entry JSON, type/policy lookup fields, and canonical hash. |
+| `trigger_registrations` | `(pairing_id, identity, trigger_id)` key, authored order, normalized entry JSON, and canonical identity. |
 | `trigger_runtime` | Nullable throttle floor, one-shot completion, repeating anchor and last-fire floor, and boot-generation receipt. SQL null remains absence, never zero. Silent baselines remain runtime-only. |
-| `trigger_effect_progress` | Frozen substituted local effects and completion cursor for durable queue/wake occurrences so pending work can resume and `pending_local` is eventually cleared. Drop effects are not replayed. |
 | `pairing_themes` | Complete latest accepted theme JSON per pairing. |
-| `legacy_imports` | Source kind, digest, assigned pairing, importer version, result, and completion time for idempotent POC 1/POC 2 import. |
+| `platform_effects` | Pairing-scoped idempotent host work, dedupe identity, pending/claimed/completed state, lease attempt count, and timestamps. External work is never performed inside Room. |
 | `pairing_revocations` / `revocation_artifacts` | A journal that intentionally survives deletion of the pairing partition and resumes Keystore, image, alarm, notification, shortcut, and other external cleanup after a crash. |
 
 Indexes lead with `pairing_id`. Queue EventId uniqueness is
@@ -235,7 +282,7 @@ surface tombstone during ordinary operation.
 | Queue admission | ACTIVE check; effective-clock update; pairing-local dedupe excluding the runtime in-flight/retained head; count/byte limits; EventId/record insert; `next_seq` increment. |
 | Queue expiry | Effective-clock/high-water update and expiry deletion. Permanent delivery deletes only the resolved record. |
 | Reminder replace | Validate total limit; replace exactly one pairing/owner set; delete receipts for removed or changed tuples; preserve unchanged receipts. |
-| Reminder fire | Insert the fired receipt before presentation. A conflict means it already fired. Platform presentation happens after commit. |
+| Reminder fire | Insert the fired receipt and idempotent notification effect together. A conflict means it already fired. Claim, presentation, and completion happen after commit. |
 | Trigger replace | Replace one pairing set; carry every runtime field only for a canonically equal normalized entry; reset changed/new entries and delete removed entries. |
 | Trigger occurrence | For queue/wake, insert the event and advance queue state together with throttle, one-shot, repeat, and boot runtime. For drop, commit runtime only. Run local effects and remote eligibility after commit. |
 | Theme | Replace the complete normalized theme for exactly one pairing. |
@@ -263,38 +310,17 @@ notification API, Keystore call, image deletion, or local trigger effect.
   state and remains separate from EBP `view.switch`.
 - pairing tokens or reusable plaintext encryption keys.
 
-## Legacy import and cutover
+## Legacy quarantine and clean cutover
 
-The rebuild uses a new database and a one-shot importer; it never dual-writes
-Room and POC 2 files.
+The rebuild opens a new database and never dual-writes or imports POC 1/POC 2
+state. Old queue, surface/draft, reminder, trigger, theme, and prototype Room
+files remain untouched and quarantined. Production startup contains no probe,
+parser, importer, deletion, or fallback for them. Emacs is the authored-state
+authority and re-pushes the desired surfaces, reminders, triggers, and theme.
 
-Supported sources are the POC 2 queue, surface/draft, reminder, trigger, and
-theme JSON files and, when present, POC 1's Room queue/trigger database. POC 2
-global files are not safely attributable in a multi-pairing install. They may
-be imported only when exactly one active pairing is known or after an explicit
-user assignment. If attribution is ambiguous, or POC 1 and POC 2 sources
-conflict, migration fails closed and preserves every source.
-
-The importer:
-
-1. reads every source with the lenient persisted-data parser, never the strict
-   EBP frame parser;
-2. preserves deep JSON, JSON-null versus absence, integral-number compatibility,
-   nullable trigger floors, revision floors, ordering, queue counters, and
-   high-water state;
-3. validates and hashes all sources before opening the write transaction;
-4. writes the complete assigned partition and its `legacy_imports` digest in
-   one Room transaction;
-5. reopens and verifies counts, floors, counters, and canonical payload hashes;
-6. leaves legacy data read-only until two successful cold starts and the full
-   device gate; and
-7. archives or removes legacy data only through an explicit later cleanup.
-
-Killing the process at any import boundary must leave either no import marker
-or one complete verified import. Runtime `FileQueueStore`,
-`FileSurfaceBacking`, `FileReminderBacking`, and `FileTriggerBacking` lose all
-production callers before they are removed; compatibility readers and frozen
-fixtures may remain test-only.
+Runtime `FileQueueStore`, `FileSurfaceBacking`, `FileReminderBacking`, and
+`FileTriggerBacking` have no production callers. They remain only as portable
+backend fixtures and historical compatibility witnesses in `:wire` tests.
 
 After the first Room-only mutation, an older POC 2 binary cannot safely be used
 as a downgrade. A downgrade must be blocked or require an explicit export or
@@ -323,7 +349,7 @@ before production Room code is written.
 ### WP1 — Replace the fork-forward companion with the clean scaffold
 
 - Recreate `llm-poc-3/companion` from the local multimodule architecture
-  template and retain the verified Android 16+/KMP/Room 3/Nav 3 toolchain.
+  template and retain the verified Android 14+/KMP/Room 3/Nav 3 toolchain.
 - Add the module graph above, including `:core:ebp-store` and feature modules.
 - Configure Room KMP constructor/KSP/bundled SQLite from the local Fruitties
   sample and export the new database's complete schema version 1.
@@ -375,14 +401,15 @@ storage-failure test, and Android integration test pass.
 Exit: the application composition root constructs one database, one Room EBP
 store, and one actor. `CompanionStores` constructs no `File*Backing`.
 
-### WP5 — Import and production cutover
+### WP5 — Clean production cutover
 
-- Implement and test the POC 1/POC 2 import rules above with frozen fixtures.
+- Open the new Room schema without reading, importing, or deleting POC 1/POC 2
+  stores; retain old data as a quarantine only.
 - Switch the production composition root in one cutover commit.
 - Remove the post-accept `SurfaceCacheRepository.accept` write path and every
   production file-store caller.
-- Keep the pre-rebuild Git checkpoint and legacy files for recovery until the
-  complete kill/device matrix passes.
+- Keep the pre-rebuild Git checkpoint and legacy files untouched; recovery is
+  an Emacs re-push into the clean store.
 
 Exit: Room is the only live writer and process restart cannot select a stale
 legacy store.
@@ -430,7 +457,7 @@ POC 3 may call the Room rebuild complete only when:
   callers;
 - revocation fences authentication first and crash-resumable cleanup erases
   Room, Keystore, image, alarm, notification, and shortcut state;
-- legacy import is idempotent and kill-safe;
+- clean startup never reads, mutates, deletes, or falls back to legacy stores;
 - JVM, Android device, schema, migration, process-death, 16 KB alignment,
   lifecycle, predictive-back, offline, reconnect, and accessibility gates pass;
   and
