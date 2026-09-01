@@ -1,3 +1,0 @@
-This is an Org Mode file attachment linked from the main Orgro manual file.
-
-There's not much to see here!
