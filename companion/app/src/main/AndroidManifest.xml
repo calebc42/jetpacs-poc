@@ -26,6 +26,9 @@
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
 
+    <!-- Camera permission backs the optional flashlight handler; neither a
+         camera nor a flash is required to install Jetpacs. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
     <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
@@ -79,6 +82,12 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar" />
+        <activity
+            android:name=".ReminderInteractionActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay" />
 
         <service
             android:name=".JetpacsBridgeService"

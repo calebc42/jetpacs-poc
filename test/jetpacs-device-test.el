@@ -268,5 +268,68 @@ rejects it as stale while reporting success)."
                      :owner "agenda")))
     (should (= 0 (gethash "agenda" jetpacs-device--reminders-gen 0)))))
 
+(ert-deftest jetpacs-device-reminder-actions-are-normalized-and-gated ()
+  "Rich reminder gestures require their distinct negotiated capability."
+  (let* ((open (jetpacs-action
+                "agenda.reschedule" :args '(:item "opaque")
+                :when-offline 'queue :ttl-s 3600
+                :open-surface "app:agenda"))
+         (action (jetpacs-reminder-action
+                  "Reschedule" open :icon "edit"))
+         (reminder (list :id "r" :title "T" :at_ms 5
+                         :actions (list action))))
+    (jetpacs-device-test--with
+        (jetpacs-device-test--client ["reminders.owner"])
+      (should-error (jetpacs-reminders-set (list reminder) :owner "agenda"))
+      (should-not jetpacs-device-test--calls))
+    (jetpacs-device-test--with
+        (jetpacs-device-test--client
+         ["reminders.owner" "reminders.actions"])
+      (jetpacs-reminders-set (list reminder) :owner "agenda")
+      (let* ((params (nth 1 (car jetpacs-device-test--calls)))
+             (wire (aref (plist-get params :reminders) 0))
+             (wire-action (aref (plist-get wire :actions) 0)))
+        (should (vectorp (plist-get wire :actions)))
+        (should (equal (plist-get wire-action :label) "Reschedule"))
+        (should (equal (plist-get (plist-get wire-action :on_tap)
+                                  :open_surface)
+                       "app:agenda"))))))
+
+(ert-deftest jetpacs-device-reminder-action-gate-scans-the-whole-set ()
+  "A basic sibling cannot hide an earlier rich reminder from cap gating."
+  (let ((rich
+         (list :id "rich" :title "Rich" :at_ms 5
+               :actions
+               (list (jetpacs-reminder-action
+                      "Complete" (jetpacs-action "agenda.complete")))))
+        (basic (list :id "basic" :title "Basic" :at_ms 6)))
+    (jetpacs-device-test--with
+        (jetpacs-device-test--client ["reminders.owner"])
+      (should-error
+       (jetpacs-reminders-set (list rich basic) :owner "agenda"))
+      (should-not jetpacs-device-test--calls))))
+
+(ert-deftest jetpacs-device-reminder-actions-reject-injected-conflicts ()
+  "An app cannot override identity injected from the durable reminder row."
+  (dolist (descriptor
+           '((:action "agenda.complete" :args (:owner "other"))
+             (:action "agenda.complete" :args (:reminder_id "other"))
+             (:action "agenda.complete" :capture_fields ["field"])))
+    (should-error
+     (jetpacs-reminder-action "Complete" descriptor :icon "done"))))
+
+(ert-deftest jetpacs-device-reminder-body-open-surface-is-capability-gated ()
+  "The direct app launch adjunct cannot hide in a body tap on older peers."
+  (jetpacs-device-test--with
+      (jetpacs-device-test--client ["reminders.owner"])
+    (should-error
+     (jetpacs-reminders-set
+      (list (list :id "r" :title "T" :at_ms 5
+                  :on_tap
+                  (jetpacs-action "agenda.open"
+                                  :open-surface "app:agenda")))
+      :owner "agenda"))
+    (should-not jetpacs-device-test--calls)))
+
 (provide 'jetpacs-device-test)
 ;;; jetpacs-device-test.el ends here

@@ -8,14 +8,19 @@
 package com.calebc42.jetpacs.companion
 
 import android.app.AlarmManager
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.app.RemoteInput
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
+import android.os.Bundle
+import com.calebc42.ebp.wire.routeReminderAction
+import com.calebc42.ebp.wire.routeReminderTap
 import com.calebc42.ebp.renderer.model.arrOrNull
 import com.calebc42.ebp.renderer.model.boolOr
 import com.calebc42.ebp.renderer.model.longByValue
@@ -102,6 +107,7 @@ object Notifications {
     }
 
     const val REMINDER_TAG = "reminder"
+    private const val MAX_VISIBLE_REMINDER_ACTIONS = 3
 
     /** SPEC 18.6: a collision-resistant, OWNER-scoped key for a reminder's alarm
      * request code, tap PendingIntent, and notification id — a truncated SHA-256
@@ -142,15 +148,17 @@ object Notifications {
     ) {
         val am = ctx.getSystemService(AlarmManager::class.java)
         val store = stores.reminders()
-        val newIds = (0 until newSet.size)
-            .map { (newSet[it] as JsonObject).requiredString("id") }.toSet()
+        val nextById = (0 until newSet.size).associate {
+            val reminder = newSet[it] as JsonObject
+            reminder.requiredString("id") to reminder
+        }
         for (i in 0 until priorSet.size) {
-            val id = (priorSet[i] as JsonObject).requiredString("id")
-            if (id in newIds) continue
-            PendingIntent.getBroadcast(ctx, reminderKey(owner, id),
-                Intent(ctx, ReminderAlarmReceiver::class.java),
-                PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
-                ?.let { am.cancel(it); it.cancel() }
+            val prior = priorSet[i] as JsonObject
+            val id = prior.requiredString("id")
+            val next = nextById[id]
+            if (next != null && longByValue(prior["at_ms"]) ==
+                longByValue(next["at_ms"])) continue
+            cancelReminderTuple(ctx, am, owner, id)
         }
         for (i in 0 until newSet.size) {
             val r = newSet[i] as JsonObject
@@ -159,8 +167,6 @@ object Notifications {
             val atMs = longByValue(r["at_ms"]) ?: throw NoSuchElementException("at_ms")
             val intent = Intent(ctx, ReminderAlarmReceiver::class.java)
                 .putExtra("owner", owner).putExtra("rid", id)
-                .putExtra("title", r.requiredString("title"))
-                .putExtra("body", r.stringOr("body"))
                 .putExtra("at_ms", atMs)
             val pi = PendingIntent.getBroadcast(ctx, reminderKey(owner, id), intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -181,6 +187,25 @@ object Notifications {
         }
     }
 
+    private fun cancelReminderTuple(
+        ctx: Context,
+        alarmManager: AlarmManager,
+        owner: String,
+        reminderId: String,
+    ) {
+        PendingIntent.getBroadcast(
+            ctx,
+            reminderKey(owner, reminderId),
+            Intent(ctx, ReminderAlarmReceiver::class.java),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        )?.let { pending ->
+            alarmManager.cancel(pending)
+            pending.cancel()
+        }
+        ctx.getSystemService(NotificationManager::class.java)
+            .cancel(REMINDER_TAG, reminderKey(owner, reminderId))
+    }
+
     /** SPEC 18.6: re-arm every owner's unfired reminders from the durable store.
      * AlarmManager loses alarms across a reboot or a force-stop, so a cold start
      * (and a wall-clock change) must re-establish them. Arm-only (prior empty):
@@ -195,22 +220,131 @@ object Notifications {
 
     /** SPEC 18.6: present a reminder with a tap route into the Section 14
      * pipeline via ReminderTapReceiver (works whether or not a session is up). */
-    fun postReminder(ctx: Context, owner: String, rid: String, title: String, body: String?) {
+    fun postReminder(
+        ctx: Context,
+        owner: String,
+        rid: String,
+        atMs: Long,
+        reminder: JsonObject,
+    ) {
         ensureChannel(ctx)
-        val tap = Intent(ctx, ReminderTapReceiver::class.java)
-            .putExtra("owner", owner).putExtra("rid", rid)
-        val contentIntent = PendingIntent.getBroadcast(ctx, reminderKey(owner, rid),
-            tap, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val n = Notification.Builder(ctx, CHANNEL)
+        val contentIntent = reminder.objOrNull("on_tap")?.let { descriptor ->
+            reminderPendingIntent(
+                ctx,
+                owner,
+                rid,
+                atMs,
+                ReminderInteraction.BODY_INDEX,
+                descriptor,
+                hasInput = false,
+            )
+        }
+        val builder = Notification.Builder(ctx, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle(title)
-            .also { if (!body.isNullOrEmpty()) it.setContentText(body) }
-            .setContentIntent(contentIntent)
+            .setContentTitle(reminder.requiredString("title"))
+            .also {
+                reminder.stringOr("body").takeIf(String::isNotEmpty)
+                    ?.let(it::setContentText)
+            }
+            .also { contentIntent?.let(it::setContentIntent) }
+            .setCategory(Notification.CATEGORY_REMINDER)
             // SPEC 18.6/14.4: NOT setAutoCancel — the tap receiver dismisses only
             // AFTER safe admission (a lost/failed tap keeps its notification).
-            .build()
+            .setAutoCancel(false)
+        reminder.arrOrNull("actions")?.let { actions ->
+            repeat(minOf(actions.size, MAX_VISIBLE_REMINDER_ACTIONS)) { index ->
+                val action = actions[index] as? JsonObject ?: return@repeat
+                builder.addAction(buildReminderAction(
+                    ctx,
+                    owner,
+                    rid,
+                    atMs,
+                    index,
+                    action,
+                ))
+            }
+        }
         ctx.getSystemService(NotificationManager::class.java)
-            .notify(REMINDER_TAG, reminderKey(owner, rid), n)
+            .notify(REMINDER_TAG, reminderKey(owner, rid), builder.build())
+    }
+
+    private fun buildReminderAction(
+        ctx: Context,
+        owner: String,
+        rid: String,
+        atMs: Long,
+        index: Int,
+        action: JsonObject,
+    ): Notification.Action {
+        val descriptor = action.objOrNull("on_tap") ?: JsonObject(emptyMap())
+        val input = action.objOrNull("input")
+        val replyKey = input?.stringOr("key")?.ifEmpty { "reply" }
+        val pending = reminderPendingIntent(
+            ctx,
+            owner,
+            rid,
+            atMs,
+            index,
+            descriptor,
+            hasInput = input != null,
+        )
+        val builder = Notification.Action.Builder(
+            Icon.createWithResource(ctx, notifIconRes(action.stringOr("icon"))),
+            action.stringOr("label"),
+            pending,
+        )
+        if (replyKey != null) {
+            builder.addRemoteInput(
+                RemoteInput.Builder(replyKey)
+                    .also {
+                        input.stringOr("hint").takeIf(String::isNotEmpty)
+                            ?.let(it::setLabel)
+                    }
+                    .build(),
+            )
+        }
+        return builder.build()
+    }
+
+    private fun reminderPendingIntent(
+        ctx: Context,
+        owner: String,
+        rid: String,
+        atMs: Long,
+        actionIndex: Int,
+        descriptor: JsonObject,
+        hasInput: Boolean,
+    ): PendingIntent {
+        val opensSurface = descriptor.stringOr("open_surface")
+            .takeIf { it.startsWith("app:") }
+        val target = if (opensSurface == null) ReminderTapReceiver::class.java
+            else ReminderInteractionActivity::class.java
+        val intent = Intent(ctx, target)
+            .putExtra(ReminderInteraction.OWNER, owner)
+            .putExtra(ReminderInteraction.REMINDER_ID, rid)
+            .putExtra(ReminderInteraction.AT_MS, atMs)
+            .putExtra(ReminderInteraction.ACTION_INDEX, actionIndex)
+            .also { opensSurface?.let { surface ->
+                it.putExtra(ReminderInteraction.OPEN_SURFACE, surface)
+            } }
+        val requestCode = reminderKey(owner, "$rid/action/$actionIndex")
+        val mutability = if (hasInput) PendingIntent.FLAG_MUTABLE
+            else PendingIntent.FLAG_IMMUTABLE
+        return if (opensSurface == null) {
+            PendingIntent.getBroadcast(
+                ctx,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or mutability,
+            )
+        } else {
+            PendingIntent.getActivity(
+                ctx,
+                requestCode,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or mutability,
+            )
+        }
     }
 
     /** SPEC 18.5: priority -> a per-priority channel (Android channel
@@ -317,7 +451,7 @@ object Notifications {
 
     /** Best-effort action icon name -> a platform drawable (cosmetic; Android
      * rarely draws action icons in the shade). */
-    private fun notifIconRes(name: String): Int = when (name) {
+    internal fun notifIconRes(name: String): Int = when (name) {
         "close", "cancel", "dismiss" -> android.R.drawable.ic_menu_close_clear_cancel
         "delete", "trash" -> android.R.drawable.ic_menu_delete
         "edit" -> android.R.drawable.ic_menu_edit
@@ -379,10 +513,8 @@ internal fun shouldPostReconnectNotification(
 class ReminderAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
         val owner = intent.getStringExtra("owner") ?: return
-        val title = intent.getStringExtra("title") ?: return
         val rid = intent.getStringExtra("rid") ?: return
         val atMs = intent.getLongExtra("at_ms", -1).takeIf { it >= 0 } ?: return
-        val body = intent.getStringExtra("body")
         val app = ctx.applicationContext as JetpacsApplication
         // SPEC 18.6: markFired commits Room state off the main thread.
         val pending = goAsync()
@@ -393,10 +525,13 @@ class ReminderAlarmReceiver : BroadcastReceiver() {
                 // that transaction, and cold-start reconciliation retries a
                 // crash-stranded effect using the same notification tag/id.
                 val createdAt = System.currentTimeMillis().coerceAtLeast(0)
+                val store = app.stores.reminders()
+                val reminder = store.reminder(owner, rid) ?: return@submit
+                if (longByValue(reminder["at_ms"]) != atMs) return@submit
                 val effect = PlatformEffectReconciler.reminderNotification(
-                    owner, rid, atMs, title, body, createdAt,
+                    owner, rid, atMs, reminder, createdAt,
                 )
-                if (app.stores.reminders().markFired(
+                if (store.markFired(
                         owner = owner,
                         id = rid,
                         presentationEffect = effect,
@@ -455,28 +590,123 @@ class NotificationActionReceiver : BroadcastReceiver() {
  * offline policy. Works cold (no live engine): queue/wake taps admit to the
  * shared durable queue and replay on the next connect; a drop delivers live
  * only through the current session. */
+internal object ReminderInteraction {
+    const val BODY_INDEX = -1
+    const val OWNER = "owner"
+    const val REMINDER_ID = "rid"
+    const val AT_MS = "at_ms"
+    const val ACTION_INDEX = "action_index"
+    const val OPEN_SURFACE = "open_surface"
+
+    fun currentDescriptor(app: JetpacsApplication, intent: Intent): JsonObject? {
+        val owner = intent.getStringExtra(OWNER) ?: return null
+        val rid = intent.getStringExtra(REMINDER_ID) ?: return null
+        val atMs = intent.getLongExtra(AT_MS, -1).takeIf { it >= 0 } ?: return null
+        val reminder = app.stores.reminders().reminder(owner, rid) ?: return null
+        if (longByValue(reminder["at_ms"]) != atMs) return null
+        val index = intent.getIntExtra(ACTION_INDEX, BODY_INDEX)
+        return if (index == BODY_INDEX) reminder.objOrNull("on_tap")
+        else (reminder.arrOrNull("actions")?.getOrNull(index) as? JsonObject)
+            ?.objOrNull("on_tap")
+    }
+
+    fun dispatch(ctx: Context, intent: Intent, onFinished: () -> Unit = {}) {
+        val owner = intent.getStringExtra(OWNER) ?: return onFinished()
+        val rid = intent.getStringExtra(REMINDER_ID) ?: return onFinished()
+        val atMs = intent.getLongExtra(AT_MS, -1).takeIf { it >= 0 }
+            ?: return onFinished()
+        val index = intent.getIntExtra(ACTION_INDEX, BODY_INDEX)
+        val app = ctx.applicationContext as JetpacsApplication
+        val pendingResults = RemoteInput.getResultsFromIntent(intent)
+        if (!app.stores.submit {
+          try {
+            val reminder = app.stores.reminders().reminder(owner, rid)
+                ?: return@submit
+            if (longByValue(reminder["at_ms"]) != atMs) return@submit
+            if (index == BODY_INDEX) {
+                routeReminderTap(
+                    app.stores.reminders(),
+                    app.stores.queue(),
+                    CompanionStores.MAX_EVENT_BYTES,
+                    owner,
+                    rid,
+                    app.stores.liveSession,
+                ) { status, error ->
+                    if (error == null && status in
+                        setOf("queued", "accepted", "duplicate")) {
+                        app.getSystemService(NotificationManager::class.java)
+                            .cancel(Notifications.REMINDER_TAG,
+                                Notifications.reminderKey(owner, rid))
+                    }
+                }
+                return@submit
+            }
+            val action = reminder.arrOrNull("actions")?.getOrNull(index)
+                as? JsonObject ?: return@submit
+            val input = action.objOrNull("input")
+            val replyKey = input?.stringOr("key")?.ifEmpty { "reply" }
+            val replyText = replyKey?.let { key ->
+                pendingResults?.getCharSequence(key)?.toString()
+            }
+            routeReminderAction(
+                app.stores.reminders(),
+                app.stores.queue(),
+                CompanionStores.MAX_EVENT_BYTES,
+                owner,
+                rid,
+                index,
+                expectedAtMs = atMs,
+                replyText = replyText,
+                live = app.stores.liveSession,
+                maxFieldBytes = CompanionStores.MAX_FIELD_BYTES,
+            ) { status, error ->
+                if (action.boolOr("dismiss") && error == null && status in
+                    setOf("queued", "accepted", "duplicate")) {
+                    app.getSystemService(NotificationManager::class.java)
+                        .cancel(Notifications.REMINDER_TAG,
+                            Notifications.reminderKey(owner, rid))
+                }
+            }
+          } finally {
+            onFinished()
+          }
+        }) onFinished()
+    }
+}
+
 class ReminderTapReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {
-        val owner = intent.getStringExtra("owner") ?: return
-        val rid = intent.getStringExtra("rid") ?: return
-        val app = ctx.applicationContext as JetpacsApplication
-        // SPEC 14/18.6: the tap admits to the Room outbox and may
-        // deliver live (socket write) — off the main thread.
         val pending = goAsync()
-        if (!app.stores.submit {
-            try {
-                com.calebc42.ebp.wire.routeReminderTap(
-                    app.stores.reminders(), app.stores.queue(),
-                    CompanionStores.MAX_EVENT_BYTES, owner, rid, app.stores.liveSession
-                ) { status, error ->
-                    // SPEC 18.6/14.4: dismiss ONLY after safe admission — a durable
-                    // queue/wake admit ("queued") or a live drop the peer accepted;
-                    // never on a failure or a lost/no-session drop.
-                    if (error == null && status in setOf("queued", "accepted", "duplicate"))
-                        app.getSystemService(NotificationManager::class.java)
-                            .cancel(Notifications.REMINDER_TAG, Notifications.reminderKey(owner, rid))
-                }
-            } finally { pending.finish() }
-        }) pending.finish()
+        ReminderInteraction.dispatch(ctx, intent, pending::finish)
+    }
+}
+
+/** Direct notification Activity target for reminder gestures that also open
+ * an app surface. Modern Android prohibits a broadcast/service notification
+ * trampoline; this non-exported no-display Activity validates the descriptor
+ * from Room, selects the cached surface, launches the host, and separately
+ * admits the remote occurrence through the same durable router. */
+class ReminderInteractionActivity : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val app = application as JetpacsApplication
+        val descriptor = ReminderInteraction.currentDescriptor(app, intent)
+        val requested = intent.getStringExtra(ReminderInteraction.OPEN_SURFACE)
+        val authorized = descriptor?.stringOr("open_surface")
+        if (requested != null && requested == authorized &&
+            requested.matches(Regex("app:[A-Za-z0-9][A-Za-z0-9._:/-]*"))) {
+            app.requestSurfaceOpenFromPlatform(requested)
+            startActivity(
+                Intent(this, MainActivity::class.java)
+                    .setAction(Intent.ACTION_MAIN)
+                    .addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                            Intent.FLAG_ACTIVITY_SINGLE_TOP,
+                    ),
+            )
+        }
+        ReminderInteraction.dispatch(this, intent)
+        finish()
     }
 }

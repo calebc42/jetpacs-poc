@@ -325,7 +325,8 @@ class DeviceBridge(
         proofProvider = proofProvider,
         supportedCapabilities = setOf("theme", "surfaces.dialog", "presentation.toast",
             "presentation.snackbar",
-            "presentation.pie-menu", "reminders.owner", "surfaces.notification",
+            "presentation.pie-menu", "reminders.owner", "reminders.actions",
+            "surfaces.notification",
             "surfaces.widget", "surfaces.tile",
             "editor.sync", "capabilities", "triggers"),
         // `offline.wake` is deliberately absent until the user configures an

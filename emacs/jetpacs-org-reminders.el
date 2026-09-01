@@ -442,45 +442,77 @@ while every returned row is rechecked against the canonical agenda scope."
     (format "%s.rem-%s-%s" jetpacs-org-reminders-owner stem
             (substring (sha1 name) 0 8))))
 
-(defun jetpacs-org-reminders--upcoming-reminders
-    (&optional horizon-hours now)
-  "Return timed Org Agenda reminders within HORIZON-HOURS of NOW.
-HORIZON-HOURS defaults to `jetpacs-org-reminders-horizon-hours'; NOW
-is an Emacs time value and defaults to `current-time'."
+(defun jetpacs-org-mode-reminder-candidates
+    (&optional horizon-hours now lead-minutes)
+  "Return neutral timed Org candidates within HORIZON-HOURS of NOW.
+HORIZON-HOURS defaults to `jetpacs-org-reminders-horizon-hours'; NOW is an
+Emacs time value and defaults to `current-time'.  LEAD-MINUTES defaults to
+zero and shifts only the presentation timestamp, not eligibility: an event
+must still be future and within the horizon, while its lead-time reminder may
+already be due.  Date-only agenda rows are intentionally absent.
+
+Each returned plist carries :ref, :headline, :type, :date, :time,
+:event_at_ms, :at_ms, and a stable private :identity.  It is neutral
+application data, not an EBP reminder descriptor, so downstream applets can
+add their own opaque routing without duplicating Org extraction."
   (let* ((hours (or horizon-hours jetpacs-org-reminders-horizon-hours))
+         (lead (or lead-minutes 0))
          (horizon (* hours 3600))
          (now-seconds (float-time (or now (current-time))))
          (days (max 1 (1+ (ceiling (/ hours 24.0)))))
          (items (jetpacs-org-mode--agenda-items days nil))
-         reminders
+         candidates
          seen)
+    (unless (and (numberp hours) (>= hours 0))
+      (error "jetpacs-org: reminder horizon must be non-negative"))
+    (unless (and (integerp lead) (>= lead 0))
+      (error "jetpacs-org: reminder lead minutes must be a non-negative integer"))
     (dolist (item items)
       (let ((date (alist-get 'date item))
             (hm (jetpacs-org-reminders--item-hm (alist-get 'time item)))
             (headline (alist-get 'headline item))
             (type (alist-get 'type item))
             (file (alist-get 'file item))
-            (pos (alist-get 'pos item)))
+            (pos (alist-get 'pos item))
+            (ref (alist-get 'ref item)))
         (when (and (stringp date) hm)
-          (let ((at (float-time
-                     (org-time-string-to-time (concat date " " hm)))))
-            (when (and (> at now-seconds) (< (- at now-seconds) horizon))
-              (let ((id
-                     (jetpacs-org-reminders--reminder-id
-                      (format "%sT%s %s:%s" date hm
-                              (or file "") (or pos 0)))))
+          (let ((event-at (float-time
+                           (org-time-string-to-time (concat date " " hm)))))
+            (when (and (> event-at now-seconds)
+                       (< (- event-at now-seconds) horizon))
+              (let ((identity
+                     (format "%sT%s %S" date hm
+                             (or ref (cons file pos)))))
                 ;; A heading scheduled and deadlined for the same instant
                 ;; appears twice in Org Agenda but must create one alarm.
-                (unless (member id seen)
-                  (push id seen)
-                  (push (list :id id
-                              :at_ms (truncate (* at 1000))
-                              :title (or headline "Org reminder")
-                              :body (concat hm
-                                            (when (stringp type)
-                                              (concat " · " type))))
-                        reminders))))))))
-    (nreverse reminders)))
+                (unless (member identity seen)
+                  (push identity seen)
+                  (push (list :ref ref
+                              :headline (or headline "Org reminder")
+                              :type type
+                              :date date
+                              :time hm
+                              :event_at_ms (truncate (* event-at 1000))
+                              :at_ms (max 0 (truncate
+                                             (* (- event-at (* lead 60)) 1000)))
+                              :identity identity)
+                        candidates))))))))
+    (nreverse candidates)))
+
+(defun jetpacs-org-reminders--upcoming-reminders
+    (&optional horizon-hours now)
+  "Return basic EBP reminders projected from neutral Org candidates."
+  (mapcar
+   (lambda (candidate)
+     (list :id (jetpacs-org-reminders--reminder-id
+                (plist-get candidate :identity))
+           :at_ms (plist-get candidate :at_ms)
+           :title (plist-get candidate :headline)
+           :body (concat (plist-get candidate :time)
+                         (when-let* ((type (plist-get candidate :type))
+                                     ((stringp type)))
+                           (concat " · " type)))))
+   (jetpacs-org-mode-reminder-candidates horizon-hours now 0)))
 
 (defun jetpacs-org-reminders--sync-reminders ()
   "Synchronize the canonical Org reminder set after a successful push."

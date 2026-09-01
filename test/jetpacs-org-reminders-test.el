@@ -196,6 +196,27 @@
                     (jetpacs-org-reminders--upcoming-reminders nil now))
                    2))))))
 
+(ert-deftest jetpacs-org-reminder-candidates-preserve-ref-and-lead-time ()
+  "The neutral seam shifts presentation without changing event eligibility."
+  (let* ((now (encode-time 0 0 12 16 8 2026))
+         (ref '(:file "/v/private.org" :pos 42 :headline "Water"))
+         (items `(((headline . "Water") (time . "12:10")
+                   (date . "2026-08-16") (type . "scheduled")
+                   (file . "/v/private.org") (pos . 42) (ref . ,ref)))))
+    (cl-letf (((symbol-function 'jetpacs-org-mode--agenda-items)
+               (lambda (&rest _) items)))
+      (let ((candidate
+             (car (jetpacs-org-mode-reminder-candidates 1 now 15))))
+        (should (equal (plist-get candidate :ref) ref))
+        (should (equal (plist-get candidate :headline) "Water"))
+        (should (= (- (plist-get candidate :event_at_ms)
+                      (plist-get candidate :at_ms))
+                   (* 15 60 1000)))
+        ;; The lead timestamp is five minutes in the past, but the future
+        ;; event remains eligible and Android may present it immediately.
+        (should (< (plist-get candidate :at_ms)
+                   (truncate (* 1000 (float-time now)))))))))
+
 (ert-deftest jetpacs-org-reminders-sync-gates-and-diffs-confirmed-set ()
   "The active owner sends only when connected/granted and suppresses repeats."
   (let ((jetpacs-org-reminders-enabled t)

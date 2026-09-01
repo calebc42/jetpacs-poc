@@ -54,6 +54,17 @@ confirmation overtaking a newer one on crossed responses.")
   (clrhash jetpacs-device--reminder-sets)
   (clrhash jetpacs-device--reminders-gen))
 
+(cl-defun jetpacs-reminder-action
+    (label on-tap &key icon dismiss input)
+  "Build one ordered reminder action from the Section 18.5 shape.
+Unlike an ordinary notification-surface action, ON-TAP may use the negotiated
+reminder `open_surface' adjunct.  The Companion injects owner and reminder_id,
+so authored conflicts and context-less field capture are rejected here."
+  (jetpacs--check-notification-action
+   (jetpacs-make-node nil :label label :on_tap on-tap :icon icon
+                      :dismiss dismiss :input input)
+   "reminder action" '("owner" "reminder_id") t))
+
 (defun jetpacs-device--reminder-check (reminder)
   "Validate REMINDER (SPEC 18.6) and return a normalized copy.
 The copy is rebuilt through the nil-dropping node funnel, so an
@@ -63,13 +74,15 @@ the rule — never the :title/:body values (SPEC 23.3)."
   (unless (and (consp reminder) (keywordp (car reminder)))
     (error "jetpacs: a reminder must be a keyword plist (SPEC 18.6)"))
   (cl-loop for (k _v) on reminder by #'cddr
-           unless (memq k '(:id :title :body :at_ms :on_tap))
+           unless (memq k '(:id :title :body :at_ms :on_tap :actions))
            do (error "jetpacs: unknown reminder member %s (18.6 is closed)" k))
   (let ((id (plist-get reminder :id))
         (title (plist-get reminder :title))
         (body (plist-get reminder :body))
         (at-ms (plist-get reminder :at_ms))
-        (tap (plist-get reminder :on_tap)))
+        (tap (plist-get reminder :on_tap))
+        (actions (and (plist-member reminder :actions)
+                      (plist-get reminder :actions))))
     (unless (and (stringp id) (jetpacs-identifier-p id))
       (error "jetpacs: reminder :id must be a SPEC 4.4 identifier"))
     (unless (and (stringp title) (not (string-empty-p title)))
@@ -83,14 +96,10 @@ the rule — never the :title/:body values (SPEC 23.3)."
     ;; The SPEC 4.2 ceiling too: an over-2^53 integer is content-invalid.
     (jetpacs-check-integer at-ms ":at_ms" 0 nil)
     (when tap
-      (jetpacs-check-descriptor tap ":on_tap")
+      (jetpacs--check-contextless-descriptor
+       tap ":on_tap" '("owner" "reminder_id") t)
       (unless (plist-member tap :action)
         (error "jetpacs: reminder :on_tap must be a remote action, not a builtin (SPEC 18.6)"))
-      (let ((args (plist-get tap :args)))
-        (when (or (plist-member args :owner) (plist-member args :reminder_id))
-          (error "jetpacs: :on_tap args must not author :owner/:reminder_id — the Companion injects them (SPEC 18.6)")))
-      (when (plist-member tap :capture_fields)
-        (error "jetpacs: :capture_fields is surface/dialog-scoped; invalid in a reminder :on_tap (SPEC 14.5)"))
       ;; SPEC 18.6 routes a tap through Section 14's normal pipeline using
       ;; the AUTHORED offline policy, so 14.1's wake gate governs here —
       ;; and this path never touches the shell's document gate.
@@ -103,13 +112,44 @@ the rule — never the :title/:body values (SPEC 23.3)."
            (format "reminder :on_tap action %S is not registered; a tap will be rejected until it is"
                    action)
            :warning))))
+    (when (and (plist-member reminder :actions)
+               (not (or (listp actions) (vectorp actions))))
+      (error "jetpacs: reminder :actions must be a list or vector (SPEC 18.6)"))
+    (let ((normalized-actions
+           (and (plist-member reminder :actions)
+                (vconcat
+                 (cl-loop
+                  for action across (vconcat actions)
+                  for index from 0
+                  collect
+                  (let* ((normalized
+                          (jetpacs--check-notification-action
+                           action (format "reminder :actions[%d]" index)
+                           '("owner" "reminder_id") t))
+                         (descriptor (plist-get normalized :on_tap))
+                         (name (plist-get descriptor :action)))
+                    (jetpacs-gate-descriptor-policy descriptor)
+                    (when (and (stringp name)
+                               (not (gethash name jetpacs-action-handlers)))
+                      (display-warning
+                       'jetpacs
+                       (format "reminder action %S is not registered; a tap will be rejected until it is"
+                               name)
+                       :warning))
+                    normalized))))))
     (jetpacs-make-node nil :id id :title title :body body :at_ms at-ms
-                   :on_tap tap)))
+                       :on_tap tap :actions normalized-actions))))
+
+(defun jetpacs-device--reminder-needs-actions-p (reminder)
+  "Return non-nil when REMINDER uses the negotiated interaction extension."
+  (or (plist-member reminder :actions)
+      (plist-get (plist-get reminder :on_tap) :open_surface)))
 
 (cl-defun jetpacs-reminders-set (reminders &key owner callback)
   "Replace OWNER's reminder set on the device (SPEC 18.6).
 REMINDERS is a list or vector of reminder plists
-\(:id ID :title S :at_ms MS [:body S] [:on_tap remote-ACTION]); nil or
+\(:id ID :title S :at_ms MS [:body S] [:on_tap remote-ACTION]
+ [:actions NOTIFICATION-ACTIONS]); nil or
 empty clears the owner's set.  OWNER defaults from
 `with-jetpacs-owner' context and MUST be a valid owner name — it is
 also the app surface a tap handler re-pushes.  Signals on invalid
@@ -137,13 +177,21 @@ gated on `jetpacs-connected-p'."
           (puthash (plist-get n :id) t seen)
           (push n normalized))))
     (let* ((client (jetpacs-client-or-error))
-           (vec (vconcat (nreverse normalized)))
+           ;; Preserve NORMALIZED for the whole-set capability scan below.
+           ;; `nreverse' would leave this binding pointing at only the old
+           ;; head (now the tail), so a mixed set could inspect one reminder
+           ;; and miss an actionable sibling.
+           (vec (vconcat (reverse normalized)))
            ;; The grant check runs BEFORE the generation bump: an error
            ;; between bump and send would orphan an IN-FLIGHT set's
            ;; confirmation (the gen guard would reject it as stale).
            (gen (progn
                   (unless (jetpacs-granted-p "reminders.owner" client)
                     (error "jetpacs: reminders.set requires the ungranted \"reminders.owner\" capability"))
+                  (when (and (cl-some #'jetpacs-device--reminder-needs-actions-p
+                                      normalized)
+                             (not (jetpacs-granted-p "reminders.actions" client)))
+                    (error "jetpacs: reminder actions/open_surface require the ungranted \"reminders.actions\" capability"))
                   (cl-incf (gethash owner jetpacs-device--reminders-gen 0)))))
       (puthash owner gen jetpacs-device--reminders-gen)
       (ebp-client-reminders-set

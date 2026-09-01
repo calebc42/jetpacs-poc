@@ -318,16 +318,22 @@ authors into specs — never by the peer."
     "companion.settings.open" "trigger.fire")
   "Builtins valid without a surface node, view, or dialog (SPEC 14.2).")
 
-(defun jetpacs--check-contextless-descriptor (descriptor what injected)
+(defun jetpacs--check-contextless-descriptor
+    (descriptor what injected &optional allow-open-surface)
   "Validate context-less DESCRIPTOR for WHAT with INJECTED arg names.
 Such an occurrence has no node tree from which to capture fields.  A platform
 adapter supplies each string in INJECTED, so an authored conflicting argument
-would make the descriptor ambiguous."
+would make the descriptor ambiguous.  ALLOW-OPEN-SURFACE permits the
+receiver-local app-surface adjunct used by negotiated reminder gestures."
   (jetpacs-check-descriptor descriptor what)
   (when (plist-member descriptor :capture_fields)
     (error "jetpacs: %s cannot capture fields without a surface (SPEC 13.4)" what))
-  (when (plist-member descriptor :open_surface)
-    (error "jetpacs: %s cannot open a surface outside an app surface (SPEC 14.1)" what))
+  (when-let* ((surface (plist-get descriptor :open_surface)))
+    (unless allow-open-surface
+      (error "jetpacs: %s cannot open a surface outside an app surface (SPEC 14.1)" what))
+    (unless (and (jetpacs-identifier-p surface)
+                 (string-match-p (rx bos "app:" alnum) surface))
+      (error "jetpacs: %s :open_surface must name an app Surface ID" what)))
   (let ((args (plist-get descriptor :args)))
     (dolist (member injected)
       (when (and (listp args) (plist-member args (intern (concat ":" member))))
@@ -338,6 +344,46 @@ would make the descriptor ambiguous."
       (error "jetpacs: %s builtin %S requires a surface or dialog"
              what builtin)))
   descriptor)
+
+(defun jetpacs--check-notification-action
+    (action what &optional injected allow-open-surface)
+  "Validate and normalize one Section 18.5 notification ACTION.
+WHAT identifies the member in errors.  INJECTED and ALLOW-OPEN-SURFACE are
+forwarded to the context-less descriptor validator for reminder reuse."
+  (jetpacs--check-obj
+   action '(:label :icon :dismiss :input :on_tap) what
+   (lambda (key value)
+     (pcase key
+       (:label (jetpacs--require-non-empty-string value ":label"))
+       (:icon (jetpacs-check-identifier value ":icon"))
+       (:dismiss (jetpacs-check-bool value ":dismiss"))
+       (:input
+        (jetpacs--check-obj
+         value '(:hint :key) ":input"
+         (lambda (input-key input-value)
+           (pcase input-key
+             (:hint (jetpacs-require-string input-value ":hint"))
+             (:key (jetpacs-check-identifier input-value ":key"))))))
+       (:on_tap
+        (jetpacs--check-contextless-descriptor
+         value ":on_tap" injected allow-open-surface)
+        (unless (plist-member value :action)
+          (error "jetpacs: %s :on_tap must be a remote action (SPEC 18.5)"
+                 what))))))
+  (unless (and (plist-member action :label)
+               (plist-member action :on_tap))
+    (error "jetpacs: %s requires :label and :on_tap (SPEC 18.5)" what))
+  (let ((input (plist-get action :input)))
+    (jetpacs-make-node
+     nil
+     :label (plist-get action :label)
+     :icon (plist-get action :icon)
+     :dismiss (plist-get action :dismiss)
+     :input (and input
+                 (jetpacs-make-node nil
+                                    :hint (plist-get input :hint)
+                                    :key (plist-get input :key)))
+     :on_tap (plist-get action :on_tap))))
 
 (defun jetpacs--check-swipe (v what)
   "Validate legacy or reveal-first rich swipe side V; WHAT names the field."
@@ -3280,6 +3326,18 @@ BODY is a Node."
   (unless (jetpacs-root-node-p body)
     (error "jetpacs-notification-surface: BODY must be a root node, got %S" body))
   (jetpacs-make-node nil :body body :meta meta))
+
+(cl-defun jetpacs-notification-action
+    (label on-tap &key icon dismiss input)
+  "Build a reusable Section 18.5 notification action.
+LABEL is the user-visible text and ON-TAP must be a remote action descriptor.
+ICON is an optional identifier.  DISMISS is `t' or `:json-false' and only
+takes effect after safe admission.  INPUT is an optional `(:hint S :key ID)'
+inline-reply description.  Context-less actions cannot capture fields."
+  (jetpacs--check-notification-action
+   (jetpacs-make-node nil :label label :on_tap on-tap :icon icon
+                      :dismiss dismiss :input input)
+   "notification action"))
 
 (cl-defun jetpacs-widget-size-variant (min-width min-height body)
   "An adaptive widget body eligible at MIN-WIDTH by MIN-HEIGHT dp (SPEC §13.4)."

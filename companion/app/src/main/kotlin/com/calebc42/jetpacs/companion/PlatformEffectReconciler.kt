@@ -69,15 +69,27 @@ internal class PlatformEffectReconciler(
         }
     }
 
-    private fun execute(effect: DurablePlatformEffect): Boolean = when (effect.kind) {
+    private suspend fun execute(effect: DurablePlatformEffect): Boolean = when (effect.kind) {
         REMINDER_NOTIFICATION_KIND -> {
             val payload = effect.payload
+            val owner = payload.requiredString("owner")
+            val reminderId = payload.requiredString("reminder_id")
+            val atMs = payload.requiredLong("at_ms")
+            val current = durableStore.restore(pairingId).reminders.firstOrNull {
+                it.owner == owner && it.reminderId == reminderId && it.atMs == atMs
+            }
+            // A remove/reschedule can race the already-committed presentation
+            // effect. Completing it without posting prevents stale resurrection.
+            // Render CURRENT rather than the effect's snapshot: this also keeps
+            // crash-stranded pre-actions effects (which carried title/body but
+            // no nested reminder) replayable across the upgrade.
+            if (current == null) return true
             Notifications.postReminder(
                 app,
-                payload.requiredString("owner"),
-                payload.requiredString("reminder_id"),
-                payload.requiredString("title"),
-                payload.optionalString("body"),
+                owner,
+                reminderId,
+                atMs,
+                current.payload,
             )
             true
         }
@@ -97,8 +109,7 @@ internal class PlatformEffectReconciler(
             owner: String,
             reminderId: String,
             atMs: Long,
-            title: String,
-            body: String?,
+            reminder: JsonObject,
             createdAtMs: Long,
         ): DurablePlatformEffect {
             val tuple = "$owner\u0000$reminderId\u0000$atMs"
@@ -112,8 +123,7 @@ internal class PlatformEffectReconciler(
                     put("owner", owner)
                     put("reminder_id", reminderId)
                     put("at_ms", atMs)
-                    put("title", title)
-                    body?.let { put("body", it) }
+                    put("reminder", reminder)
                 },
                 dedupeKey = "reminder:$digest",
                 createdAtMs = createdAtMs,
@@ -126,5 +136,6 @@ private fun JsonObject.requiredString(key: String): String =
     (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
         ?: throw IllegalArgumentException("Platform effect is missing $key")
 
-private fun JsonObject.optionalString(key: String): String? =
-    (this[key] as? JsonPrimitive)?.takeIf { it.isString }?.content
+private fun JsonObject.requiredLong(key: String): Long =
+    (this[key] as? JsonPrimitive)?.content?.toLongOrNull()
+        ?: throw IllegalArgumentException("Platform effect is missing $key")

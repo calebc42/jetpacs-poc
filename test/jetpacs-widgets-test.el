@@ -1480,5 +1480,25 @@ the conclusion JSON under a throwaway obarray, re-home, extract."
       (should (equal "Ship it"
                      (plist-get (echoed-fields) (intern name)))))))
 
+(ert-deftest jetpacs-widgets/notification-action-builder-is-closed ()
+  "The reusable action builder normalizes inline input and rejects ambiguity."
+  (should
+   (equal
+    (jetpacs-notification-action
+     "Reply" (jetpacs-action "demo.reply")
+     :icon "reply" :dismiss t :input '(:hint "Message" :key "reply"))
+    '(:label "Reply" :icon "reply" :dismiss t
+      :input (:hint "Message" :key "reply")
+      :on_tap (:action "demo.reply"))))
+  (should-error
+   (jetpacs-notification-action
+    "Bad" (jetpacs-action "demo.reply" :capture-fields '("field"))))
+  (should-error
+   (jetpacs-notification-action
+    "Bad" (jetpacs-action "demo.reply" :open-surface "app:demo")))
+  (should-error
+   (jetpacs-notification-action
+    "Bad" (jetpacs-action "demo.reply") :input '(:unknown t))))
+
 (provide 'jetpacs-widgets-test)
 ;;; jetpacs-widgets-test.el ends here

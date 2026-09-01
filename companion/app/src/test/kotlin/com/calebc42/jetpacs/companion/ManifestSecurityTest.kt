@@ -64,6 +64,18 @@ class ManifestSecurityTest {
     }
 
     @Test
+    fun reminderInteractionActivityIsPrivateAndNoDisplay() {
+        val activity = components("activity").single {
+            it.attr("name") == ".ReminderInteractionActivity"
+        }
+        assertEquals("false", activity.attr("exported"))
+        assertEquals("true", activity.attr("noHistory"))
+        assertEquals("true", activity.attr("excludeFromRecents"))
+        assertEquals("@android:style/Theme.NoDisplay", activity.attr("theme"))
+        assertEquals(0, activity.getElementsByTagName("intent-filter").length)
+    }
+
+    @Test
     fun exportedReceiversAreOnlyProtectedSystemEntrypoints() {
         val receivers = components("receiver")
         val exported = receivers.filter { it.attr("exported") == "true" }

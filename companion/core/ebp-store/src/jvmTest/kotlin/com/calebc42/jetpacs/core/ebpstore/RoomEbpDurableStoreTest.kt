@@ -54,6 +54,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
@@ -466,6 +467,14 @@ class RoomEbpDurableStoreTest {
                 put("id", "r1")
                 put("at_ms", 20)
                 put("title", "Room")
+                put("actions", buildJsonArray {
+                    add(buildJsonObject {
+                        put("label", "Complete")
+                        put("on_tap", buildJsonObject {
+                            put("action", "grove.complete")
+                        })
+                    })
+                })
             }
             fixture.store.write(pairing) {
                 putReminder(DurableReminder("agenda", "r1", 20, 0, reminderPayload))
@@ -498,6 +507,7 @@ class RoomEbpDurableStoreTest {
             fixture = fileFixture(path)
             val restored = fixture.store.restore(pairing)
             assertEquals(listOf("r1"), restored.reminders.map { it.reminderId })
+            assertEquals(reminderPayload, restored.reminders.single().payload)
             assertEquals(listOf(20L), restored.reminderReceipts.map { it.atMs })
             assertEquals(22L, restored.triggers.single().throttleFloorMs)
             assertEquals(true, restored.theme?.payload?.get("dark")?.let {
