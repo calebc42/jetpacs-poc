@@ -66,6 +66,7 @@ class MainActivity : ComponentActivity() {
             // scheme following the system when no theme is set.
             val themePayload by app.theme.collectAsState()
             val keepScreenOn by app.keepScreenOn.collectAsState()
+            val rendererInstallation by bridge.rendererInstallation.collectAsState()
             androidx.compose.runtime.DisposableEffect(keepScreenOn) {
                 if (keepScreenOn) {
                     window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -83,33 +84,38 @@ class MainActivity : ComponentActivity() {
                 config.screenWidthDp, config.screenHeightDp) {
                 bridge.windowChanged(config.screenWidthDp, config.screenHeightDp)
             }
-            EbpTheme(themePayload) {
-                ProvideJetpacsTheme(themePayload) {
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    var onboardingRequired by androidx.compose.runtime.remember {
-                        androidx.compose.runtime.mutableStateOf(
-                            !isCurrentOnboardingComplete(context),
-                        )
-                    }
-                    Surface(Modifier.fillMaxSize()) {
-                        androidx.compose.foundation.layout.Box {
-                            // Nav3 owns receiver destinations; EBP view.switch remains
-                            // inside the selected Surface entry. Each process-owned
-                            // overlay still reads its own flow in a separate scope, so
-                            // opening one cannot recompose a large surface document.
-                            JetpacsNavHost(
-                                app,
-                                bridge,
-                                onboardingRequired = onboardingRequired,
-                                onOnboardingComplete = {
-                                    markCurrentOnboardingComplete(this@MainActivity)
-                                    onboardingRequired = false
-                                },
-                                onExit = { finish() },
+            androidx.compose.runtime.CompositionLocalProvider(
+                LocalCompanionRendererConfiguration provides
+                    rendererInstallation.composeConfiguration,
+            ) {
+                EbpTheme(themePayload) {
+                    ProvideJetpacsTheme(themePayload) {
+                        val context = androidx.compose.ui.platform.LocalContext.current
+                        var onboardingRequired by androidx.compose.runtime.remember {
+                            androidx.compose.runtime.mutableStateOf(
+                                !isCurrentOnboardingComplete(context),
                             )
-                            PieMenuHost(app.currentPieMenu, bridge)
-                            DialogHost(app.currentDialog, bridge)
-                            ConfirmHost(bridge)
+                        }
+                        Surface(Modifier.fillMaxSize()) {
+                            androidx.compose.foundation.layout.Box {
+                                // Nav3 owns receiver destinations; EBP view.switch remains
+                                // inside the selected Surface entry. Each process-owned
+                                // overlay still reads its own flow in a separate scope, so
+                                // opening one cannot recompose a large surface document.
+                                JetpacsNavHost(
+                                    app,
+                                    bridge,
+                                    onboardingRequired = onboardingRequired,
+                                    onOnboardingComplete = {
+                                        markCurrentOnboardingComplete(this@MainActivity)
+                                        onboardingRequired = false
+                                    },
+                                    onExit = { finish() },
+                                )
+                                PieMenuHost(app.currentPieMenu, bridge)
+                                DialogHost(app.currentDialog, bridge)
+                                ConfirmHost(bridge)
+                            }
                         }
                     }
                 }
@@ -228,7 +234,7 @@ private fun DialogHost(
                         dspec,
                         bridge,
                         epoch,
-                        CompanionRenderer.composeConfiguration,
+                        LocalCompanionRendererConfiguration.current,
                     )
                 }
             }

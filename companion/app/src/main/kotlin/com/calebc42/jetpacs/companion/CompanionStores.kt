@@ -4,6 +4,7 @@ package com.calebc42.jetpacs.companion
 import android.content.Context
 import android.provider.Settings
 import com.calebc42.ebp.wire.DurableQueue
+import com.calebc42.ebp.wire.AppSurfaceAdmission
 import com.calebc42.ebp.wire.CapabilityHandler
 import com.calebc42.ebp.wire.EbpActorOverloaded
 import com.calebc42.ebp.wire.EbpCommandActor
@@ -109,6 +110,17 @@ class CompanionStores(
             tileSurfaceIds = TileSlots.surfaceIds,
             nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
             backing = RoomSurfaceBacking(durableStore, pairingId, nowMs),
+            appAdmissionProvider = {
+                val installation = CompanionRenderer.installation(
+                    ExperimentalElispDesignRuntime.isEnabled(app),
+                )
+                AppSurfaceAdmission(
+                    nodeTypes = installation.appProfile.nodeTypes,
+                    builtins = installation.appProfile.builtins,
+                    features = installation.appProfile.features,
+                    nodeVocabulary = installation.nodeVocabulary,
+                )
+            },
         ).also { surfacesInstance = it }
     }
 

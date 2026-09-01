@@ -30,6 +30,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -388,7 +389,7 @@ private fun SurfaceDocumentHost(
                 spec,
                 surfaceId,
                 bridge,
-                configuration = CompanionRenderer.composeConfiguration,
+                configuration = LocalCompanionRendererConfiguration.current,
             )
         }
     }
@@ -452,6 +453,8 @@ private fun JetpacsSettingsScreen(
     var narrowing by androidx.compose.runtime.remember {
         androidx.compose.runtime.mutableStateOf(bridge.completionNarrowing)
     }
+    val designRuntimeEnabled by
+        bridge.experimentalDesignRuntimeEnabled.collectAsState()
     val navigateBack = dropUnlessResumed { onBack() }
     val openOnboarding = dropUnlessResumed { onOpenOnboarding() }
     val scrollBehavior = androidx.compose.material3.TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -508,6 +511,27 @@ private fun JetpacsSettingsScreen(
                         },
                     )
                 }
+            }
+            HorizontalDivider(Modifier.padding(vertical = 16.dp))
+            Text("Experiments", style = MaterialTheme.typography.titleSmall)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(ExperimentalElispDesignRuntime.LABEL)
+                    Text(
+                        "Uses bounded Elisp-authored Foundation styles. " +
+                            "Changing this reconnects Emacs.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = designRuntimeEnabled,
+                    onCheckedChange = bridge::setExperimentalDesignRuntimeEnabled,
+                )
             }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
             Text("Installation", style = MaterialTheme.typography.titleSmall)

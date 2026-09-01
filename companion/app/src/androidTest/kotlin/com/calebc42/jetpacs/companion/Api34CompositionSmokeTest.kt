@@ -118,6 +118,24 @@ class Api34CompositionSmokeTest {
         ))
     }
 
+    @Test
+    fun experimentalDesignPreferenceSurvivesReceiverRecreation() {
+        val app = ApplicationProvider.getApplicationContext<JetpacsApplication>()
+        val original = ExperimentalElispDesignRuntime.isEnabled(app)
+        try {
+            assertTrue(ExperimentalElispDesignRuntime.persist(app, !original))
+            assertEquals(!original, ExperimentalElispDesignRuntime.isEnabled(app))
+            assertEquals(
+                !original,
+                ExperimentalElispDesignRuntime.isEnabled(
+                    ApplicationProvider.getApplicationContext(),
+                ),
+            )
+        } finally {
+            assertTrue(ExperimentalElispDesignRuntime.persist(app, original))
+        }
+    }
+
     private companion object {
         val EXPECTED_CAPS = setOf(
             "settings.open", "intent.start", "app.launch", "apps.list",

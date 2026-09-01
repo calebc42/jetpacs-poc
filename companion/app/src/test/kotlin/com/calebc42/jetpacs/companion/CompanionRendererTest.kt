@@ -7,6 +7,10 @@ import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STIC
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_EXTENSION
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_NODE_SCHEMA
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_TYPED_NODE_SCHEMA
+import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignSemanticValidator
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -17,7 +21,7 @@ import org.junit.Test
 
 class CompanionRendererTest {
     @Test
-    fun appInstallsBothDesignExtensionsWithoutLeakingJetpacsIntoDialogs() {
+    fun designRuntimeIsDefaultOffWithoutLeakingJetpacsIntoDialogs() {
         val profiles = CompanionRenderer.surfaceProfiles()
         fun extensions(target: String): Set<String> =
             (((profiles.getValue(target) as JsonObject)
@@ -28,8 +32,64 @@ class CompanionRendererTest {
             setOf(GLASSPANE_MATERIAL3_EXTENSION, JETPACS_COMPONENTS_EXTENSION),
             extensions("app"),
         )
+        assertFalse(JETPACS_DESIGN_EXTENSION in extensions("app"))
         assertEquals(setOf(GLASSPANE_MATERIAL3_EXTENSION), extensions("dialog"))
         assertFalse(JETPACS_COMPONENTS_EXTENSION in extensions("notification"))
+        assertFalse(JETPACS_DESIGN_EXTENSION in extensions("notification"))
+    }
+
+    @Test
+    fun disabledInstallationRecognizesCachedDesignWithoutOwningOrExecutingIt() {
+        val disabled = CompanionRenderer.installation(false)
+
+        assertTrue(disabled.nodeVocabulary.schema.keys.containsAll(JETPACS_DESIGN_NODE_SCHEMA.keys))
+        assertFalse(JETPACS_DESIGN_EXTENSION in disabled.nodeVocabulary.extensions)
+        assertTrue(disabled.nodeVocabulary.extensionSchemas.isEmpty())
+        assertTrue(disabled.nodeVocabulary.extensionSemanticValidators.isEmpty())
+        assertFalse(
+            disabled.composeConfiguration.extensions.nodeTypes
+                .any { it in JETPACS_DESIGN_NODE_SCHEMA },
+        )
+    }
+
+    @Test
+    fun enabledInstallationAddsTypedAdmissionSemanticsAndComposeAsOneUnit() {
+        val disabled = CompanionRenderer.installation(false)
+        val enabled = CompanionRenderer.installation(true)
+
+        assertEquals(
+            disabled.appProfile.nodeTypes + JETPACS_DESIGN_NODE_SCHEMA.keys,
+            enabled.appProfile.nodeTypes,
+        )
+        assertEquals(disabled.appProfile.builtins, enabled.appProfile.builtins)
+        assertEquals(disabled.appProfile.features, enabled.appProfile.features)
+        assertEquals(
+            disabled.appProfile.extensions + JETPACS_DESIGN_EXTENSION,
+            enabled.appProfile.extensions,
+        )
+        assertEquals(
+            JETPACS_DESIGN_NODE_SCHEMA.keys,
+            enabled.nodeVocabulary.extensions.getValue(JETPACS_DESIGN_EXTENSION),
+        )
+        assertEquals(
+            JETPACS_DESIGN_TYPED_NODE_SCHEMA,
+            enabled.nodeVocabulary.extensionSchemas,
+        )
+        assertEquals(
+            JetpacsDesignSemanticValidator,
+            enabled.nodeVocabulary.extensionSemanticValidators
+                .getValue(JETPACS_DESIGN_EXTENSION),
+        )
+        assertTrue(
+            enabled.composeConfiguration.extensions.nodeTypes
+                .containsAll(JETPACS_DESIGN_NODE_SCHEMA.keys),
+        )
+        assertTrue(
+            JETPACS_DESIGN_EXTENSION in enabled.composeConfiguration.appExtensions,
+        )
+        assertFalse(
+            JETPACS_DESIGN_EXTENSION in enabled.composeConfiguration.dialogExtensions,
+        )
     }
 
     @Test

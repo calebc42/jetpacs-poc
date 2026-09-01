@@ -318,7 +318,18 @@ class DeviceBridge(
     override val editorConnectionPhase: StateFlow<EditorConnectionPhase>
         get() = _editorConnectionPhase
 
-    private val config = CompanionConfig(
+    private val _experimentalDesignRuntimeEnabled = MutableStateFlow(
+        ExperimentalElispDesignRuntime.isEnabled(appContext),
+    )
+    val experimentalDesignRuntimeEnabled: StateFlow<Boolean>
+        get() = _experimentalDesignRuntimeEnabled
+    private val _rendererInstallation = MutableStateFlow(
+        CompanionRenderer.installation(_experimentalDesignRuntimeEnabled.value),
+    )
+    val rendererInstallation: StateFlow<CompanionRendererInstallation>
+        get() = _rendererInstallation
+
+    private val baseConfig = CompanionConfig(
         serverName = "jetpacs-companion",
         serverVersion = "0.1.0-w4",
         pairings = emptyMap(),
@@ -393,6 +404,35 @@ class DeviceBridge(
         // KeyStore key, so queued sms/call fire data satisfies SPEC 21.5.
         sensitiveQueueEncrypted = true,
     )
+
+    /**
+     * Persist, publish, and then retire only the transport that was active
+     * when the user changed the setting. A concurrently accepted replacement
+     * sees the newly published installation and must not be torn down.
+     */
+    fun setExperimentalDesignRuntimeEnabled(enabled: Boolean) {
+        val activeTransport = current
+        val applied = applyExperimentalDesignRuntimeChange(
+            current = _experimentalDesignRuntimeEnabled.value,
+            requested = enabled,
+            persist = { ExperimentalElispDesignRuntime.persist(appContext, it) },
+            publish = {
+                _experimentalDesignRuntimeEnabled.value = it
+                _rendererInstallation.value = CompanionRenderer.installation(it)
+            },
+            closeActiveSession = { activeTransport?.runCatching { close() } },
+        )
+        if (!applied) onToast("Could not save the experimental design setting")
+    }
+
+    /** Every accepted connection receives a setting-consistent welcome. */
+    private fun sessionConfig(): CompanionConfig {
+        val installation = _rendererInstallation.value
+        return baseConfig.copy(
+            surfaceProfiles = installation.surfaceProfiles,
+            nodeVocabulary = installation.nodeVocabulary,
+        )
+    }
 
     private fun loadTheme(): JsonObject? = stores.theme().load()
 
@@ -1569,7 +1609,7 @@ class DeviceBridge(
     private fun serve(socket: Socket, generation: Long) {
         val out = socket.getOutputStream()
         val engine = variantEngineRoute.prepare(generation) {
-            CompanionEngine(config, store, queue, reminders, triggers, firing) { bytes ->
+            CompanionEngine(sessionConfig(), store, queue, reminders, triggers, firing) { bytes ->
                 // The sink runs on whatever thread emits — the reader, the pump,
                 // or the UI dispatch executor. A peer that went away mid-write
                 // MUST NOT crash that thread (and with it the app): close the
