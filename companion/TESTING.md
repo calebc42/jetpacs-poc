@@ -73,6 +73,27 @@ ACTIVE pairing and distinct credential/payload Keystore aliases, and checks
 that the `specialUse` foreground service is private. CI runs this as the
 `api34-device` job with KVM enabled.
 
+## Generic Glance widget gate
+
+Run the renderer, Room lifecycle, policy, and app composition checks with:
+
+```sh
+./gradlew \
+  :renderer:glance:testDebugUnitTest \
+  :core:database:jvmTest \
+  :app:testDebugUnitTest \
+  :app:assembleDebug
+```
+
+The Glance suite pins first-authored eligible size selection and conservative
+empty-body projection. The Room suite covers multiple bindings, token
+replacement and deletion, host-ID restore, and pairing revocation. App policy
+tests pin stale deadlines, resize inputs, and the 716,800-byte marshalled
+RemoteViews cap. EBP's `SurfaceOccurrenceTest` and durable-queue kill matrix
+cover offline admission, process death, and replay. The full lifecycle mapping
+and Grove Capture/Agenda acceptance fixtures are in
+`../docs/GLANCE-WIDGETS.md`.
+
 ## Screenshot references
 
 ```sh

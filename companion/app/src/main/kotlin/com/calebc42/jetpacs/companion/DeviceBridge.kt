@@ -276,6 +276,7 @@ class DeviceBridge(
         supportedCapabilities = setOf("theme", "surfaces.dialog", "presentation.toast",
             "presentation.snackbar",
             "presentation.pie-menu", "reminders.owner", "surfaces.notification",
+            "surfaces.widget",
             "editor.sync", "capabilities", "triggers"),
         // SPEC 10.2: what this build's renderer actually honors — derived from
         // the render/NodeSupport registry (the pin test holds the renderer's

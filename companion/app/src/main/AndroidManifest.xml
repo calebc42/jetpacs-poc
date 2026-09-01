@@ -44,6 +44,20 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".WidgetConfigurationActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".WidgetActionConfirmationActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.DeviceDefault.Dialog.NoActionBar" />
+
         <service
             android:name=".JetpacsBridgeService"
             android:exported="false"
@@ -59,6 +73,18 @@
         <receiver android:name=".ReminderTapReceiver" android:exported="false" />
         <!-- SPEC 18.5: a notification action tap routes into the Section 14 pipeline. -->
         <receiver android:name=".NotificationActionReceiver" android:exported="false" />
+        <receiver android:name=".WidgetActionReceiver" android:exported="false" />
+
+        <receiver
+            android:name=".JetpacsWidgetProvider"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/jetpacs_widget_info" />
+        </receiver>
 
         <!-- SPEC 21.5: an armed time.* trigger fires here (our PendingIntent only). -->
         <receiver android:name=".TimeAlarmReceiver" android:exported="false" />

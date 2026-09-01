@@ -165,6 +165,7 @@ abstract class RevocationDao {
         eraseTriggerState(pairingId)
         eraseThemeState(pairingId)
         erasePlatformEffects(pairingId)
+        eraseWidgetState(pairingId)
         check(resetRuntime(pairingId) == 1) { "Pairing runtime is missing" }
         return true
     }
@@ -244,6 +245,9 @@ abstract class RevocationDao {
 
     @Query("DELETE FROM platform_effects WHERE pairing_id = :pairingId")
     protected abstract suspend fun erasePlatformEffects(pairingId: String): Int
+
+    @Query("DELETE FROM widget_bindings WHERE pairing_id = :pairingId")
+    protected abstract suspend fun eraseWidgetState(pairingId: String): Int
 
     @Query(
         """

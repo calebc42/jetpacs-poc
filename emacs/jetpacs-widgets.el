@@ -76,7 +76,7 @@ of the same extension and refuses ownership or schema collisions."
                                       (member node-type owned))))
         (error "jetpacs: renderer node %S already has an owner" node-type)))
     (dolist (target targets)
-      (unless (memq (car target) '(app dialog notification))
+      (unless (memq (car target) '(app dialog notification widget))
         (error "jetpacs: unknown renderer target %S" (car target)))
       (dolist (node-type (cdr target))
         (unless (member node-type node-types)
@@ -298,12 +298,51 @@ authors into specs — never by the peer."
     (error "jetpacs: %s must be an action/builtin descriptor (SPEC 14), got %S" what v))
   v)
 
+(defun jetpacs--check-swipe-action (action what)
+  "Validate one labeled swipe ACTION; WHAT identifies it in an error."
+  (jetpacs--check-obj
+   action '(:label :icon :color :on_trigger) what
+   (lambda (key value)
+     (pcase key
+       (:label (jetpacs--require-non-empty-string value ":label"))
+       (:icon (jetpacs-check-identifier value ":icon"))
+       (:color (jetpacs--check-color value))
+       (:on_trigger (jetpacs-check-descriptor value ":on-trigger")))))
+  (unless (and (plist-member action :label)
+               (plist-member action :on_trigger))
+    (error "jetpacs: %s requires :label and :on_trigger (SPEC 17.3)" what))
+  action)
+
 (defun jetpacs--check-swipe (v what)
-  "Signal unless V is a swipe side: a plist with :label and :on_trigger (§17.3).
-WHAT names the field.  Returns V."
-  (unless (and (consp v) (keywordp (car v))
-               (plist-member v :label) (plist-member v :on_trigger))
-    (error "jetpacs: %s must be a swipe side with :label and :on_trigger (SPEC 17.3), got %S" what v))
+  "Validate legacy or reveal-first rich swipe side V; WHAT names the field."
+  (unless (and (consp v) (keywordp (car v)))
+    (error "jetpacs: %s must be a swipe object (SPEC 17.3), got %S" what v))
+  (if (plist-member v :actions)
+      (progn
+        (jetpacs--check-obj
+         v '(:actions :commit) what
+         (lambda (key value)
+           (pcase key
+             (:actions
+              (unless (vectorp value)
+                (error "jetpacs: %s :actions must be an array (SPEC 17.3)" what)))
+             (:commit (jetpacs-check-bool value ":commit")))))
+        (let* ((actions (plist-get v :actions))
+               (count (length actions))
+               labels)
+          (unless (<= 1 count jetpacs-max-swipe-actions-per-side)
+            (error "jetpacs: %s requires 1..%d actions (SPEC 17.3), got %d"
+                   what jetpacs-max-swipe-actions-per-side count))
+          (dotimes (index count)
+            (let ((action (aref actions index)))
+              (jetpacs--check-swipe-action
+               action (format "%s action %d" what index))
+              (push (plist-get action :label) labels)))
+          (unless (= count (length (delete-dups (copy-sequence labels))))
+            (error "jetpacs: %s action labels must be distinct (SPEC 17.3)" what))
+          (when (and (eq (plist-get v :commit) t) (> count 2))
+            (error "jetpacs: %s :commit supports at most two actions (SPEC 17.3)" what))))
+    (jetpacs--check-swipe-action v what))
   v)
 
 (defun jetpacs--flag (x)
@@ -1316,15 +1355,38 @@ COLOR is a §16.6 color; THICKNESS a non-negative dp."
   (when thickness (jetpacs--check-number thickness ":thickness" 0 nil))
   (jetpacs-make-node "divider" :color color :thickness thickness))
 
-(cl-defun jetpacs-swipe (label &key icon color on-trigger)
-  "A swipe side {label, icon?, color?, on_trigger} for card/collapsible (§17.3).
-LABEL is a string; ICON a §4.4 identifier; COLOR a §16.6 color; ON-TRIGGER
-an ActionDescriptor dispatched at most once per gesture."
-  (jetpacs-require-string label ":label")
+(cl-defun jetpacs-swipe-action (label &key icon color on-trigger)
+  "One labeled action inside a rich reveal-first swipe side (SPEC §17.3)."
+  (jetpacs--require-non-empty-string label ":label")
   (when icon (jetpacs-check-identifier icon ":icon"))
   (when color (jetpacs--check-color color))
   (jetpacs-check-descriptor on-trigger ":on-trigger")   ; required (§17.3)
   (jetpacs-make-node nil :label label :icon icon :color color :on_trigger on-trigger))
+
+(cl-defun jetpacs-swipe (label-or-actions &key icon color on-trigger commit)
+  "Build a legacy commit swipe or a rich reveal-first swipe side (SPEC §17.3).
+
+When LABEL-OR-ACTIONS is a string, preserve the legacy one-action shape and
+use ICON, COLOR, and ON-TRIGGER.  When it is a list or vector of one through
+four `jetpacs-swipe-action' objects, ordinary swipes only reveal those actions.
+COMMIT opts into the deliberately deeper first-action commit gesture and is
+valid only for rich sides containing at most two actions."
+  (if (stringp label-or-actions)
+      (progn
+        (when commit
+          (error "jetpacs: :commit belongs only to a rich swipe side (SPEC 17.3)"))
+        (jetpacs-swipe-action label-or-actions
+                              :icon icon :color color :on-trigger on-trigger))
+    (when (or icon color on-trigger)
+      (error "jetpacs: rich swipe styling/actions belong on each jetpacs-swipe-action"))
+    (let* ((actions
+            (cond
+             ((vectorp label-or-actions) label-or-actions)
+             ((listp label-or-actions) (vconcat label-or-actions))
+             (t (error "jetpacs: rich swipe actions must be a list or vector"))))
+           (side (jetpacs-make-node nil :actions actions :commit commit)))
+      (jetpacs--check-swipe side "rich swipe")
+      side)))
 
 (defconst jetpacs--card-variants '("filled" "elevated" "outlined"))
 
@@ -3192,16 +3254,44 @@ BODY is a Node."
     (error "jetpacs-notification-surface: BODY must be a root node, got %S" body))
   (jetpacs-make-node nil :body body :meta meta))
 
-(cl-defun jetpacs-widget-surface (title body &key empty header-action)
-  "A `widget:*' SurfaceSpec {title, body, empty?, header_action?} (SPEC §13.4).
-TITLE is a string; BODY and EMPTY are Nodes; HEADER-ACTION a descriptor."
+(cl-defun jetpacs-widget-size-variant (min-width min-height body)
+  "An adaptive widget body eligible at MIN-WIDTH by MIN-HEIGHT dp (SPEC §13.4)."
+  (jetpacs--check-number min-width ":min-width" 0 nil)
+  (jetpacs--check-number min-height ":min-height" 0 nil)
+  (unless (jetpacs-root-node-p body)
+    (error "jetpacs-widget-size-variant: BODY must be a root node, got %S" body))
+  (jetpacs-make-node nil :min_width min-width :min_height min-height :body body))
+
+(cl-defun jetpacs-widget-surface (title body &key empty header-action size-variants)
+  "Build a complete `widget:*' SurfaceSpec wrapper (SPEC §13.4).
+
+TITLE is a string; BODY and EMPTY are Nodes; HEADER-ACTION is a descriptor.
+SIZE-VARIANTS is an authored-order list or vector of at most eight
+`jetpacs-widget-size-variant' objects; the first eligible variant wins."
   (jetpacs-require-string title ":title")
   (unless (jetpacs-root-node-p body)
     (error "jetpacs-widget-surface: BODY must be a root node, got %S" body))
   (when (and empty (not (jetpacs-root-node-p empty)))
     (error "jetpacs-widget-surface: :empty must be a root node, got %S" empty))
   (when header-action (jetpacs-check-descriptor header-action ":header-action"))
-  (jetpacs-make-node nil :title title :body body :empty empty :header_action header-action))
+  (let ((variants
+         (cond
+          ((null size-variants) nil)
+          ((vectorp size-variants) size-variants)
+          ((listp size-variants) (vconcat size-variants))
+          (t (error "jetpacs-widget-surface: :size-variants must be a list or vector")))))
+    (when (> (length variants) jetpacs-max-widget-size-variants)
+      (error "jetpacs-widget-surface: at most %d size variants are allowed"
+             jetpacs-max-widget-size-variants))
+    (dotimes (index (length variants))
+      (let ((variant (aref variants index)))
+        (unless (and (jetpacs-node-p variant)
+                     (plist-member variant :min_width)
+                     (plist-member variant :min_height)
+                     (jetpacs-root-node-p (plist-get variant :body)))
+          (error "jetpacs-widget-surface: size variant %d is malformed" index))))
+    (jetpacs-make-node nil :title title :body body :empty empty
+                       :header_action header-action :size_variants variants)))
 
 ;;;; Hypertext block sequences
 
@@ -3270,6 +3360,12 @@ worked on device while this constant disagreed.")
 (defconst jetpacs-notification-node-types
   '("text" "row" "column" "box" "spacer" "divider")
   "The reference companion's advertised `notification' node_types (6).")
+
+(defconst jetpacs-widget-node-types
+  '("text" "icon" "row" "column" "box" "surface" "lazy_column" "spacer"
+    "divider" "card" "button" "icon_button" "badge" "section_header"
+    "empty_state")
+  "The reference companion's conservative Glance `widget' node types (15).")
 
 (defconst jetpacs--opaque-members '(:args :meta :value)
   "Members carrying opaque JSON data, whose object keys are application data
@@ -3456,7 +3552,7 @@ connection, pass that connection's advertised
 
 (defun jetpacs-check-profile (tree profile)
   "Signal if TREE uses a type outside the reference PROFILE's node set (§16.2).
-PROFILE is `app', `dialog', or `notification'.  For a specific connection,
+PROFILE is `app', `dialog', `notification', or `widget'.  For a connection,
 prefer `jetpacs-check-node-types' with that connection's advertised set."
   (jetpacs-check-node-types
    tree
@@ -3468,7 +3564,10 @@ prefer `jetpacs-check-node-types' with that connection's advertised set."
      ('notification
       (append jetpacs-notification-node-types
               (jetpacs-renderer-target-node-types 'notification)))
-     (_ (error "jetpacs-check-profile: unknown profile %S (want app/dialog/notification)" profile)))
+     ('widget
+      (append jetpacs-widget-node-types
+              (jetpacs-renderer-target-node-types 'widget)))
+     (_ (error "jetpacs-check-profile: unknown profile %S (want app/dialog/notification/widget)" profile)))
    (symbol-name profile)))
 
 (provide 'jetpacs-widgets)

@@ -101,6 +101,7 @@ class BootReceiver : BroadcastReceiver() {
             try {
                 Notifications.rearmAllReminders(app, app.stores)
                 TriggerAlarms.reschedule(app, app.stores)
+                WidgetUpdateCoordinator.updateAll(app)
                 val firing = app.stores.firing()
                 when (action) {
                     Intent.ACTION_BOOT_COMPLETED ->

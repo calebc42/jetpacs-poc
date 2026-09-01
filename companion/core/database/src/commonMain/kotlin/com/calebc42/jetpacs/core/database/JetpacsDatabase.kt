@@ -1,6 +1,7 @@
 package com.calebc42.jetpacs.core.database
 
 import androidx.room3.ConstructedBy
+import androidx.room3.AutoMigration
 import androidx.room3.Database
 import androidx.room3.RoomDatabase
 import androidx.room3.RoomDatabaseConstructor
@@ -22,8 +23,11 @@ import androidx.room3.RoomDatabaseConstructor
         PairingThemeEntity::class,
         PlatformEffectEntity::class,
         AppRuntimeEntity::class,
+        WidgetBindingEntity::class,
+        WidgetActionTokenEntity::class,
     ],
-    version = 1,
+    version = 2,
+    autoMigrations = [AutoMigration(from = 1, to = 2)],
     exportSchema = true,
 )
 @ConstructedBy(JetpacsDatabaseConstructor::class)
@@ -45,6 +49,8 @@ abstract class JetpacsDatabase : RoomDatabase() {
     abstract fun themeAndEffectDao(): ThemeAndEffectDao
 
     abstract fun appRuntimeDao(): AppRuntimeDao
+
+    abstract fun widgetDao(): WidgetDao
 }
 
 @Suppress("NO_ACTUAL_FOR_EXPECT")

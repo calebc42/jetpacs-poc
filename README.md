@@ -32,6 +32,14 @@ accessibility contract. Jetpacs authors the envelope with
 `jetpacs-with-semantics`, `jetpacs-semantic-collection`,
 `jetpacs-semantic-collection-item`, and `jetpacs-semantic-action`.
 
+Android home-screen widgets use the sibling `:renderer:glance` module and the
+same admitted neutral renderer model. One generic provider binds each launcher
+instance to any Emacs-authored `widget:<name>` surface, renders accepted Room
+state after a cold start, and routes remote clicks through the durable Room
+outbox. The profile, lifecycle, security boundary, RemoteViews size guard, and
+Grove visual fixtures are documented in
+[`docs/GLANCE-WIDGETS.md`](docs/GLANCE-WIDGETS.md).
+
 ## Lineage and reusable sources
 
 The tags below are immutable historical snapshots, not code-use boundaries.

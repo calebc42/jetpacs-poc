@@ -71,6 +71,10 @@ class JetpacsApplication : Application() {
         )
     }
 
+    internal fun requestSurfaceOpenFromPlatform(surfaceId: String) {
+        requestSurfaceOpen(surfaceId)
+    }
+
     lateinit var bridge: DeviceBridge
         private set
     lateinit var container: JetpacsProcessContainer
@@ -97,6 +101,9 @@ class JetpacsApplication : Application() {
             proofProvider = container.proofProvider,
             onSurfaceChanged = { surface, spec ->
                 appSurfaces.publish(surface, spec)
+                if (surface.startsWith("widget:")) {
+                    WidgetUpdateCoordinator.enqueueSurface(this, surface)
+                }
             },
             onAppSurfaceCacheLoaded = appSurfaces::markLoaded,
             // SPEC 15.1: storage failure and queue exhaustion MUST reach the

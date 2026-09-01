@@ -5,7 +5,7 @@
 
 ;;; Commentary:
 
-;; GENERATED from ebp/contract.json (format 11, spec
+;; GENERATED from ebp/contract.json (format 12, spec
 ;; 3.1.0-draft) by tools/gen-jetpacs-vocabulary.py -- DO NOT EDIT.
 ;; `jetpacs-widgets/catalog-node-schema' re-reads the contract and fails on
 ;; any disagreement, exactly as the other `catalog-*' mirrors do.
@@ -23,7 +23,7 @@
 
 ;;; Code:
 
-(defconst jetpacs-contract-format 11
+(defconst jetpacs-contract-format 12
   "The `contract_format' this vocabulary was generated from.")
 
 (defconst jetpacs-protocol-version 3
@@ -64,6 +64,35 @@
 (defconst jetpacs-max-semantic-actions-per-node
   8
   "The fixed maximum number of authored custom actions on one Node.")
+
+(defconst jetpacs-renderer-profile-contract
+  '(:required ("node_types" "builtins" "features" "extensions") :optional ("members" "limits") :members (:required ("universal" "nodes" "semantics" "surface") :optional () :field_types (:universal "identifier-array" :nodes "node-member-map" :semantics "identifier-array" :surface "identifier-array")) :limits (:required () :optional ("max_nodes" "max_lazy_items" "max_node_depth" "max_size_variants" "max_remote_views_bytes") :field_types (:max_nodes "positive-integer" :max_lazy_items "positive-integer" :max_node_depth "positive-integer" :max_size_variants "positive-integer" :max_remote_views_bytes "positive-integer")))
+  "Contract-projected target profile and exact member-support shape.")
+
+(defconst jetpacs-widget-surface-contract
+  '(:required ("title" "body") :optional ("empty" "header_action" "size_variants") :node_body t :multi_view :json-false)
+  "Contract-projected `widget:*' SurfaceSpec wrapper.")
+
+(defconst jetpacs-widget-size-variant-contract
+  '(:required ("min_width" "min_height" "body") :optional () :field_types (:min_width "dp" :min_height "dp" :body "node") :selection "first-authored-eligible")
+  "Contract-projected adaptive widget body shape.")
+
+(defconst jetpacs-swipe-contract
+  '(:legacy (:required ("label" "on_trigger") :optional ("icon" "color")) :rich (:required ("actions") :optional ("commit") :min_actions 1 :max_actions_limit "max_swipe_actions_per_side" :commit_max_actions 2) :action (:required ("label" "on_trigger") :optional ("icon" "color")))
+  "Contract-projected legacy and reveal-first rich swipe shapes.")
+
+(defconst jetpacs-max-widget-nodes
+  128)
+(defconst jetpacs-max-widget-lazy-items
+  40)
+(defconst jetpacs-max-widget-node-depth
+  12)
+(defconst jetpacs-max-widget-size-variants
+  8)
+(defconst jetpacs-max-widget-remote-views-bytes
+  716800)
+(defconst jetpacs-max-swipe-actions-per-side
+  4)
 
 (defconst jetpacs-accessible-name-precedence
   '("semantics.name" "content_description" "label" "icon" "t" "node")

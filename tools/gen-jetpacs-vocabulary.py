@@ -179,6 +179,35 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
   {contract["limits"]["fixed"]["max_semantic_actions_per_node"]}
   "The fixed maximum number of authored custom actions on one Node.")
 
+(defconst jetpacs-renderer-profile-contract
+  '{el_plist(contract["renderer_profile_schema"])}
+  "Contract-projected target profile and exact member-support shape.")
+
+(defconst jetpacs-widget-surface-contract
+  '{el_plist(contract["surface_spec_variants"]["widget"])}
+  "Contract-projected `widget:*' SurfaceSpec wrapper.")
+
+(defconst jetpacs-widget-size-variant-contract
+  '{el_plist(contract["widget_size_variant_schema"])}
+  "Contract-projected adaptive widget body shape.")
+
+(defconst jetpacs-swipe-contract
+  '{el_plist(contract["swipe_schema"])}
+  "Contract-projected legacy and reveal-first rich swipe shapes.")
+
+(defconst jetpacs-max-widget-nodes
+  {contract["limits"]["fixed"]["max_widget_nodes"]})
+(defconst jetpacs-max-widget-lazy-items
+  {contract["limits"]["fixed"]["max_widget_lazy_items"]})
+(defconst jetpacs-max-widget-node-depth
+  {contract["limits"]["fixed"]["max_widget_node_depth"]})
+(defconst jetpacs-max-widget-size-variants
+  {contract["limits"]["fixed"]["max_widget_size_variants"]})
+(defconst jetpacs-max-widget-remote-views-bytes
+  {contract["limits"]["fixed"]["max_widget_remote_views_bytes"]})
+(defconst jetpacs-max-swipe-actions-per-side
+  {contract["limits"]["fixed"]["max_swipe_actions_per_side"]})
+
 (defconst jetpacs-accessible-name-precedence
   '({el_strings(semantics["accessible_name_precedence"])})
   "Accessible-name sources in normative first-present order.")

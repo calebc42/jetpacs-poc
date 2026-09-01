@@ -19,11 +19,17 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'jetpacs-widgets)
+(require 'jetpacs-widget-fixtures)
 (require 'glasspane-material3)
 
 (defvar jetpacs-test--dir
   (file-name-directory (or load-file-name buffer-file-name))
   "Directory holding this test file (repo `test/').")
+
+(defvar jetpacs-test--ebp-spec-dir
+  (or (getenv "EBP_SPEC_DIR")
+      (expand-file-name "../../ebp-poc/ebp" jetpacs-test--dir))
+  "Canonical EBP specification checkout containing the golden corpora.")
 
 (defvar jetpacs-test--glasspane-material3-dir
   (or (getenv "GLASSPANE_MATERIAL3_DIR")
@@ -35,14 +41,19 @@
   (let ((h (make-hash-table :test 'equal)))
     (with-temp-buffer
       (insert-file-contents
-       (expand-file-name (format "../ebp/goldens/%s.golden" name)
-                         jetpacs-test--dir))
+       (expand-file-name (format "goldens/%s.golden" name)
+                         jetpacs-test--ebp-spec-dir))
       (goto-char (point-min))
       (while (not (eobp))
         (let ((line (buffer-substring-no-properties
                      (line-beginning-position) (line-end-position))))
           (when (string-match "\\`\\([0-9]+\\) \\(.*\\)\\'" line)
-            (puthash (match-string 1 line) (match-string 2 line) h)))
+            ;; `json-serialize' returns the UTF-8 wire octets as a unibyte
+            ;; string.  Compare the golden in that same byte representation,
+            ;; including for non-ASCII visual fixtures.
+            (puthash (match-string 1 line)
+                     (encode-coding-string (match-string 2 line) 'utf-8)
+                     h)))
         (forward-line 1)))
     h))
 
@@ -223,6 +234,24 @@
                               :swipe-end (jetpacs-swipe "Delete" :icon "delete"
                                           :color "error"
                                           :on-trigger (jetpacs-action "demo.delete"))))
+      (chk "105"
+           (jetpacs-card
+            (jetpacs-text "Reveal before acting")
+            :swipe-start
+            (jetpacs-swipe
+             (list
+              (jetpacs-swipe-action "Done" :icon "done"
+                                    :on-trigger (jetpacs-action "demo.done"))
+              (jetpacs-swipe-action "Note" :icon "note_add"
+                                    :on-trigger (jetpacs-action "demo.note")))
+             :commit t)
+            :swipe-end
+            (jetpacs-swipe
+             (list
+              (jetpacs-swipe-action "Delete" :icon "delete" :color "error"
+                                    :on-trigger (jetpacs-action "demo.delete"))
+              (jetpacs-swipe-action "Archive" :icon "archive"
+                                    :on-trigger (jetpacs-action "demo.archive"))))))
       (chk "31" (jetpacs-collapsible "sec1" (jetpacs-text "Section") (jetpacs-text "body")
                                      :collapsed t
                                      :on-long-tap (jetpacs-action "demo.long")
@@ -337,7 +366,21 @@
   ;; swipe_start/swipe_end must be swipe sides (label + on_trigger)
   (should-error (jetpacs-card (jetpacs-text "a") :swipe-start '(:label "x")))
   (should (jetpacs-card (jetpacs-text "a")
-                        :swipe-start (jetpacs-swipe "x" :on-trigger (jetpacs-action "a.b")))))
+                        :swipe-start (jetpacs-swipe "x" :on-trigger (jetpacs-action "a.b"))))
+  ;; Rich sides reveal first, have 1..4 distinct actions, and deep-commit at most two.
+  (let ((action (jetpacs-swipe-action "Done" :on-trigger (jetpacs-action "a.b"))))
+    (should (jetpacs-swipe (list action)))
+    (should-error (jetpacs-swipe nil))
+    (should-error (jetpacs-swipe (make-list 5 action)))
+    (should-error (jetpacs-swipe (list action action)))
+    (should-error
+     (jetpacs-swipe
+      (list action
+            (jetpacs-swipe-action "Two" :on-trigger (jetpacs-action "a.two"))
+            (jetpacs-swipe-action "Three" :on-trigger (jetpacs-action "a.three")))
+      :commit t))
+    (should-error (jetpacs-swipe "Done" :on-trigger (jetpacs-action "a.b")
+                                 :commit t))))
 
 (ert-deftest jetpacs-widgets/layout-negative-dp ()
   "Negative dp values are rejected (§17.3)."
@@ -710,6 +753,16 @@
                   (jetpacs-widget-surface "Title" (jetpacs-text "hi")))
                  "{\"body\":{\"t\":\"text\",\"text\":\"hi\"},\"title\":\"Title\"}")))
 
+(ert-deftest jetpacs-widgets/widget-visual-acceptance-goldens ()
+  "Grove Capture and Agenda fixtures match the normative widget witnesses."
+  (let ((goldens (jetpacs-test--golden-map "widget-surfaces")))
+    (should (equal (jetpacs-node->canonical-json
+                    (jetpacs-grove-capture-widget-fixture))
+                   (gethash "00" goldens)))
+    (should (equal (jetpacs-node->canonical-json
+                    (jetpacs-grove-agenda-widget-fixture))
+                   (gethash "01" goldens)))))
+
 (ert-deftest jetpacs-widgets/scaffold-surface-validation ()
   "Scaffold + SurfaceSpec wrappers enforce their rules."
   (should-error (jetpacs-scaffold :body "not-a-node"))
@@ -719,6 +772,14 @@
   (should-error (jetpacs-multi-view (list (cons "bad id" (jetpacs-column))) "bad id"))
   (should-error (jetpacs-multi-view (list (cons "list" (jetpacs-column))) "detail"))
   (should-error (jetpacs-widget-surface "T" "not-a-node"))
+  (should-error (jetpacs-widget-size-variant -1 100 (jetpacs-text "x")))
+  (should-error (jetpacs-widget-size-variant 100 100 "not-a-node"))
+  (should-error
+   (jetpacs-widget-surface
+    "T" (jetpacs-text "x")
+    :size-variants
+    (cl-loop repeat (1+ jetpacs-max-widget-size-variants)
+             collect (jetpacs-widget-size-variant 0 0 (jetpacs-text "x")))))
   (should-error (jetpacs-notification-surface "not-a-node"))
   ;; post-audit: snackbar_action shape validated
   (should-error (jetpacs-scaffold :snackbar-action "not-an-object"))
@@ -768,6 +829,7 @@
   (should (= (length jetpacs-app-node-types) 49))
   (should (= (length jetpacs-dialog-node-types) 32))
   (should (= (length jetpacs-notification-node-types) 6))
+  (should (= (length jetpacs-widget-node-types) 15))
   (should (equal (sort (copy-sequence jetpacs-app-node-types) #'string<)
                  (sort (copy-sequence jetpacs-node-types) #'string<)))
   (should (= (length (append jetpacs-app-node-types
@@ -788,6 +850,9 @@
   (should-error (jetpacs-check-profile (jetpacs-chart nil) 'notification))
   (should-error (jetpacs-check-profile (jetpacs-button "x" (jetpacs-action "a.b"))
                                        'notification))
+  ;; widget advertises only the nodes the Glance translation really implements.
+  (should (jetpacs-check-profile (jetpacs-grove-agenda-widget-fixture) 'widget))
+  (should-error (jetpacs-check-profile (jetpacs-checkbox "c") 'widget))
   ;; dialog (27) forbids scaffold/layout/viz.  `editor' IS advertised:
   ;; JC-4b added it to the Companion's DIALOG_NODE_TYPES so a dialog could
   ;; host the capf picker, and this reference constant lagged that change

@@ -27,6 +27,7 @@ include(":core:navigation")
 include(":core:testing")
 include(":renderer:model")
 include(":renderer:compose")
+include(":renderer:glance")
 include(":renderer:jetpacs")
 include(":renderer:material3")
 
@@ -38,6 +39,7 @@ project(":wire").projectDir = file("../../ebp-poc/ebp-kmp/wire")
 project(":renderer").projectDir = file("../../ebp-poc/ebp-compose/renderer")
 project(":renderer:model").projectDir = file("../../ebp-poc/ebp-compose/renderer/model")
 project(":renderer:compose").projectDir = file("../../ebp-poc/ebp-compose/renderer/compose")
+project(":renderer:glance").projectDir = file("renderer/glance")
 project(":renderer:jetpacs").projectDir =
     file("../../jetpacs-components/renderer/jetpacs")
 project(":renderer:material3").projectDir =

@@ -24,6 +24,7 @@ import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsEditorRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsTextInputRenderer
+import com.calebc42.jetpacs.renderer.glance.GlanceRendererContribution
 import com.calebc42.ebp.renderer.model.RendererProfile
 import com.calebc42.ebp.renderer.model.RendererRegistry
 import kotlinx.serialization.json.JsonObject
@@ -49,6 +50,7 @@ object CompanionRenderer {
             NodeSupport.MATERIAL_APP_CONTRIBUTION,
             NodeSupport.MATERIAL_DIALOG_CONTRIBUTION,
             NodeSupport.NOTIFICATION_CONTRIBUTION,
+            GlanceRendererContribution,
             JetpacsComponentsContribution,
         ),
         extensionOwners = extensionOwners,
@@ -80,6 +82,9 @@ object CompanionRenderer {
     private val notificationProfile: RendererProfile = registry.profile(
         NodeSupport.NOTIFICATION_CONTRIBUTION.id,
     )
+    val widgetProfile: RendererProfile = registry.profile(
+        GlanceRendererContribution.id,
+    )
 
     val APP_NODE_TYPES: Set<String> get() = appProfile.nodeTypes
     val DIALOG_NODE_TYPES: Set<String> get() = dialogProfile.nodeTypes
@@ -90,12 +95,16 @@ object CompanionRenderer {
     val APP_FEATURES: Set<String> get() = appProfile.features
     val DIALOG_FEATURES: Set<String> get() = dialogProfile.features
     val NOTIFICATION_FEATURES: Set<String> get() = notificationProfile.features
+    val WIDGET_NODE_TYPES: Set<String> get() = widgetProfile.nodeTypes
+    val WIDGET_BUILTINS: Set<String> get() = widgetProfile.builtins
+    val WIDGET_FEATURES: Set<String> get() = widgetProfile.features
 
     /** Target profiles advertised in the authenticated EBP welcome. */
     fun surfaceProfiles(): JsonObject = buildJsonObject {
         put("app", appProfile.toJson())
         put("dialog", dialogProfile.toJson())
         put("notification", notificationProfile.toJson())
+        put("widget", widgetProfile.toJson())
     }
 
     /** Visual dispatch corresponding exactly to the installed app profile. */

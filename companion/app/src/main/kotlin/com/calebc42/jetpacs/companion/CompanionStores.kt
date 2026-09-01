@@ -13,6 +13,7 @@ import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.ebp.wire.TriggerFiringService
 import com.calebc42.ebp.wire.TriggerStore
 import com.calebc42.ebp.wire.jsonStringSet
+import com.calebc42.ebp.wire.memberSupportFromProfiles
 import com.calebc42.jetpacs.core.ebpstore.RoomEbpDurableStore
 import java.util.concurrent.atomic.AtomicReference
 
@@ -86,10 +87,21 @@ class CompanionStores(
             maxCanvasOps = 4096,
             appNodeTypes = CompanionRenderer.APP_NODE_TYPES,
             notificationNodeTypes = CompanionRenderer.NOTIFICATION_NODE_TYPES,
+            widgetNodeTypes = CompanionRenderer.WIDGET_NODE_TYPES,
             appBuiltins = CompanionRenderer.APP_BUILTINS,
             notificationBuiltins = CompanionRenderer.NOTIFICATION_BUILTINS,
+            widgetBuiltins = CompanionRenderer.WIDGET_BUILTINS,
             appFeatures = CompanionRenderer.APP_FEATURES,
             notificationFeatures = CompanionRenderer.NOTIFICATION_FEATURES,
+            widgetFeatures = CompanionRenderer.WIDGET_FEATURES,
+            widgetMembers = memberSupportFromProfiles(
+                CompanionRenderer.surfaceProfiles(),
+                "widget",
+            ),
+            maxWidgetNodes = CompanionRenderer.widgetProfile.limits!!.maxNodes,
+            maxWidgetLazyItems = CompanionRenderer.widgetProfile.limits!!.maxLazyItems,
+            maxWidgetNodeDepth = CompanionRenderer.widgetProfile.limits!!.maxNodeDepth,
+            maxWidgetSizeVariants = CompanionRenderer.widgetProfile.limits!!.maxSizeVariants,
             nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
             backing = RoomSurfaceBacking(durableStore, pairingId, nowMs),
         ).also { surfacesInstance = it }
