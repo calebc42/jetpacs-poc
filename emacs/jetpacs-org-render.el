@@ -134,6 +134,65 @@ its document screen, top-bar actions, and FAB.  A host that enforces a
 stricter boundary must return non-nil after a refusal so the generic
 fallback cannot bypass that boundary.")
 
+(defvar jetpacs-org-render--surface-presenters (make-hash-table :test #'equal)
+  "Host presenters keyed by (BUFFER-NAME . SURFACE).
+The registry lets two applets render the same Org buffer without replacing
+one global document-navigation policy.  Entries contain functions with the
+same signature as `jetpacs-org-render-follow-destination-function'.")
+
+(defun jetpacs-org-render--presenter-for (buffer-name surface)
+  "Return the presenter registered for BUFFER-NAME on SURFACE, if any."
+  (and (stringp buffer-name) (stringp surface)
+       (gethash (cons buffer-name surface)
+                jetpacs-org-render--surface-presenters)))
+
+(defun jetpacs-org-render-clear-context (&optional buffer surface)
+  "Remove registered host presenters matching BUFFER and SURFACE.
+BUFFER may be a live buffer or a buffer name string.  Either argument may be
+nil as a wildcard, so an applet can clear every presenter on its surface when
+it unloads without disturbing another host."
+  (let ((name (cond ((bufferp buffer) (buffer-name buffer))
+                    ((stringp buffer) buffer)
+                    ((null buffer) nil)
+                    (t (error "BUFFER must be a buffer, name, or nil"))))
+        dead)
+    (maphash
+     (lambda (key _presenter)
+       (when (and (or (null name) (equal (car key) name))
+                  (or (null surface) (equal (cdr key) surface)))
+         (push key dead)))
+     jetpacs-org-render--surface-presenters)
+    (dolist (key dead)
+      (remhash key jetpacs-org-render--surface-presenters))
+    (length dead)))
+
+(cl-defun jetpacs-org-render-in-context
+    (buffer &key surface follow-destination
+            (reader-typography nil reader-typography-p)
+            (hide-widen nil hide-widen-p))
+  "Render Org BUFFER under an explicit host presentation context.
+SURFACE and FOLLOW-DESTINATION register link navigation only for this buffer
+on that surface; the function receives (SOURCE DESTINATION POSITION SURFACE)
+and follows the same handled/non-handled contract as
+`jetpacs-org-render-follow-destination-function'.  READER-TYPOGRAPHY and
+HIDE-WIDEN bind the existing neutral renderer policies for this build.
+
+The ordinary one-argument `jetpacs-org-render' entry point remains unchanged
+for the Files adapter and generic buffer renderer."
+  (unless (buffer-live-p buffer)
+    (error "jetpacs-org-render-in-context: BUFFER must be live"))
+  (when (or surface follow-destination)
+    (unless (and (stringp surface) (functionp follow-destination))
+      (error "Jetpacs Org render context requires surface and presenter together"))
+    (puthash (cons (buffer-name buffer) surface) follow-destination
+             jetpacs-org-render--surface-presenters))
+  (let ((jetpacs-org-render-reader-typography
+         (if reader-typography-p reader-typography
+           jetpacs-org-render-reader-typography))
+        (jetpacs-org-render-hide-widen
+         (if hide-widen-p hide-widen jetpacs-org-render-hide-widen)))
+    (jetpacs-org-render buffer)))
+
 ;;;; Native upgrades: table
 
 (defun jetpacs-org-render--table-aligns (rows)
@@ -1217,7 +1276,10 @@ to the pure Tier-0 render."
                (org-in-regexp org-link-any-re))))
       'stale)
      (t
-      (let ((presenter jetpacs-org-render-follow-destination-function))
+      (let ((presenter
+             (or (jetpacs-org-render--presenter-for
+                  name (plist-get params :surface))
+                 jetpacs-org-render-follow-destination-function)))
         (jetpacs-navigate-thunk
          (lambda ()
            ;; Deliberately leave the destination buffer current: the
@@ -1402,7 +1464,7 @@ from their own state on the deferred re-push."
 ;;;; Reset / unload
 
 (defun jetpacs-org-render-reset ()
-  "Reset render-module state: LaTeX memo/queue/timer, view modes."
+  "Reset render-module state: LaTeX, view modes, and host presenters."
   (clrhash jetpacs-org-render--latex-memo)
   (setq jetpacs-org-render--latex-order nil
         jetpacs-org-render--latex-queue nil
@@ -1410,7 +1472,8 @@ from their own state on the deferred re-push."
   (when (timerp jetpacs-org-render--latex-timer)
     (cancel-timer jetpacs-org-render--latex-timer))
   (setq jetpacs-org-render--latex-timer nil)
-  (clrhash jetpacs-org-render--files-mode))
+  (clrhash jetpacs-org-render--files-mode)
+  (clrhash jetpacs-org-render--surface-presenters))
 
 (add-hook 'jetpacs-reset-functions #'jetpacs-org-render-reset)
 

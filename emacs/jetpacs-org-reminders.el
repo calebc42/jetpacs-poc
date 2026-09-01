@@ -1,19 +1,20 @@
-;;; jetpacs-org-reminders.el --- Org agenda reminder owner -*- lexical-binding: t; -*-
+;;; jetpacs-org-reminders.el --- Org agenda, search, and reminder owner -*- lexical-binding: t; -*-
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 ;; Package-Requires: ((emacs "30.1"))
 
 ;;; Commentary:
 
-;; The one Org agenda extraction and device-reminder pipeline owned by the
-;; Org Mode app.  Downstream screens may consume the richer agenda projection,
-;; but extraction and reminder delivery remain native Org machinery here.
+;; The one Org agenda/search extraction and device-reminder pipeline owned by
+;; the Org Mode app.  Downstream screens may consume the neutral projections,
+;; but extraction, search, and reminder delivery remain native Org machinery.
 ;; Registration is explicit from `jetpacs-org-mode', and the rollout flag is
 ;; deliberately independent of the inert legacy inline pipeline's flag.
 
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
 (require 'subr-x)
 (require 'calendar)
 (require 'org)
@@ -37,6 +38,12 @@ A date-only scheduled item is not an alarm.  Repeating timestamps are
 expanded by Org Agenda before reminders are built."
   :type 'natnum :group 'jetpacs-org)
 
+(defcustom jetpacs-org-mode-search-result-limit 100
+  "Maximum rows returned by the canonical Org search projection.
+The search itself is performed by Org's agenda search commands; this bound
+limits the neutral records retained for downstream applets."
+  :type '(integer 1 512) :group 'jetpacs-org)
+
 (defvar jetpacs-org-reminders-enabled nil
   "Non-nil when the canonical Org reminder pipeline is enabled.
 The default stays nil so the device owner can be changed only by the
@@ -47,6 +54,9 @@ ordered, durable-set cutover ceremony.")
 
 (defconst jetpacs-org-mode--agenda-buffer "*Jetpacs Org Mode Agenda*"
   "Private Org Agenda buffer used by the canonical extraction.")
+
+(defconst jetpacs-org-mode--search-buffer "*Jetpacs Org Mode Search*"
+  "Private Org Agenda buffer used by the canonical search projection.")
 
 ;;;; Canonical agenda extraction
 
@@ -80,6 +90,102 @@ count.  Results are memoised in the Org Mode namespace."
 SPAN and START-DAY have the same meaning as in Org Agenda.  This public read
 seam lets downstream applets present the one foundation-owned extraction
 without depending on its private worker or introducing another agenda engine.")
+
+(defun jetpacs-org-mode--search-record-at-point ()
+  "Return the neutral Org search record on the current agenda line.
+Return nil when the line is an agenda heading rather than an Org hit."
+  (when-let* ((marker (or (get-text-property (point) 'org-marker)
+                          (get-text-property (point) 'org-hd-marker)))
+              ((markerp marker))
+              (buffer (marker-buffer marker))
+              ((buffer-live-p buffer)))
+    (let ((summary (string-trim
+                    (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position)))))
+      (with-current-buffer buffer
+        (org-with-wide-buffer
+         (goto-char marker)
+         (org-back-to-heading t)
+         (let* ((components (org-heading-components))
+                (tags (org-get-tags nil t)))
+           `((headline . ,(or (nth 4 components) "Untitled"))
+             (todo . ,(nth 2 components))
+             (priority . ,(and (nth 3 components)
+                               (char-to-string (nth 3 components))))
+             (tags . ,(vconcat tags))
+             (file . ,buffer-file-name)
+             (pos . ,(point))
+             (summary . ,summary)
+             (ref . ,(ebp-org-ref-at-point)))))))))
+
+(defun jetpacs-org-mode--search-items-1 (query mode limit)
+  "Run Org's QUERY search in MODE and return at most LIMIT records.
+MODE is `text', which delegates to `org-search-view' (including its native
+phrase, Boolean, and brace-regexp syntax), or `match', which delegates to
+`org-tags-view' and therefore accepts standard Org match syntax."
+  (let ((files (sort (copy-sequence (jetpacs-org-mode--agenda-scope))
+                     #'string-lessp)))
+    (when files
+      (let ((org-agenda-files files)
+            (org-agenda-buffer-name jetpacs-org-mode--search-buffer)
+            (org-agenda-buffer-tmp-name jetpacs-org-mode--search-buffer)
+            (org-agenda-sticky nil)
+            (inhibit-redisplay t)
+            records
+            seen)
+        (unwind-protect
+            (save-window-excursion
+              (let ((org-agenda-window-setup 'current-window))
+                (ebp-org--with-clamped-io
+                  (pcase mode
+                    ('text (org-search-view nil query))
+                    ('match (org-tags-view nil query))))
+                (with-current-buffer jetpacs-org-mode--search-buffer
+                  (goto-char (point-min))
+                  (while (not (eobp))
+                    (when-let* ((record
+                                 (jetpacs-org-mode--search-record-at-point))
+                                (key (cons (alist-get 'file record)
+                                           (alist-get 'pos record)))
+                                ((not (member key seen))))
+                      (push key seen)
+                      (push record records))
+                    (forward-line 1)))))
+          (when-let* ((buffer (get-buffer jetpacs-org-mode--search-buffer)))
+            (kill-buffer buffer)))
+        (seq-take
+         (sort records
+               (lambda (left right)
+                 (let ((left-key
+                        (format "%s:%012d:%s"
+                                (or (alist-get 'file left) "")
+                                (or (alist-get 'pos left) 0)
+                                (or (alist-get 'headline left) "")))
+                       (right-key
+                        (format "%s:%012d:%s"
+                                (or (alist-get 'file right) "")
+                                (or (alist-get 'pos right) 0)
+                                (or (alist-get 'headline right) ""))))
+                   (string-lessp left-key right-key))))
+         limit)))))
+
+(defun jetpacs-org-mode-search-items (query &optional mode limit)
+  "Return a bounded canonical Org search projection for QUERY.
+MODE defaults to `text' and may be `text' or `match'.  Text mode is the
+built-in Org agenda text search, including its native Boolean and
+brace-regexp forms; match mode is standard Org tag/property/TODO match
+syntax.  LIMIT defaults to `jetpacs-org-mode-search-result-limit'."
+  (unless (and (stringp query) (not (string-blank-p query))
+               (<= (length query) 512))
+    (user-error "Search query must contain 1 to 512 characters"))
+  (setq mode (or mode 'text)
+        limit (or limit jetpacs-org-mode-search-result-limit))
+  (unless (memq mode '(text match))
+    (user-error "Unsupported Org search mode: %s" mode))
+  (unless (and (integerp limit) (<= 1 limit 512))
+    (user-error "Search limit must be between 1 and 512"))
+  (ebp-org-with-cache 'org-mode (list 'search mode query limit)
+    (jetpacs-org-mode--search-items-1 query mode limit)))
 
 (defun jetpacs-org-mode--agenda-items-1 (span start-day)
   "Uncached worker for `jetpacs-org-mode--agenda-items'."

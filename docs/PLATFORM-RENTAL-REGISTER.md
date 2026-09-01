@@ -18,6 +18,9 @@ documented compatibility boundary with an upstream/removal plan.
 | Canonical buffer initialization | `normal-mode`, normal file/local/dir-local/project hooks | One normally initialized visited buffer per document. No hand-selected `auto-mode-alist` shadow environment. |
 | Atomic buffer edits | `atomic-change-group`, `replace-region-contents` | Use for rollback/full reseed. Do not mistake buffer atomicity for a disk/SQLite transaction. |
 | Save/revert lifecycle | normal visited-buffer save/revert functions and hooks | Do not bypass mode save hooks or defer an accepted durable effect without a recoverable work record. |
+| Org search | built-in `org-search-view` and `org-tags-view` | Project their results through one bounded neutral adapter. Applets may choose presentation and modes, but must not ship a parallel index or query engine. |
+| Org document presentation | `jetpacs-org-render` neutral model plus scoped host presenters | Reuse the renderer for content. Register link presentation per buffer and surface, and clear that context when an applet unloads; no global presenter takeover. |
+| Applet file mutations | `jetpacs-files-create`, `jetpacs-files-rename`, `jetpacs-files-move`, `jetpacs-files-trash` | Reuse the Files allowlist and literal-entry guards. Never overwrite on create/move, follow a symlink out of policy, or silently replace recoverable trash with deletion. |
 | External file observation | `file-notify-add-watch`, save/revert hooks | Timer polling is a bounded fallback only when notifications are unavailable. |
 | HMAC | `gnutls-hash-mac` | Pass an intentional disposable key copy because the primitive wipes directly supplied key strings. No pure-Elisp HMAC in production. |
 | Secure entropy | `iv-auto` | Fail closed when unavailable. Do not shell to `head` or assume `/dev/urandom`. |

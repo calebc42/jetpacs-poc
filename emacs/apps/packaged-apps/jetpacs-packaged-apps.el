@@ -25,7 +25,7 @@
         (:name "grove.el"
          :label "Grove"
          :icon "forest"
-         :summary "Agenda and capture powered directly by Emacs Org"
+         :summary "Notebooks, editing, search, agenda, capture, and widgets powered by Emacs Org"
          :feature grove
          :app-id "grove"
          :register grove-register

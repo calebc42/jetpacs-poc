@@ -108,6 +108,29 @@ host machine's /sdcard-alikes into the allowlist."
   "Drive the run-at-time continuations."
   (cl-loop repeat 10 do (accept-process-output nil 0.05)))
 
+(ert-deftest jetpacs-files-public-mutations-share-the-root-checked-policy ()
+  "Applet-facing create, rename, move, and trash never bypass Files roots."
+  (jetpacs-files-test--with-tree root
+    (let* ((folder (jetpacs-files-create (concat root "notes") t))
+           (file (jetpacs-files-create (concat root "one.org")))
+           (renamed (jetpacs-files-rename file (concat root "two.org")))
+           trashed)
+      (should (file-directory-p folder))
+      (should (file-exists-p renamed))
+      (should-error (jetpacs-files-create renamed) :type 'ebp-path-refused)
+      (let ((moved (jetpacs-files-move renamed folder)))
+        (should (equal (file-name-nondirectory moved) "two.org"))
+        (should (file-exists-p moved))
+        (cl-letf (((symbol-function 'move-file-to-trash)
+                   (lambda (path) (setq trashed path) (delete-file path))))
+          (should (jetpacs-files-trash moved)))
+        (should (equal trashed (concat folder "/two.org")))
+        (should-not (file-exists-p moved)))
+      (should-error
+       (jetpacs-files-create
+        (expand-file-name "jetpacs-outside.org" temporary-file-directory))
+       :type 'ebp-path-refused))))
+
 ;;;; The floor guard, driven directly (the plan's named cases)
 
 (ert-deftest jetpacs-files-guard-remote-refused-before-any-stat ()

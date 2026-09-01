@@ -58,6 +58,45 @@
             (should (= calls 2))))
       (ebp-org-cache-invalidate))))
 
+(ert-deftest jetpacs-org-search-projection-uses-native-text-and-match-modes ()
+  "The public projection delegates to Org and returns stable bounded refs."
+  (let* ((dir (make-temp-file "jetpacs-org-search" t))
+         (first (expand-file-name "a.org" dir))
+         (second (expand-file-name "b.org" dir))
+         (org-directory dir)
+         (org-agenda-files (list second first))
+         (org-todo-keywords '((sequence "TODO" "NEXT" "|" "DONE")))
+         (ebp-org-roots (list dir)))
+    (unwind-protect
+        (progn
+          (write-region "* TODO Alpha rocket :work:\nBody needle.\n" nil first
+                        nil 'silent)
+          (write-region "* NEXT Beta garden :home:\nAnother needle.\n" nil second
+                        nil 'silent)
+          (ebp-org-cache-invalidate)
+          (let ((text (jetpacs-org-mode-search-items "needle" 'text 10))
+                (match (jetpacs-org-mode-search-items "+work" 'match 10)))
+            (should (= (length text) 2))
+            (should (equal (mapcar (lambda (row) (alist-get 'headline row))
+                                   text)
+                           '("Alpha rocket" "Beta garden")))
+            (should (= (length match) 1))
+            (should (equal (alist-get 'headline (car match)) "Alpha rocket"))
+            (should (plist-get (alist-get 'ref (car match)) :file)))
+          (should (= (length (jetpacs-org-mode-search-items
+                              "needle" 'text 1))
+                     1))
+          (should-error (jetpacs-org-mode-search-items "" 'text 10)
+                        :type 'user-error)
+          (should-error (jetpacs-org-mode-search-items "x" 'unknown 10)
+                        :type 'user-error))
+      (dolist (file (list first second))
+        (when-let* ((buffer (find-buffer-visiting file)))
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)))
+      (delete-directory dir t)
+      (ebp-org-cache-invalidate))))
+
 (ert-deftest jetpacs-org-reminders-horizon-dedupe-and-id-shape ()
   "Only in-horizon timed rows arm, with one owner-shaped id per instant."
   (let* ((now (encode-time 0 0 12 16 8 2026))

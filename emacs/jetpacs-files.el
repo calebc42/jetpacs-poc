@@ -1497,6 +1497,62 @@ an explicit nil is containment-only on both sides."
     (concat (file-name-as-directory (jetpacs-files--check parent nil))
             (file-name-nondirectory dfn))))
 
+(defun jetpacs-files-create (path &optional directory)
+  "Create a new empty file or DIRECTORY at root-scoped PATH.
+PATH must be absent and its parent must already be an authorized directory.
+The function never overwrites and returns the new canonical path.  It owns no
+dialog, notification, or navigation policy, so applets can safely build their
+own confirmation flow around it."
+  (let* ((expanded (expand-file-name path))
+         (parent (file-name-directory (directory-file-name expanded)))
+         (_parent (jetpacs-files--check parent 'directory))
+         (target (jetpacs-files--check expanded 'absent)))
+    (if directory
+        (make-directory target)
+      ;; MUSTBENEW=`excl' closes the check/create race: an entry appearing
+      ;; after the guard is never overwritten.
+      (write-region "" nil target nil 'silent nil 'excl))
+    (jetpacs-files--invalidate-browse-cache)
+    (file-truename target)))
+
+(defun jetpacs-files-rename (source target)
+  "Rename root-scoped SOURCE to absent root-scoped TARGET.
+Both the literal SOURCE entry and its resolved target are validated, so a
+symlink is renamed as a link and cannot escape the Files allowlist.  Return
+TARGET's canonical path after success."
+  (let ((act (jetpacs-files--check-op source))
+        (destination (jetpacs-files--check (expand-file-name target) 'absent)))
+    (rename-file act destination)
+    (jetpacs-files--invalidate-browse-cache)
+    ;; Preserve the literal directory entry for a renamed symlink.  Resolving
+    ;; the final component here would incorrectly return its target instead
+    ;; of the entry the caller just moved.
+    (expand-file-name destination)))
+
+(defun jetpacs-files-move (source directory)
+  "Move root-scoped SOURCE into authorized DIRECTORY without overwriting.
+The source basename is retained.  Return the destination's canonical path."
+  (let* ((destination-directory
+          (jetpacs-files--check (expand-file-name directory) 'directory))
+         (name (file-name-nondirectory (directory-file-name source)))
+         (target (expand-file-name name
+                                   (file-name-as-directory
+                                    destination-directory))))
+    (jetpacs-files-rename source target)))
+
+(defun jetpacs-files-trash (path)
+  "Move root-scoped PATH to the platform trash and return non-nil.
+The literal directory entry is validated and moved; symlinks are never
+followed.  If the host has no recoverable trash implementation,
+`move-file-to-trash' signals and the caller must report the refusal instead
+of silently falling back to permanent deletion."
+  (let ((act (jetpacs-files--check-op path nil)))
+    (unless (or (file-symlink-p act) (file-exists-p act))
+      (signal 'file-missing (list "File no longer exists")))
+    (move-file-to-trash act)
+    (jetpacs-files--invalidate-browse-cache)
+    t))
+
 (defun jetpacs-files--op-finish (surface)
   "Re-push SURFACE after an op; already on a timer stack, so directly."
   (jetpacs-files--invalidate-browse-cache)

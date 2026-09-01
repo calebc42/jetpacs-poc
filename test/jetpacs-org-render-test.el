@@ -21,6 +21,48 @@
 (require 'ebp)
 (require 'jetpacs-org-render)
 
+(ert-deftest jetpacs-org-render-context-is-surface-local-and-resettable ()
+  "Two hosts can render one buffer without replacing each other's links."
+  (let ((buffer (generate-new-buffer " *org-context-test*"))
+        (presenter-a (lambda (&rest _) 'a))
+        (presenter-b (lambda (&rest _) 'b))
+        observed)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer (org-mode))
+          (cl-letf (((symbol-function 'jetpacs-org-render)
+                     (lambda (_buffer)
+                       (setq observed
+                             (list jetpacs-org-render-reader-typography
+                                   jetpacs-org-render-hide-widen))
+                       '(rendered))))
+            (should
+             (equal (jetpacs-org-render-in-context
+                     buffer :surface "app:a"
+                     :follow-destination presenter-a
+                     :reader-typography t :hide-widen t)
+                    '(rendered)))
+            (should (equal observed '(t t)))
+            (jetpacs-org-render-in-context
+             buffer :surface "app:b" :follow-destination presenter-b))
+          (should (equal observed '(nil nil)))
+          (should (eq (jetpacs-org-render--presenter-for
+                       (buffer-name buffer) "app:a")
+                      presenter-a))
+          (should (eq (jetpacs-org-render--presenter-for
+                       (buffer-name buffer) "app:b")
+                      presenter-b))
+          (should (= (jetpacs-org-render-clear-context nil "app:a") 1))
+          (should-not (jetpacs-org-render--presenter-for
+                       (buffer-name buffer) "app:a"))
+          (should (eq (jetpacs-org-render--presenter-for
+                       (buffer-name buffer) "app:b")
+                      presenter-b))
+          (jetpacs-org-render-reset)
+          (should-not (jetpacs-org-render--presenter-for
+                       (buffer-name buffer) "app:a")))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
+
 ;;;; Fixtures
 
 (defconst jetpacs-org-render-test--png
