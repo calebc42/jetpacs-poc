@@ -8,7 +8,7 @@ android {
     namespace = "com.calebc42.jetpacs.renderer.jetpacs"
     compileSdk = 37
     defaultConfig {
-        minSdk = 36
+        minSdk = 34
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
