@@ -40,6 +40,7 @@
 (require 'jetpacs-org)                  ; NOT the engine: the shim, for its load
                                         ; effect — it registers the engine's token
                                         ; sweep on `jetpacs-teardown-functions'
+(require 'jetpacs-org-structure)
 (require 'jetpacs-widgets)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-buffer)
@@ -340,22 +341,8 @@ under D2); the prompting arm (Refile) re-enters through
          (with-current-buffer buf (widen))
          (jetpacs-org-dialogs--refresh params))
         ("duplicate"
-         (ebp-org-with-mutation ref 'org
-           (org-back-to-heading t)
-           (let* ((beg (point))
-                  (end (progn (org-end-of-subtree t t) (point)))
-                  (text (buffer-substring-no-properties beg end)))
-             (goto-char end)
-             (unless (bolp) (insert "
-"))
-             (let ((ins (point)))
-               (insert text)
-               (unless (bolp) (insert "
-"))
-               (save-restriction
-                 (narrow-to-region ins (point))
-                 (org-map-entries
-                  (lambda () (org-entry-delete (point) "ID")))))))
+         (jetpacs-org-structure-duplicate
+          jetpacs-org-dialogs-owner ref 'org)
          (jetpacs-org-dialogs--refresh params))
         ("encrypt"
          (ebp-org-with-mutation ref 'org
@@ -375,15 +362,13 @@ under D2); the prompting arm (Refile) re-enters through
          (jetpacs-org-dialogs--notify "Decrypted" params)
          (jetpacs-org-dialogs--refresh params))
         ("archive"
-         (ebp-org-with-mutation ref 'org
-           (let ((org-archive-subtree-save-file-p t))
-             (org-archive-subtree)))
+         (jetpacs-org-structure-archive
+          jetpacs-org-dialogs-owner ref 'org)
          (jetpacs-org-dialogs--notify "Archived" params)
          (jetpacs-org-dialogs--refresh params))
         ("delete"
-         (ebp-org-with-mutation ref 'org
-           (org-back-to-heading t)
-           (delete-region (point) (progn (org-end-of-subtree t t) (point))))
+         (jetpacs-org-structure-delete
+          jetpacs-org-dialogs-owner ref 'org)
          (jetpacs-org-dialogs--notify "Deleted" params)
          (jetpacs-org-dialogs--refresh params)))
       (ebp-org-unresolved
@@ -1384,9 +1369,8 @@ completed archive — and the spent sheet is abandoned."
             'stale
           (condition-case err
               (progn
-                (ebp-org-with-mutation ref 'org
-                  (let ((org-archive-subtree-save-file-p t))
-                    (org-archive-subtree)))
+                (jetpacs-org-structure-archive
+                 jetpacs-org-dialogs-owner ref 'org)
                 (when-let* ((sheet jetpacs-org-dialogs--sheet)
                             (client (jetpacs-client)))
                   (when (equal token (plist-get sheet :token))

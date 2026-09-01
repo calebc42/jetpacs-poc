@@ -355,6 +355,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-devtools-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-org-test.el \
   -f ert-run-tests-batch-and-exit
 
+# Reusable Org structure sessions: prompt-free engine delegation, applet-private
+# copy/cut, revision-bound focus, and drift-checked one-level undo.
+emacs -Q --batch -L emacs -l test/jetpacs-org-structure-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # Vulpea arm (Tier-1 staging — jetpacs-org-vulpea.el, never required by
 # base): synthetic-struct accessor semantics + index-evaluable routing.
 emacs -Q --batch -L emacs -l test/jetpacs-org-vulpea-test.el \
