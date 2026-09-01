@@ -14,11 +14,30 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- SPEC 20.3: the `vibrate` capability. -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.READ_CALL_LOG" />
+
+    <uses-feature android:name="android.hardware.camera.flash" android:required="false" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
 
     <!-- The reconnection notification opens Android Emacs directly. Android
          11+ hides installed packages unless they are declared here. -->
     <queries>
         <package android:name="org.gnu.emacs" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
     </queries>
 
     <!-- SPEC 15/18.6/21.1: the Companion's durable state is an outbox and a
@@ -90,6 +109,18 @@
                 android:resource="@xml/jetpacs_widget_info" />
         </receiver>
 
+        <!-- SPEC 21.5: the system-only SMS broadcast. The sender must hold the
+             signature BROADCAST_SMS permission in addition to matching this
+             exported component. Message content is never logged. -->
+        <receiver
+            android:name=".SmsTriggerReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
         <!-- SPEC 21.5: an armed time.* trigger fires here (our PendingIntent only). -->
         <receiver android:name=".TimeAlarmReceiver" android:exported="false" />
         <!-- SPEC 21.5: re-arm reminders/time triggers and fire boot/timezone
@@ -105,5 +136,64 @@
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
             </intent-filter>
         </receiver>
+
+        <!-- Fixed EBP Quick Settings host slots. Export is required for System
+             UI; BIND_QUICK_SETTINGS_TILE is a signature permission, so no
+             ordinary application can bind or invoke these services. -->
+        <service
+            android:name=".EbpTile1"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_jetpacs"
+            android:label="Jetpacs 1"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+        <service
+            android:name=".EbpTile2"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_jetpacs"
+            android:label="Jetpacs 2"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+        <service
+            android:name=".EbpTile3"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_jetpacs"
+            android:label="Jetpacs 3"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+        <service
+            android:name=".EbpTile4"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_jetpacs"
+            android:label="Jetpacs 4"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
+        <service
+            android:name=".EbpTile5"
+            android:exported="true"
+            android:icon="@drawable/ic_qs_jetpacs"
+            android:label="Jetpacs 5"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data android:name="android.service.quicksettings.ACTIVE_TILE" android:value="true" />
+        </service>
     </application>
 </manifest>

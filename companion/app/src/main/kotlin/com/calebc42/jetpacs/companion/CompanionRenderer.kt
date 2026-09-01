@@ -85,6 +85,20 @@ object CompanionRenderer {
     val widgetProfile: RendererProfile = registry.profile(
         GlanceRendererContribution.id,
     )
+    // A Quick Settings tile has no Node renderer. Its only executable field
+    // is a context-less ActionDescriptor, so the profile advertises exactly
+    // the builtins DeviceBridge can execute without a surface or dialog.
+    private val tileProfile = RendererProfile(
+        nodeTypes = emptySet(),
+        builtins = setOf(
+            "surface.open",
+            "clipboard.copy",
+            "companion.settings.open",
+            "trigger.fire",
+        ),
+        features = emptySet(),
+        extensions = emptySet(),
+    )
 
     val APP_NODE_TYPES: Set<String> get() = appProfile.nodeTypes
     val DIALOG_NODE_TYPES: Set<String> get() = dialogProfile.nodeTypes
@@ -98,6 +112,8 @@ object CompanionRenderer {
     val WIDGET_NODE_TYPES: Set<String> get() = widgetProfile.nodeTypes
     val WIDGET_BUILTINS: Set<String> get() = widgetProfile.builtins
     val WIDGET_FEATURES: Set<String> get() = widgetProfile.features
+    val TILE_BUILTINS: Set<String> get() = tileProfile.builtins
+    val TILE_FEATURES: Set<String> get() = tileProfile.features
 
     /** Target profiles advertised in the authenticated EBP welcome. */
     fun surfaceProfiles(): JsonObject = buildJsonObject {
@@ -105,6 +121,7 @@ object CompanionRenderer {
         put("dialog", dialogProfile.toJson())
         put("notification", notificationProfile.toJson())
         put("widget", widgetProfile.toJson())
+        put("tile", tileProfile.toJson())
     }
 
     /** Visual dispatch corresponding exactly to the installed app profile. */

@@ -313,6 +313,32 @@ authors into specs — never by the peer."
     (error "jetpacs: %s requires :label and :on_trigger (SPEC 17.3)" what))
   action)
 
+(defconst jetpacs--contextless-builtins
+  '("surface.open" "clipboard.copy" "share.send"
+    "companion.settings.open" "trigger.fire")
+  "Builtins valid without a surface node, view, or dialog (SPEC 14.2).")
+
+(defun jetpacs--check-contextless-descriptor (descriptor what injected)
+  "Validate context-less DESCRIPTOR for WHAT with INJECTED arg names.
+Such an occurrence has no node tree from which to capture fields.  A platform
+adapter supplies each string in INJECTED, so an authored conflicting argument
+would make the descriptor ambiguous."
+  (jetpacs-check-descriptor descriptor what)
+  (when (plist-member descriptor :capture_fields)
+    (error "jetpacs: %s cannot capture fields without a surface (SPEC 13.4)" what))
+  (when (plist-member descriptor :open_surface)
+    (error "jetpacs: %s cannot open a surface outside an app surface (SPEC 14.1)" what))
+  (let ((args (plist-get descriptor :args)))
+    (dolist (member injected)
+      (when (and (listp args) (plist-member args (intern (concat ":" member))))
+        (error "jetpacs: %s :args.%s conflicts with the Companion-injected value"
+               what member))))
+  (when-let* ((builtin (plist-get descriptor :builtin)))
+    (unless (member builtin jetpacs--contextless-builtins)
+      (error "jetpacs: %s builtin %S requires a surface or dialog"
+             what builtin)))
+  descriptor)
+
 (defun jetpacs--check-swipe (v what)
   "Validate legacy or reveal-first rich swipe side V; WHAT names the field."
   (unless (and (consp v) (keywordp (car v)))
@@ -3225,7 +3251,8 @@ EXIT-DIRECTION lets it slide away as the body scrolls."
 ;;
 ;; These wrap a node tree into the SurfaceSpec a caller hands to
 ;; `ebp-client-surface-update'.  An `app:*' single-root surface is just the
-;; root node itself; the wrappers cover multi-view app, notification, widget.
+;; root node itself; the wrappers cover multi-view app, notification, widget,
+;; and the deliberately node-less Quick Settings tile variant.
 
 (defun jetpacs-multi-view (views initial-view)
   "An `app:*' multi-view SurfaceSpec {views, initial_view} (SPEC §13.4).
@@ -3292,6 +3319,23 @@ SIZE-VARIANTS is an authored-order list or vector of at most eight
           (error "jetpacs-widget-surface: size variant %d is malformed" index))))
     (jetpacs-make-node nil :title title :body body :empty empty
                        :header_action header-action :size_variants variants)))
+
+(cl-defun jetpacs-tile-surface (label &key icon subtitle active on-tap)
+  "A `tile:*' SurfaceSpec (SPEC 13.4).
+LABEL and optional SUBTITLE are strings.  ICON, when present, is an EBP
+identifier.  ACTIVE is `t' or `:json-false'; nil omits the member and therefore
+uses the receiver default.  ON-TAP is a context-less ActionDescriptor.  The
+returned plist is the actual node-less wire IR; this function does not create
+a parallel tile model."
+  (jetpacs-require-string label ":label")
+  (when icon (jetpacs-check-identifier icon ":icon"))
+  (when subtitle (jetpacs-require-string subtitle ":subtitle"))
+  (when active (jetpacs-check-bool active ":active"))
+  (when on-tap
+    (jetpacs--check-contextless-descriptor on-tap ":on-tap" '("tile")))
+  (jetpacs-make-node nil
+                     :label label :icon icon :subtitle subtitle
+                     :active active :on_tap on-tap))
 
 ;;;; Hypertext block sequences
 

@@ -81,4 +81,22 @@ class CompanionRendererTest {
         )
         assertTrue(owned.none { it in CompanionRenderer.DIALOG_NODE_TYPES })
     }
+
+    @Test
+    fun tileProfileIsNodeLessAndContextless() {
+        val profile = CompanionRenderer.surfaceProfiles().getValue("tile") as JsonObject
+        assertEquals(0, (profile.getValue("node_types") as JsonArray).size)
+        assertEquals(
+            setOf(
+                "surface.open",
+                "clipboard.copy",
+                "companion.settings.open",
+                "trigger.fire",
+            ),
+            (profile.getValue("builtins") as JsonArray)
+                .mapTo(mutableSetOf()) { (it as JsonPrimitive).content },
+        )
+        assertEquals(0, (profile.getValue("features") as JsonArray).size)
+        assertEquals(0, (profile.getValue("extensions") as JsonArray).size)
+    }
 }

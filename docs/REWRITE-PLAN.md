@@ -26,6 +26,11 @@ orders gates, not calendar.
 
 ## Historical reuse assessment (from the divergence map)
 
+The current implementation of that policy, including the donor-by-donor
+ledger, revived capability/trigger/tile slices, security constraints, and
+promotion gates, is recorded in
+[`REVIVAL-EXECUTION.md`](REVIVAL-EXECUTION.md).
+
 This assessment records the expected adaptation risk when it was written; it
 is not an allowlist. Code from any POC may be copied, cherry-picked, merged,
 ported, or adapted. Reused code must be audited against the current normative
@@ -66,6 +71,10 @@ picker), W6 (`tile:*` namespace — before W8 ports tile slots).
 Resolved: ebp amendment #33 (2026-07-22) pinned local-editing efficiency —
 delta coalescing before `seq` assignment and source-throttled carets are
 explicitly conformant; the W7 editor module builds on that reading.
+
+Resolved for the platform-breadth revival: the current SPEC §13.4 and §22.1
+define the exact node-less `tile:*` variant and its negotiated capability, so
+fixed Quick Settings slots no longer require a protocol-design decision.
 
 ## The ebp.el boundary (the jsonrpc.el model)
 

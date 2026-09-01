@@ -36,6 +36,11 @@
       (expand-file-name "../../glasspane-material3" jetpacs-test--dir))
   "Canonical Glasspane Material 3 checkout.")
 
+(defvar jetpacs-test--ebp-spec-dir
+  (or (getenv "EBP_SPEC_DIR")
+      (expand-file-name "../../ebp-poc/ebp" jetpacs-test--dir))
+  "Canonical EBP specification checkout.")
+
 (defun jetpacs-test--golden-map (name)
   "Return a hash of INDEX-STRING -> RAW-JSON from `ebp/goldens/NAME.golden'."
   (let ((h (make-hash-table :test 'equal)))
@@ -77,7 +82,7 @@
   "Parse `ebp/contract.json' as an alist (symbol keys, list arrays)."
   (with-temp-buffer
     (insert-file-contents
-     (expand-file-name "../../ebp-poc/ebp/contract.json" jetpacs-test--dir))
+     (expand-file-name "contract.json" jetpacs-test--ebp-spec-dir))
     (json-parse-buffer :object-type 'alist :array-type 'list)))
 
 ;;;; Byte-parity: ActionDescriptor / builtin vectors (widgets.golden 61-71, 100-101)
@@ -751,7 +756,14 @@
   ;; widget: {title, body, empty?, header_action?}
   (should (equal (jetpacs-node->canonical-json
                   (jetpacs-widget-surface "Title" (jetpacs-text "hi")))
-                 "{\"body\":{\"t\":\"text\",\"text\":\"hi\"},\"title\":\"Title\"}")))
+                 "{\"body\":{\"t\":\"text\",\"text\":\"hi\"},\"title\":\"Title\"}"))
+  ;; tile: node-less exact object, including explicit JSON false.
+  (should (equal
+           (jetpacs-node->canonical-json
+            (jetpacs-tile-surface
+             "Work" :icon "work" :subtitle "Ready" :active :json-false
+             :on-tap (jetpacs-action "demo.work")))
+           "{\"active\":false,\"icon\":\"work\",\"label\":\"Work\",\"on_tap\":{\"action\":\"demo.work\"},\"subtitle\":\"Ready\"}")))
 
 (ert-deftest jetpacs-widgets/widget-visual-acceptance-goldens ()
   "Grove Capture and Agenda fixtures match the normative widget witnesses."
@@ -781,6 +793,20 @@
     (cl-loop repeat (1+ jetpacs-max-widget-size-variants)
              collect (jetpacs-widget-size-variant 0 0 (jetpacs-text "x")))))
   (should-error (jetpacs-notification-surface "not-a-node"))
+  (should-error (jetpacs-tile-surface 42))
+  (should-error (jetpacs-tile-surface "T" :icon "bad icon"))
+  (should-error (jetpacs-tile-surface "T" :active nil :on-tap "not-an-action"))
+  (should-error
+   (jetpacs-tile-surface
+    "T" :on-tap (jetpacs-action "tile.run" :capture-fields '("field"))))
+  (should-error
+   (jetpacs-tile-surface
+    "T" :on-tap (jetpacs-action "tile.run" :open-surface "app:detail")))
+  (should-error
+   (jetpacs-tile-surface
+    "T" :on-tap (jetpacs-action "tile.run" :args '(:tile "authored"))))
+  (should-error
+   (jetpacs-tile-surface "T" :on-tap '(:builtin "view.switch" :view "other")))
   ;; post-audit: snackbar_action shape validated
   (should-error (jetpacs-scaffold :snackbar-action "not-an-object"))
   (should-error (jetpacs-scaffold :snackbar-action '(:label "x")))   ; missing on_tap
