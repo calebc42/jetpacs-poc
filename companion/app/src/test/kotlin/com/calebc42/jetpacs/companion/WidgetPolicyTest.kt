@@ -20,6 +20,59 @@ class WidgetPolicyTest {
         assertFalse(widgetIsStale(runtime, surface, 60_999))
         assertTrue(widgetIsStale(runtime, surface, 61_000))
         assertFalse(widgetIsStale(runtime(disconnectedAt = null), surface, Long.MAX_VALUE))
+        assertNull(widgetStaleDeadline(runtime(Long.MAX_VALUE - 500), surface))
+    }
+
+    @Test
+    fun schedulerUsesOnlyHostedWidgetsAndTheEarliestFutureDeadline() {
+        val candidates = listOf(
+            staleCandidate(id = 41, disconnectedAt = 1_000, staleAfterSeconds = 60),
+            staleCandidate(id = 42, disconnectedAt = 1_000, staleAfterSeconds = 10),
+            staleCandidate(id = 43, disconnectedAt = 1_000, staleAfterSeconds = 1),
+        )
+
+        assertEquals(
+            11_000L,
+            nextWidgetStaleRefreshAt(candidates, setOf(41, 42), false, 5_000),
+        )
+        assertEquals(
+            61_000L,
+            nextWidgetStaleRefreshAt(candidates, setOf(41, 42), false, 11_000),
+        )
+        assertNull(nextWidgetStaleRefreshAt(candidates, emptySet(), false, 5_000))
+    }
+
+    @Test
+    fun readySchedulerLeavesAProcessDeathWatchdog() {
+        val candidates = listOf(
+            staleCandidate(id = 41, disconnectedAt = 1_000, staleAfterSeconds = 60),
+            staleCandidate(id = 42, disconnectedAt = null, staleAfterSeconds = 10),
+        )
+
+        // A current READY session ignores any old durable timestamp and puts
+        // the next watchdog one shortest authored stale interval from now.
+        assertEquals(
+            15_000L,
+            nextWidgetStaleRefreshAt(candidates, setOf(41, 42), true, 5_000),
+        )
+    }
+
+    @Test
+    fun coldRecoveryUsesOnlyASelfExitNewerThanTheCachedSnapshot() {
+        assertEquals(
+            4_000L,
+            inferColdReadyDisconnectAt(null, 2_000, 4_000, 5_000),
+        )
+        assertEquals(
+            5_000L,
+            inferColdReadyDisconnectAt(null, 2_000, 1_000, 5_000),
+        )
+        assertEquals(
+            5_000L,
+            inferColdReadyDisconnectAt(null, 2_000, 6_000, 5_000),
+        )
+        assertNull(inferColdReadyDisconnectAt(3_000, 2_000, 4_000, 5_000))
+        assertNull(inferColdReadyDisconnectAt(null, null, 4_000, 5_000))
     }
 
     @Test
@@ -71,6 +124,15 @@ class WidgetPolicyTest {
         assertFalse(widgetTokenMatches(token, binding, surface(present = false), 999))
     }
 
+    @Test
+    fun durableActionsRunLocalAdjunctsOnlyAfterSafeAdmission() {
+        assertFalse(widgetMayRunLocalAdjunct("queue", safelyAdmitted = false))
+        assertFalse(widgetMayRunLocalAdjunct("wake", safelyAdmitted = false))
+        assertTrue(widgetMayRunLocalAdjunct("queue", safelyAdmitted = true))
+        assertTrue(widgetMayRunLocalAdjunct("wake", safelyAdmitted = true))
+        assertTrue(widgetMayRunLocalAdjunct("drop", safelyAdmitted = false))
+    }
+
     private fun surface(
         staleAfterSeconds: Long? = null,
         specJson: String = "{}",
@@ -92,5 +154,17 @@ class WidgetPolicyTest {
     private fun runtime(disconnectedAt: Long?) = PairingRuntimeEntity(
         pairingId = "pair",
         readyDisconnectedAtEpochMs = disconnectedAt,
+    )
+
+    private fun staleCandidate(
+        id: Int,
+        disconnectedAt: Long?,
+        staleAfterSeconds: Long,
+    ) = WidgetStaleCandidate(
+        binding = WidgetBindingEntity(id, "pair", "widget:$id", 0, 0),
+        runtime = runtime(disconnectedAt),
+        surface = surface(staleAfterSeconds = staleAfterSeconds).copy(
+            surfaceId = "widget:$id",
+        ),
     )
 }

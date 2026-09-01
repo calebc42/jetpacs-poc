@@ -206,6 +206,42 @@ internal class AuthenticatedConnectionTracker<T : Any> {
     }
 }
 
+/**
+ * Generation-aware READY ownership. Accepting a newer transport ends the old
+ * READY authority immediately, even while the replacement is still proving or
+ * syncing; delayed teardown from an older socket can never end the successor.
+ */
+internal class ReadyConnectionTracker<T : Any> {
+    private var generation: Long = 0
+    private var current: T? = null
+
+    @Synchronized
+    fun supersede(newGeneration: Long): Boolean {
+        if (newGeneration <= generation) return false
+        val disconnected = current != null
+        generation = newGeneration
+        current = null
+        return disconnected
+    }
+
+    @Synchronized
+    fun ready(atGeneration: Long, session: T): Boolean {
+        if (atGeneration != generation) return false
+        current = session
+        return true
+    }
+
+    @Synchronized
+    fun disconnected(atGeneration: Long, session: T): Boolean {
+        if (atGeneration != generation || current !== session) return false
+        current = null
+        return true
+    }
+
+    @Synchronized
+    fun connected(): Boolean = current != null
+}
+
 class DeviceBridge(
     private val appContext: android.content.Context,
     private val stores: CompanionStores,
@@ -213,6 +249,13 @@ class DeviceBridge(
     /** SPEC 14.4: the shown surface's ID travels with its spec, so an
      * event names the surface the action actually occurred in. */
     private val onSurfaceChanged: (String, JsonObject?) -> Unit,
+    /** A committed widget update/removal fans out to every bound host ID. */
+    private val onWidgetSurfaceChanged: (String) -> Unit = {},
+    /**
+     * SPEC 13.5: null after a session reaches READY; otherwise the durable
+     * wall-clock instant at which the current READY authority ended.
+     */
+    private val onReadyConnectionChanged: suspend (Long?) -> Unit = {},
     /** The durable app-surface cache has finished its initial projection.
      * Nav3 must not invalidate restored Surface keys before this barrier. */
     private val onAppSurfaceCacheLoaded: () -> Unit = {},
@@ -263,6 +306,7 @@ class DeviceBridge(
     // immune to an unauthenticated probe displacing the live-session route.
     private val authenticatedConnection =
         AuthenticatedConnectionTracker<CompanionEngine>()
+    private val readyConnection = ReadyConnectionTracker<CompanionEngine>()
     val connected: StateFlow<Boolean> get() = authenticatedConnection.connected
     private val _editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.OFFLINE)
     override val editorConnectionPhase: StateFlow<EditorConnectionPhase>
@@ -336,6 +380,24 @@ class DeviceBridge(
 
     private fun saveTheme(payload: JsonObject) = stores.theme().replace(payload)
 
+    internal fun hasReadySession(): Boolean = readyConnection.connected()
+
+    private fun persistReadyConnectionChange(disconnectedAtEpochMs: Long?) {
+        try {
+            kotlinx.coroutines.runBlocking {
+                stores.commandActor.execute {
+                    onReadyConnectionChanged(disconnectedAtEpochMs)
+                }
+            }
+        } catch (failure: Throwable) {
+            android.util.Log.e(
+                "EbpBridge",
+                "Could not persist READY connection lifecycle",
+                failure,
+            )
+        }
+    }
+
     private val running = AtomicBoolean(false)
     @Volatile private var listenerServer: ServerSocket? = null
     @Volatile private var listenerThread: Thread? = null
@@ -386,6 +448,11 @@ class DeviceBridge(
                     while (running.get()) {
                         val socket = server.accept()
                         val generation = acceptedConnectionGeneration.incrementAndGet()
+                        if (readyConnection.supersede(generation)) {
+                            persistReadyConnectionChange(
+                                System.currentTimeMillis().coerceAtLeast(0),
+                            )
+                        }
                         // SPEC 5.2: one session at a time; the newcomer
                         // supersedes the prior transport immediately. Advance
                         // the receiver-local route first: this closes any
@@ -1434,6 +1501,7 @@ class DeviceBridge(
                     if (spec != null) Notifications.postSurface(appContext, surface, spec)
                     else Notifications.cancelSurface(appContext, surface)
                 }
+                surface.startsWith("widget:") -> onWidgetSurfaceChanged(surface)
                 surface.startsWith("app:") ->
                     onSurfaceChanged(surface, resolveView(surface))
             }
@@ -1539,6 +1607,7 @@ class DeviceBridge(
             return
         }
         var authenticated = false
+        var reachedReady = false
         try {
             // INSIDE the try: SPEC 5.2's newest-wins supersession closes this
             // socket from the accept loop the instant a newcomer arrives, and
@@ -1562,6 +1631,13 @@ class DeviceBridge(
                     authenticated = true
                     authenticatedConnection.authenticated(engine)
                     Notifications.cancelReconnect(appContext)
+                }
+                if (!reachedReady &&
+                    engine.state == SessionState.READY &&
+                    readyConnection.ready(generation, engine)
+                ) {
+                    reachedReady = true
+                    persistReadyConnectionChange(null)
                 }
             }
         } catch (_: Exception) {
@@ -1606,6 +1682,11 @@ class DeviceBridge(
             }
             val wasCurrentAuthenticatedSession = authenticated &&
                 authenticatedConnection.disconnected(engine)
+            if (readyConnection.disconnected(generation, engine)) {
+                persistReadyConnectionChange(
+                    System.currentTimeMillis().coerceAtLeast(0),
+                )
+            }
             if (shouldPostReconnectNotification(
                     authenticated,
                     wasCurrentAuthenticatedSession,

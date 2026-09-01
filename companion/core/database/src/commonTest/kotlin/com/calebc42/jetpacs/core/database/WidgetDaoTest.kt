@@ -69,6 +69,54 @@ class WidgetDaoTest {
     }
 
     @Test
+    fun restoreSnapshotsAnOverlappingIdPermutationAtomically() = runTest {
+        database.insertTestPairing()
+        val dao = database.widgetDao()
+        dao.upsertBinding(binding(41, "widget:capture"))
+        dao.upsertBinding(binding(42, "widget:agenda"))
+        dao.stageTokens(
+            listOf(
+                token("a".repeat(32), 41),
+                token("b".repeat(32), 42),
+            ),
+        )
+
+        assertEquals(2, dao.restoreBindings(listOf(41, 42), listOf(42, 99), 30))
+        assertNull(dao.getBinding(41))
+        assertEquals("widget:capture", dao.getBinding(42)?.surfaceId)
+        assertEquals("widget:agenda", dao.getBinding(99)?.surfaceId)
+        assertEquals(30, dao.getBinding(42)?.updatedAtEpochMs)
+        assertNull(dao.getToken("a".repeat(32)))
+        assertNull(dao.getToken("b".repeat(32)))
+    }
+
+    @Test
+    fun invalidRestoreMapsLeaveEveryBindingUntouched() = runTest {
+        database.insertTestPairing()
+        val dao = database.widgetDao()
+        dao.upsertBinding(binding(41, "widget:capture"))
+        dao.upsertBinding(binding(42, "widget:agenda"))
+
+        assertEquals(0, dao.restoreBindings(listOf(41, 42), listOf(99), 30))
+        assertEquals(0, dao.restoreBindings(listOf(41, 42), listOf(99, 99), 30))
+        assertEquals(listOf(41, 42), dao.getBindings().map { it.appWidgetId })
+    }
+
+    @Test
+    fun readyDisconnectMarkerClearsAndColdRecoveryIsCompareAndSet() = runTest {
+        database.insertTestPairing()
+        val dao = database.pairingDao()
+
+        assertEquals(1, dao.setReadyDisconnectedAtIfNull(TEST_PAIRING_A, 50))
+        assertEquals(50, dao.getRuntime(TEST_PAIRING_A)?.readyDisconnectedAtEpochMs)
+        assertEquals(0, dao.setReadyDisconnectedAtIfNull(TEST_PAIRING_A, 60))
+        assertEquals(50, dao.getRuntime(TEST_PAIRING_A)?.readyDisconnectedAtEpochMs)
+
+        assertEquals(1, dao.setReadyDisconnectedAt(TEST_PAIRING_A, null))
+        assertNull(dao.getRuntime(TEST_PAIRING_A)?.readyDisconnectedAtEpochMs)
+    }
+
+    @Test
     fun revocationImmediatelyErasesBindingsAndTokens() = runTest {
         database.insertTestPairing()
         val dao = database.widgetDao()

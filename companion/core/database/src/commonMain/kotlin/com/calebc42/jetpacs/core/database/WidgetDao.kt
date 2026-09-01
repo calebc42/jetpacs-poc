@@ -58,21 +58,52 @@ abstract class WidgetDao {
     @Query("DELETE FROM widget_action_tokens WHERE expires_at_epoch_ms <= :nowEpochMs")
     abstract suspend fun deleteExpiredTokens(nowEpochMs: Long): Int
 
-    /** Host restore changes Android IDs; content and action tokens are regenerated. */
+    /**
+     * Host restore changes Android IDs. Snapshot every old binding before any
+     * delete so even an overlapping ID permutation is deterministic; deleting
+     * the old rows deliberately cascades every pre-restore click capability.
+     */
+    @Transaction
+    open suspend fun restoreBindings(
+        oldAppWidgetIds: List<Int>,
+        newAppWidgetIds: List<Int>,
+        nowEpochMs: Long,
+    ): Int {
+        if (oldAppWidgetIds.size != newAppWidgetIds.size ||
+            oldAppWidgetIds.distinct().size != oldAppWidgetIds.size ||
+            newAppWidgetIds.distinct().size != newAppWidgetIds.size ||
+            oldAppWidgetIds.any { it <= 0 } ||
+            newAppWidgetIds.any { it <= 0 }
+        ) {
+            return 0
+        }
+        val restored = oldAppWidgetIds.zip(newAppWidgetIds).mapNotNull { (oldId, newId) ->
+            getBinding(oldId)?.let { it to newId }
+        }
+        oldAppWidgetIds.forEach { deleteBinding(it) }
+        restored.forEach { (old, newId) ->
+            upsertBinding(
+                old.copy(
+                    appWidgetId = newId,
+                    updatedAtEpochMs = maxOf(
+                        nowEpochMs,
+                        old.createdAtEpochMs,
+                        old.updatedAtEpochMs,
+                    ),
+                ),
+            )
+        }
+        return restored.size
+    }
+
     @Transaction
     open suspend fun restoreBinding(
         oldAppWidgetId: Int,
         newAppWidgetId: Int,
         nowEpochMs: Long,
-    ): Boolean {
-        val old = getBinding(oldAppWidgetId) ?: return false
-        deleteBinding(oldAppWidgetId)
-        upsertBinding(
-            old.copy(
-                appWidgetId = newAppWidgetId,
-                updatedAtEpochMs = nowEpochMs.coerceAtLeast(old.createdAtEpochMs),
-            ),
-        )
-        return true
-    }
+    ): Boolean = restoreBindings(
+        listOf(oldAppWidgetId),
+        listOf(newAppWidgetId),
+        nowEpochMs,
+    ) == 1
 }

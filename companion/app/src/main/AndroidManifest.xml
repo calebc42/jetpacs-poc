@@ -44,9 +44,12 @@
             </intent-filter>
         </activity>
 
+        <!-- The external widget host must launch this one component. It
+             accepts only ACTION_APPWIDGET_CONFIGURE and revalidates the
+             supplied ID against this provider before reading or writing. -->
         <activity
             android:name=".WidgetConfigurationActivity"
-            android:exported="false"
+            android:exported="true"
             android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
@@ -74,6 +77,7 @@
         <!-- SPEC 18.5: a notification action tap routes into the Section 14 pipeline. -->
         <receiver android:name=".NotificationActionReceiver" android:exported="false" />
         <receiver android:name=".WidgetActionReceiver" android:exported="false" />
+        <receiver android:name=".WidgetStaleReceiver" android:exported="false" />
 
         <receiver
             android:name=".JetpacsWidgetProvider"

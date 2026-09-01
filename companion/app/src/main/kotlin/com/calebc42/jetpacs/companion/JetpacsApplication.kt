@@ -85,6 +85,7 @@ class JetpacsApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val processStartedAtEpochMs = System.currentTimeMillis().coerceAtLeast(0)
         // LD-11: size the image cache to this device's per-app memory class.
         // An eighth of the app heap is a conservative retention budget — the
         // Semaphore(3) already bounds concurrent decodes on top of it.
@@ -101,9 +102,16 @@ class JetpacsApplication : Application() {
             proofProvider = container.proofProvider,
             onSurfaceChanged = { surface, spec ->
                 appSurfaces.publish(surface, spec)
-                if (surface.startsWith("widget:")) {
-                    WidgetUpdateCoordinator.enqueueSurface(this, surface)
-                }
+            },
+            onWidgetSurfaceChanged = { surface ->
+                WidgetUpdateCoordinator.enqueueSurface(this, surface)
+            },
+            onReadyConnectionChanged = { disconnectedAtEpochMs ->
+                container.database.pairingDao().setReadyDisconnectedAt(
+                    container.pairingId.value,
+                    disconnectedAtEpochMs,
+                )
+                WidgetUpdateCoordinator.enqueueAll(this)
             },
             onAppSurfaceCacheLoaded = appSurfaces::markLoaded,
             // SPEC 15.1: storage failure and queue exhaustion MUST reach the
@@ -132,5 +140,6 @@ class JetpacsApplication : Application() {
             },
             onOpenSurface = ::requestSurfaceOpen,
             onOpenSettings = { _settingsOpen.value = true })
+        WidgetUpdateCoordinator.start(this, processStartedAtEpochMs)
     }
 }

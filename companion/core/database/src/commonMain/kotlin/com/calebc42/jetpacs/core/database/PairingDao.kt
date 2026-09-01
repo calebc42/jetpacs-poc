@@ -60,6 +60,37 @@ abstract class PairingDao {
     abstract fun observeRuntime(pairingId: String): Flow<PairingRuntimeEntity?>
 
     /**
+     * SPEC 13.5's process-independent READY lifecycle marker. A null value
+     * means a current session has reached READY; a timestamp starts every
+     * cached surface's authored staleness clock.
+     */
+    @Query(
+        """
+        UPDATE pairing_runtime
+        SET ready_disconnected_at_epoch_ms = :disconnectedAtEpochMs
+        WHERE pairing_id = :pairingId
+        """
+    )
+    abstract suspend fun setReadyDisconnectedAt(
+        pairingId: String,
+        disconnectedAtEpochMs: Long?,
+    ): Int
+
+    /** Cold-start recovery must not overwrite a READY transition that won the race. */
+    @Query(
+        """
+        UPDATE pairing_runtime
+        SET ready_disconnected_at_epoch_ms = :disconnectedAtEpochMs
+        WHERE pairing_id = :pairingId
+          AND ready_disconnected_at_epoch_ms IS NULL
+        """
+    )
+    abstract suspend fun setReadyDisconnectedAtIfNull(
+        pairingId: String,
+        disconnectedAtEpochMs: Long,
+    ): Int
+
+    /**
      * Monotonic protocol-state transition which leaves key aliases, creation time, and
      * authentication metadata untouched.
      */

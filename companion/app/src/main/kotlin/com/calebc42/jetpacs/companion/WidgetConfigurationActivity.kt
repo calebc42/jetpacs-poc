@@ -10,7 +10,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -47,7 +46,9 @@ class WidgetConfigurationActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setResult(Activity.RESULT_CANCELED)
-        if (!isOurWidget(widgetId)) {
+        if (intent?.action != AppWidgetManager.ACTION_APPWIDGET_CONFIGURE ||
+            !isOurWidget(widgetId)
+        ) {
             finish()
             return
         }
@@ -96,17 +97,23 @@ class WidgetConfigurationActivity : ComponentActivity() {
                                 }
                             }
                         }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Button(onClick = {
-                                if (!WIDGET_SURFACE.matches(surfaceId) ||
-                                    surfaceId.toByteArray(Charsets.UTF_8).size > 128
-                                ) {
-                                    error = "Use widget:<name> with letters, numbers, ., _, :, /, or -."
-                                } else {
-                                    save(surfaceId)
-                                }
-                            }) { Text("Save") }
-                            OutlinedButton(onClick = ::finish) { Text("Cancel") }
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    if (!WIDGET_SURFACE.matches(surfaceId) ||
+                                        surfaceId.toByteArray(Charsets.UTF_8).size > 128
+                                    ) {
+                                        error = "Use widget:<name> with letters, numbers, ., _, :, /, or -."
+                                    } else {
+                                        save(surfaceId)
+                                    }
+                                },
+                            ) { Text("Save") }
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = ::finish,
+                            ) { Text("Cancel") }
                         }
                     }
                 }

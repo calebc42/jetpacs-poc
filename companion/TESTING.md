@@ -85,13 +85,17 @@ Run the renderer, Room lifecycle, policy, and app composition checks with:
   :app:assembleDebug
 ```
 
-The Glance suite pins first-authored eligible size selection and conservative
-empty-body projection. The Room suite covers multiple bindings, token
-replacement and deletion, host-ID restore, and pairing revocation. App policy
-tests pin stale deadlines, resize inputs, and the 716,800-byte marshalled
-RemoteViews cap. EBP's `SurfaceOccurrenceTest` and durable-queue kill matrix
-cover offline admission, process death, and replay. The full lifecycle mapping
-and Grove Capture/Agenda acceptance fixtures are in
+The Glance suite pins first-authored eligible size selection, conservative
+empty-body projection, and the Grove Capture/Agenda visual witnesses. The Room
+suite covers multiple bindings, process-death-safe token replacement, removal,
+atomic overlapping host-ID restore, invalid restore rollback, READY-marker
+compare-and-set, and pairing revocation. App policy tests pin exact stale
+deadlines, READY-generation ownership, cold process-exit inference, earliest
+host scheduling, the rolling READY watchdog, resize inputs, and the
+716,800-byte marshalled RemoteViews cap. EBP's `SurfaceOccurrenceTest` and
+durable-queue kill matrix cover offline admission, process death, and replay.
+The API 34 composition smoke resolves the widget provider metadata and pins the
+configuration/private-receiver export boundary. The full lifecycle mapping is in
 `../docs/GLANCE-WIDGETS.md`.
 
 ## Screenshot references

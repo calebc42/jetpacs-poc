@@ -69,4 +69,30 @@ class ReconnectNotificationTest {
         assertTrue(tracker.disconnected(replacement))
         assertFalse(tracker.connected.value)
     }
+
+    @Test
+    fun readyLifecycleBelongsOnlyToTheNewestTransportGeneration() {
+        val first = Any()
+        val replacement = Any()
+        val tracker = ReadyConnectionTracker<Any>()
+
+        assertFalse(tracker.connected())
+        assertFalse(tracker.supersede(1))
+        assertTrue(tracker.ready(1, first))
+        assertTrue(tracker.connected())
+
+        // Accepting the successor ends the previous READY authority before
+        // the successor authenticates. Delayed callbacks from generation 1
+        // cannot mutate generation 2's lifecycle.
+        assertTrue(tracker.supersede(2))
+        assertFalse(tracker.connected())
+        assertFalse(tracker.ready(1, first))
+        assertFalse(tracker.disconnected(1, first))
+
+        assertTrue(tracker.ready(2, replacement))
+        assertFalse(tracker.disconnected(2, first))
+        assertTrue(tracker.connected())
+        assertTrue(tracker.disconnected(2, replacement))
+        assertFalse(tracker.connected())
+    }
 }

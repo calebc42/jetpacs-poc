@@ -27,12 +27,15 @@ import com.calebc42.jetpacs.core.database.WidgetBindingEntity
 import com.calebc42.jetpacs.renderer.glance.GlanceActionResolver
 import com.calebc42.jetpacs.renderer.glance.RenderGlanceWidget
 import java.security.SecureRandom
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -72,6 +75,7 @@ class JetpacsWidgetProvider : AppWidgetProvider() {
         async(context) {
             val dao = context.jetpacsApp().container.database.widgetDao()
             appWidgetIds.forEach { dao.deleteBinding(it) }
+            WidgetStaleScheduler.reschedule(context)
         }
     }
 
@@ -82,14 +86,36 @@ class JetpacsWidgetProvider : AppWidgetProvider() {
     ) {
         // Restore is a tiny Room transaction and must finish before the host's
         // subsequent update asks the new IDs to render.
-        runBlocking(Dispatchers.IO) {
-            val dao = context.jetpacsApp().container.database.widgetDao()
-            val now = System.currentTimeMillis().coerceAtLeast(0)
-            oldWidgetIds.zip(newWidgetIds).forEach { (oldId, newId) ->
-                dao.restoreBinding(oldId, newId, now)
+        val restoreCompleted = runCatching {
+            runBlocking(Dispatchers.IO) {
+                val restored = context.jetpacsApp().container.database.widgetDao().restoreBindings(
+                    oldWidgetIds.toList(),
+                    newWidgetIds.toList(),
+                    System.currentTimeMillis().coerceAtLeast(0),
+                )
+                oldWidgetIds.isNotEmpty() &&
+                    oldWidgetIds.size == newWidgetIds.size &&
+                    restored == oldWidgetIds.size
+            }
+        }.onFailure { failure ->
+            Log.e(TAG, "Could not remap restored widget IDs", failure)
+        }.getOrDefault(false)
+        if (restoreCompleted) {
+            newWidgetIds.forEach { appWidgetId ->
+                runCatching {
+                    appWidgetManager(context).updateAppWidgetOptions(
+                        appWidgetId,
+                        Bundle().apply {
+                            putBoolean(AppWidgetManager.OPTION_APPWIDGET_RESTORE_COMPLETED, true)
+                        },
+                    )
+                }.onFailure { failure ->
+                    Log.e(TAG, "Could not mark restored widget $appWidgetId complete", failure)
+                }
             }
         }
         super.onRestored(context, oldWidgetIds, newWidgetIds)
+        async(context) { WidgetUpdateCoordinator.update(context, newWidgetIds) }
     }
 
     private fun async(context: Context, block: suspend () -> Unit) {
@@ -104,6 +130,9 @@ class JetpacsWidgetProvider : AppWidgetProvider() {
             }
         }
     }
+
+    private fun appWidgetManager(context: Context): AppWidgetManager =
+        AppWidgetManager.getInstance(context)
 }
 
 /** Explicit non-exported receiver; its only input is an opaque token URI. */
@@ -164,10 +193,8 @@ internal fun widgetIsStale(
     surface: SurfaceRecordEntity,
     nowEpochMs: Long,
 ): Boolean {
-    val disconnectedAt = runtime?.readyDisconnectedAtEpochMs ?: return false
-    val seconds = surface.staleAfterSeconds ?: return false
-    if (seconds > (Long.MAX_VALUE - disconnectedAt) / 1_000L) return false
-    return nowEpochMs >= disconnectedAt + seconds * 1_000L
+    val deadline = widgetStaleDeadline(runtime, surface) ?: return false
+    return nowEpochMs >= deadline
 }
 
 internal fun widgetSize(options: Bundle): DpSize = widgetSize(
@@ -198,10 +225,36 @@ internal fun remoteViewsFitsBudget(bytes: Int): Boolean =
 @OptIn(ExperimentalGlanceRemoteViewsApi::class)
 internal object WidgetUpdateCoordinator {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val started = AtomicBoolean(false)
+    private val updateMutex = Mutex()
     private val composer = GlanceRemoteViews()
     private val json = Json { ignoreUnknownKeys = false }
 
     fun launch(block: suspend CoroutineScope.() -> Unit): Job = scope.launch(block = block)
+
+    fun start(context: Context, processStartedAtEpochMs: Long) {
+        if (!started.compareAndSet(false, true)) return
+        val appContext = context.applicationContext
+        launch {
+            runCatching {
+                WidgetStaleScheduler.recoverAfterProcessStart(
+                    appContext,
+                    processStartedAtEpochMs,
+                )
+            }.onFailure { failure ->
+                Log.e(TAG, "Could not recover widget connection state", failure)
+            }
+            runCatching { updateAll(appContext) }
+                .onFailure { failure -> Log.e(TAG, "Initial widget update failed", failure) }
+            appContext.jetpacsApp().container.database.widgetDao().observeBindings()
+                .collect {
+                    runCatching { updateAll(appContext) }
+                        .onFailure { failure ->
+                            Log.e(TAG, "Widget binding update failed", failure)
+                        }
+                }
+        }
+    }
 
     fun enqueueAll(context: Context) {
         launch { updateAll(context) }
@@ -227,7 +280,21 @@ internal object WidgetUpdateCoordinator {
     }
 
     suspend fun update(context: Context, appWidgetIds: IntArray) {
-        appWidgetIds.distinct().forEach { updateOne(context, it) }
+        updateMutex.lock()
+        try {
+            appWidgetIds.distinct().forEach { appWidgetId ->
+                runCatching { updateOne(context, appWidgetId) }
+                    .onFailure { failure ->
+                        Log.e(TAG, "Widget update failed for $appWidgetId", failure)
+                    }
+            }
+            runCatching { WidgetStaleScheduler.reschedule(context) }
+                .onFailure { failure ->
+                    Log.e(TAG, "Could not schedule widget stale refresh", failure)
+                }
+        } finally {
+            updateMutex.unlock()
+        }
     }
 
     private suspend fun updateOne(context: Context, appWidgetId: Int) {
@@ -274,7 +341,14 @@ internal object WidgetUpdateCoordinator {
             return
         }
         val tokens = resolver.tokens()
-        if (!remoteViewsFitsBudget(RemoteViewsParcelSizer.bytes(remoteViews))) {
+        val parcelBytes = runCatching { RemoteViewsParcelSizer.bytes(remoteViews) }
+            .getOrElse { failure ->
+                Log.e(TAG, "Could not measure RemoteViews for $appWidgetId", failure)
+                widgetDao.deleteTokens(appWidgetId)
+                showStatus(context, appWidgetId, "Widget content unavailable")
+                return
+            }
+        if (!remoteViewsFitsBudget(parcelBytes)) {
             widgetDao.deleteTokens(appWidgetId)
             showStatus(context, appWidgetId, "Widget content is too large")
             return
@@ -381,9 +455,15 @@ internal data class WidgetConfirmation(
 
 internal sealed interface WidgetActionResult {
     data object Invalid : WidgetActionResult
+    data object NotAdmitted : WidgetActionResult
     data object Dispatched : WidgetActionResult
     data class NeedsConfirmation(val face: WidgetConfirmation) : WidgetActionResult
 }
+
+internal fun widgetMayRunLocalAdjunct(
+    policy: String,
+    safelyAdmitted: Boolean,
+): Boolean = (policy != "queue" && policy != "wake") || safelyAdmitted
 
 private data class ValidWidgetAction(
     val token: WidgetActionTokenEntity,
@@ -410,6 +490,8 @@ internal object WidgetActionRouter {
             return WidgetActionResult.Dispatched
         }
         if ("action" !in descriptor) return WidgetActionResult.Invalid
+        val policy = descriptor.string("when_offline").ifBlank { "drop" }
+        val durable = policy == "queue" || policy == "wake"
         var safelyAdmitted = false
         app.container.commandActor.execute {
             dispatchSurfaceOccurrence(
@@ -421,14 +503,17 @@ internal object WidgetActionRouter {
                 live = app.stores.liveSession,
             ) { status, _ -> safelyAdmitted = status != null }
         }
-        descriptor.string("open_surface").takeIf(String::isNotBlank)?.let {
-            openSurface(context, it)
+        if (widgetMayRunLocalAdjunct(policy, safelyAdmitted)) {
+            descriptor.string("open_surface").takeIf(String::isNotBlank)?.let {
+                openSurface(context, it)
+            }
         }
-        if (safelyAdmitted && descriptor.string("when_offline") == "wake") {
+        if (safelyAdmitted && policy == "wake") {
             JetpacsBridgeService.enable(context)
             openAndroidEmacs(context)
         }
-        return WidgetActionResult.Dispatched
+        return if (durable && !safelyAdmitted) WidgetActionResult.NotAdmitted
+        else WidgetActionResult.Dispatched
     }
 
     suspend fun confirmation(context: Context, opaqueToken: String): WidgetConfirmation? =
@@ -463,7 +548,7 @@ internal object WidgetActionRouter {
     }
 
     private fun openSurface(context: Context, surface: String) {
-        if (!Regex("(app|companion):[A-Za-z0-9][A-Za-z0-9._:/-]*").matches(surface)) return
+        if (!Regex("app:[A-Za-z0-9][A-Za-z0-9._:/-]*").matches(surface)) return
         val app = context.jetpacsApp()
         app.requestSurfaceOpenFromPlatform(surface)
         context.startActivity(

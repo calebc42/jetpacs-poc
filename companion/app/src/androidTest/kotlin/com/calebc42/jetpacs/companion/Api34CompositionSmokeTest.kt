@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion
 
+import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.pm.ServiceInfo
 import android.os.Build
@@ -20,7 +21,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class Api34CompositionSmokeTest {
     @Test
-    fun api34StartsRoomKeystoreAndPrivateSpecialUseServiceComposition() = runBlocking {
+    fun api34StartsRoomKeystoreAndNarrowPlatformComponents() = runBlocking {
         assertEquals(34, Build.VERSION.SDK_INT)
         val app = ApplicationProvider.getApplicationContext<JetpacsApplication>()
         val snapshot = app.container.durableStore.restore(app.container.pairingId)
@@ -45,5 +46,29 @@ class Api34CompositionSmokeTest {
             service.foregroundServiceType and
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE != 0,
         )
+
+        val widgetProviderName = ComponentName(app, JetpacsWidgetProvider::class.java)
+        val widgetInfo = AppWidgetManager.getInstance(app).installedProviders
+            .single { it.provider == widgetProviderName }
+        assertEquals(
+            ComponentName(app, WidgetConfigurationActivity::class.java),
+            widgetInfo.configure,
+        )
+        assertTrue(
+            app.packageManager.getActivityInfo(widgetInfo.configure, 0).exported,
+        )
+        assertFalse(
+            app.packageManager.getActivityInfo(
+                ComponentName(app, WidgetActionConfirmationActivity::class.java),
+                0,
+            ).exported,
+        )
+        listOf(
+            widgetProviderName,
+            ComponentName(app, WidgetActionReceiver::class.java),
+            ComponentName(app, WidgetStaleReceiver::class.java),
+        ).forEach { component ->
+            assertFalse(app.packageManager.getReceiverInfo(component, 0).exported)
+        }
     }
 }
