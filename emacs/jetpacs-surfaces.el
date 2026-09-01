@@ -225,6 +225,15 @@ order: `granted' survives on a closed client struct and would lie."
   (when-let* ((client (or client (jetpacs-client))))
     (and (seq-contains-p (ebp-client-granted client) capability) t)))
 
+(defun jetpacs-durable-offline-policy (&optional client)
+  "Return the strongest durable offline policy allowed by CLIENT.
+Use `wake' only when the live session granted `offline.wake'; otherwise
+return `queue'.  Callers must still supply the bounded `ttl_s' required by
+both policies.  This helper lets reusable applets survive a disconnected
+Companion without voiding their complete surface on installations that have
+no configured OS-local Emacs wake target."
+  (if (jetpacs-granted-p "offline.wake" client) "wake" "queue"))
+
 (defun jetpacs-max-event-bytes (&optional client)
   "The session's declared `max_event_bytes', or nil with no client.
 B11: the largest `event.action' the Companion will CREATE — anything

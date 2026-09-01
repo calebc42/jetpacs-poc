@@ -58,8 +58,7 @@ Use `wake' only when the session holds `offline.wake'.  An ungranted wake
 descriptor voids the whole surface at the push gate, so other sessions
 degrade to `queue' instead of losing the chronometer."
   (jetpacs-action name
-                  :when-offline (if (jetpacs-granted-p "offline.wake")
-                                    "wake" "queue")
+                  :when-offline (jetpacs-durable-offline-policy)
                   :ttl-s jetpacs-org-clock--ttl-s))
 
 (defun jetpacs-org-clock-notification-spec ()

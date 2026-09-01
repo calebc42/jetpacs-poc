@@ -619,6 +619,13 @@ reference defconst passes the same spec, proving it cannot witness."
         (jetpacs-floor-test--recording-push sent
           (should (= (jetpacs-shell-push "app:demo" :spec spec) 42)))))))
 
+(ert-deftest jetpacs-floor-durable-policy-degrades-without-wake-grant ()
+  "Durable applet actions queue unless this session may wake Emacs."
+  (jetpacs-floor-test--with-client (client)
+    (should (equal (jetpacs-durable-offline-policy client) "queue"))
+    (setf (ebp-client-granted client) ["theme" "offline.wake"])
+    (should (equal (jetpacs-durable-offline-policy client) "wake"))))
+
 (ert-deftest jetpacs-floor-semantic-actions-use-ordinary-profile-gates ()
   "Semantic descriptors are visible to the same builtin and feature gates."
   (let ((builtin-spec
