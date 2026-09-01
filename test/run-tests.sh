@@ -7,6 +7,11 @@ ebp_el_dir=${EBP_EL_DIR:-"$(pwd)/../ebp-poc/ebp.el"}
 
 tools/check-projections.sh
 
+emacs -Q --batch -L "$ebp_el_dir/lisp" -L "$jetpacs_dir/emacs" \
+  -L lisp/jetpacs-components \
+  -l test/jetpacs-design-test.el \
+  -f ert-run-tests-batch-and-exit
+
 compile_dir=$(mktemp -d)
 trap 'rm -rf "$compile_dir"' EXIT
 for source in lisp/jetpacs-components/*.el; do

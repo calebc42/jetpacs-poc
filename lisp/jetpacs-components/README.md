@@ -62,3 +62,24 @@ The checked-in vocabulary is generated from
 `renderer-extensions/jetpacs-components.json`. Run `test/run-tests.sh`, or use
 the focused gate documented by the sibling catalog README, before changing the
 public constructors.
+
+## Experimental design runtime
+
+`jetpacs-design.el` separately registers the format-2 `jetpacs.design`
+extension. Its scope, styled, and pressable builders use a closed set of
+bounded values and properties. Token, style, and motion maps are alists at the
+call site and become lexically sorted JSON objects; local type mismatches,
+token cycles, and unresolved local token or motion references signal before a
+surface is sent.
+
+```elisp
+(jetpacs-design-scope TOKENS STYLES CHILDREN :motions MOTIONS)
+(jetpacs-design-styled STYLE-NAMES CHILDREN)
+(jetpacs-design-pressable STYLE-NAMES ON-TAP CHILDREN
+                          :enabled BOOL :selected BOOL :toggled BOOL)
+```
+
+`jetpacs-design-material.el` is a small proof library with a filled button,
+passive card, and controlled two-option selector. It remains ordinary Elisp
+authoring over Foundation-backed renderer nodes; it does not expose or depend
+on Android Material APIs.

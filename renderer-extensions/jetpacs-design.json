@@ -1,0 +1,159 @@
+{
+  "format": 2,
+  "extension": "jetpacs.design",
+  "description": "Jetpacs' bounded Elisp-authored Foundation design runtime.",
+  "node_types": [
+    "jetpacs.design_scope",
+    "jetpacs.styled",
+    "jetpacs.pressable"
+  ],
+  "targets": {
+    "app": [
+      "jetpacs.design_scope",
+      "jetpacs.styled",
+      "jetpacs.pressable"
+    ],
+    "dialog": [],
+    "notification": []
+  },
+  "definitions": {
+    "identifier": {
+      "type": "string",
+      "min_length": 1,
+      "max_length": 128
+    },
+    "design-value": {
+      "type": "object",
+      "required": {
+        "kind": {
+          "type": "enum",
+          "values": [
+            "boolean",
+            "color",
+            "dimension",
+            "font-family",
+            "font-weight",
+            "number",
+            "text-align",
+            "token"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 256
+        }
+      },
+      "optional": {}
+    },
+    "property-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "design-value"},
+      "min_entries": 0,
+      "max_entries": 64
+    },
+    "state-rule": {
+      "type": "object",
+      "required": {
+        "state": {
+          "type": "enum",
+          "values": [
+            "disabled",
+            "selected",
+            "toggled",
+            "hovered",
+            "focused",
+            "pressed"
+          ]
+        },
+        "properties": {"type": "ref", "ref": "property-map"}
+      },
+      "optional": {
+        "motion": {"type": "ref", "ref": "identifier"}
+      }
+    },
+    "style": {
+      "type": "object",
+      "required": {
+        "properties": {"type": "ref", "ref": "property-map"},
+        "rules": {
+          "type": "array",
+          "items": {"type": "ref", "ref": "state-rule"},
+          "min_items": 0,
+          "max_items": 16
+        }
+      },
+      "optional": {
+        "motion": {"type": "ref", "ref": "identifier"}
+      }
+    },
+    "motion": {
+      "type": "object",
+      "required": {
+        "duration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "easing": {
+          "type": "enum",
+          "values": ["linear", "ease-in", "ease-out", "ease-in-out", "spring"]
+        }
+      },
+      "optional": {}
+    },
+    "token-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "design-value"},
+      "min_entries": 0,
+      "max_entries": 256
+    },
+    "style-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "style"},
+      "min_entries": 0,
+      "max_entries": 256
+    },
+    "motion-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "motion"},
+      "min_entries": 0,
+      "max_entries": 64
+    },
+    "style-references": {
+      "type": "array",
+      "items": {"type": "ref", "ref": "identifier"},
+      "min_items": 1,
+      "max_items": 16
+    }
+  },
+  "node_schema": {
+    "jetpacs.design_scope": {
+      "required": {
+        "tokens": {"type": "ref", "ref": "token-map"},
+        "styles": {"type": "ref", "ref": "style-map"},
+        "children": {"type": "node-array", "min_items": 0, "max_items": 10000}
+      },
+      "optional": {
+        "motions": {"type": "ref", "ref": "motion-map"}
+      }
+    },
+    "jetpacs.styled": {
+      "required": {
+        "styles": {"type": "ref", "ref": "style-references"},
+        "children": {"type": "node-array", "min_items": 0, "max_items": 10000}
+      },
+      "optional": {}
+    },
+    "jetpacs.pressable": {
+      "required": {
+        "styles": {"type": "ref", "ref": "style-references"},
+        "on_tap": {"type": "action"},
+        "children": {"type": "node-array", "min_items": 1, "max_items": 16}
+      },
+      "optional": {
+        "enabled": {"type": "boolean"},
+        "selected": {"type": "boolean"},
+        "toggled": {"type": "boolean"}
+      }
+    }
+  },
+  "stateful_when_present": {},
+  "at_least_one_non_empty": {}
+}
