@@ -682,10 +682,15 @@
       (chk "58" (jetpacs-month-grid
                  "2026-07"
                  :marks (list (cons "2026-07-04" (jetpacs-month-mark 2 :color "primary")))
+                 :day-styles
+                 (list (cons "2026-07-22"
+                             (jetpacs-month-day-style "primary" "on_primary"))
+                       (cons "2026-07-25"
+                             (jetpacs-month-day-style "error" "on_error")))
                  :max-month "2026-12" :min-month "2026-01"
                  :on-day-tap (jetpacs-action "day.tap")
                  :on-month-change (jetpacs-action "month.nav")
-                 :selected "2026-07-22")))))
+                 :range-start "2026-07-22" :range-end "2026-07-25")))))
 
 (ert-deftest jetpacs-widgets/viz-validation ()
   "Visualization constructors enforce their §17.5 rules."
@@ -707,6 +712,16 @@
                                     :marks (list (cons "2026-07-04" '(:dots 99)))))
   (should-error (jetpacs-month-grid "2026-07"
                                     :marks (list (cons "2026-07-04" '(:bogus 1)))))
+  (should-error (jetpacs-month-day-style "#12" "on_primary"))
+  (should-error (jetpacs-month-grid
+                 "2026-07"
+                 :day-styles (list (cons "bad-date"
+                                         (jetpacs-month-day-style
+                                          "primary" "on_primary")))))
+  (should-error (jetpacs-month-grid
+                 "2026-07"
+                 :day-styles (list (cons "2026-07-04"
+                                         '(:background "primary")))))
   ;; chart point meta must be an object (post-audit)
   (should-error (jetpacs-chart-point 0 1 :meta 5)))
 
@@ -718,6 +733,19 @@
                                 :marks (list (cons "2026-07-20" (jetpacs-month-mark 1))
                                              (cons "2026-07-04" (jetpacs-month-mark 2)))))
            "{\"marks\":{\"2026-07-04\":{\"dots\":2},\"2026-07-20\":{\"dots\":1}},\"month\":\"2026-07\",\"t\":\"month_grid\"}")))
+
+(ert-deftest jetpacs-widgets/month-grid-day-styles-order ()
+  "Day styles validate and serialize in canonical date order."
+  (should
+   (equal
+    (jetpacs-node->canonical-json
+     (jetpacs-month-grid
+      "2026-07"
+      :day-styles
+      (list (cons "2026-07-20" (jetpacs-month-day-style "error" "on_error"))
+            (cons "2026-07-04"
+                  (jetpacs-month-day-style "primary" "on_primary")))))
+    "{\"day_styles\":{\"2026-07-04\":{\"background\":\"primary\",\"foreground\":\"on_primary\"},\"2026-07-20\":{\"background\":\"error\",\"foreground\":\"on_error\"}},\"month\":\"2026-07\",\"t\":\"month_grid\"}")))
 
 ;;;; Byte-parity: scaffold (widgets.golden 59-60) + SurfaceSpec shapes (JW-6)
 

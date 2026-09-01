@@ -965,7 +965,7 @@ the sole route to a load-bearing action.
 #+end_src
 
 ** month_grid
-- Elisp: =(jetpacs-month-grid month &key marks selected min-month max-month on-day-tap on-month-change children)=
+- Elisp: =(jetpacs-month-grid month &key marks day-styles selected min-month max-month min-date max-date disabled-weekdays range-start range-end on-day-tap on-month-change children)=
 - Wire: ="month_grid"=
 - M3: =Column=, =Row=, =IconButton=, =Icon=, =Box=, =CircleShape=, =Text=
 - Renderer: =VisualizationNodes.kt:260-353=
@@ -976,16 +976,28 @@ the sole route to a load-bearing action.
 |----------|------|----------|-------------|
 | ~month~ | string | Yes | Month to display (YYYY-MM) |
 | ~marks~ | date-marks-object | No | Day marks (date → {dots, color}) |
+| ~day_styles~ | date-style-object | No | Presentation-only date → {background, foreground} colors |
 | ~selected~ | string | No | Selected date (YYYY-MM-DD) |
 | ~min_month~ | string | No | Earliest navigable month (YYYY-MM) |
 | ~max_month~ | string | No | Latest navigable month (YYYY-MM) |
+| ~min_date~ | string | No | Earliest enabled day (YYYY-MM-DD) |
+| ~max_date~ | string | No | Latest enabled day (YYYY-MM-DD) |
+| ~disabled_weekdays~ | integer-array | No | Distinct disabled weekdays, Sunday = 0 |
+| ~range_start~ | string | No | Inclusive range start; paired with ~range_end~ |
+| ~range_end~ | string | No | Inclusive range end; paired with ~range_start~ |
 | ~on_day_tap~ | action descriptor | No | Day tap handler |
 | ~on_month_change~| action descriptor | No | Month navigation handler |
 | ~children~ | node-array | No | Overlay nodes |
 
 *Usage Example*
 #+begin_src elisp
-(jetpacs-month-grid "2026-07" :selected "2026-07-28" :on-day-tap (jetpacs-action "select-day"))
+(jetpacs-month-grid
+ "2026-07"
+ :range-start "2026-07-22" :range-end "2026-07-25"
+ :day-styles
+ `(("2026-07-22" . ,(jetpacs-month-day-style "primary" "on_primary"))
+   ("2026-07-25" . ,(jetpacs-month-day-style "error" "on_error")))
+ :on-day-tap (jetpacs-action "select-day"))
 #+end_src
 
 * Sub-Element Constructors
@@ -1010,6 +1022,7 @@ the sole route to a load-bearing action.
 | =jetpacs-canvas-path= | Canvas path op | =(points &key color fill stroke-width closed)= |
 | =jetpacs-canvas-text= | Canvas text op | =(x y text &key color size)= |
 | =jetpacs-month-mark= | Calendar day mark | =(dots &key color)= |
+| =jetpacs-month-day-style= | Calendar day palette | =(background foreground)= |
 | =jetpacs-snackbar-action= | Scaffold snackbar action | =(label on-tap)= |
 
 * Universal Attributes

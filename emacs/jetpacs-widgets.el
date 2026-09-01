@@ -2986,13 +2986,54 @@ DOTS is an integer 0..3; COLOR a §16.6 color."
   (when color (jetpacs--check-color color))
   (jetpacs-make-node nil :dots dots :color color))
 
-(cl-defun jetpacs-month-grid (month &key marks selected min-month max-month
+(defun jetpacs--check-month-day-style (style)
+  "Signal unless STYLE is a closed month_grid day-style plist."
+  (unless (and (consp style) (keywordp (car style)))
+    (error "jetpacs-month-grid: a day style must be a plist (use jetpacs-month-day-style), got %S"
+           style))
+  (let ((rest style) keys)
+    (while rest
+      (unless (and (keywordp (car rest)) (consp (cdr rest)))
+        (error "jetpacs-month-grid: malformed day-style plist %S" style))
+      (push (pop rest) keys)
+      (pop rest))
+    (unless (equal (sort keys
+                         (lambda (a b)
+                           (string< (symbol-name a) (symbol-name b))))
+                   '(:background :foreground))
+      (error "jetpacs-month-grid: a day style requires exactly :background and :foreground (SPEC 17.5)")))
+  (jetpacs--check-color (plist-get style :background))
+  (jetpacs--check-color (plist-get style :foreground))
+  style)
+
+(defun jetpacs--day-styles->map (styles)
+  "Convert STYLES, a date/style alist, to a validated JSON object."
+  (let ((h (make-hash-table :test 'equal)))
+    (dolist (cell styles)
+      (let ((date (car cell)))
+        (jetpacs--check-date date)
+        (jetpacs--check-month-day-style (cdr cell))
+        (when (gethash date h)
+          (error "jetpacs-month-grid: duplicate day-style date %S (SPEC 17.5)" date))
+        (puthash date (cdr cell) h)))
+    h))
+
+(defun jetpacs-month-day-style (background foreground)
+  "Return a month-grid day style using BACKGROUND and FOREGROUND colors."
+  (jetpacs--check-color background)
+  (jetpacs--check-color foreground)
+  (jetpacs-make-node nil :background background :foreground foreground))
+
+(cl-defun jetpacs-month-grid (month &key marks day-styles selected min-month max-month
                                     min-date max-date disabled-weekdays
                                     range-start range-end
                                     on-day-tap on-month-change children)
   "A month grid for MONTH, a `YYYY-MM' string (SPEC §17.5).
-MARKS is an alist of (YYYY-MM-DD . mark) from `jetpacs-month-mark'; SELECTED
-a YYYY-MM-DD date; MIN-MONTH/MAX-MONTH `YYYY-MM' bounds (min not after max).
+MARKS is an alist of (YYYY-MM-DD . mark) from `jetpacs-month-mark'.
+DAY-STYLES is an alist of (YYYY-MM-DD . style) values from
+`jetpacs-month-day-style'; a style changes that day's background and
+foreground without selecting it.  SELECTED is a YYYY-MM-DD date;
+MIN-MONTH/MAX-MONTH are `YYYY-MM' bounds (min not after max).
 
 MIN-DATE/MAX-DATE and DISABLED-WEEKDAYS (0..6 integers, 0 = Sunday) are
 the DAY-level bounds: an excluded day renders disabled and never
@@ -3033,6 +3074,8 @@ builds the range and re-pushes."
   (jetpacs-make-node "month_grid"
                  :month month
                  :marks (and marks (jetpacs--marks->map marks))
+                 :day_styles (and day-styles
+                                  (jetpacs--day-styles->map day-styles))
                  :selected selected :min_month min-month :max_month max-month
                  :min_date min-date :max_date max-date
                  :disabled_weekdays disabled-weekdays

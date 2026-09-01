@@ -431,6 +431,24 @@ reference defconst passes the same spec, proving it cannot witness."
           (should (= (jetpacs-shell-push "app:demo" :spec node) 42))
           (should (= (length sent) 1)))))))
 
+(ert-deftest jetpacs-floor-node-member-advertisement-honors-compatibility ()
+  "Member queries distinguish omitted whole-schema and constrained profiles."
+  (should (jetpacs-node-member-advertised-p "month_grid" "day_styles"))
+  (jetpacs-floor-test--with-client
+      (client :profiles
+              '(:app (:node_types ["month_grid"] :builtins [] :features []
+                      :extensions [])))
+    (should (jetpacs-node-member-advertised-p "month_grid" "day_styles")))
+  (jetpacs-floor-test--with-client
+      (client :profiles
+              '(:app (:node_types ["month_grid"] :builtins [] :features []
+                      :extensions []
+                      :members (:universal []
+                                :nodes (:month_grid ["month" "day_styles"])
+                                :semantics [] :surface []))))
+    (should (jetpacs-node-member-advertised-p "month_grid" "day_styles"))
+    (should-not (jetpacs-node-member-advertised-p "month_grid" "selected"))))
+
 (ert-deftest jetpacs-floor-gate-stale-spec-and-builtins ()
   (jetpacs-floor-test--with-client (client)
     (let ((sent nil))

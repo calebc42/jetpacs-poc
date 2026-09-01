@@ -1122,6 +1122,32 @@ first and degrade when the answer is no.  With no client attached
     ;; No client at all — offline render or test: assume the richer form.
     t))
 
+(defun jetpacs--profile-object-get (object name)
+  "Return string-keyed NAME from decoded JSON OBJECT, or nil."
+  (cond
+   ((hash-table-p object) (gethash name object))
+   ((listp object) (plist-get object (intern (concat ":" name))))))
+
+(defun jetpacs-node-member-advertised-p (type member &optional target)
+  "Non-nil when node TYPE's MEMBER is advertised for TARGET.
+TYPE and MEMBER are wire-name strings and TARGET defaults to `:app'.  An
+omitted profile `members' object retains EBP 3 whole-schema compatibility.
+With no attached client, offline builders and tests assume the richer form."
+  (unless (and (stringp type) (stringp member))
+    (error "jetpacs: TYPE and MEMBER must be wire-name strings"))
+  (if-let* ((client (jetpacs-client)))
+      (if-let* ((profile (plist-get (ebp-client-profiles client)
+                                    (or target :app))))
+          (and (jetpacs-node-advertised-p type target)
+               (or (not (plist-member profile :members))
+                   (let* ((members (plist-get profile :members))
+                          (nodes (jetpacs--profile-object-get members "nodes"))
+                          (node-members
+                           (jetpacs--profile-object-get nodes type)))
+                     (and (member member (append node-members nil)) t))))
+        (null (jetpacs--capability-gated-target-p target)))
+    t))
+
 (defun jetpacs-feature-advertised-p (feature &optional target)
   "Non-nil when the live welcome advertises FEATURE for TARGET (SPEC 22.4).
 The feature twin of `jetpacs-node-advertised-p'.  SPEC 22.4 registers the
