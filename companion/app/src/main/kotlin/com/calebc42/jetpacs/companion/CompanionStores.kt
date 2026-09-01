@@ -4,6 +4,7 @@ package com.calebc42.jetpacs.companion
 import android.content.Context
 import android.provider.Settings
 import com.calebc42.ebp.wire.DurableQueue
+import com.calebc42.ebp.wire.CapabilityHandler
 import com.calebc42.ebp.wire.EbpActorOverloaded
 import com.calebc42.ebp.wire.EbpCommandActor
 import com.calebc42.ebp.wire.LiveSession
@@ -40,6 +41,7 @@ class CompanionStores(
     @Volatile private var firingInstance: TriggerFiringService? = null
     @Volatile private var sourcesInstance: TriggerSources? = null
     @Volatile private var themeInstance: RoomThemeStore? = null
+    @Volatile private var capabilityHandlerInstance: CapabilityHandler? = null
 
     private val liveSessionRef = AtomicReference<LiveSession?>()
 
@@ -90,6 +92,9 @@ class CompanionStores(
             notificationBuiltins = CompanionRenderer.NOTIFICATION_BUILTINS,
             appFeatures = CompanionRenderer.APP_FEATURES,
             notificationFeatures = CompanionRenderer.NOTIFICATION_FEATURES,
+            tileBuiltins = CompanionRenderer.TILE_BUILTINS,
+            tileFeatures = CompanionRenderer.TILE_FEATURES,
+            tileSurfaceIds = TileSlots.surfaceIds,
             nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
             backing = RoomSurfaceBacking(durableStore, pairingId, nowMs),
         ).also { surfacesInstance = it }
@@ -121,12 +126,15 @@ class CompanionStores(
                 triggers(),
                 queue(),
                 MAX_EVENT_BYTES,
-                triggerCaps = jsonStringSet(AppCapabilities.deviceReport(), "trigger_caps"),
-                capabilityHandler = AppCapabilities.handler(app, 65_536),
+                triggerCaps = jsonStringSet(AppCapabilities.deviceReport(app), "trigger_caps"),
+                capabilityHandler = capabilityHandler(),
                 bootGeneration = { bootGeneration() },
                 occurrenceTransaction = triggerOccurrence,
             ).also { service ->
                 service.stateProvider = { type -> triggerSources().currentState(type) }
+                service.statePredicateProvider = { predicate ->
+                    triggerSources().predicateHolds(predicate)
+                }
                 service.notifyListener = { notify -> Notifications.postTrigger(app, notify) }
                 service.onTimeScheduleChanged = { TriggerAlarms.reschedule(app, this) }
                 firingInstance = service
@@ -138,13 +146,46 @@ class CompanionStores(
         Settings.Global.getString(app.contentResolver, Settings.Global.BOOT_COUNT)
     }.getOrNull()
 
-    fun triggerSources(): TriggerSources {
+    internal fun triggerSources(): TriggerSources {
         sourcesInstance?.let { return it }
         return synchronized(this) {
-            sourcesInstance ?: TriggerSources(app) { type, sample ->
-                submit { firing().observeSample(type, sample) }
-            }.also { sourcesInstance = it }
+            sourcesInstance ?: TriggerSources(
+                app,
+                onSample = { type, sample ->
+                    submit { firing().observeSample(type, sample) }
+                },
+                onExternal = { type, data ->
+                    submit { firing().observeExternal(type, data) }
+                },
+            ).also { sourcesInstance = it }
         }
+    }
+
+    fun capabilityHandler(): CapabilityHandler {
+        capabilityHandlerInstance?.let { return it }
+        return synchronized(this) {
+            capabilityHandlerInstance ?: AppCapabilities.handler(
+                app,
+                MAX_FIELD_BYTES,
+                AppCapabilityBindings(
+                    pairingIdentity = pairingId.value,
+                    state = triggerSources(),
+                    fireManual = ::fireManualFromHost,
+                    setKeepScreenOn = { enabled ->
+                        (app as? JetpacsApplication)?.setKeepScreenOn(enabled)
+                    },
+                ),
+            ).also { capabilityHandlerInstance = it }
+        }
+    }
+
+    /** `trigger.fire` succeeds only for a stored manual registration. */
+    internal fun fireManualFromHost(triggerId: String): Boolean {
+        val registration = triggers().registration(pairingId.value, triggerId)
+            ?: return false
+        if (registration.entry.stringOrNull("type") != "manual") return false
+        firing().fireManual(pairingId.value, triggerId, "emacs")
+        return true
     }
 
     companion object {

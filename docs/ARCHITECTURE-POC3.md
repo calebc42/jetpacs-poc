@@ -102,6 +102,31 @@ change the implementation when it is out of spec, or expand the spec only when
 the missing requirement can be stated without a language, platform, database,
 UI toolkit, or product dependency.
 
+## Revived optional platform breadth
+
+The executed reuse and promotion ledger is
+[`REVIVAL-EXECUTION.md`](REVIVAL-EXECUTION.md). Historical POC source is valid
+implementation evidence; it is neither prohibited lineage nor protocol
+authority. The revived Android adapters therefore reuse prior platform
+mechanics behind current ownership seams instead of restoring an old message
+layer.
+
+`:wire` owns the closed Section 20 capability schemas, Section 21 trigger
+validation/runtime, shared state-predicate semantics, context-less action
+validation, and `offline.wake` grant enforcement. `:app` projects a fresh
+device report per connection and owns Android permissions, exact Intent and
+package allowlists, platform effects, OS observations, fixed tile services,
+shortcut trust boundaries, and encrypted storage. Elisp builders return the
+actual SurfaceSpec plist/vector IR and do not introduce a second tile or
+trigger model.
+
+Optional platform breadth never weakens the dumb-renderer boundary. An Android
+source produces typed state or occurrences; wire code decides whether a
+registration matches and whether an event is durably admitted; Emacs remains
+the owner of application actions and policy. In particular, this build does
+not advertise `offline.wake` until an exact inert OS-local wake target exists
+and can be rechecked immediately before every signal.
+
 ## Module map
 
 | Module | Responsibility | May depend on |

@@ -426,7 +426,7 @@ other owner's pending re-render (decision D1 makes that routine)."
 (defun jetpacs-shell--error-spec (surface message detail)
   "A visible error view shaped for SURFACE's SPEC 13.4 variant.
 A bare Node is a valid spec only for `app:*'; emitting one for a
-`notification:'/`widget:' surface would make the degrade path itself
+`notification:'/`widget:'/`tile:' surface would make the degrade path itself
 content-invalid, so the error view could never appear exactly where a
 builder crashed."
   (let ((node (jetpacs-column
@@ -435,6 +435,8 @@ builder crashed."
     (pcase (jetpacs-shell--surface-target surface)
       (:notification (jetpacs-notification-surface node))
       (:widget (jetpacs-widget-surface "Error" node))
+      (:tile (jetpacs-tile-surface "Error" :subtitle detail
+                                   :active :json-false))
       (_ node))))
 
 (defun jetpacs-shell--build (surface plist)

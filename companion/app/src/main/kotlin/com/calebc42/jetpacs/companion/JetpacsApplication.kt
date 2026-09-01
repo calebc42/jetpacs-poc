@@ -47,6 +47,9 @@ class JetpacsApplication : Application() {
     private val _settingsOpen = MutableStateFlow(false)
     val settingsOpen: StateFlow<Boolean> get() = _settingsOpen
     fun dismissSettings() { _settingsOpen.value = false }
+    private val _keepScreenOn = MutableStateFlow(false)
+    val keepScreenOn: StateFlow<Boolean> get() = _keepScreenOn
+    internal fun setKeepScreenOn(enabled: Boolean) { _keepScreenOn.value = enabled }
 
     // SPEC 14.2 `surface.open`: an occurrence is receiver-local host-shell
     // navigation, not a surface refresh. The epoch prevents StateFlow's

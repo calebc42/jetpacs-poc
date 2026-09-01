@@ -6,6 +6,8 @@
 package com.calebc42.jetpacs.companion
 
 import android.os.Bundle
+import android.content.Intent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -34,6 +36,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val app = application as JetpacsApplication
+        val bridge = app.bridge
+        // MainActivity is exported only because it is the launcher target.
+        // Refuse any foreign action before it can prompt for permission or
+        // enable the durable background bridge. A valid platform shortcut is
+        // resolved from app-private state at this same boundary.
+        if (!handlePlatformIntent(intent, bridge)) {
+            finish()
+            return
+        }
         // SPEC 18.5/18.6: request notification presentation permission —
         // the one duty that genuinely needs an Activity, so it stays.
         if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS)
@@ -46,15 +58,24 @@ class MainActivity : ComponentActivity() {
         // and 18.1's one-outstanding-dialog rule live where the state does.
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
-        val app = application as JetpacsApplication
         // First visible launch opts into the best-effort background bridge.
         // The service owns the listener and its durable enabled flag.
         JetpacsBridgeService.enable(this)
-        val bridge = app.bridge
         setContent {
             // SPEC 18.4: mirror the pushed palette (colors/dark), or the native
             // scheme following the system when no theme is set.
             val themePayload by app.theme.collectAsState()
+            val keepScreenOn by app.keepScreenOn.collectAsState()
+            androidx.compose.runtime.DisposableEffect(keepScreenOn) {
+                if (keepScreenOn) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                onDispose {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+            }
             // SPEC 20.1.1: report the window geometry on first composition
             // and every configuration change (rotation, fold, resize).
             val config = androidx.compose.ui.platform.LocalConfiguration.current
@@ -94,6 +115,32 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (!handlePlatformIntent(
+                intent,
+                (application as JetpacsApplication).bridge,
+            )) {
+            setIntent(Intent())
+        }
+    }
+
+    /** Validate exported launcher ingress before resolving private state. */
+    private fun handlePlatformIntent(intent: Intent?, bridge: DeviceBridge): Boolean {
+        if (intent?.action == null || intent.action == Intent.ACTION_MAIN) return true
+        if (intent.action != PlatformShortcuts.ACTION_INVOKE) return false
+        val pairingIdentity = (application as JetpacsApplication).container.pairingId.value
+        val action = PlatformShortcuts.resolveLaunch(this, pairingIdentity, intent)
+        // Rotation must not replay a shortcut occurrence, and the opaque token
+        // must not linger in the Activity's retained Intent. A fresh launcher
+        // tap delivers a fresh onNewIntent.
+        setIntent(Intent())
+        action ?: return false
+        bridge.dispatchPlatformAction(action.descriptor, action.injected)
+        return true
     }
 }
 

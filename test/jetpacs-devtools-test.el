@@ -103,6 +103,17 @@ it carries the error SYMBOL, never the datum (SPEC 23.3)."
     (should (string-match-p "error" json))
     (should-not (string-match-p "sms-body" json))))
 
+(ert-deftest jetpacs-devtools-tile-degrade-stays-in-the-tile-schema ()
+  "A failed tile builder produces a valid node-less SPEC 13.4 tile."
+  (let* ((spec (jetpacs-shell--build
+                "tile:custom1"
+                (list :builder (lambda () (error "leak: %s" "sms-body")))))
+         (json (jetpacs-node->canonical-json spec)))
+    (should (equal (plist-get spec :label) "Error"))
+    (should (eq (plist-get spec :active) :json-false))
+    (should-not (plist-member spec :t))
+    (should-not (string-match-p "sms-body" json))))
+
 (ert-deftest jetpacs-devtools-recorder-off-keeps-nothing ()
   (jetpacs-devtools-test--with (jetpacs-devtools-test--client)
     (jetpacs-devtools-test--recording recs

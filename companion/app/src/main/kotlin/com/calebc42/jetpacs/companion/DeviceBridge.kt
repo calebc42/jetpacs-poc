@@ -16,6 +16,7 @@ import com.calebc42.ebp.renderer.model.stringOr
 import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.ActionAdmissionOutcome
+import com.calebc42.ebp.wire.SafeAdmissionEvidence
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.CompanionConfig
 import com.calebc42.ebp.wire.CompanionProofProvider
@@ -27,6 +28,7 @@ import com.calebc42.ebp.wire.SessionState
 import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.ebp.wire.Utf16Pos
 import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
+import com.calebc42.ebp.wire.dispatchContextless
 import com.calebc42.ebp.wire.utf16PosIn
 import com.calebc42.ebp.renderer.model.ActionHandoff
 import com.calebc42.ebp.renderer.model.CandidateDocument
@@ -238,6 +240,10 @@ class DeviceBridge(
     private val onOpenSettings: () -> Unit = {},
 ) : MaterialRendererHost {
 
+    private companion object {
+        const val CONTEXTLESS_PLATFORM = "contextless:platform"
+    }
+
     internal val context: android.content.Context get() = appContext
 
     // SPEC 13.1/15.1/18.6: the durable stores are process-wide singletons
@@ -276,7 +282,10 @@ class DeviceBridge(
         supportedCapabilities = setOf("theme", "surfaces.dialog", "presentation.toast",
             "presentation.snackbar",
             "presentation.pie-menu", "reminders.owner", "surfaces.notification",
-            "editor.sync", "capabilities", "triggers"),
+            "surfaces.tile", "editor.sync", "capabilities", "triggers"),
+        // `offline.wake` is deliberately absent until the user configures an
+        // exact, inert OS-local Emacs wake target and the host rechecks it at
+        // every send (SPEC 5.3). A durable queue alone is not a wake grant.
         // SPEC 10.2: what this build's renderer actually honors — derived from
         // the render/NodeSupport registry (the pin test holds the renderer's
         // dispatch to the same sets), never hand-kept here.
@@ -301,7 +310,9 @@ class DeviceBridge(
             put("max_editor_sessions", 8)
             put("max_trigger_responses", 8)
             put("max_triggers", 64)
-            put("max_device_report_bytes", 8192)
+            put("max_device_report_bytes", AppCapabilities.MAX_DEVICE_REPORT_BYTES)
+            put("max_shortcut_icon_bytes", AppCapabilities.MAX_SHORTCUT_ICON_BYTES)
+            put("max_shortcuts", AppCapabilities.MAX_SHORTCUTS)
             // SPEC 4.5/17.2: the three image limits are REQUIRED whenever image
             // is advertised — the same constants the loader enforces (no drift).
             put("max_image_bytes",
@@ -327,8 +338,14 @@ class DeviceBridge(
             put("max_editor_bytes", CompanionStores.MAX_EDITOR_BYTES)
         },
         // SPEC 20.1/20.2: advertise the device report and the platform executor.
-        deviceReport = AppCapabilities.deviceReport(),
-        capabilityHandler = AppCapabilities.handler(appContext, 65_536),
+        deviceReport = AppCapabilities.deviceReport(appContext),
+        // Permissions and the launchable-app inventory may change without a
+        // process restart. Each connection gets one fresh welcome snapshot.
+        deviceReportProvider = { AppCapabilities.deviceReport(appContext) },
+        capabilityHandler = stores.capabilityHandler(),
+        // Room encrypts every queued payload with an identity-scoped Android
+        // KeyStore key, so queued sms/call fire data satisfies SPEC 21.5.
+        sensitiveQueueEncrypted = true,
     )
 
     private fun loadTheme(): JsonObject? = stores.theme().load()
@@ -503,6 +520,39 @@ class DeviceBridge(
             com.calebc42.ebp.wire.UnsafeAdmissionReason.Cancelled))
     }
 
+    /** Shortcut/tile occurrence -> confirmation (when authored) -> §14 funnel. */
+    fun dispatchPlatformAction(descriptor: JsonObject, injected: JsonObject) {
+        val completion: (RendererActionOutcome) -> Unit = { outcome ->
+            if (outcome is RendererActionOutcome.NotAdmitted) {
+                outcome.error?.let { error ->
+                    onQueueProblem(error.stringOr("message", "platform action was not admitted"))
+                }
+            }
+        }
+        if (parkIfConfirmed(
+                CONTEXTLESS_PLATFORM,
+                descriptor,
+                null,
+                injected,
+                null,
+                null,
+                null,
+                null,
+                completion,
+            )) return
+        dispatch(
+            CONTEXTLESS_PLATFORM,
+            descriptor,
+            null,
+            injected,
+            null,
+            null,
+            null,
+            null,
+            completion,
+        )
+    }
+
     /** Park when DESCRIPTOR carries `confirm`; true when parked. */
     private fun parkIfConfirmed(surface: String, descriptor: JsonObject,
                                 value: JsonElement?, injected: JsonObject?,
@@ -568,6 +618,37 @@ class DeviceBridge(
                     }
                 } finally {
                     secretAttempt.releaseAfterDispatch()
+                }
+                return@execute
+            }
+            if (surface == CONTEXTLESS_PLATFORM) {
+                val supplied = injected ?: JsonObject(emptyMap())
+                val activeEngine = engine
+                // Accepted platform-slot builtins are receiver-local and must
+                // remain usable while a replacement connection is challenged
+                // or syncing. The persisted slot was profile-validated when
+                // accepted, so it does not need a transient session grant.
+                if ("builtin" in descriptor) {
+                    deliverOutcome(onOutcome, executeColdPlatformBuiltin(descriptor))
+                } else if (activeEngine != null) {
+                    activeEngine.dispatchContextlessAction(descriptor, supplied) { outcome ->
+                        completeOutcome(onOutcome, outcome)
+                    }
+                } else {
+                    val args = buildJsonObject {
+                        descriptor.objOrNull("args")?.forEach { (key, item) -> put(key, item) }
+                        supplied.forEach { (key, item) -> put(key, item) }
+                    }
+                    dispatchContextless(
+                        queue,
+                        CompanionStores.MAX_EVENT_BYTES,
+                        descriptor,
+                        args,
+                        stores.liveSession,
+                        callback = { status, error ->
+                        deliverOutcome(onOutcome, contextlessRendererOutcome(status, error))
+                        },
+                    )
                 }
                 return@execute
             }
@@ -638,6 +719,51 @@ class DeviceBridge(
                 if (traceVariant) android.os.Trace.endSection()
             }
         }
+    }
+
+    private fun executeColdPlatformBuiltin(descriptor: JsonObject): RendererActionOutcome =
+        runCatching {
+            when (descriptor.stringOr("builtin")) {
+                "trigger.fire" -> {
+                    if (!stores.fireManualFromHost(descriptor.stringOr("id"))) {
+                        return RendererActionOutcome.NotAdmitted(
+                            com.calebc42.ebp.wire.UnsafeAdmissionReason.InvalidContext,
+                        )
+                    }
+                }
+                "clipboard.copy" -> appContext.getSystemService(
+                    android.content.ClipboardManager::class.java,
+                ).setPrimaryClip(android.content.ClipData.newPlainText(
+                    "EBP",
+                    descriptor.stringOr("text"),
+                ))
+                "surface.open" -> onOpenSurface(descriptor.stringOr("surface"))
+                "companion.settings.open" -> onOpenSettings()
+                else -> return RendererActionOutcome.NotAdmitted(
+                    com.calebc42.ebp.wire.UnsafeAdmissionReason.InvalidContext,
+                )
+            }
+            RendererActionOutcome.LocallyCompleted
+        }.getOrElse {
+            RendererActionOutcome.NotAdmitted(
+                com.calebc42.ebp.wire.UnsafeAdmissionReason.Unknown,
+            )
+        }
+
+    private fun contextlessRendererOutcome(
+        status: String?,
+        error: JsonObject?,
+    ): RendererActionOutcome = when (status) {
+        "queued" -> RendererActionOutcome.SafelyAdmitted(
+            SafeAdmissionEvidence.DurableQueued)
+        "accepted" -> RendererActionOutcome.SafelyAdmitted(
+            SafeAdmissionEvidence.RemoteAccepted)
+        "duplicate" -> RendererActionOutcome.SafelyAdmitted(
+            SafeAdmissionEvidence.RemoteDuplicate)
+        else -> RendererActionOutcome.NotAdmitted(
+            com.calebc42.ebp.wire.UnsafeAdmissionReason.Unknown,
+            error,
+        )
     }
 
     /** Renderer occurrence -> the one confirmation/admission/delivery path. */
@@ -1433,6 +1559,8 @@ class DeviceBridge(
                     if (spec != null) Notifications.postSurface(appContext, surface, spec)
                     else Notifications.cancelSurface(appContext, surface)
                 }
+                surface.startsWith("tile:") ->
+                    TileSlots.refresh(appContext, surface)
                 surface.startsWith("app:") ->
                     onSurfaceChanged(surface, resolveView(surface))
             }
@@ -1446,8 +1574,8 @@ class DeviceBridge(
             }
         }
         engine.localStateProblemListener = onQueueProblem
-        // SPEC 14.2: host-platform builtins. Settings is a stub until the app
-        // shell lands (deferred scope) — visible, honest, no silent drop.
+        // SPEC 14.2: host-platform builtins cross only their owning Android
+        // seam; none is converted into a remote action or silently dropped.
         engine.hostBuiltinListener = { builtin, descriptor ->
             when (builtin) {
                 "clipboard.copy" -> {
