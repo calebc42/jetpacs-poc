@@ -294,6 +294,48 @@ class DesignModelTest {
         assertTrue(failure.reason.contains("nesting"))
     }
 
+    @Test
+    fun cachedPressableMustRevalidateBeforeItCanOwnInteraction() {
+        val scope = DesignModel.compileScope(
+            scope(
+                """
+                {"tokens":{},"styles":{"face":{"properties":{},"rules":[]}},"children":[]}
+                """,
+            ),
+        )
+        val invalidBoolean = objectNode(
+            """
+            {"t":"jetpacs.pressable","styles":["face"],
+             "on_tap":{"action":"demo.run"},"enabled":"true",
+             "children":[{"t":"text","text":"Run"}]}
+            """,
+        )
+        val booleanFailure = assertThrows(ContentInvalid::class.java) {
+            JetpacsDesignSemanticValidator.validatePressableForRender(
+                invalidBoolean,
+                scope,
+                "surface.children[0]",
+            )
+        }
+        assertEquals("surface.children[0].enabled", booleanFailure.path)
+
+        val interactiveChild = objectNode(
+            """
+            {"t":"jetpacs.pressable","styles":["face"],
+             "on_tap":{"action":"demo.run"},
+             "children":[{"t":"button","label":"Nested","on_tap":{"action":"nested"}}]}
+            """,
+        )
+        val passiveFailure = assertThrows(ContentInvalid::class.java) {
+            JetpacsDesignSemanticValidator.validatePressableForRender(
+                interactiveChild,
+                scope,
+                "surface.children[0]",
+            )
+        }
+        assertEquals("surface.children[0].children[0]", passiveFailure.path)
+    }
+
     private fun uniqueScope(index: Int): JsonObject = scope(
         """
         {

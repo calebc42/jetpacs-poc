@@ -34,6 +34,32 @@ class JetpacsRendererBoundaryTest {
     }
 
     @Test
+    fun experimentalAndroidxStyleIsConfinedToTheInternalAdapter() {
+        val sources = File(moduleDirectory(), "src/main/kotlin").walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .toList()
+        val designSources = sources.filter {
+            it.name.startsWith("JetpacsDesign") || it.name == "DesignModel.kt"
+        }
+        val styleUsers = designSources.filter {
+            it.readText().contains("androidx.compose.foundation.style")
+        }
+
+        assertTrue(styleUsers.isNotEmpty())
+        assertTrue(styleUsers.all {
+            it.name in setOf("JetpacsDesignRenderer.kt", "JetpacsDesignStyleAdapter.kt")
+        })
+        val model = sources.single { it.name == "DesignModel.kt" }.readText()
+        assertFalse(model.contains("androidx.compose"))
+        assertFalse(model.contains("android."))
+        assertTrue(
+            sources.single { it.name == "JetpacsDesignStyleAdapter.kt" }
+                .readText()
+                .contains("internal fun ComputedDesignStyle.toFoundationStyle"),
+        )
+    }
+
+    @Test
     fun maskedFieldsUseTheSharedExplicitOffsetMappingPath() {
         val source = File(
             moduleDirectory(),

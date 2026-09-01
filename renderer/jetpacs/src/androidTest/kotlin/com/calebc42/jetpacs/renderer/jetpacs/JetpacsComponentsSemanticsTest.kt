@@ -34,6 +34,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
@@ -66,6 +67,7 @@ import com.calebc42.ebp.renderer.model.RendererVolatileSecret
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -79,6 +81,124 @@ import org.junit.runner.RunWith
 class JetpacsComponentsSemanticsTest {
     @get:Rule
     val compose = createAndroidComposeRule<SemanticsHostActivity>()
+
+    @Test
+    fun designPressableHasOneMinimumButtonTargetAndOneActionPath() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = designScope(
+            """
+            {
+              "button": {
+                "properties": {"min_width":{"kind":"dimension","value":"48"}},
+                "rules": [
+                  {"state":"pressed","properties":{"scale":{"kind":"number","value":"0.96"}}},
+                  {"state":"focused","properties":{"border_width":{"kind":"dimension","value":"2"}}}
+                ]
+              }
+            }
+            """,
+            """
+            {"t":"jetpacs.pressable","styles":["button"],
+             "on_tap":{"action":"design.run"},
+             "children":[{"t":"text","text":"Designed action"}]}
+            """,
+        )
+        compose.setContent {
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+
+        compose.onNodeWithText("Designed action")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHasClickAction()
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .performClick()
+
+        compose.runOnIdle {
+            assertEquals(listOf("design.run"), context.actionNames)
+            assertTrue(context.states.isEmpty())
+        }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun designPressableReflectsAuthoredDisabledSelectedAndToggledState() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = designScope(
+            """{"face":{"properties":{},"rules":[]}}""",
+            """
+            {"t":"jetpacs.pressable","styles":["face"],
+             "on_tap":{"action":"design.run"},
+             "enabled":false,"selected":true,"toggled":true,
+             "children":[{"t":"text","text":"Selected"}]}
+            """,
+        )
+        compose.setContent {
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+
+        compose.onNodeWithText("Selected")
+            .assertIsNotEnabled()
+            .assertIsSelected()
+            .assertIsOn()
+            .performClick()
+        compose.runOnIdle {
+            assertTrue(context.actions.isEmpty())
+            assertTrue(context.states.isEmpty())
+        }
+    }
+
+    @Test
+    fun styledAppliesFoundationStyleThroughTheChildModifier() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = Json.parseToJsonElement(
+            """
+            {"t":"jetpacs.design_scope","tokens":{},
+             "styles":{"frame":{"properties":{
+               "padding":{"kind":"dimension","value":"8"}
+             },"rules":[]}},
+             "children":[
+               {"t":"jetpacs.styled","styles":["frame"],
+                "children":[{"t":"text","text":"same width"}]},
+               {"t":"text","text":"same width"}
+             ]}
+            """,
+        ) as JsonObject
+        compose.setContent {
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+
+        val styled = compose.onNodeWithTag("rendered:same width:0")
+            .getUnclippedBoundsInRoot()
+        val plain = compose.onNodeWithTag("rendered:same width:1")
+            .getUnclippedBoundsInRoot()
+        assertTrue(styled.right - styled.left > plain.right - plain.left)
+        compose.onAllNodes(hasClickAction()).assertCountEquals(0)
+    }
+
+    @Test
+    fun malformedCachedDesignFallsBackToChildrenWithoutInteraction() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = Json.parseToJsonElement(
+            """
+            {"t":"jetpacs.design_scope","tokens":{},"styles":{},"children":[
+              {"t":"jetpacs.pressable","styles":["missing"],
+               "on_tap":{"action":"must.not.dispatch"},
+               "children":[{"t":"text","text":"Safe fallback"}]}
+            ]}
+            """,
+        ) as JsonObject
+        compose.setContent {
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+
+        compose.onNodeWithText("Safe fallback").assertIsDisplayed()
+        compose.onAllNodes(hasClickAction()).assertCountEquals(0)
+        compose.runOnIdle {
+            assertTrue(context.actions.isEmpty())
+            assertTrue(context.states.isEmpty())
+        }
+    }
 
     @Test
     fun actionHasOneButtonTargetAndDispatchesOnce() {
@@ -971,13 +1091,14 @@ class JetpacsComponentsSemanticsTest {
         val end: Int,
     )
 
-    private class RecordingContext : ComposeExtensionRenderContext, RendererEditorHost {
+    private class RecordingContext(
+        override val extensionId: String = JETPACS_COMPONENTS_EXTENSION,
+    ) : ComposeExtensionRenderContext, RendererEditorHost {
         override val surface = "app:test"
         override val path = "root"
         override val inDialog = false
         override val maxFieldBytes = 65_536
         override val editorHost: RendererEditorHost get() = this
-        override val extensionId = JETPACS_COMPONENTS_EXTENSION
         override val maxEditorBytes = 262_144
         override val editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.READY)
         override val editorMirrors =
@@ -1092,7 +1213,27 @@ class JetpacsComponentsSemanticsTest {
         }
 
         @Composable
-        override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) = Unit
+        override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) {
+            when ((child["t"] as? JsonPrimitive)?.content) {
+                in JETPACS_DESIGN_NODE_SCHEMA ->
+                    JetpacsDesignRenderer.render(child, this, modifier)
+                "text" -> {
+                    val text = (child["text"] as? JsonPrimitive)?.content.orEmpty()
+                    BasicText(
+                        text,
+                        Modifier.testTag("rendered:$text:$index").then(modifier),
+                    )
+                }
+                "row" -> Row(modifier) {
+                    (child["children"] as? JsonArray)
+                        ?.forEachIndexed { childIndex, element ->
+                            (element as? JsonObject)?.let {
+                                renderChild(it, childIndex)
+                            }
+                        }
+                }
+            }
+        }
 
         @Composable
         override fun renderScopedChild(
@@ -1104,4 +1245,12 @@ class JetpacsComponentsSemanticsTest {
             BasicText((child["text"] as? JsonPrimitive)?.content.orEmpty(), modifier)
         }
     }
+
+    private fun designScope(styles: String, child: String): JsonObject =
+        Json.parseToJsonElement(
+            """
+            {"t":"jetpacs.design_scope","tokens":{},"styles":$styles,
+             "children":[$child]}
+            """,
+        ) as JsonObject
 }

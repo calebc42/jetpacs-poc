@@ -35,6 +35,42 @@ object JetpacsDesignSemanticValidator : ExtensionSemanticValidator {
         walk(document, path, scope = null, scopeDepth = 0)
     }
 
+    /** Recheck cached content before a pressable can acquire interaction. */
+    internal fun validatePressableForRender(
+        node: JsonObject,
+        scope: CompiledDesignScope,
+        path: String,
+    ): ComputedDesignStyle {
+        val style = DesignModel.computedStyle(node, scope, path, baseOnly = false)
+        val descriptor = node["on_tap"] as? JsonObject
+            ?: invalid("$path.on_tap", "must be an action descriptor")
+        val action = descriptor.stringMember("action")
+        val builtin = descriptor.stringMember("builtin")
+        if ((action == null) == (builtin == null)) {
+            invalid("$path.on_tap", "must name exactly one action or builtin")
+        }
+        for (member in listOf("enabled", "selected", "toggled")) {
+            val value = node[member] ?: continue
+            val primitive = value as? JsonPrimitive
+                ?: invalid("$path.$member", "must be a boolean")
+            if (primitive.isString || primitive.content.toBooleanStrictOrNull() == null) {
+                invalid("$path.$member", "must be a boolean")
+            }
+        }
+        val children = node["children"] as? JsonArray
+            ?: invalid("$path.children", "must be an array")
+        if (children.size !in 1..16) {
+            invalid("$path.children", "must contain 1 to 16 passive nodes")
+        }
+        children.forEachIndexed { index, child ->
+            if (child !is JsonObject) {
+                invalid("$path.children[$index]", "must be a node")
+            }
+            validatePassive(child, "$path.children[$index]")
+        }
+        return style
+    }
+
     private fun walk(
         element: JsonElement,
         path: String,
@@ -121,5 +157,10 @@ object JetpacsDesignSemanticValidator : ExtensionSemanticValidator {
     private fun JsonObject.nodeType(): String? {
         val primitive = this["t"] as? JsonPrimitive ?: return null
         return if (primitive.isString) primitive.contentOrNull else null
+    }
+
+    private fun JsonObject.stringMember(name: String): String? {
+        val primitive = this[name] as? JsonPrimitive ?: return null
+        return primitive.takeIf { it.isString }?.contentOrNull?.takeIf(String::isNotEmpty)
     }
 }
