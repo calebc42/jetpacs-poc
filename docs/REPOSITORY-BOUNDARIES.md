@@ -28,6 +28,7 @@ jetpacs-authoring           shared, inert Elisp authoring/inspection support
 `-- jetpacs-component-catalog
 glasspane                   downstream personal-information applet
 `-- glasspane-ef            optional Modus-family theme provider module
+grove                       downstream Org applet and Android UI reference
 ```
 
 Consumption flows downward through the diagram: implementations consume the
@@ -54,6 +55,7 @@ particular:
 | `ebp-kmp` | `../ebp-poc/ebp-kmp` | `companion/ebp-kmp`, `companion/wire`, their tests, and the Kotlin vocabulary generator |
 | `ebp-compose` | `../ebp-poc/ebp-compose` | `companion/renderer/model`, `companion/renderer/compose`, and renderer-extension projection tooling |
 | `glasspane` | `../glasspane` | the already extracted applet, its EF Themes provider module, remaining legacy tests, and plans |
+| `grove` | `../../../grove/elisp` | the Elisp-authored rebuild; the sibling Android tree remains its visual/workflow reference |
 | `glasspane-material3` | `../glasspane-material3` | `companion/renderer/material3`, `emacs/apps/glasspane-material3`, the M3 catalog, its manifest/golden, tests, and lookup tooling |
 | `jetpacs-components` | `../jetpacs-components` | `companion/renderer/jetpacs`, `emacs/apps/jetpacs-components`, and the `jetpacs.components` manifest/golden |
 | `jetpacs-authoring` | `../jetpacs-authoring` | shared `jetpacs-authoring.el`, `jetpacs-elisp-source.el`, and `jetpacs-catalog-inspection.el` |

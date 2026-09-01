@@ -75,6 +75,9 @@ abstract class StageOnboardingAssets : DefaultTask() {
     abstract val glasspaneDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
+    abstract val groveDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
     abstract val orgDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
@@ -173,6 +176,7 @@ abstract class StageOnboardingAssets : DefaultTask() {
             File(apps, "jetpacs-component-catalog"),
         )
         copyElispSources(glasspaneDir.get().asFile, File(apps, "glasspane"))
+        copyElispSources(groveDir.get().asFile, File(apps, "grove"))
         copyDistribution(orgDir.get().asFile, File(payload, "org"))
         copyDistribution(examplesDir.get().asFile, File(payload, "examples/python"))
         initFile.get().asFile.copyTo(File(payload, "init.el"), overwrite = true)
@@ -206,6 +210,7 @@ androidComponents {
             jetpacsAutomationsDir.set(repo.dir("../jetpacs-automations/lisp"))
             jetpacsComponentCatalogDir.set(repo.dir("../jetpacs-component-catalog/lisp"))
             glasspaneDir.set(repo.dir("../glasspane"))
+            groveDir.set(repo.dir("../../../grove/elisp"))
             orgDir.set(repo.dir("org"))
             examplesDir.set(repo.dir("device/py"))
             initFile.set(repo.file("device/init.el"))

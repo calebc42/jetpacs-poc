@@ -16,6 +16,8 @@
 
 (ert-deftest jetpacs-org-reminders-agenda-extractor-is-shared-and-memoised ()
   "Glasspane delegates to the one extractor cached under org-mode."
+  (should (eq (symbol-function 'jetpacs-org-mode-agenda-items)
+              'jetpacs-org-mode--agenda-items))
   (should (eq (symbol-function 'jetpacs-org-mode-agenda-scope)
               'jetpacs-org-mode--agenda-scope))
   (should (eq (symbol-function 'glasspane-org--agenda-scope)

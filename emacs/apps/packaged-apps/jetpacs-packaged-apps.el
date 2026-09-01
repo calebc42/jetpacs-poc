@@ -21,7 +21,15 @@
          :feature glasspane
          :app-id "glasspane"
          :register glasspane-register
-         :unregister glasspane-unregister)))
+         :unregister glasspane-unregister)
+        (:name "grove.el"
+         :label "Grove"
+         :icon "forest"
+         :summary "Agenda and capture powered directly by Emacs Org"
+         :feature grove
+         :app-id "grove"
+         :register grove-register
+         :unregister grove-unregister)))
 
 (provide 'jetpacs-packaged-apps)
 ;;; jetpacs-packaged-apps.el ends here

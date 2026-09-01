@@ -74,6 +74,13 @@ count.  Results are memoised in the Org Mode namespace."
   (ebp-org-with-cache 'org-mode (list 'agenda (or span 'day) start-day)
     (jetpacs-org-mode--agenda-items-1 span start-day)))
 
+(defalias 'jetpacs-org-mode-agenda-items
+  #'jetpacs-org-mode--agenda-items
+  "Return Org Mode's canonical rich agenda projection.
+SPAN and START-DAY have the same meaning as in Org Agenda.  This public read
+seam lets downstream applets present the one foundation-owned extraction
+without depending on its private worker or introducing another agenda engine.")
+
 (defun jetpacs-org-mode--agenda-items-1 (span start-day)
   "Uncached worker for `jetpacs-org-mode--agenda-items'."
   (let ((files (jetpacs-org-mode--agenda-scope)))

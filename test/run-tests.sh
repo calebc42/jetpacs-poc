@@ -15,17 +15,20 @@ JETPACS_AUTHORING_DIR=${JETPACS_AUTHORING_DIR:-"$jetpacs_root/../jetpacs-authori
 JETPACS_AUTOMATIONS_DIR=${JETPACS_AUTOMATIONS_DIR:-"$jetpacs_root/../jetpacs-automations"}
 JETPACS_COMPONENT_CATALOG_DIR=${JETPACS_COMPONENT_CATALOG_DIR:-"$jetpacs_root/../jetpacs-component-catalog"}
 GLASSPANE_DIR=${GLASSPANE_DIR:-"$jetpacs_root/../glasspane"}
+GROVE_DIR=${GROVE_DIR:-"$jetpacs_root/../../../grove"}
 export EBP_SPEC_DIR EBP_EL_DIR EBP_ORG_DIR EBP_KMP_DIR EBP_COMPOSE_DIR
 export GLASSPANE_MATERIAL3_DIR JETPACS_COMPONENTS_DIR JETPACS_AUTHORING_DIR
 export JETPACS_AUTOMATIONS_DIR JETPACS_COMPONENT_CATALOG_DIR
 export GLASSPANE_DIR
+export GROVE_DIR
 
 for dependency in \
   "$EBP_SPEC_DIR/contract.json" \
   "$EBP_EL_DIR/lisp/ebp.el" \
   "$EBP_ORG_DIR/lisp/ebp-org.el" \
   "$EBP_KMP_DIR/wire/build.gradle.kts" \
-  "$EBP_COMPOSE_DIR/renderer/model/build.gradle.kts"; do
+  "$EBP_COMPOSE_DIR/renderer/model/build.gradle.kts" \
+  "$GROVE_DIR/elisp/grove.el"; do
   test -r "$dependency" || {
     echo "workspace dependency missing: $dependency" >&2
     exit 2
@@ -50,7 +53,8 @@ emacs() {
     -L "$JETPACS_COMPONENTS_DIR/lisp/jetpacs-components" \
     -L "$JETPACS_AUTOMATIONS_DIR/lisp" \
     -L "$JETPACS_COMPONENT_CATALOG_DIR/lisp" \
-    -L "$GLASSPANE_DIR" "$@"
+    -L "$GLASSPANE_DIR" \
+    -L "$GROVE_DIR/elisp" "$@"
 }
 
 # Upstream and extension owners gate their own source. Jetpacs then runs the
@@ -62,6 +66,10 @@ EBP_EL_DIR="$EBP_EL_DIR" "$EBP_ORG_DIR/test/run-tests.sh"
 "$JETPACS_COMPONENTS_DIR/test/run-tests.sh"
 "$JETPACS_AUTOMATIONS_DIR/test/run-tests.sh"
 "$JETPACS_COMPONENT_CATALOG_DIR/test/run-tests.sh"
+JETPACS_ROOT="$jetpacs_root" \
+EBP_EL_ROOT="$EBP_EL_DIR" \
+EBP_ORG_ROOT="$EBP_ORG_DIR" \
+  "$GROVE_DIR/test-elisp/run-tests.sh"
 
 python3 "$EBP_KMP_DIR/tools/gen-vocabulary.py" \
   --spec-dir "$EBP_SPEC_DIR" \

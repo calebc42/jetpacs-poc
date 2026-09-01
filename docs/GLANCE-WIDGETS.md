@@ -138,6 +138,12 @@ the `widget` profile catches unsupported nodes before a push. For example:
 documents. Their canonical bytes match `widget-surfaces.golden`; their Grove
 action names are opaque fixture data, not Android behavior.
 
+The downstream `grove` repository now also authors the live
+`widget:grove.capture` and `widget:grove.agenda` surfaces in Elisp over its
+explicit Org snapshot. Those applet surfaces are the user-facing acceptance
+case; the in-tree fixtures remain protocol goldens and do not duplicate Grove
+semantics in Kotlin.
+
 ## Lifecycle verification matrix
 
 | Case | Implementation and automated evidence |
