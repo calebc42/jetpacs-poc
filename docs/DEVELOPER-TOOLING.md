@@ -159,7 +159,7 @@ steps, once repeated work proves the need, are:
   tables;
 - structured validator findings alongside the backward-compatible text result;
 - applet test-harness generation after the applet packaging contract settles;
-- extraction of the active clean-room implementation from the POC snapshot,
+- extraction of the active spec-driven implementation from the POC snapshot,
   after which discovery should prefer top-level `ebp/`, `emacs/`, and
   `companion/` automatically; and
 - publication/versioning only after a second checkout consumes the tools.

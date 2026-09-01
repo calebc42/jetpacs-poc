@@ -24,9 +24,9 @@ directories are separate Git repositories or workspace projects. A root
 
 | Path | Role | Default editing rule |
 |---|---|---|
-| `README.org` | Goal of the clean-room branch | Preserve unless the task explicitly changes that goal |
+| `README.org` | Goal of the spec-driven branch | Preserve unless the task explicitly changes that goal |
 | `jetpacs/` | Canonical standalone Jetpacs repository and the source-backed target used by the developer tools | Obey its lineage and architecture documents |
-| `poc/v1`, `poc/v2`, `poc/v3-pre-split` tags in `jetpacs/` | Immutable older POC snapshots and implementation evidence | Read through Git; do not recreate version worktrees by default |
+| `poc/v1`, `poc/v2`, `poc/v3-pre-split` tags in `jetpacs/` | Immutable older POC snapshots and reusable implementation evidence | Reuse or adapt their code as useful; do not move or modify the snapshot tags |
 | `ebp-poc/` | EBP POC umbrella; each direct child is an independent Git repository | Use `ebp-poc/ebp/` as the sole POC specification authority |
 | `glasspane/` | Workspace applet source | Follow the applet authoring contract below |
 | `jetpacs-platform-tools/` | Read-only platform contributor workbench, CLI, and MCP server | Read its nested `AGENTS.md` |
@@ -51,7 +51,7 @@ are nearby.
 |---|---|---|
 | Change EBP wire/session/durability behavior | `ebp-poc/ebp/SPEC.md`, especially §2.2, then the focused contract slice and goldens | `jetpacs-platform` MCP or `jetpacs-platform-tools ... contract` |
 | Change Jetpacs Kotlin or foundational Elisp | `jetpacs/docs/ARCHITECTURE-POC3.md`, `jetpacs/docs/REWRITE-PLAN.md`, then the owning source/tests | `jetpacs-platform` MCP |
-| Change the clean-room implementation | `README.org` and user-supplied clean-room plan | Do not copy or merge from an LLM POC unless the user expressly changes the clean-room rule |
+| Reuse or port prior POC code | `README.org`, `ebp-poc/ebp/SPEC.md`, then the owning architecture, source, and tests | Prior POC code may be copied, merged, or adapted; verify it against the current normative EBP rules |
 | Create or change an applet | `jetpacs-applet-mcp/APPLET-GUIDE.md`, then `DETERMINISM.md` | Static `jetpacs-applets` MCP first; trusted runtime only for explicitly trusted code |
 | Skin an existing Emacs package | `jetpacs-applet-mcp/PACKAGE-SKINS.md`, then the exact package source under its configured read-only namespace | `skin_emacs_package` prompt plus static `jetpacs-applets` tools |
 | Look up Org behavior | The exact Org definition under the external `org/` namespace | `jetpacs_describe_symbol` or an explicit `org/FILE.el` summary |
@@ -82,6 +82,14 @@ Use this order when artifacts disagree:
 
 When a README or old plan contradicts this order, cite the contradiction and
 follow the governing artifact rather than choosing the most convenient text.
+
+Implementation lineage never determines conformance. Code from `poc/v1`,
+`poc/v2`, `poc/v3-pre-split`, `slop-fork/main`, or any other prior work may be
+reused, copied, merged, or adapted. Treat that code as implementation evidence,
+not protocol authority: build and verify it against `ebp-poc/ebp/SPEC.md`. If
+the desired behavior needs protocol semantics that the specification does not
+yet define, amend the normative specification and keep its contract projection,
+goldens, and affected conformance tests aligned before relying on that behavior.
 
 ## Required implementation workflow
 
