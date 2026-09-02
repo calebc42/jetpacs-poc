@@ -220,6 +220,7 @@ internal fun JetpacsNavHost(
                     surfaceFlow = app.appSurface(key.surfaceId),
                     connectedFlow = bridge.connected,
                     bridge = bridge,
+                    onSettings = { push(JetpacsNavKey.Settings) },
                     onRepair = { push(JetpacsNavKey.Pairing) },
                 )
             }
@@ -338,11 +339,12 @@ private fun SurfaceDestination(
     surfaceFlow: StateFlow<JsonObject?>,
     connectedFlow: StateFlow<Boolean>,
     bridge: DeviceBridge,
+    onSettings: () -> Unit,
     onRepair: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
         SurfaceDocumentHost(surfaceId, surfaceFlow, bridge, onRepair)
-        ConnectionStatusHost(surfaceFlow, connectedFlow)
+        ConnectionStatusHost(surfaceFlow, connectedFlow, onSettings)
     }
 }
 
@@ -400,44 +402,68 @@ private fun SurfaceDocumentHost(
 private fun ConnectionStatusHost(
     surfaceFlow: StateFlow<JsonObject?>,
     connectedFlow: StateFlow<Boolean>,
+    onSettings: () -> Unit,
 ) {
     val shown by surfaceFlow.collectAsState()
     val connected by connectedFlow.collectAsState()
     if (shown == null || connected) return
 
     val context = LocalContext.current
+    val openSettings = dropUnlessResumed { onSettings() }
     val openEmacs = dropUnlessResumed { openEmacsOrExplain(context) }
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        Surface(
-            shape = MaterialTheme.shapes.large,
-            color = MaterialTheme.colorScheme.inverseSurface,
-            contentColor = MaterialTheme.colorScheme.inverseOnSurface,
-            shadowElevation = 6.dp,
+        OfflineConnectionBanner(
+            onSettings = openSettings,
+            onOpenEmacs = openEmacs,
             modifier = Modifier
                 .padding(16.dp)
                 .widthIn(max = 560.dp)
                 .fillMaxWidth(),
+        )
+    }
+}
+
+/**
+ * Receiver-owned recovery controls shown over a cached surface.
+ *
+ * These actions must not depend on the cached document: that document can be
+ * the reason Emacs cannot reconnect.
+ */
+@Composable
+internal fun OfflineConnectionBanner(
+    onSettings: () -> Unit,
+    onOpenEmacs: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        shape = MaterialTheme.shapes.large,
+        color = MaterialTheme.colorScheme.inverseSurface,
+        contentColor = MaterialTheme.colorScheme.inverseOnSurface,
+        shadowElevation = 6.dp,
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Icon(Icons.Default.Cable, contentDescription = null)
-                Column(Modifier.weight(1f)) {
-                    Text("Emacs is offline", style = MaterialTheme.typography.labelLarge)
-                    Text(
-                        "Showing the last screen Emacs sent.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.75f),
-                    )
-                }
-                TextButton(onClick = openEmacs) {
-                    Text("Open Emacs", color = MaterialTheme.colorScheme.inversePrimary)
-                }
+            Icon(Icons.Default.Cable, contentDescription = null)
+            Column(Modifier.weight(1f)) {
+                Text("Emacs is offline", style = MaterialTheme.typography.labelLarge)
+                Text(
+                    "Showing the last screen Emacs sent.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.75f),
+                )
+            }
+            TextButton(onClick = onSettings) {
+                Text("Settings", color = MaterialTheme.colorScheme.inversePrimary)
+            }
+            TextButton(onClick = onOpenEmacs) {
+                Text("Open Emacs", color = MaterialTheme.colorScheme.inversePrimary)
             }
         }
     }
