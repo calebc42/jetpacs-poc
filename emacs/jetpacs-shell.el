@@ -250,8 +250,8 @@ schedules a debounced repush on a live session.  Returns SURFACE."
 (defun jetpacs-shell-roots ()
   "Live root registrations as an alist of (SURFACE . OWNER), a copy.
 OWNER is the id recorded at registration (nil for an ownerless root).
-The launcher's read surface: everything with a registered builder is an
-app a user could switch to, and nothing else is."
+The result spans app, notification, widget, and tile targets; consumers
+must select the namespaces appropriate to their own presentation."
   (mapcar (lambda (entry)
             (cons (car entry) (plist-get (cdr entry) :owner)))
           jetpacs-shell--roots))

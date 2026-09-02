@@ -33,15 +33,18 @@
     client))
 
 (defmacro jetpacs-launcher-test--with-demos (&rest body)
-  "BODY with two demo roots registered; they are removed afterwards."
+  "BODY with two app roots and one widget root registered temporarily."
   (declare (indent 0))
   `(unwind-protect
        (progn
          (with-jetpacs-owner "demob" (jetpacs-shell-define-root "demob" #'ignore))
          (with-jetpacs-owner "demoa" (jetpacs-shell-define-root "demoa" #'ignore))
+         (with-jetpacs-owner "grove"
+           (jetpacs-shell-define-root "widget:grove.agenda" #'ignore))
          ,@body)
      (jetpacs-shell-remove-root "app:demoa")
-     (jetpacs-shell-remove-root "app:demob")))
+     (jetpacs-shell-remove-root "app:demob")
+     (jetpacs-shell-remove-root "widget:grove.agenda")))
 
 (defun jetpacs-launcher-test--collect (node key)
   (let (hits)
@@ -62,6 +65,10 @@
       (should (member '("app:demoa" . "demoa") entries))
       (should (member '("app:demob" . "demob") entries))
       (should-not (assoc "app:jetpacs.launcher" entries))
+      ;; Grove registers widget roots beside its app root.  They are device
+      ;; projections, not launcher destinations, and `surface.open' rejects
+      ;; their namespace.
+      (should-not (assoc "widget:grove.agenda" entries))
       ;; Sorted by surface: demoa before demob wherever they sit.
       (let ((surfaces (mapcar #'car entries)))
         (should (< (cl-position "app:demoa" surfaces :test #'equal)
@@ -133,6 +140,14 @@ arrived."
                              client '(:action "jetpacs.launcher.open"
                                       :surface "app:jetpacs.launcher"
                                       :args (:surface "app:gone"))
+                             handler)
+                            'stale))
+                ;; Membership in the broad root registry is insufficient:
+                ;; widget roots are never app-switch destinations.
+                (should (eq (jetpacs--dispatch
+                             client '(:action "jetpacs.launcher.open"
+                                      :surface "app:jetpacs.launcher"
+                                      :args (:surface "widget:grove.agenda"))
                              handler)
                             'stale))
                 (cl-loop repeat 10 do (accept-process-output nil 0.05))

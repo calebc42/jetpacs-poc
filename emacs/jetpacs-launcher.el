@@ -9,10 +9,11 @@
 ;; "apps are configs").  The reference Companion presents ONE app
 ;; surface at a time, last push wins, and nothing device-side switches
 ;; between them; this module is the switcher.  Its root lists every
-;; surface with a registered builder (`jetpacs-shell-roots' — an app a
-;; user could switch to is exactly a surface something would render),
-;; and a row tap re-pushes that surface, which is what "switching"
-;; means under last-write-wins.
+;; `app:*' surface with a registered builder.  Widget, notification,
+;; and tile roots are device projections rather than navigation
+;; destinations, so they never enter the launcher.  A row tap re-pushes
+;; its app surface, which is what "switching" means under
+;; last-write-wins.
 ;;
 ;; Reaching the launcher has the same shape as the problem it solves,
 ;; so `jetpacs.launcher.show' is a GLOBAL VERB (`:any-surface', the
@@ -36,11 +37,15 @@
 
 (defun jetpacs-launcher--entries ()
   "Switch targets as a sorted alist of (SURFACE . OWNER).
-Every live root except the launcher's own; sorted by surface so the
-list is stable across pushes."
+Every live `app:*' root except the launcher's own; sorted by surface
+so the list is stable across pushes.  Other registered targets are
+non-navigable device projections and must not reach `surface.open'."
   (sort (cl-remove-if
          (lambda (entry)
-           (equal (car entry) (concat "app:" jetpacs-launcher-owner)))
+           (let ((surface (car entry)))
+             (or (not (string-prefix-p "app:" surface))
+                 (equal surface
+                        (concat "app:" jetpacs-launcher-owner)))))
          (jetpacs-shell-roots))
         (lambda (a b) (string< (car a) (car b)))))
 
@@ -156,7 +161,7 @@ GLOBAL verb retained for older Companions."
       (ignore params)
       (let ((target (plist-get args :surface)))
         (if (not (and (stringp target)
-                      (assoc target (jetpacs-shell-roots))))
+                      (assoc target (jetpacs-launcher--entries))))
             'stale
           (jetpacs-flow-continue
            (lambda ()
