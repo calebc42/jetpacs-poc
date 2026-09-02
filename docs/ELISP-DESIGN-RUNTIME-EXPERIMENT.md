@@ -65,7 +65,7 @@ Run from each owning repository, narrow gates before broad gates:
 (cd jetpacs-components && ./tools/check-projections.sh && ./test/run-tests.sh && ./gradlew test)
 (cd glasspane-material3 && ./tools/check-projections.sh && ./test/run-tests.sh && ./gradlew test)
 (cd jetpacs && ./test/run-tests.sh)
-(cd jetpacs/companion && ./gradlew testDebugUnitTest lintDebug assembleDebug)
+(cd jetpacs/companion && ./gradlew testDebugUnitTest lintDebug assembleDebug assembleDebugAndroidTest)
 (cd grove && ./test-elisp/run-tests.sh && ./gradlew testDebugUnitTest lintDebug assembleDebug)
 ```
 
@@ -84,6 +84,7 @@ they are not implied by a successful host build.
 | jetpacs-components | 1f122304f100dd6c72392b4bac5f489b35fba4b8 | Foundation design renderer |
 | jetpacs-components | d14eb3741b2be16c5bc1fafd8af0b4058897e111 | Bounded compiler performance |
 | jetpacs | 46c81f2c9c8a4730ab27e3e5485a39fe0871e078 | Live Companion opt-in |
+| jetpacs | 783b7cbdaef1e1dec4c9bd49dffa795b2195a4e9 | Offline cached-surface repair route |
 | grove | 7fccae9bb76e8c572eb09047e3445f896face1d8 | Advertised design presentation |
 | grove | 54cdb77df3e29534dcd4a505effe51f184f75996 | Configuration-aware lint fix |
 
@@ -104,6 +105,10 @@ The following gates passed on 2026-09-01:
 - Grove connectedDebugAndroidTest on the Pixel Tablet: 57 of 57 tests.
 - The Companion device-global experiment-preference recreation test on the
   Pixel Tablet.
+- The Companion offline-recovery banner instrumentation test on the Pixel
+  Tablet. Live layout inspection also verified cached offline surface ->
+  Settings -> Set up or repair Jetpacs -> repair wizard, without clearing app
+  data.
 - Four focused Foundation renderer device tests covering one accessible
   pressable/action path, authored disabled/selected/toggled state, child
   modifier style application, and malformed-cache passive fallback.
@@ -183,7 +188,8 @@ Run each repository's reverts newest first, in this dependency-reverse order:
 
 1. grove: 54cdb77df3e29534dcd4a505effe51f184f75996, then
    7fccae9bb76e8c572eb09047e3445f896face1d8.
-2. jetpacs: 46c81f2c9c8a4730ab27e3e5485a39fe0871e078.
+2. jetpacs: 783b7cbdaef1e1dec4c9bd49dffa795b2195a4e9, then
+   46c81f2c9c8a4730ab27e3e5485a39fe0871e078.
 3. jetpacs-components: d14eb3741b2be16c5bc1fafd8af0b4058897e111,
    then 1f122304f100dd6c72392b4bac5f489b35fba4b8, then
    f6e549a3cf1cc66e80f25ec2a6d7d072e513c5c9.
