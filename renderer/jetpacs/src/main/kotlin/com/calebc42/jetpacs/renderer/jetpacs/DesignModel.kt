@@ -147,12 +147,16 @@ internal data class CompiledStyle(
  * nested scope can replace identifiers and re-resolve inherited styles.
  */
 class CompiledDesignScope internal constructor(
-    val canonicalContent: String,
+    private val canonical: Lazy<String>,
+    val configurationBytes: Int,
     internal val tokens: Map<String, JsonElement>,
     internal val styleDeclarations: Map<String, JsonElement>,
     internal val motionDeclarations: Map<String, JsonElement>,
     private val styles: Map<String, CompiledStyle>,
 ) {
+    val canonicalContent: String
+        get() = canonical.value
+
     fun computedStyle(styleNames: List<String>, path: String): ComputedDesignStyle {
         val layers = mutableListOf<DesignStyleLayer>()
         for ((index, name) in styleNames.withIndex()) {
@@ -170,15 +174,30 @@ object DesignModel {
     const val MAX_CONFIGURATION_BYTES: Int = 256 * 1024
     const val MAX_SCOPE_DEPTH: Int = 8
     private const val MAX_CACHE_ENTRIES = 32
-    private val identifier = Regex("[A-Za-z0-9][A-Za-z0-9._:/-]*")
 
-    private val cache = object : LinkedHashMap<String, CompiledDesignScope>(
+    private class ScopeContentKey(
+        val motions: Map<String, JsonElement>,
+        val styles: Map<String, JsonElement>,
+        val tokens: Map<String, JsonElement>,
+        private val contentHash: Int,
+    ) {
+        override fun hashCode(): Int = contentHash
+
+        override fun equals(other: Any?): Boolean =
+            other is ScopeContentKey &&
+                contentHash == other.contentHash &&
+                motions == other.motions &&
+                styles == other.styles &&
+                tokens == other.tokens
+    }
+
+    private val cache = object : LinkedHashMap<ScopeContentKey, CompiledDesignScope>(
         MAX_CACHE_ENTRIES + 1,
         0.75f,
         true,
     ) {
         override fun removeEldestEntry(
-            eldest: MutableMap.MutableEntry<String, CompiledDesignScope>?,
+            eldest: MutableMap.MutableEntry<ScopeContentKey, CompiledDesignScope>?,
         ): Boolean = size > MAX_CACHE_ENTRIES
     }
 
@@ -196,21 +215,27 @@ object DesignModel {
         val tokens = merge(parent?.tokens, localTokens, 256, "$path.tokens")
         val styles = merge(parent?.styleDeclarations, localStyles, 256, "$path.styles")
         val motions = merge(parent?.motionDeclarations, localMotions, 64, "$path.motions")
-        val canonical = canonicalObject(
-            mapOf(
-                "motions" to JsonObject(motions),
-                "styles" to JsonObject(styles),
-                "tokens" to JsonObject(tokens),
-            ),
+        val canonicalValues = mapOf(
+            "motions" to JsonObject(motions),
+            "styles" to JsonObject(styles),
+            "tokens" to JsonObject(tokens),
         )
-        if (canonical.toByteArray(Charsets.UTF_8).size > MAX_CONFIGURATION_BYTES) {
+        val canonicalMetrics = canonicalMetrics(JsonObject(canonicalValues))
+        val configurationBytes = canonicalMetrics.utf8Bytes
+        if (configurationBytes > MAX_CONFIGURATION_BYTES) {
             invalid(path, "design configuration exceeds 256 KiB")
         }
-        cache[canonical]?.let { return it }
+        val contentKey = ScopeContentKey(
+            motions,
+            styles,
+            tokens,
+            canonicalMetrics.contentHash,
+        )
+        cache[contentKey]?.let { return it }
 
         val compiledMotions = compileMotions(motions, path)
         val tokenResolver = TokenResolver(tokens, path)
-        tokens.keys.sorted().forEach { tokenResolver.resolve(it, "$path.tokens.$it") }
+        tokens.keys.forEach { tokenResolver.resolve(it, "$path.tokens.$it") }
         val compiledStyles = compileStyles(
             declarations = styles,
             motions = compiledMotions,
@@ -218,12 +243,15 @@ object DesignModel {
             path = path,
         )
         return CompiledDesignScope(
-            canonicalContent = canonical,
-            tokens = tokens.toMap(),
-            styleDeclarations = styles.toMap(),
-            motionDeclarations = motions.toMap(),
+            canonical = lazy(LazyThreadSafetyMode.PUBLICATION) {
+                canonicalObject(canonicalValues)
+            },
+            configurationBytes = configurationBytes,
+            tokens = tokens,
+            styleDeclarations = styles,
+            motionDeclarations = motions,
             styles = compiledStyles,
-        ).also { cache[canonical] = it }
+        ).also { cache[contentKey] = it }
     }
 
     /** Resolve one styled or pressable node against an effective scope. */
@@ -253,7 +281,7 @@ object DesignModel {
     internal fun clearCacheForTest() = cache.clear()
 
     @Synchronized
-    internal fun cacheKeysForTest(): List<String> = cache.keys.toList()
+    internal fun cacheKeysForTest(): List<String> = cache.values.map { it.canonicalContent }
 
     private fun merge(
         inherited: Map<String, JsonElement>?,
@@ -261,10 +289,15 @@ object DesignModel {
         limit: Int,
         path: String,
     ): Map<String, JsonElement> {
+        if (inherited == null) {
+            if (local.size > limit) invalid(path, "contains more than $limit identifiers")
+            for (name in local.keys) requireIdentifierMember(name, path)
+            return local
+        }
         val result = LinkedHashMap<String, JsonElement>()
-        inherited?.let(result::putAll)
+        result.putAll(inherited)
         for ((name, value) in local) {
-            requireIdentifier(name, "$path.$name")
+            requireIdentifierMember(name, path)
             result[name] = value
         }
         if (result.size > limit) invalid(path, "contains more than $limit identifiers")
@@ -274,25 +307,29 @@ object DesignModel {
     private fun compileMotions(
         declarations: Map<String, JsonElement>,
         scopePath: String,
-    ): Map<String, DesignMotion> = declarations.keys.sorted().associateWith { name ->
-        requireIdentifier(name, "$scopePath.motions.$name")
-        val path = "$scopePath.motions.$name"
-        val declaration = declarations[name] as? JsonObject
-            ?: invalid(path, "must be an object")
-        val duration = (declaration["duration_ms"] as? JsonPrimitive)?.longOrNull
-            ?: invalid("$path.duration_ms", "must be an integer")
-        if (duration !in 0L..10_000L) {
-            invalid("$path.duration_ms", "must be between 0 and 10000")
+    ): Map<String, DesignMotion> {
+        val result = LinkedHashMap<String, DesignMotion>(declarations.size)
+        for ((name, element) in declarations) {
+            requireIdentifierMember(name, "$scopePath.motions")
+            val path = "$scopePath.motions.$name"
+            val declaration = element as? JsonObject
+                ?: invalid(path, "must be an object")
+            val duration = (declaration["duration_ms"] as? JsonPrimitive)?.longOrNull
+                ?: invalid("$path.duration_ms", "must be an integer")
+            if (duration !in 0L..10_000L) {
+                invalid("$path.duration_ms", "must be between 0 and 10000")
+            }
+            val easing = when (requiredString(declaration, "easing", path)) {
+                "linear" -> DesignEasing.Linear
+                "ease-in" -> DesignEasing.EaseIn
+                "ease-out" -> DesignEasing.EaseOut
+                "ease-in-out" -> DesignEasing.EaseInOut
+                "spring" -> DesignEasing.Spring
+                else -> invalid("$path.easing", "has an unknown easing")
+            }
+            result[name] = DesignMotion(duration.toInt(), easing)
         }
-        val easing = when (requiredString(declaration, "easing", path)) {
-            "linear" -> DesignEasing.Linear
-            "ease-in" -> DesignEasing.EaseIn
-            "ease-out" -> DesignEasing.EaseOut
-            "ease-in-out" -> DesignEasing.EaseInOut
-            "spring" -> DesignEasing.Spring
-            else -> invalid("$path.easing", "has an unknown easing")
-        }
-        DesignMotion(duration.toInt(), easing)
+        return result
     }
 
     private fun compileStyles(
@@ -300,43 +337,67 @@ object DesignModel {
         motions: Map<String, DesignMotion>,
         tokens: TokenResolver,
         path: String,
-    ): Map<String, CompiledStyle> = declarations.keys.sorted().associateWith { name ->
-        requireIdentifier(name, "$path.styles.$name")
-        val stylePath = "$path.styles.$name"
-        val declaration = declarations[name] as? JsonObject
-            ?: invalid(stylePath, "must be an object")
-        val motion = motionReference(declaration["motion"], motions, "$stylePath.motion")
-        val properties = propertyMap(declaration["properties"], tokens, "$stylePath.properties")
-        val rules = declaration["rules"] as? JsonArray
-            ?: invalid("$stylePath.rules", "must be an array")
-        if (rules.size > 16) invalid("$stylePath.rules", "contains more than 16 rules")
-        val compiledRules = rules.mapIndexed { index, element ->
-            val rulePath = "$stylePath.rules[$index]"
-            val rule = element as? JsonObject ?: invalid(rulePath, "must be an object")
-            val state = when (requiredString(rule, "state", rulePath)) {
-                "disabled" -> DesignState.Disabled
-                "selected" -> DesignState.Selected
-                "toggled" -> DesignState.Toggled
-                "hovered" -> DesignState.Hovered
-                "focused" -> DesignState.Focused
-                "pressed" -> DesignState.Pressed
-                else -> invalid("$rulePath.state", "has an unknown state")
-            }
-            DesignStyleLayer(
-                state = state,
-                properties = propertyMap(
-                    rule["properties"],
-                    tokens,
-                    "$rulePath.properties",
-                ),
-                motion = motionReference(
-                    rule["motion"],
-                    motions,
-                    "$rulePath.motion",
-                ) ?: motion,
-            )
+    ): Map<String, CompiledStyle> {
+        val result = LinkedHashMap<String, CompiledStyle>(declarations.size)
+        val hasRules = declarations.values.any { element ->
+            val declaration = element as? JsonObject
+            val rules = declaration?.get("rules") as? JsonArray
+            rules?.isNotEmpty() == true
         }
-        CompiledStyle(properties, compiledRules.toList(), motion)
+        val propertyCache = if (hasRules) {
+            HashMap<JsonObjectKey, Map<DesignProperty, DesignValue>>()
+        } else {
+            null
+        }
+        val valueCache = HashMap<JsonObjectKey, DesignValue>()
+        for ((name, element) in declarations) {
+            requireIdentifierMember(name, "$path.styles")
+            val stylePath = "$path.styles.$name"
+            val declaration = element as? JsonObject
+                ?: invalid(stylePath, "must be an object")
+            val motion = motionReference(declaration["motion"], motions, "$stylePath.motion")
+            val properties = propertyMap(
+                declaration["properties"],
+                tokens,
+                "$stylePath.properties",
+                propertyCache,
+                valueCache,
+            )
+            val rules = declaration["rules"] as? JsonArray
+                ?: invalid("$stylePath.rules", "must be an array")
+            if (rules.size > 16) invalid("$stylePath.rules", "contains more than 16 rules")
+            val compiledRules = ArrayList<DesignStyleLayer>(rules.size)
+            for ((index, ruleElement) in rules.withIndex()) {
+                val rulePath = "$stylePath.rules[$index]"
+                val rule = ruleElement as? JsonObject ?: invalid(rulePath, "must be an object")
+                val state = when (requiredString(rule, "state", rulePath)) {
+                    "disabled" -> DesignState.Disabled
+                    "selected" -> DesignState.Selected
+                    "toggled" -> DesignState.Toggled
+                    "hovered" -> DesignState.Hovered
+                    "focused" -> DesignState.Focused
+                    "pressed" -> DesignState.Pressed
+                    else -> invalid("$rulePath.state", "has an unknown state")
+                }
+                compiledRules += DesignStyleLayer(
+                    state = state,
+                    properties = propertyMap(
+                        rule["properties"],
+                        tokens,
+                        "$rulePath.properties",
+                        propertyCache,
+                        valueCache,
+                    ),
+                    motion = motionReference(
+                        rule["motion"],
+                        motions,
+                        "$rulePath.motion",
+                    ) ?: motion,
+                )
+            }
+            result[name] = CompiledStyle(properties, compiledRules, motion)
+        }
+        return result
     }
 
     private fun motionReference(
@@ -354,17 +415,23 @@ object DesignModel {
         element: JsonElement?,
         tokens: TokenResolver,
         path: String,
+        propertyCache: MutableMap<JsonObjectKey, Map<DesignProperty, DesignValue>>?,
+        valueCache: MutableMap<JsonObjectKey, DesignValue>,
     ): Map<DesignProperty, DesignValue> {
         val map = element as? JsonObject ?: invalid(path, "must be an object")
+        val mapKey = propertyCache?.let { JsonObjectKey(map) }
+        if (mapKey != null) propertyCache[mapKey]?.let { return it }
         if (map.size > 64) invalid(path, "contains more than 64 properties")
         val result = LinkedHashMap<DesignProperty, DesignValue>()
-        for (name in map.keys.sorted()) {
-            requireIdentifier(name, "$path.$name")
+        for ((name, element) in map) {
+            requireIdentifierMember(name, path)
             val property = DesignProperty.fromWireName(name)
                 ?: invalid("$path.$name", "unknown design property '$name'")
-            val raw = map.getValue(name) as? JsonObject
+            val raw = element as? JsonObject
                 ?: invalid("$path.$name", "must be a design value object")
-            val value = parseValue(raw, tokens, "$path.$name")
+            val valueKey = JsonObjectKey(raw)
+            val value = valueCache[valueKey] ?: parseValue(raw, tokens, "$path.$name")
+                .also { valueCache[valueKey] = it }
             if (!matches(property.kind, value)) {
                 invalid("$path.$name", "value kind does not match property '$name'")
             }
@@ -375,7 +442,18 @@ object DesignModel {
             }
             result[property] = value
         }
-        return result.toMap()
+        val compiled = result.toMap()
+        if (mapKey != null) propertyCache[mapKey] = compiled
+        return compiled
+    }
+
+    private class JsonObjectKey(private val value: JsonObject) {
+        private val contentHash = value.hashCode()
+
+        override fun hashCode(): Int = contentHash
+
+        override fun equals(other: Any?): Boolean =
+            other is JsonObjectKey && contentHash == other.contentHash && value == other.value
     }
 
     private fun requireRange(
@@ -404,8 +482,8 @@ object DesignModel {
         private val declarations: Map<String, JsonElement>,
         private val scopePath: String,
     ) {
-        private val resolved = mutableMapOf<String, DesignValue>()
-        private val resolving = linkedSetOf<String>()
+        private val resolved = HashMap<String, DesignValue>(declarations.size)
+        private val resolving = HashSet<String>()
 
         fun resolve(name: String, requestPath: String): DesignValue {
             resolved[name]?.let { return it }
@@ -481,13 +559,16 @@ object DesignModel {
     }
 
     private fun parseColor(value: String, path: String): Long {
-        val hex = value.removePrefix("#")
-        if (hex.length != 6 && hex.length != 8) {
+        if (value.length != 7 && value.length != 9 || value[0] != '#') {
             invalid(path, "must be #RRGGBB or #AARRGGBB")
         }
-        val parsed = hex.toLongOrNull(16)
-            ?: invalid(path, "must be #RRGGBB or #AARRGGBB")
-        return if (hex.length == 6) 0xff000000L or parsed else parsed
+        var parsed = 0L
+        for (index in 1 until value.length) {
+            val digit = value[index].digitToIntOrNull(16)
+                ?: invalid(path, "must be #RRGGBB or #AARRGGBB")
+            parsed = parsed shl 4 or digit.toLong()
+        }
+        return if (value.length == 7) 0xff000000L or parsed else parsed
     }
 
     private fun parseFinite(
@@ -522,20 +603,128 @@ object DesignModel {
     }
 
     private fun requireIdentifier(value: String, path: String) {
-        if (value.length > 128 || !identifier.matches(value)) {
+        if (!validIdentifier(value)) {
             invalid(path, "must be a bounded identifier")
         }
     }
 
-    private fun canonicalObject(values: Map<String, JsonElement>): String =
-        canonical(JsonObject(values))
-
-    private fun canonical(value: JsonElement): String = when (value) {
-        is JsonObject -> value.keys.sorted().joinToString(",", "{", "}") { key ->
-            "${JsonPrimitive(key)}:${canonical(value.getValue(key))}"
+    private fun requireIdentifierMember(value: String, parentPath: String) {
+        if (!validIdentifier(value)) {
+            invalid("$parentPath.$value", "must be a bounded identifier")
         }
-        is JsonArray -> value.joinToString(",", "[", "]") { canonical(it) }
-        else -> value.toString()
+    }
+
+    private fun validIdentifier(value: String): Boolean =
+        value.isNotEmpty() &&
+            value.length <= 128 &&
+            isAsciiLetterOrDigit(value[0]) &&
+            value.all(::isIdentifierCharacter)
+
+    private fun isAsciiLetterOrDigit(character: Char): Boolean =
+        character in 'A'..'Z' || character in 'a'..'z' || character in '0'..'9'
+
+    private fun isIdentifierCharacter(character: Char): Boolean =
+        isAsciiLetterOrDigit(character) ||
+            character == '.' ||
+            character == '_' ||
+            character == ':' ||
+            character == '/' ||
+            character == '-'
+
+    private fun canonicalObject(values: Map<String, JsonElement>): String =
+        StringBuilder(MAX_CONFIGURATION_BYTES).also { canonical(JsonObject(values), it) }.toString()
+
+    private data class CanonicalMetrics(
+        val utf8Bytes: Int,
+        val contentHash: Int,
+    )
+
+    private fun canonicalMetrics(value: JsonElement): CanonicalMetrics {
+        val accumulator = CanonicalMetricAccumulator()
+        val contentHash = accumulator.add(value)
+        return CanonicalMetrics(accumulator.utf8Bytes, contentHash)
+    }
+
+    private class CanonicalMetricAccumulator {
+        var utf8Bytes: Int = 0
+            private set
+
+        fun add(value: JsonElement): Int = when (value) {
+            is JsonObject -> {
+                utf8Bytes += 2 + (value.size - 1).coerceAtLeast(0)
+                var contentHash = 0
+                for ((key, element) in value) {
+                    utf8Bytes += jsonStringUtf8Size(key) + 1
+                    contentHash += key.hashCode() xor add(element)
+                }
+                contentHash
+            }
+            is JsonArray -> {
+                utf8Bytes += 2 + (value.size - 1).coerceAtLeast(0)
+                var contentHash = 1
+                for (element in value) contentHash = 31 * contentHash + add(element)
+                contentHash
+            }
+            is JsonPrimitive -> {
+                utf8Bytes += if (value.isString) {
+                    jsonStringUtf8Size(value.contentOrNull ?: "")
+                } else {
+                    value.toString().length
+                }
+                value.hashCode()
+            }
+        }
+    }
+
+    private fun jsonStringUtf8Size(value: String): Int {
+        var size = 2
+        var index = 0
+        while (index < value.length) {
+            val character = value[index]
+            size += when {
+                character == '"' || character == '\\' -> 2
+                character == '\b' ||
+                    character == '\t' ||
+                    character == '\n' ||
+                    character == '\u000c' ||
+                    character == '\r' -> 2
+                character < ' ' -> 6
+                character <= '\u007f' -> 1
+                character <= '\u07ff' -> 2
+                character.isHighSurrogate() &&
+                    index + 1 < value.length &&
+                    value[index + 1].isLowSurrogate() -> {
+                    index += 1
+                    4
+                }
+                else -> 3
+            }
+            index += 1
+        }
+        return size
+    }
+
+    private fun canonical(value: JsonElement, output: StringBuilder) {
+        when (value) {
+            is JsonObject -> {
+                output.append('{')
+                value.keys.sorted().forEachIndexed { index, key ->
+                    if (index > 0) output.append(',')
+                    output.append(JsonPrimitive(key)).append(':')
+                    canonical(value.getValue(key), output)
+                }
+                output.append('}')
+            }
+            is JsonArray -> {
+                output.append('[')
+                value.forEachIndexed { index, element ->
+                    if (index > 0) output.append(',')
+                    canonical(element, output)
+                }
+                output.append(']')
+            }
+            else -> output.append(value)
+        }
     }
 }
 

@@ -66,6 +66,10 @@ class DesignModelTest {
         val compiledAgain = DesignModel.compileScope(reordered)
 
         assertEquals(compiledFirst.canonicalContent, compiledAgain.canonicalContent)
+        assertEquals(
+            compiledFirst.canonicalContent.toByteArray(Charsets.UTF_8).size,
+            compiledFirst.configurationBytes,
+        )
         assertSame(compiledFirst, compiledAgain)
     }
 
