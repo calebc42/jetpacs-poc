@@ -595,6 +595,86 @@ Three slots, 77 -> 80: `collapsible.header`, `collapsible.chevron`,
   document's "Properties (1)" drawer is the second collapsible, seeded
   collapsed.
 
+## Slice 11: a Foundation `month_grid`
+
+The planning calendar was the last Material-drawn centrepiece on a Grove
+screen. Grove authors exactly one: the month, `marks` as dot counts for other
+notes' dates, `day_styles` for its two endpoints (scheduled
+`primary`/`on_primary`, deadline `error`/`on_error`, deadline winning a
+same-day collision), `selected` XOR a range, both actions, and a caption
+fallback. It never authors bounds or disabled weekdays.
+
+A design-scoped override honoring every member, so it never declines. Three
+decisions were taken deliberately and are recorded here rather than hidden:
+
+- **Marks are dots**, styled by a slot. The app draws a bold violet numeral
+  and no dot, but the wire carries a count of 0-3 and nothing on it
+  distinguishes that mode; the numeral would drop the count.
+- **Grove's scheduled day stays `primary`** (warm brown) where the app fills
+  it blue. `day_styles` accept only theme roles or a hex literal, the builder
+  does not know the active profile, and `primary` keeps `grove.default`
+  theme-neutral. Deadline already matches. This is the one known color
+  divergence on the planning screen.
+- **The band follows SPEC 17.5**: inclusive, one continuous strip across the
+  interior with two caps. The app paints exclusive per-cell chips.
+
+Everything reusable was `internal` to the Material module and importing it
+is forbidden by the boundary test, so the arithmetic was ported -- onto
+`java.time`, which minSdk 34 makes free, retiring `Calendar`, the `.take(2)`
+on a locale weekday string, and the truncating `monthAdd` for negative
+totals. It lives in `MonthGridModel.kt` with no Compose in it, and its ten
+unit tests are the first this logic has had in either renderer: month layout
+from each week start, the `0 = Sunday` wire mapping, `monthAdd` across years
+both ways, the two presentation-reconciliation cases, inclusive bounds and
+disabled weekdays, range caps including a one-day range, `dots` read by
+value, and a half-authored day style rejected.
+
+The viewed month is the only local state, keyed on the presentation
+identity: a snapshot that changes only marks keeps the browsed month and a
+changed authored month adopts it in the same frame. The composable is
+controlled -- it reports the next month and the override decides -- which is
+what keeps that state the host's. A day is one 48 dp target announcing its
+date and mark count with a Selected / In range / Today state; a disabled
+day announces itself and never dispatches. The grid carries a 7-column
+`CollectionInfo`. Precedence is Material's exactly: authored day style over
+selection or cap fill over today's ring, and a styled cell's dots take the
+mark color, else the styled foreground, else the profile's mark color.
+
+Eight slots, 80 -> 88. There is no `Shape` design property, so the day cell
+is a rounded rect whose radius the profile sets -- which is what the app
+draws anyway. Grove adds four styles: the 37 dp r=10 Plex Mono day cell with
+its `selected` rule, ten-point faint weekday initials, a hairline today ring,
+and the soft accent band.
+
+### Verification record for slice 11
+
+- 71 renderer unit tests, 10 new. 53 of 53 device tests, 3 new: a day tap
+  dispatching its ISO date and a day before `min_date` dispatching nothing;
+  the next arrow reporting the new month and disabling at `max_month`; a
+  mark-only re-push keeping the browsed month and an authored change
+  adopting it.
+- Screenshot references for Grove's planning shape (styled range caps, two
+  marked days, today) in compact, dark and 1.5x, plus a single selection
+  with disabled weekends and a day bound.
+- Grove 40 of 40 with all eight slots bound; 78 Elisp suites; the Companion
+  pin with `month_grid`.
+- Tablet: a heading's planning screen under Grove Light draws the surface
+  card, Plex Mono numbers, faint weekday initials and today's ring. Tapping
+  the 14th with Scheduled focused made Emacs re-push with the 14th filled
+  primary; focusing Deadline and tapping the 18th produced the red cap and
+  the soft band between them, with "4 days between scheduled and deadline"
+  beneath. The draft was left unsaved.
+
+Two defects were caught after the gates were green, one by reading the
+reference and one on the tablet. The unbound default drew no ring on today
+because the base today style was never layered, only the profile's slot.
+And the deadline cap rendered brown under Grove: the profile's `selected`
+rule on `month-grid.day` was repainting the authored `error` style, because
+the Foundation Styles API resolves state rules over the merged base whatever
+the layer order. SPEC 17.5 says an authored day style overrides the
+selected and cap faces outright, so a styled cell now carries no selected
+style state at all -- its accessibility state still says Selected.
+
 ## Remaining gaps, in order of leverage
 
 1. Chrome colors. Done in slice 3 through scope theme roles. Shapes and
