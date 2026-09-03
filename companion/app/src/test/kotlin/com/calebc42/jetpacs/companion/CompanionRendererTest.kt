@@ -148,7 +148,7 @@ class CompanionRendererTest {
         assertEquals(
             setOf(
                 "text", "card", "icon", "icon_button", "badge", "empty_state",
-                "button", "chip", "divider", "section_header", "menu",
+                "button", "chip", "divider", "section_header", "menu", "switch",
                 "text_input", "editor",
             ),
             designOverrides.nodeTypesFor(JETPACS_DESIGN_EXTENSION),
