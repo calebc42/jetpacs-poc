@@ -58,10 +58,20 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
             "jetpacs.scope" -> {
                 // An invisible selection boundary: no layout, modifier,
                 // semantics, state, or interaction owner is introduced.
+                // Inside an active design scope the boundary is redundant --
+                // the design scope selects the Foundation field and editor
+                // this scope exists for, and every other override besides --
+                // so the children keep the enclosing scope rather than
+                // narrowing to this one and losing those.
+                val designActive = LocalDesignScope.current != null
                 val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
                 children.forEachIndexed { index, element ->
                     (element as? JsonObject)?.let {
-                        context.renderScopedChild(it, index)
+                        if (designActive) {
+                            context.renderChild(it, index)
+                        } else {
+                            context.renderScopedChild(it, index)
+                        }
                     }
                 }
             }

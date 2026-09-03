@@ -1456,6 +1456,33 @@ class JetpacsComponentsSemanticsTest {
     }
 
     @Test
+    fun scopeInsideADesignScopeKeepsTheEnclosingScopeForItsChildren() {
+        // A design scope already selects the Foundation field and editor, so
+        // narrowing to the components scope would only drop its other
+        // overrides: the children render in the enclosing scope instead.
+        val scope = DesignModel.compileScope(
+            Json.parseToJsonElement(
+                """{"t":"jetpacs.design_scope","tokens":{},"styles":{},"children":[]}""",
+            ) as JsonObject,
+            null,
+            "root",
+        )
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """{"t":"jetpacs.scope","children":[{"t":"text","text":"One"},{"t":"text","text":"Two"}]}""",
+        ) as JsonObject
+        compose.setContent {
+            CompositionLocalProvider(LocalDesignScope provides scope) {
+                JetpacsComponentsRenderer.render(node, context, Modifier.testTag("scope"))
+            }
+        }
+
+        compose.onNodeWithText("One").assertIsDisplayed()
+        compose.onNodeWithText("Two").assertIsDisplayed()
+        compose.runOnIdle { assertTrue(context.scopedChildren.isEmpty()) }
+    }
+
+    @Test
     fun textFieldHasOneEditableNodeAndUsesTheOrdinaryActionPipeline() {
         val context = RecordingContext()
         val node = Json.parseToJsonElement(
