@@ -6,10 +6,14 @@
 ;;; Commentary:
 
 ;; A second catalog app for editing named `jetpacs.design' profiles.  The
-;; authoring shell always uses the stable baseline renderer; only the preview
-;; subtree receives the draft design scope.  Source editing uses the inert
-;; `jetpacs-authoring' reader and a closed symbol normalizer—forms are never
-;; evaluated.
+;; authoring shell wears the host's active profile; only the preview subtree
+;; receives the draft design scope.  Every entry is a folded disclosure whose
+;; header summarizes its value; closed leaves (families, weights, alignments,
+;; theme roles, easings, rule states, motion and token references) are
+;; dropdowns over the public design vocabularies, booleans are switches on a
+;; dedicated boolean action, and numbers carry numeric keyboards.  Source
+;; editing uses the inert `jetpacs-authoring' reader and a closed symbol
+;; normalizer—forms are never evaluated.
 
 ;;; Code:
 
@@ -137,14 +141,19 @@
   (setq jetpacs-design-lab--draft-error
         (truncate-string-to-width (jetpacs-error-label err) 180 nil nil "…")))
 
-(defun jetpacs-design-lab--number (value integer)
-  "Parse bounded numeric string VALUE; require INTEGER when non-nil."
+(defun jetpacs-design-lab--number (value integer &optional negative)
+  "Parse bounded numeric string VALUE; require INTEGER when non-nil.
+NEGATIVE non-nil admits a leading minus sign."
   (unless (and (stringp value)
                (string-match-p
-                (if integer "\\`[0-9]+\\'" "\\`[0-9]+\\(?:\\.[0-9]+\\)?\\'")
+                (concat "\\`" (if negative "-?" "")
+                        (if integer "[0-9]+" "[0-9]+\\(?:\\.[0-9]+\\)?")
+                        "\\'")
                 value))
-    (error "Design Lab: Expected a non-negative number"))
-  (if integer (string-to-number value) (string-to-number value)))
+    (error (if negative
+               "Design Lab: Expected a number"
+             "Design Lab: Expected a non-negative number")))
+  (string-to-number value))
 
 (defun jetpacs-design-lab--value-with-text (design-value text)
   "Rebuild DESIGN-VALUE using user-authored TEXT and its existing kind."
@@ -157,7 +166,8 @@
     ("theme-role" (jetpacs-design-theme-role text))
     ("dimension" (jetpacs-design-dimension
                   (jetpacs-design-lab--number text nil)))
-    ("number" (jetpacs-design-number (jetpacs-design-lab--number text nil)))
+    ("number" (jetpacs-design-number
+               (jetpacs-design-lab--number text nil t)))
     ("font-family" (jetpacs-design-font-family text))
     ("font-weight" (jetpacs-design-font-weight
                     (jetpacs-design-lab--number text t)))
@@ -227,6 +237,14 @@
       (error "Design Lab: Unknown style rule"))
     (aref rules index)))
 
+(defun jetpacs-design-lab--with-motion (plist value)
+  "Return PLIST with its `:motion' set to VALUE, or removed for \"__none\".
+The motion reference is the one optional leaf a style or rule carries."
+  (let ((copy (copy-sequence plist)))
+    (if (equal value "__none")
+        (progn (cl-remf copy :motion) copy)
+      (plist-put copy :motion value))))
+
 (defun jetpacs-design-lab--edit-style (profile item field index value)
   "Return PROFILE with style ITEM leaf FIELD at INDEX replaced by VALUE."
   (let* ((copy (copy-tree profile))
@@ -236,8 +254,12 @@
     (if index
         (let* ((rules (copy-sequence (plist-get style :rules)))
                (rule (copy-tree (jetpacs-design-lab--style-rule style index))))
-          (if (equal field "state")
-              (setq rule (plist-put rule :state value))
+          (cond
+           ((equal field "state")
+            (setq rule (plist-put rule :state value)))
+           ((equal field "motion")
+            (setq rule (jetpacs-design-lab--with-motion rule value)))
+           (t
             (let* ((properties (plist-get rule :properties))
                    (key (intern (concat ":" field)))
                    (old (plist-get properties key)))
@@ -245,17 +267,19 @@
               (setq properties
                     (plist-put properties key
                                (jetpacs-design-lab--value-with-text old value)))
-              (setq rule (plist-put rule :properties properties))))
+              (setq rule (plist-put rule :properties properties)))))
           (aset rules index rule)
           (setcdr entry (plist-put style :rules rules)))
-      (let* ((properties (plist-get style :properties))
-             (key (intern (concat ":" field)))
-             (old (plist-get properties key)))
-        (unless old (error "Design Lab: Unknown style property"))
-        (setq properties
-              (plist-put properties key
-                         (jetpacs-design-lab--value-with-text old value)))
-        (setcdr entry (plist-put style :properties properties))))
+      (if (equal field "motion")
+          (setcdr entry (jetpacs-design-lab--with-motion style value))
+        (let* ((properties (plist-get style :properties))
+               (key (intern (concat ":" field)))
+               (old (plist-get properties key)))
+          (unless old (error "Design Lab: Unknown style property"))
+          (setq properties
+                (plist-put properties key
+                           (jetpacs-design-lab--value-with-text old value)))
+          (setcdr entry (plist-put style :properties properties)))))
     copy))
 
 (defun jetpacs-design-lab--edited-profile (args)
@@ -292,8 +316,8 @@
       'accepted)))
 
 (defun jetpacs-design-lab--on-profile (args params)
-  "Load profile named by ARGS under event PARAMS."
-  (let* ((id (plist-get args :id))
+  "Load the profile the picker's ARGS name under event PARAMS."
+  (let* ((id (plist-get args :value))
          (profile (jetpacs-design-profile-get id)))
     (if (not (and (jetpacs-design-lab--live-p params) profile))
         'stale
@@ -316,6 +340,17 @@
       (error (jetpacs-design-lab--set-error err)))
     (jetpacs-design-lab--refresh params)
     'accepted)))
+
+(defun jetpacs-design-lab--on-boolean-edit (args params)
+  "Apply one switch-injected boolean edit from ARGS under PARAMS.
+A switch injects a native boolean; the dedicated wire action keeps that
+type honest, then the edit joins the ordinary string-valued path."
+  (let ((value (plist-get args :value)))
+    (if (not (memq value '(t :json-false)))
+        'rejected
+      (jetpacs-design-lab--on-edit
+       (plist-put (copy-sequence args) :value (if (eq value t) "true" "false"))
+       params))))
 
 (defun jetpacs-design-lab--on-source (args params)
   "Apply inert profile source in ARGS under event PARAMS."
@@ -426,19 +461,190 @@
                                           domain item field index))
                      0 20)))
 
-(defun jetpacs-design-lab--field
-    (label value domain item field &optional index)
-  "Build LABEL field editing VALUE at DOMAIN, ITEM, FIELD, and optional INDEX."
+(defun jetpacs-design-lab--edit-action (domain item field &optional index)
+  "Return the digest-addressed edit descriptor for DOMAIN ITEM FIELD INDEX."
+  (jetpacs-design-lab--action
+   "jpdesign.edit"
+   :digest (jetpacs-design-lab--digest)
+   :domain domain :item item :field field :index index))
+
+(defun jetpacs-design-lab--boolean-action (domain item field &optional index)
+  "Return the boolean edit descriptor for DOMAIN ITEM FIELD INDEX."
+  (jetpacs-design-lab--action
+   "jpdesign.edit.boolean"
+   :digest (jetpacs-design-lab--digest)
+   :domain domain :item item :field field :index index))
+
+(defun jetpacs-design-lab--options (values)
+  "Return dropdown options for VALUES, spelled exactly as authored."
+  (mapcar (lambda (value)
+            (jetpacs-enum-option (format "%s" value) (format "%s" value)))
+          values))
+
+(defun jetpacs-design-lab--token-kind (draft id)
+  "Return the terminal value kind of DRAFT's token ID, or nil when unknown.
+A token that references another token takes that token's kind."
+  (let ((tokens (plist-get draft :tokens))
+        (current id)
+        (hops 0)
+        kind)
+    (while (and current (<= hops (length tokens)))
+      (let ((entry (cdr (assoc current tokens))))
+        (setq hops (1+ hops))
+        (cond
+         ((null entry) (setq current nil))
+         ((equal (plist-get entry :kind) "token")
+          (setq current (plist-get entry :value)))
+         (t (setq kind (plist-get entry :kind) current nil)))))
+    kind))
+
+(defun jetpacs-design-lab--token-ids (draft expected &optional self)
+  "Return DRAFT's token ids a leaf expecting kind EXPECTED may reference.
+EXPECTED nil admits every token; a theme role satisfies a color, as the
+design runtime allows.  SELF, when non-nil, is excluded."
+  (cl-loop for entry in (plist-get draft :tokens)
+           for id = (car entry)
+           for kind = (jetpacs-design-lab--token-kind draft id)
+           when (and kind
+                     (not (equal id self))
+                     (or (null expected)
+                         (equal kind expected)
+                         (and (equal expected "color")
+                              (equal kind "theme-role"))))
+           collect id))
+
+(defun jetpacs-design-lab--kind-options (kind draft &optional expected self)
+  "Return the closed choices for a value of KIND, or nil for free text.
+DRAFT supplies token ids, filtered to EXPECTED and excluding SELF."
+  (pcase kind
+    ("font-family" jetpacs-design-font-families)
+    ("font-weight" (mapcar #'number-to-string jetpacs-design-font-weights))
+    ("text-align" jetpacs-design-text-aligns)
+    ("theme-role" jetpacs-theme-roles)
+    ("token" (jetpacs-design-lab--token-ids draft expected self))
+    (_ nil)))
+
+(defun jetpacs-design-lab--typography-caption (value)
+  "Summarize typography VALUE for a folded header."
+  (format "%s %s / %s · lh %s"
+          (plist-get value :family) (plist-get value :size)
+          (plist-get value :weight) (plist-get value :line-height)))
+
+(defun jetpacs-design-lab--token-caption (value)
+  "Summarize design VALUE for a folded header."
+  (format "%s · %s" (plist-get value :kind) (plist-get value :value)))
+
+(defun jetpacs-design-lab--style-caption (style)
+  "Summarize STYLE for a folded header."
+  (concat (format "%d properties · %d rules"
+                  (/ (length (plist-get style :properties)) 2)
+                  (length (plist-get style :rules)))
+          (if (plist-get style :motion)
+              (format " · motion %s" (plist-get style :motion))
+            "")))
+
+(defun jetpacs-design-lab--motion-caption (motion)
+  "Summarize MOTION for a folded header."
+  (format "%s ms · %s" (plist-get motion :duration_ms)
+          (plist-get motion :easing)))
+
+(defun jetpacs-design-lab--binding-caption (styles)
+  "Summarize the ordered STYLES of a binding for a folded header."
+  (truncate-string-to-width (string-join styles ", ") 40 nil nil "…"))
+
+(defun jetpacs-design-lab--disclosure (domain item caption children)
+  "Return a folded disclosure for DOMAIN's entry ITEM holding CHILDREN.
+The header carries the entry id and CAPTION, its current value in brief."
+  (jetpacs-collapsible
+   (jetpacs-design-lab--field-id domain item "disclosure")
+   (jetpacs-row
+    (jetpacs-with-attrs (jetpacs-text item :style "label") :weight 1)
+    (jetpacs-text caption :style "caption")
+    :spacing 8 :align "center" :fill t)
+   children
+   :collapsed t))
+
+(cl-defun jetpacs-design-lab--text-field
+    (label value domain item field &key index keyboard hint)
+  "Build LABEL text field editing VALUE at DOMAIN ITEM FIELD INDEX.
+KEYBOARD names the soft keyboard and HINT the placeholder."
   (jetpacs-text-input
    (jetpacs-design-lab--field-id domain item field index)
    :value (format "%s" value)
    :label label
    :single-line t
-   :on-submit
-   (jetpacs-design-lab--action
-    "jpdesign.edit"
-    :digest (jetpacs-design-lab--digest)
-    :domain domain :item item :field field :index index)))
+   :keyboard keyboard
+   :hint hint
+   :on-submit (jetpacs-design-lab--edit-action domain item field index)))
+
+(defun jetpacs-design-lab--dropdown-field
+    (label value values domain item field &optional index)
+  "Build LABEL dropdown choosing VALUE among VALUES at DOMAIN ITEM FIELD INDEX.
+A value outside VALUES (a profile saved before a vocabulary changed) keeps
+a text field, so it still renders and can be corrected."
+  (let ((value (format "%s" value)))
+    (if (member value values)
+        (jetpacs-dropdown
+         (jetpacs-design-lab--field-id domain item field index)
+         (jetpacs-design-lab--options values)
+         :label label
+         :value value
+         :on-change (jetpacs-design-lab--edit-action domain item field index))
+      (jetpacs-design-lab--text-field label value domain item field
+                                      :index index))))
+
+(defun jetpacs-design-lab--switch-field
+    (label value domain item field &optional index)
+  "Build LABEL switch for boolean text VALUE at DOMAIN ITEM FIELD INDEX."
+  (jetpacs-switch
+   (jetpacs-design-lab--field-id domain item field index)
+   :label label
+   :checked (jetpacs-bool (equal value "true"))
+   :on-change (jetpacs-design-lab--boolean-action domain item field index)))
+
+(defun jetpacs-design-lab--motion-field (draft item motion &optional index)
+  "Build the motion reference dropdown for style ITEM's rule INDEX in DRAFT.
+MOTION is the current reference or nil; None clears it."
+  (let ((ids (mapcar #'car (plist-get draft :motions))))
+    (if (or (null motion) (member motion ids))
+        (jetpacs-dropdown
+         (jetpacs-design-lab--field-id "style" item "motion" index)
+         (cons (jetpacs-enum-option "None" "__none")
+               (jetpacs-design-lab--options ids))
+         :label "motion"
+         :value (or motion "__none")
+         :on-change (jetpacs-design-lab--edit-action "style" item "motion" index))
+      (jetpacs-design-lab--text-field "motion" motion "style" item "motion"
+                                      :index index))))
+
+(defun jetpacs-design-lab--value-field
+    (draft label design-value domain item field &optional index expected)
+  "Build the control for DESIGN-VALUE labelled LABEL at DOMAIN ITEM FIELD INDEX.
+The control follows the value's kind: a switch, a text field with the
+matching keyboard, or a dropdown over the closed vocabulary.  DRAFT supplies
+token ids, narrowed to the property kind EXPECTED."
+  (let ((kind (plist-get design-value :kind))
+        (value (plist-get design-value :value)))
+    (pcase kind
+      ("boolean"
+       (jetpacs-design-lab--switch-field label value domain item field index))
+      ("color"
+       (jetpacs-design-lab--text-field label value domain item field
+                                       :index index
+                                       :hint "#RRGGBB or #AARRGGBB"))
+      ("dimension"
+       (jetpacs-design-lab--text-field label value domain item field
+                                       :index index :keyboard "decimal"))
+      ("number"
+       (jetpacs-design-lab--text-field label value domain item field
+                                       :index index :keyboard "decimal"
+                                       :hint "-10000 to 10000"))
+      (_
+       (jetpacs-design-lab--dropdown-field
+        label value
+        (jetpacs-design-lab--kind-options
+         kind draft expected (and (equal domain "token") item))
+        domain item field index)))))
 
 (defun jetpacs-design-lab--section-tabs ()
   "Build controlled section navigation for the stable authoring shell."
@@ -477,16 +683,19 @@
         :enabled (if is-user t :json-false))))
      (jetpacs-component-panel
       "AVAILABLE PROFILES"
-      (mapcar
-       (lambda (profile)
-         (jetpacs-component-action
-          (format "%s%s" (plist-get profile :label)
-                  (if (equal (plist-get profile :id)
-                             jetpacs-design-lab--selected-profile-id)
-                      " · editing" ""))
-          (jetpacs-design-lab--action
-           "jpdesign.profile" :id (plist-get profile :id))))
-       (jetpacs-design-profiles)))
+      (let* ((profiles (jetpacs-design-profiles))
+             (ids (mapcar (lambda (profile) (plist-get profile :id)) profiles)))
+        (list
+         (jetpacs-dropdown
+          "jpdesign-profile"
+          (mapcar (lambda (profile)
+                    (jetpacs-enum-option (plist-get profile :label)
+                                         (plist-get profile :id)))
+                  profiles)
+          :label "Profile"
+          :value (car (member jetpacs-design-lab--selected-profile-id ids))
+          :hint "Choose a profile"
+          :on-change (jetpacs-design-lab--action "jpdesign.profile")))))
      (jetpacs-component-panel
       "SAVE AS"
       (list
@@ -504,93 +713,112 @@
         "Save new profile" (jetpacs-design-lab--action "jpdesign.save-as")))))))
 
 (defun jetpacs-design-lab--typography-content ()
-  "Build editors for every typography role in the draft."
+  "Build one folded editor per typography role in the draft."
   (mapcar
    (lambda (entry)
      (let ((id (car entry)) (value (cdr entry)))
-       (jetpacs-component-panel
-        id
-        (mapcar
-         (lambda (field)
-           (jetpacs-design-lab--field
-            (car field) (plist-get value (cdr field))
-            "typography" id (car field)))
-         '(("family" . :family) ("size" . :size) ("weight" . :weight)
-           ("line-height" . :line-height)
-           ("letter-spacing" . :letter-spacing))))))
+       (jetpacs-design-lab--disclosure
+        "typography" id (jetpacs-design-lab--typography-caption value)
+        (list
+         (jetpacs-design-lab--dropdown-field
+          "family" (plist-get value :family) jetpacs-design-font-families
+          "typography" id "family")
+         (jetpacs-design-lab--text-field
+          "size" (plist-get value :size) "typography" id "size"
+          :keyboard "decimal")
+         (jetpacs-design-lab--dropdown-field
+          "weight" (plist-get value :weight)
+          (mapcar #'number-to-string jetpacs-design-font-weights)
+          "typography" id "weight")
+         (jetpacs-design-lab--text-field
+          "line-height" (plist-get value :line-height)
+          "typography" id "line-height" :keyboard "decimal")
+         (jetpacs-design-lab--text-field
+          "letter-spacing" (plist-get value :letter-spacing)
+          "typography" id "letter-spacing" :keyboard "decimal")))))
    (plist-get (jetpacs-design-lab--ensure-draft) :typography)))
 
 (defun jetpacs-design-lab--tokens-content ()
-  "Build scalar editors for every design token in the draft."
-  (mapcar
-   (lambda (entry)
-     (jetpacs-component-panel
-      (car entry)
-      (list
-       (jetpacs-text (format "Kind: %s" (plist-get (cdr entry) :kind))
-                     :style "caption")
-       (jetpacs-design-lab--field
-        "value" (plist-get (cdr entry) :value) "token" (car entry) "value"))))
-   (plist-get (jetpacs-design-lab--ensure-draft) :tokens)))
+  "Build one folded editor per design token in the draft."
+  (let ((draft (jetpacs-design-lab--ensure-draft)))
+    (mapcar
+     (lambda (entry)
+       (jetpacs-design-lab--disclosure
+        "token" (car entry) (jetpacs-design-lab--token-caption (cdr entry))
+        (list
+         (jetpacs-text (format "Kind: %s" (plist-get (cdr entry) :kind))
+                       :style "caption")
+         (jetpacs-design-lab--value-field
+          draft "value" (cdr entry) "token" (car entry) "value"))))
+     (plist-get draft :tokens))))
 
 (defun jetpacs-design-lab--property-fields
-    (style-id properties &optional rule-index)
-  "Build leaf editors for STYLE-ID PROPERTIES and optional RULE-INDEX."
+    (draft style-id properties &optional rule-index)
+  "Build leaf editors for STYLE-ID PROPERTIES in DRAFT at optional RULE-INDEX."
   (cl-loop for (key value) on properties by #'cddr
+           for name = (substring (symbol-name key) 1)
            collect
-           (jetpacs-design-lab--field
-            (substring (symbol-name key) 1)
-            (plist-get value :value)
-            "style" style-id (substring (symbol-name key) 1) rule-index)))
+           (jetpacs-design-lab--value-field
+            draft name value "style" style-id name rule-index
+            (cdr (assoc name jetpacs-design-property-kinds)))))
 
 (defun jetpacs-design-lab--styles-content ()
-  "Build base-property and ordered-rule editors for every style."
-  (mapcar
-   (lambda (entry)
-     (let ((id (car entry)) (style (cdr entry)) children)
-       (setq children
-             (append
-              (list (jetpacs-text "Base properties" :style "label"))
-              (jetpacs-design-lab--property-fields
-               id (plist-get style :properties))))
-       (cl-loop for rule across (plist-get style :rules)
-                for index from 0
-                do (setq children
-                         (append
-                          children
-                          (list
-                           (jetpacs-text
-                            (format "Rule %d · %s" index
-                                    (plist-get rule :state))
-                            :style "label"))
-                          (jetpacs-design-lab--property-fields
-                           id (plist-get rule :properties) index))))
-       (jetpacs-component-panel id children)))
-   (plist-get (jetpacs-design-lab--ensure-draft) :styles)))
+  "Build one folded editor per style, with its base properties and rules."
+  (let ((draft (jetpacs-design-lab--ensure-draft)))
+    (mapcar
+     (lambda (entry)
+       (let* ((id (car entry))
+              (style (cdr entry))
+              (children
+               (append
+                (list (jetpacs-text "Base properties" :style "label")
+                      (jetpacs-design-lab--motion-field
+                       draft id (plist-get style :motion)))
+                (jetpacs-design-lab--property-fields
+                 draft id (plist-get style :properties)))))
+         (cl-loop for rule across (plist-get style :rules)
+                  for index from 0
+                  do (setq children
+                           (append
+                            children
+                            (list
+                             (jetpacs-text (format "Rule %d" index)
+                                           :style "label")
+                             (jetpacs-design-lab--dropdown-field
+                              "state" (plist-get rule :state)
+                              jetpacs-design-states "style" id "state" index)
+                             (jetpacs-design-lab--motion-field
+                              draft id (plist-get rule :motion) index))
+                            (jetpacs-design-lab--property-fields
+                             draft id (plist-get rule :properties) index))))
+         (jetpacs-design-lab--disclosure
+          "style" id (jetpacs-design-lab--style-caption style) children)))
+     (plist-get draft :styles))))
 
 (defun jetpacs-design-lab--motions-content ()
-  "Build duration and easing editors for every motion."
+  "Build one folded editor per motion: its duration and easing."
   (mapcar
    (lambda (entry)
-     (jetpacs-component-panel
-      (car entry)
-      (list
-       (jetpacs-design-lab--field
-        "duration" (plist-get (cdr entry) :duration_ms)
-        "motion" (car entry) "duration")
-       (jetpacs-design-lab--field
-        "easing" (plist-get (cdr entry) :easing)
-        "motion" (car entry) "easing"))))
+     (let ((id (car entry)) (motion (cdr entry)))
+       (jetpacs-design-lab--disclosure
+        "motion" id (jetpacs-design-lab--motion-caption motion)
+        (list
+         (jetpacs-design-lab--text-field
+          "duration" (plist-get motion :duration_ms) "motion" id "duration"
+          :keyboard "number")
+         (jetpacs-design-lab--dropdown-field
+          "easing" (plist-get motion :easing) jetpacs-design-easings
+          "motion" id "easing")))))
    (plist-get (jetpacs-design-lab--ensure-draft) :motions)))
 
 (defun jetpacs-design-lab--bindings-content ()
-  "Build comma-separated style-reference editors for component bindings."
+  "Build one folded editor per component binding: its ordered styles."
   (mapcar
    (lambda (entry)
-     (jetpacs-component-panel
-      (car entry)
+     (jetpacs-design-lab--disclosure
+      "binding" (car entry) (jetpacs-design-lab--binding-caption (cdr entry))
       (list
-       (jetpacs-design-lab--field
+       (jetpacs-design-lab--text-field
         "Ordered styles" (string-join (cdr entry) ", ")
         "binding" (car entry) "styles"))))
    (plist-get (jetpacs-design-lab--ensure-draft) :component-styles)))
@@ -675,12 +903,19 @@
   (let ((nodes
          (append
           (list (jetpacs-design-lab--section-tabs))
-          (when jetpacs-design-lab--draft-error
-            (list
-             (jetpacs-component-panel
-              "LAST EDIT REJECTED"
-              (list (jetpacs-text jetpacs-design-lab--draft-error
-                                  :color "error")))))
+          ;; The status slot is always one node, so the disclosures below
+          ;; keep their render paths, and with them their open state, when
+          ;; an edit is rejected and the message appears.
+          (list
+           (if jetpacs-design-lab--draft-error
+               (jetpacs-component-panel
+                "LAST EDIT REJECTED"
+                (list (jetpacs-text jetpacs-design-lab--draft-error
+                                    :color "error")))
+             (jetpacs-text
+              (format "Editing %s · draft valid"
+                      (plist-get (jetpacs-design-lab--ensure-draft) :label))
+              :style "caption")))
           (jetpacs-design-lab--content))))
     (jetpacs-chrome-screen
      jetpacs-design-lab-title
@@ -697,7 +932,8 @@
 
 (defconst jetpacs-design-lab--verbs
   '("jpdesign.section" "jpdesign.profile" "jpdesign.edit"
-    "jpdesign.source" "jpdesign.reset" "jpdesign.save-entry"
+    "jpdesign.edit.boolean" "jpdesign.source" "jpdesign.reset"
+    "jpdesign.save-entry"
     "jpdesign.save-as" "jpdesign.apply" "jpdesign.delete"
     "jpdesign.preview")
   "Actions owned by the Design Lab app.")
@@ -712,7 +948,7 @@
      :doc "Select one bounded Design Lab editor section")
     (jetpacs-defaction
      "jpdesign.profile" #'jetpacs-design-lab--on-profile
-     :args '((:name id :type "text" :required t))
+     :args '((:name value :type "enum" :required t))
      :doc "Load one registered or persisted design profile draft")
     (jetpacs-defaction
      "jpdesign.edit" #'jetpacs-design-lab--on-edit
@@ -723,6 +959,15 @@
              (:name index :type "number")
              (:name value :type "text" :required t))
      :doc "Apply one digest-addressed scalar design profile edit")
+    (jetpacs-defaction
+     "jpdesign.edit.boolean" #'jetpacs-design-lab--on-boolean-edit
+     :args '((:name digest :type "text" :required t)
+             (:name domain :type "enum" :required t)
+             (:name item :type "text" :required t)
+             (:name field :type "text" :required t)
+             (:name index :type "number")
+             (:name value :type "bool" :required t))
+     :doc "Toggle one digest-addressed boolean design profile leaf")
     (jetpacs-defaction
      "jpdesign.source" #'jetpacs-design-lab--on-source
      :args '((:name digest :type "text" :required t)

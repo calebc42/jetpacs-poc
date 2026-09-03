@@ -154,6 +154,26 @@ installs the Phase 3 `text_input` and Phase 4–6 `editor` canonical overrides
 for this app-only scope. Canonical nodes outside the boundary and dialogs
 continue through Glasspane Material.
 
+## Design Lab
+
+The package also registers **Jetpacs Design Lab** (`jpdesign`), a separate
+app that edits bounded `jetpacs.design` profiles. Its authoring chrome wears
+the host's active profile; only the Preview section wraps the seven semantic
+specimens in the draft's own scope. Every typography role, token, style,
+motion and binding is one folded disclosure whose header carries the entry
+id and a caption of its current value, so a section stays scannable at 24
+styles or 99 bindings. Closed leaves are dropdowns over the public design
+vocabularies: font family and weight, text alignment, theme roles, easing,
+a rule's state, and the motion and token references a style may carry, the
+latter narrowed to the tokens the property accepts. Booleans are switches on
+a dedicated boolean edit action, colors keep a text field with a format
+hint, and numeric leaves carry numeric keyboards; only the `number` kind
+admits a sign. Profiles are picked from one dropdown; Apply, Reset, Delete
+and Save As are unchanged. Every edit is digest-addressed against the
+process-local draft and re-validated, an invalid edit leaves the last valid
+draft in place and reports in a status slot that is always present, and the
+inert Source editor still reads one closed data form without evaluation.
+
 Run its focused authoring gates from the repository root:
 
 ```sh
