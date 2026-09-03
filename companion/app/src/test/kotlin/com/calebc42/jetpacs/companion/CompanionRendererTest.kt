@@ -149,7 +149,7 @@ class CompanionRendererTest {
             setOf(
                 "text", "card", "icon", "icon_button", "badge", "empty_state",
                 "button", "chip", "divider", "section_header", "menu", "switch", "collapsible", "month_grid",
-                "text_input", "editor",
+                "dropdown", "text_input", "editor",
             ),
             designOverrides.nodeTypesFor(JETPACS_DESIGN_EXTENSION),
         )
