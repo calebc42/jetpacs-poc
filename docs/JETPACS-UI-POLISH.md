@@ -82,10 +82,34 @@ override's outermost layout node. Every other override in
 - `jetpacs/companion` `PresentedScreenInstrumentedTest`: 1 test, green.
 - Tablet: hub REPL renders under the presented scope after the fix.
 
+## Slice 2: rows, menu names, icon names
+
+- `jetpacs-chrome-row` delegates to `jetpacs-components-list-item`: the
+  flat `jetpacs.list_item` node wherever the receiver advertises it (the
+  Companion always does), styled by the profile's `list-item.*` slots, and
+  the canonical card composition elsewhere. Every host list (Files, Apps,
+  Settings, drawer entries, project and package rows) changes with it.
+- Both host menus carry `semantics.name` ("Switch location" on Files,
+  "Heading actions" on an Org heading). `menu` has no name member of its
+  own; SPEC 16.4 derives the name from `semantics.name` first, and without
+  it the trigger announced as its icon identifier. The Material trigger
+  now puts the host modifier on the `IconButton` itself, so the name lands
+  on the control rather than on a box around an unlabelled button; the
+  Foundation trigger already did.
+- Icon buttons were already described; four labels were not names ("back",
+  "whole buffer", "imenu", "command palette") and became "Back", "Show
+  whole buffer", "Outline", "Command palette". The Files search field
+  announced as `text_input` (a hint is not a name) and now carries
+  `semantics.name` "Search contents".
+- Verified on the tablet with a `uiautomator` dump of the Files screen:
+  every row announces as its title, the location menu as "Switch location".
+- The reference profile the tests run against advertises
+  `jetpacs.list_item`, so the chrome row tests pin the list item and a
+  separate test pins the card fallback with advertisement stubbed out. The
+  org-render golden regenerated with exactly one change: the menu name.
+
 ## Remaining slices
 
-2. Rows: `jetpacs-chrome-row` becomes a `jetpacs-components-list-item`;
-   name every menu; describe every icon.
 3. Chrome polish: drawer alignment, the dead navigation-bar conditional,
    the stale rail, Glasspane's back arrow on the rail, Theme copy that leaks
    `jetpacs-theme-mode` and "(SPEC 18.4)", the duplicate + and FAB, empty
@@ -96,6 +120,15 @@ override's outermost layout node. Every other override in
    sections, menus.
 
 Open items noticed on the tablet, not yet addressed:
+
+- Every bare `icon` node announces its identifier ("folder" ten times on
+  the Files screen, "chevron right" on every drill row). The shared
+  projection in ebp-compose `Semantics.kt` exposes a name whenever a node
+  has an icon identifier, and `SemanticsProjectionTest` pins it. SPEC 16.4
+  requires names for interactive nodes only; a bare icon with no authored
+  `content_description` should be decorative and silent. This is an
+  ebp-compose decision, not a host one, so it is recorded here for a
+  separate change.
 
 - The drawer's collapsible header shows a focus ring on open. The Foundation
   focused rule fires on programmatic focus; it should be gated to keyboard
