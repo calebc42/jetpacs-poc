@@ -143,10 +143,52 @@ nothing on host screens, which is right); Glasspane's back arrow beside the
 rail and its capture FAB next to Files' "+" are Glasspane authoring and move
 to slice 5.
 
+## Slice 4: `chrome.*` slots
+
+The top bar title turned out to need nothing: the host authors it as a
+`text` inside the `top_bar` row, so under a scope the Foundation text
+override already draws it from `text.title`. What Material still styled on
+its own was the tab strip, the navigation rail, the drawer sheet and the
+snackbar.
+
+- **Seam.** ebp-compose gains `ComposeChromeStyles` and
+  `LocalComposeChromeStyles` (`ChromeStyles.kt`), the same shape as the
+  theme-roles seam: a neutral resolved value the design scope provides and
+  the toolkit reads where it draws chrome, keeping its own default for every
+  null field. A text style carries only the properties the profile set, so
+  Material merges it over its own base style.
+- **Slots.** Six, 88 → 94: `chrome.tab-label` (typography; its `selected`
+  rule's `content_color` is the selected label color), `chrome.tab-indicator`
+  (`background_color`), `chrome.rail-label`, `chrome.rail-indicator`
+  (`background_color`), `chrome.drawer` (`background_color`,
+  `corner_radius`), `chrome.snackbar` (`background_color`, `content_color`,
+  `corner_radius`). The six mirrors moved together and the vocabularies
+  regenerated. `CompiledDesignScope.composeChromeStyles` in the style
+  adapter resolves them; `RenderScope` provides the local in both of its
+  branches, falling back to an enclosing scope's value when none of the six
+  is bound.
+- **Consumers.** `RenderTabs` (label style, selected color, indicator color
+  on both primary and secondary rows), `RenderNavigationRail` (label style,
+  indicator color), the modal and permanent drawer sheets (container, shape),
+  both snackbar overloads (container, content, shape).
+- **Bindings.** Baseline: label typography for tabs and rail, the indicator
+  style for the tab indicator, the surface for the drawer, and a new
+  `base.toast` (inverted surface) for the snackbar. The rail indicator is
+  bound to `base.toolkit`, an empty style: the wire carries no container
+  roles, and a pill painted from `secondary` was a saturated block where
+  Material's `secondaryContainer` is a pale one, so that one stays the
+  toolkit's. An empty style is now legal: a plain plist with no properties
+  member in the profile (so profiles still print, re-read and compare
+  `equal`), and the scope builder supplies the wire's required `{}`. Grove
+  binds the same six from its own styles, which its every-slot test
+  requires.
+- **Tests.** The Foundation device suite checks a scope resolves bound chrome
+  slots and leaves unbound ones null; a new Material device test checks tab
+  and rail labels take the seam's font size and keep Material's `titleSmall`
+  without it.
+
 ## Remaining slices
 
-4. `chrome.*` slots (Kotlin): top bar title and tab label typography and
-   shapes, so Material chrome takes the profile's type.
 5. Glasspane: rows through the list item, hex colors to theme roles,
    sections, menus.
 
