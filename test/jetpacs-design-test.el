@@ -98,7 +98,7 @@
              "{\"slot\":\"text.body\",\"styles\":[\"typography.reading-body\"]}"
              json))
     (should (member "text.body" jetpacs-design-component-style-slots))
-    (should (= (length jetpacs-design-component-style-slots) 74))
+    (should (= (length jetpacs-design-component-style-slots) 77))
     (should-error (jetpacs-design-component-style "text.unknown" '("x")))))
 
 (ert-deftest jetpacs-design-scope-redeclares-theme-roles-for-chrome ()

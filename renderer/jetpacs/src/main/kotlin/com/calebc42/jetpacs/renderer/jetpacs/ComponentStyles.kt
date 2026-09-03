@@ -399,6 +399,36 @@ object JetpacsComponentStyles {
         )
     }
 
+    /** The switch row: one full-width toggle target with the label leading. */
+    val switchRow = Style {
+        fillWidth()
+        minHeight(48.dp)
+        contentPadding(horizontal = 0.dp, vertical = tokens.spacing.controlVertical)
+    }
+
+    /** The track, whose selected face is the whole "on" signal. */
+    val switchTrack = Style {
+        width(52.dp)
+        height(32.dp)
+        shape(androidx.compose.foundation.shape.RoundedCornerShape(16.dp))
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+        selected { animate { background(tokens.colors.accent) } }
+        focused { border(2.dp, tokens.colors.focus) }
+        disabled { alpha(0.38f) }
+    }
+
+    /** The thumb that slides along the track; its glyph, if any, rides on it. */
+    val switchThumb = Style {
+        width(24.dp)
+        height(24.dp)
+        shape(androidx.compose.foundation.shape.CircleShape)
+        background(tokens.colors.mutedContent)
+        selected { animate { background(tokens.colors.onAccent) } }
+    }
+
+    val switchLabel = Style { textStyle(tokens.typography.choice) }
+
     /** Shared inline layout for controlled tab and section navigators. */
     val navigator = Style {
         fillWidth()

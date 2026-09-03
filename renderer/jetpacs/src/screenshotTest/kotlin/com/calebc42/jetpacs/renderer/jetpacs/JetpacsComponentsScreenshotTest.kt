@@ -791,3 +791,35 @@ private fun JetpacsMenuRichItems() {
         }
     }
 }
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 300)
+@Preview(name = "dark", widthDp = 400, heightDp = 300,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 300, fontScale = 1.5f)
+@Composable
+private fun JetpacsSwitchStates() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsSwitch(checked = false, onCheckedChange = {}, label = "Folder tree")
+            JetpacsSwitch(checked = true, onCheckedChange = {}, label = "Show drawers initially")
+            JetpacsSwitch(
+                checked = true,
+                onCheckedChange = {},
+                label = "Timed Org reminders",
+                thumbIcon = "check",
+            )
+            JetpacsSwitch(
+                checked = false,
+                onCheckedChange = {},
+                label = "Unavailable",
+                enabled = false,
+            )
+        }
+    }
+}

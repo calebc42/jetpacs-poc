@@ -44,6 +44,7 @@
     "section-header.container" "section-header.title"
     "menu.trigger" "menu.container" "menu.item" "menu.item-label"
     "menu.item-supporting" "menu.group-label"
+    "switch.track" "switch.thumb" "switch.label"
     "action.container" "action.label"
     "choice.container" "choice.indicator" "choice.label"
     "panel.container" "panel.label"

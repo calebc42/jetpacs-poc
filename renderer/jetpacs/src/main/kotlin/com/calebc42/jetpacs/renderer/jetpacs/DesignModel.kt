@@ -104,6 +104,10 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     MenuItemLabel("menu.item-label"),
     MenuItemSupporting("menu.item-supporting"),
     MenuGroupLabel("menu.group-label"),
+    /** Canonical `switch`: the track, the thumb that slides on it, its label. */
+    SwitchTrack("switch.track"),
+    SwitchThumb("switch.thumb"),
+    SwitchLabel("switch.label"),
     ActionContainer("action.container"),
     ActionLabel("action.label"),
     ChoiceContainer("choice.container"),

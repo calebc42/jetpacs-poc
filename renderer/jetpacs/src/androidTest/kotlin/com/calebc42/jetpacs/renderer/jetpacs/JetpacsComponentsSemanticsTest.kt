@@ -800,6 +800,70 @@ class JetpacsComponentsSemanticsTest {
             .assertIsFocused()
     }
 
+    private fun switchNode(checked: Boolean = false, enabled: Boolean = true): JsonObject =
+        Json.parseToJsonElement(
+            """{"t":"switch","id":"tree","label":"Folder tree","checked":$checked,
+                "enabled":$enabled,"on_change":{"action":"grove.settings.set"}}""",
+        ) as JsonObject
+
+    @Test
+    fun theSwitchRowIsOneTargetThatPublishesStateBeforeItsAction() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignSwitchRenderer.render(switchNode(), context, Modifier.testTag("switch"))
+            }
+        }
+
+        compose.onNodeWithTag("switch")
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Switch))
+            .assertIsOff()
+            .performClick()
+
+        compose.onNodeWithTag("switch").assertIsOn()
+        compose.runOnIdle {
+            // SPEC 17.4: state.changed, then on_change carrying the boolean.
+            assertEquals(listOf("tree" to JsonPrimitive(true)), context.states)
+            assertEquals(listOf("grove.settings.set"), context.actionNames)
+            assertEquals(JsonPrimitive(true), context.actions.single().second)
+            assertEquals(listOf("state:true", "action:grove.settings.set"), context.events.take(2))
+        }
+    }
+
+    @Test
+    fun aDisabledSwitchAnnouncesItselfAndDispatchesNothing() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignSwitchRenderer.render(
+                    switchNode(enabled = false), context, Modifier.testTag("switch"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("switch").assertIsNotEnabled().performClick()
+        compose.runOnIdle {
+            assertTrue(context.states.isEmpty())
+            assertTrue(context.actionNames.isEmpty())
+        }
+    }
+
+    @Test
+    fun aStoredSwitchValueOutranksTheAuthoredOne() {
+        // The authored `checked` seeds a fresh node only; a value already in
+        // the store at this epoch is what the user last set.
+        val context = RecordingContext().apply { store["tree"] = JsonPrimitive(true) }
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignSwitchRenderer.render(
+                    switchNode(checked = false), context, Modifier.testTag("switch"),
+                )
+            }
+        }
+        compose.onNodeWithTag("switch").assertIsOn()
+    }
+
     /** A grouped menu exercising every wire member the node carries. */
     private fun groupedMenuNode(): JsonObject = Json.parseToJsonElement(
         """{
@@ -1703,7 +1767,8 @@ class JetpacsComponentsSemanticsTest {
             events += "state:${(value as? JsonPrimitive)?.content.orEmpty()}"
         }
 
-        override fun storeValue(id: String): JsonElement? = null
+        val store = mutableMapOf<String, JsonElement>()
+        override fun storeValue(id: String): JsonElement? = store[id]
         override fun epochOf(id: String): Long = 0
 
         override fun requestEditorCompletion(document: String, editorId: String) {
