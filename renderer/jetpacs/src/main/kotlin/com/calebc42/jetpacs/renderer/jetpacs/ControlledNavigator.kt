@@ -3,7 +3,6 @@ package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -358,7 +357,7 @@ private fun JetpacsNavigatorSelector(
         modifier = modifier
             .heightIn(min = 48.dp)
             .focusRequester(focusRequester)
-            .focusable(enabled = enabled, interactionSource = source)
+            .jetpacsFocusable(enabled = enabled, interactionSource = source)
             .semantics {
                 contentDescription = "$text$positionText"
                 stateDescription = if (expanded) "Expanded" else "Collapsed"
@@ -507,7 +506,7 @@ private fun JetpacsNavigatorPopupOption(
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .then(focusModifier)
-            .focusable(enabled = enabled, interactionSource = source)
+            .jetpacsFocusable(enabled = enabled, interactionSource = source)
             .semantics {
                 contentDescription = "${option.accessibleLabel}, $spokenPosition"
             }

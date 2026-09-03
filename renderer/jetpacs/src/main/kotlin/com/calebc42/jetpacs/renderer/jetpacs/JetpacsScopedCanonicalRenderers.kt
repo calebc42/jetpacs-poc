@@ -6,7 +6,6 @@ import androidx.compose.foundation.clickable
 import kotlinx.serialization.json.JsonArray
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -193,7 +192,7 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
             modifier = modifier
                 .heightIn(min = 48.dp)
                 .hoverable(source, enabled)
-                .focusable(enabled, source)
+                .jetpacsFocusable(enabled, source)
                 .clickable(
                     interactionSource = source,
                     indication = null,
@@ -551,7 +550,7 @@ object JetpacsDesignIconButtonRenderer : ComposeCanonicalNodeOverride {
             modifier = modifier
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 .hoverable(source, enabled)
-                .focusable(enabled, source)
+                .jetpacsFocusable(enabled, source)
                 .clickable(
                     interactionSource = source,
                     indication = null,

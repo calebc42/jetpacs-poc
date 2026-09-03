@@ -3,7 +3,6 @@ package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -274,7 +273,7 @@ private fun MonthGridNavButton(
         Modifier
             .size(48.dp)
             .hoverable(source, enabled)
-            .focusable(enabled, source)
+            .jetpacsFocusable(enabled, source)
             .semantics {
                 contentDescription = description
                 if (!enabled) disabled()
@@ -388,7 +387,7 @@ private fun RowScope.MonthGridDayCell(
                 if (onTap != null) {
                     Modifier
                         .hoverable(source, enabled)
-                        .focusable(enabled, source)
+                        .jetpacsFocusable(enabled, source)
                         .clickable(
                             interactionSource = source,
                             indication = null,

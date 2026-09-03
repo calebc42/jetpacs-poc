@@ -2,7 +2,6 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -90,7 +89,7 @@ fun JetpacsSwitch(
     Row(
         modifier = modifier
             .hoverable(source, enabled)
-            .focusable(enabled, source)
+            .jetpacsFocusable(enabled, source)
             .toggleable(
                 value = checked,
                 enabled = enabled,

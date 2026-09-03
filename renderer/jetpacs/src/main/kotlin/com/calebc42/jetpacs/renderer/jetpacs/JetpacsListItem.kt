@@ -2,7 +2,6 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
@@ -115,7 +114,7 @@ fun JetpacsListItem(
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .hoverable(source, enabled && (onClick != null || onLongClick != null))
-            .focusable(enabled && onClick != null, source)
+            .jetpacsFocusable(enabled && onClick != null, source)
             .then(interactive)
             .styleable(
                 styleState,

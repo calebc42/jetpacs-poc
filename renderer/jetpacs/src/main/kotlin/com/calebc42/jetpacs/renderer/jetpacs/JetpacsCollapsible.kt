@@ -4,7 +4,6 @@ package com.calebc42.jetpacs.renderer.jetpacs
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -83,7 +82,7 @@ fun JetpacsCollapsibleHeader(
         modifier = modifier
             .fillMaxWidth()
             .hoverable(source, enabled)
-            .focusable(enabled, source)
+            .jetpacsFocusable(enabled, source)
             .combinedClickable(
                 interactionSource = source,
                 indication = null,

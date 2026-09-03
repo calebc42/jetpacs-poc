@@ -2,7 +2,6 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
@@ -179,7 +178,7 @@ fun JetpacsMenu(
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 .focusRequester(triggerFocusRequester)
                 .hoverable(source, enabled)
-                .focusable(enabled, source)
+                .jetpacsFocusable(enabled, source)
                 .semantics {
                     stateDescription = if (expanded) "Expanded" else "Collapsed"
                     if (!enabled) disabled()
@@ -430,7 +429,7 @@ private fun JetpacsMenuRow(
             .heightIn(min = 48.dp)
             .then(focusRequester?.let { Modifier.focusRequester(it) } ?: Modifier)
             .hoverable(source, item.enabled)
-            .focusable(item.enabled, source)
+            .jetpacsFocusable(item.enabled, source)
             .semantics { if (!item.enabled) disabled() }
             .then(interactive)
             .styleable(

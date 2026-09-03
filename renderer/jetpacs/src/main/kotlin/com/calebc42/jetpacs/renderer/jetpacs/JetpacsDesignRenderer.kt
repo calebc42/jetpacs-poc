@@ -2,7 +2,6 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
@@ -202,7 +201,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
             modifier = modifier
                 .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                 .hoverable(interactionSource, enabled)
-                .focusable(enabled, interactionSource)
+                .jetpacsFocusable(enabled, interactionSource)
                 .clickable(
                     interactionSource = interactionSource,
                     indication = null,
