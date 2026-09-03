@@ -47,7 +47,15 @@ process-local, versioned component specimen:
 - **Preview** keeps the full reference page and renders the live specimen;
 - **Visual** edits the specimen through schema-driven controls for its
   component properties, universal attributes, Semantics, actions, and Editor
-  toolbar;
+  toolbar. Boolean members are switches on the native boolean edit path; an
+  absent member's switch shows its effective default, and an optional one
+  keeps the explicit "use the default" button beside it. A presence-only flag
+  such as Text's `selectable` is a switch whose off position removes the
+  member. Compound members (padding, corner, border, Semantics and its nested
+  objects, action descriptors, selection, toolbar, and a toolbar item's long
+  press) are collapsible disclosures seeded open only when authored, with a
+  header caption saying whether the member is authored or at its default;
+  closed enums remain dropdowns;
 - **Lisp** edits the same specimen as one canonical, EBP-shaped Lisp data form;
 - **Source** preserves the read-only exact authored Preview builder and its
   collapsed canonical EBP snapshot.

@@ -56,6 +56,11 @@
   '("number" "finite-number" "dp" "non-negative-dp" "font-weight")
   "Field kinds edited as finite numbers.")
 
+(defconst jetpacs-component-catalog-editor--true-by-default '(:enabled)
+  "Optional boolean members whose absence means true (SPEC 17.4).
+An absent member's switch is seeded from this effective default, so the
+control shows the state the specimen actually has.")
+
 (defconst jetpacs-component-catalog-editor--integer-types
   '("positive-integer" "non-negative-integer" "integer-1-6"
     "integer-1-31" "integer-1-12")
@@ -118,16 +123,19 @@ stateful control whose locally retained draft must be reconciled after save."
     :index index :direction direction :input_id input-id)))
 
 (defun jetpacs-component-catalog-editor--boolean-action
-    (component digest path)
+    (component digest path &optional presence)
   "Return a boolean-injecting edit descriptor for COMPONENT at DIGEST.
 PATH is encoded exactly like the other catalog editor paths, while the
-dedicated action keeps Choice's native boolean value type honest."
+dedicated action keeps a switch's or Choice's native boolean value type
+honest.  PRESENCE non-nil names a presence-only flag: true is written and
+false removes the member instead of writing false."
   (jetpacs-action
    "jpcatalog.edit.boolean"
    :args
    (jetpacs-make-node
     nil :component component :digest digest
-    :path (jetpacs-component-catalog-editor--path-wire path))))
+    :path (jetpacs-component-catalog-editor--path-wire path)
+    :codec (and presence "injected-presence"))))
 
 (defun jetpacs-component-catalog-editor--remove-button
     (component digest path label)
@@ -205,16 +213,16 @@ and REQUIRED controls whether the value can be removed."
      control
      (cond
       ((equal value-type "boolean")
-       (jetpacs-dropdown
+       (jetpacs-switch
         id
-        (jetpacs-component-catalog-editor--enum-options
-         '("true" "false") optional)
         :label label
-        :value (cond ((not present) "__unset")
-                     ((eq value t) "true")
-                     (t "false"))
-        :on-change (jetpacs-component-catalog-editor-action
-                    component digest field-path "boolean" :input-id id)))
+        :checked (jetpacs-bool
+                  (if present
+                      (eq value t)
+                    (memq field
+                          jetpacs-component-catalog-editor--true-by-default)))
+        :on-change (jetpacs-component-catalog-editor--boolean-action
+                    component digest field-path)))
       ((or (equal value-type "enum")
            (jetpacs-component-catalog-editor--enum-values type field))
        (let ((values (or (jetpacs-component-catalog-editor--enum-values
@@ -264,7 +272,7 @@ and REQUIRED controls whether the value can be removed."
         :syntax "elisp" :min-lines 2 :max-lines 6
         :on-save (jetpacs-component-catalog-editor-action
                   component digest field-path "lisp" :input-id id)))))
-    (if (or required (member value-type '("boolean" "enum")))
+    (if (or required (equal value-type "enum"))
         control
       (jetpacs-row
        (jetpacs-with-attrs control :weight 1)
@@ -279,18 +287,30 @@ DOCUMENT supplies the current value and PATH identifies its containing node."
   (let* ((field-path (append path (list field)))
          (present (jetpacs-component-catalog-editor--path-present-p
                    document field-path)))
-    (jetpacs-dropdown
+    (jetpacs-switch
      (jetpacs-component-catalog-editor--control-id
       component field-path "presence")
-     (list (jetpacs-enum-option "Default / unset" "__unset")
-           (jetpacs-enum-option "True" "true"))
      :label (jetpacs-component-catalog-editor--label field)
-     :value (if present "true" "__unset")
-     :on-change (jetpacs-component-catalog-editor-action
-                 component digest field-path "presence-boolean"
-                 :input-id
-                 (jetpacs-component-catalog-editor--control-id
-                  component field-path "presence")))))
+     :checked (jetpacs-bool present)
+     :on-change (jetpacs-component-catalog-editor--boolean-action
+                 component digest field-path t))))
+
+(defun jetpacs-component-catalog-editor--disclosure
+    (component path label present children &optional required)
+  "Return a collapsible LABEL section for COMPONENT's member at PATH.
+CHILDREN are its controls.  PRESENT seeds the disclosure open and, unless
+the member is REQUIRED, the header says whether the member is authored or
+left at its default."
+  (jetpacs-collapsible
+   (jetpacs-component-catalog-editor--control-id component path "disclosure")
+   (if required
+       (jetpacs-text label :style "label")
+     (jetpacs-row
+      (jetpacs-with-attrs (jetpacs-text label :style "label") :weight 1)
+      (jetpacs-text (if present "Authored" "Default") :style "caption")
+      :spacing 8 :align "center" :fill t))
+   children
+   :collapsed (jetpacs-bool (not present))))
 
 (defun jetpacs-component-catalog-editor--compound-field
     (component digest document path field label default children)
@@ -300,8 +320,8 @@ DEFAULT seeds an absent object, and CHILDREN builds controls when present."
   (let* ((field-path (append path (list field)))
          (present (jetpacs-component-catalog-editor--path-present-p
                    document field-path)))
-    (jetpacs-component-panel
-     label
+    (jetpacs-component-catalog-editor--disclosure
+     component field-path label present
      (if present
          (append (funcall children field-path)
                  (list (jetpacs-button
@@ -346,8 +366,8 @@ DEFAULT seeds an absent object, and CHILDREN builds controls when present."
                    document field-path))
          (value (and present (jetpacs-component-catalog-editor--path-value
                              document field-path))))
-    (jetpacs-component-panel
-     "Corner"
+    (jetpacs-component-catalog-editor--disclosure
+     component field-path "Corner" present
      (cond
       ((not present)
        (list (jetpacs-button
@@ -485,8 +505,9 @@ COMPONENT and DIGEST identify DOCUMENT; REQUIRED controls removal."
          (descriptor (and present
                           (jetpacs-component-catalog-editor--path-value
                            document path))))
-    (jetpacs-component-panel
-     (jetpacs-component-catalog-editor--label (car (last path)))
+    (jetpacs-component-catalog-editor--disclosure
+     component path (jetpacs-component-catalog-editor--label (car (last path)))
+     present
      (if (not present)
          (list
           (jetpacs-row
@@ -508,7 +529,8 @@ COMPONENT and DIGEST identify DOCUMENT; REQUIRED controls removal."
             (jetpacs-component-catalog-editor--remote-descriptor
              component digest document path)
           (jetpacs-component-catalog-editor--builtin-descriptor
-           component digest document path descriptor)))))))
+           component digest document path descriptor))))
+     required)))
 
 (defun jetpacs-component-catalog-editor--semantic-object
     (component digest document object-path kind fields defaults)
@@ -517,8 +539,8 @@ COMPONENT and DIGEST address DOCUMENT.  OBJECT-PATH locates KIND, FIELDS is a
 list of (FIELD TYPE REQUIRED), and DEFAULTS is installed by its add button."
   (let ((present (jetpacs-component-catalog-editor--path-present-p
                   document object-path)))
-    (jetpacs-component-panel
-     kind
+    (jetpacs-component-catalog-editor--disclosure
+     component object-path kind present
      (if present
          (append
           (mapcar
@@ -601,8 +623,8 @@ SEMANTICS-PATH identifies the containing Semantics object."
   (let* ((semantics-path (append path '(:semantics)))
          (present (jetpacs-component-catalog-editor--path-present-p
                    document semantics-path)))
-    (jetpacs-component-panel
-     "Semantics"
+    (jetpacs-component-catalog-editor--disclosure
+     component semantics-path "Semantics" present
      (if (not present)
          (list (jetpacs-button
                 "Configure semantics"
@@ -716,8 +738,8 @@ ITEM-PATH identifies the toolbar item."
                            in '((:snippet . "snippet") (:on_tap . "on_tap")
                                 (:command . "command") (:line . "line"))
                            when (plist-member operation field) return name))))
-    (jetpacs-component-panel
-     "Long press"
+    (jetpacs-component-catalog-editor--disclosure
+     component path "Long press" present
      (if (not present)
          (list (jetpacs-button
                 "Add long press"
@@ -889,8 +911,8 @@ nil, and only affects the button's selected presentation."
                         document toolbar-path)))
          (registered
           (jetpacs-component-catalog-editor--advertised-toolbar-ids)))
-    (jetpacs-component-panel
-     "Toolbar"
+    (jetpacs-component-catalog-editor--disclosure
+     component toolbar-path "Toolbar" present
      (cond
       ((not present)
        (append
@@ -948,8 +970,8 @@ nil, and only affects the button's selected presentation."
          (selection (and present
                          (jetpacs-component-catalog-editor--path-value
                           document selection-path))))
-    (jetpacs-component-panel
-     "Selection"
+    (jetpacs-component-catalog-editor--disclosure
+     component selection-path "Selection" present
      (if (not present)
          (list (jetpacs-button
                 "Configure selection"

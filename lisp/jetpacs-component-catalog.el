@@ -168,7 +168,7 @@
 
 (defconst jetpacs-component-catalog--edit-codecs
   '("unset" "string" "number" "integer" "boolean" "presence-boolean"
-    "injected-boolean" "enum" "lisp" "literal"
+    "injected-boolean" "injected-presence" "enum" "lisp" "literal"
     "descriptor-remote" "descriptor-builtin"
     "descriptor-builtin-select" "descriptor-policy" "toolbar-op"
     "toolbar-long-op" "vector-add" "vector-delete" "vector-move"
@@ -552,6 +552,14 @@ ARGS supplies only bounded receiver injection or catalog-authored literals."
          (jetpacs-component-catalog--edit-error
           "This toggle requires a boolean value"))
        (jetpacs-component-authoring-set-at-path document path value)))
+    ("injected-presence"
+     (let ((value (plist-get args :value)))
+       (unless (memq value '(t :json-false))
+         (jetpacs-component-catalog--edit-error
+          "This toggle requires a boolean value"))
+       (if (eq value t)
+           (jetpacs-component-authoring-set-at-path document path t)
+         (jetpacs-component-authoring-delete-at-path document path))))
     ("enum"
      (let ((value (jetpacs-component-catalog--edit-value args 256)))
        (if (equal value "__unset")
@@ -2461,12 +2469,18 @@ an explicit edit changed a same-key synchronized Editor seed."
 
 (defun jetpacs-component-catalog--on-boolean-edit (args params)
   "Apply one native boolean Visual edit from ARGS under PARAMS.
-The dedicated wire action preserves Choice's boolean injected value before
-joining the ordinary bounded, digest-addressed edit path."
+The dedicated wire action preserves a switch's or Choice's boolean injected
+value before joining the ordinary bounded, digest-addressed edit path.  A
+control authored with the `injected-presence' codec keeps it; every other
+codec claim collapses to `injected-boolean'."
   (if (not (memq (plist-get args :value) '(t :json-false)))
       'rejected
     (jetpacs-component-catalog--on-edit
-     (plist-put (copy-sequence args) :codec "injected-boolean") params)))
+     (plist-put (copy-sequence args) :codec
+                (if (equal (plist-get args :codec) "injected-presence")
+                    "injected-presence"
+                  "injected-boolean"))
+     params)))
 
 (defun jetpacs-component-catalog--on-reset (args params)
   "Restore ARGS' component default on PARAMS' current detail page."

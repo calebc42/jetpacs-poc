@@ -2504,5 +2504,188 @@
       (should (stringp (plist-get schema :doc)))
       (should-not (string-empty-p (plist-get schema :doc))))))
 
+(ert-deftest jetpacs-component-catalog-visual-booleans-are-switches ()
+  "Boolean members are switches on the native boolean edit path."
+  (let* ((document (jetpacs-component-authoring-default-document "text-field"))
+         (digest (jetpacs-component-authoring-document-digest document))
+         (visual (jetpacs-component-catalog-editor-visual
+                  "text-field" document digest))
+         (switches (jetpacs-component-catalog-test--nodes visual "switch"))
+         (by-label (lambda (label)
+                     (cl-find label switches
+                              :key (lambda (node) (plist-get node :label))
+                              :test #'equal)))
+         (single-line (funcall by-label "Single Line"))
+         (password (funcall by-label "Password"))
+         (enabled (funcall by-label "Enabled")))
+    ;; No boolean member is left on the tri-state dropdown.
+    (should-not
+     (cl-find-if
+      (lambda (node)
+        (cl-find "true" (append (plist-get node :options) nil)
+                 :key (lambda (option) (plist-get option :value))
+                 :test #'equal))
+      (jetpacs-component-catalog-test--nodes visual "dropdown")))
+    (should single-line)
+    (should (eq (plist-get single-line :checked) t))
+    (should password)
+    (should (eq (plist-get password :checked) :json-false))
+    ;; An absent `enabled' means enabled, and the switch says so.
+    (should enabled)
+    (should (eq (plist-get enabled :checked) t))
+    (dolist (switch switches)
+      (let ((descriptor (plist-get switch :on_change)))
+        (should (equal (plist-get descriptor :action) "jpcatalog.edit.boolean"))
+        (should-not (plist-get (plist-get descriptor :args) :codec))))
+    (should (equal (plist-get (plist-get (plist-get password :on_change) :args)
+                              :path)
+                   ["password"]))
+    ;; An optional boolean keeps its explicit "use the default" control.
+    (should
+     (cl-find-if
+      (lambda (node)
+        (let ((args (plist-get (plist-get node :on_tap) :args)))
+          (and (equal (plist-get args :codec) "unset")
+               (equal (plist-get args :path) ["password"]))))
+      (jetpacs-component-catalog-test--nodes visual "icon_button")))
+    (should (jetpacs-check-profile visual 'app))))
+
+(ert-deftest jetpacs-component-catalog-presence-flag-is-a-switch ()
+  "A presence-only flag is a switch whose off position removes the member."
+  (let* ((jetpacs-component-catalog--drafts
+          (make-hash-table :test #'equal))
+         (component "panel")
+         (document (jetpacs-component-catalog--document component))
+         (digest (jetpacs-component-authoring-document-digest document))
+         (visual (jetpacs-component-catalog-editor-visual
+                  component document digest))
+         (selectable
+          (cl-find "Selectable"
+                   (jetpacs-component-catalog-test--nodes visual "switch")
+                   :key (lambda (node) (plist-get node :label))
+                   :test #'equal))
+         (args (plist-get (plist-get selectable :on_change) :args))
+         refreshed)
+    (should selectable)
+    (should (eq (plist-get selectable :checked) :json-false))
+    (should (equal (plist-get (plist-get selectable :on_change) :action)
+                   "jpcatalog.edit.boolean"))
+    (should (equal (plist-get args :codec) "injected-presence"))
+    (should (equal (plist-get args :path) ["children" 0 "selectable"]))
+    (let ((path '(:children 0 :selectable)))
+      (should (eq (jetpacs-component-catalog--path-value
+                   (jetpacs-component-catalog--edit-document
+                    document path "injected-presence" '(:value t))
+                   path)
+                  t))
+      (should-not
+       (jetpacs-component-catalog-editor--path-present-p
+        (jetpacs-component-catalog--edit-document
+         (jetpacs-component-catalog--edit-document
+          document path "injected-presence" '(:value t))
+         path "injected-presence" '(:value :json-false))
+        path))
+      (should-error
+       (jetpacs-component-catalog--edit-document
+        document path "injected-presence" '(:value "true"))
+       :type 'jetpacs-component-catalog-edit-error))
+    (cl-letf (((symbol-function
+                'jetpacs-component-catalog--live-edit-context-p)
+               (lambda (&rest _arguments) t))
+              ((symbol-function
+                'jetpacs-component-catalog--defer-authoring-refresh)
+               (lambda (surface ids) (setq refreshed (list surface ids)))))
+      (should
+       (eq (jetpacs-component-catalog--on-boolean-edit
+            (append (list :value t) (copy-tree args))
+            '(:surface "app:jpcatalog"))
+           'accepted))
+      (should (eq (plist-get
+                   (aref (plist-get
+                          (plist-get (jetpacs-component-catalog--document
+                                      component)
+                                     :root)
+                          :children)
+                         0)
+                   :selectable)
+                  t))
+      ;; The next digest addresses the updated draft; a control that claims
+      ;; some other codec collapses to the plain boolean write.
+      (let ((next (jetpacs-component-authoring-document-digest
+                   (jetpacs-component-catalog--document component))))
+        (should
+         (eq (jetpacs-component-catalog--on-boolean-edit
+              (list :component component :digest next
+                    :path ["children" 1 "enabled"] :codec "lisp"
+                    :value :json-false)
+              '(:surface "app:jpcatalog"))
+             'accepted))
+        (should (eq (plist-get
+                     (aref (plist-get
+                            (plist-get (jetpacs-component-catalog--document
+                                        component)
+                                       :root)
+                            :children)
+                           1)
+                     :enabled)
+                    :json-false))))
+    (should (equal refreshed '("app:jpcatalog" nil)))))
+
+(ert-deftest jetpacs-component-catalog-compound-members-are-disclosures ()
+  "Compound members fold into collapsibles seeded open only when authored."
+  (let* ((document (jetpacs-component-authoring-default-document "editor"))
+         (digest (jetpacs-component-authoring-document-digest document))
+         (visual (jetpacs-component-catalog-editor-visual
+                  "editor" document digest))
+         (collapsibles
+          (jetpacs-component-catalog-test--nodes visual "collapsible"))
+         (header-label
+          (lambda (node)
+            (let ((header (plist-get node :header)))
+              (or (plist-get header :text)
+                  (plist-get (aref (plist-get header :children) 0) :text)))))
+         (by-label (lambda (label)
+                     (cl-find label collapsibles
+                              :key header-label :test #'equal)))
+         (on-save (funcall by-label "On Save"))
+         (toolbar (funcall by-label "Toolbar"))
+         (semantics (funcall by-label "Semantics")))
+    (should (>= (length collapsibles) 7))
+    (dolist (label '("On Save" "On Enter" "Toolbar" "Directional padding"
+                     "Corner" "Border" "Semantics"))
+      (should (funcall by-label label))
+      (should-not
+       (cl-find label (jetpacs-component-catalog-test--nodes
+                       visual "jetpacs.panel")
+                :key (lambda (node) (plist-get node :label))
+                :test #'equal)))
+    ;; Authored members open; defaulted members start folded and say so.
+    (should (eq (plist-get on-save :collapsed) :json-false))
+    (should (eq (plist-get toolbar :collapsed) t))
+    (should (eq (plist-get semantics :collapsed) t))
+    (should (equal (plist-get (aref (plist-get (plist-get toolbar :header)
+                                               :children)
+                                    1)
+                              :text)
+                   "Default"))
+    (should (equal (plist-get (aref (plist-get (plist-get on-save :header)
+                                               :children)
+                                    1)
+                              :text)
+                   "Authored"))
+    ;; Every disclosure id is catalog-owned and unique.
+    (let ((ids (mapcar (lambda (node) (plist-get node :id)) collapsibles)))
+      (should (= (length ids) (length (delete-dups (copy-sequence ids)))))
+      (dolist (id ids)
+        (should (string-prefix-p
+                 jetpacs-component-catalog-editor--reserved-id-prefix id))))
+    ;; The section panels around the fixed nodes are still panels.
+    (should (cl-find "Root component"
+                     (jetpacs-component-catalog-test--nodes
+                      visual "jetpacs.panel")
+                     :key (lambda (node) (plist-get node :label))
+                     :test #'equal))
+    (should (jetpacs-check-profile visual 'app))))
+
 (provide 'jetpacs-component-catalog-test)
 ;;; jetpacs-component-catalog-test.el ends here
