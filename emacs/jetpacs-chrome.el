@@ -119,6 +119,17 @@ non-node degrades the same way and never fails the build.  Every
 descriptor the drawer ships must be a GLOBAL VERB or scoped to the
 surfaces it appears on — it renders on every chrome surface's root.")
 
+(defvar jetpacs-chrome-present-function nil
+  "Function that presents a bare scaffold screen, or nil.
+
+Called with the scaffold a screen builder returned, before chrome composes
+into it; the value is what the shell pushes.  A downstream design runtime
+installs its active-profile wrapper here, so every `jetpacs-chrome-screen'
+wears the platform's profile without the foundation naming that runtime.
+It is only ever offered a bare scaffold: a screen an app already presents
+inside its own wrapper keeps that presentation.  A signal or a non-node
+result costs the presentation only, never the screen.")
+
 (defvar jetpacs-chrome-app-fab-function nil
   "Function (SCREEN-OWNER SURFACE) -> app-default FAB node, or nil.
 The GR-7b app seam.  Chrome resolves SCREEN-OWNER per stacked screen:
@@ -291,41 +302,27 @@ yields items.")
                       (jetpacs-error-label err))
              nil))))
 
-(defconst jetpacs-chrome-presentation-depth 4
-  "How many presentation wrappers chrome descends to reach a scaffold.
-Bounded so a malformed tree cannot make composition walk a deep screen.")
+(defconst jetpacs-chrome-presentation-depth
+  jetpacs-shell-presentation-depth
+  "How many presentation wrappers chrome descends to reach a scaffold.")
 
-(defun jetpacs-chrome--scaffold-apply (node fn &optional depth)
+(defalias 'jetpacs-chrome--scaffold-apply #'jetpacs-shell-scaffold-apply
   "Return NODE with FN applied to the scaffold it presents.
+The rule lives in `jetpacs-shell-scaffold-apply', which the shell's own
+snackbar injection shares; chrome keeps this name for its callers.")
 
-Chrome composes the drawer, the adaptive dock, the app FAB and the shell
-globals into a scaffold.  An app may present its screen INSIDE another
-node — a downstream design scope is the first such wrapper — and that
-presentation must not cost the screen its host chrome.  A wrapper is any
-non-scaffold node carrying exactly one child; at most
-`jetpacs-chrome-presentation-depth' of them are descended, and the chain
-is rebuilt by copy so the builder's node is never mutated.  NODE comes
-back untouched when no scaffold is reachable, which is the pre-existing
-behavior for a screen that is not a scaffold at all.
-
-Chrome names no downstream node type here: the wrapper is recognized by
-shape, so the foundation stays independent of the extensions above it."
-  (let ((depth (or depth jetpacs-chrome-presentation-depth)))
-    (cond
-     ((not (jetpacs-root-node-p node)) node)
-     ((equal (plist-get node :t) "scaffold") (funcall fn node))
-     ((<= depth 0) node)
-     (t
-      (let ((children (plist-get node :children)))
-        (if (not (and (vectorp children) (= (length children) 1)))
-            node
-          (let* ((child (aref children 0))
-                 (presented (jetpacs-chrome--scaffold-apply
-                             child fn (1- depth))))
-            (if (eq presented child)
-                node
-              (plist-put (copy-sequence node)
-                         :children (vector presented))))))))))
+(defun jetpacs-chrome--present (node)
+  "Offer bare scaffold NODE to `jetpacs-chrome-present-function'.
+Anything else -- an already presented screen, a non-scaffold root -- is
+returned as is, and a signal or non-node result keeps NODE."
+  (if (and jetpacs-chrome-present-function
+           (jetpacs-root-node-p node)
+           (equal (plist-get node :t) "scaffold"))
+      (condition-case nil
+          (let ((presented (funcall jetpacs-chrome-present-function node)))
+            (if (jetpacs-root-node-p presented) presented node))
+        (error node))
+    node))
 
 (defun jetpacs-chrome--join-global-actions (n globals)
   "Append GLOBALS to scaffold N's top-bar row, de-duped by action name.
@@ -871,7 +868,8 @@ views remain in the complete snapshot required by SPEC 13.2."
                               (lambda (e)
                                 (jetpacs-shell--note-builder-error
                                  (list :surface surface :screen id) e))))
-                          (let ((n (funcall (cdr entry) back)))
+                          (let ((n (jetpacs-chrome--present
+                                    (funcall (cdr entry) back))))
                             ;; Root-only drawer; authored slots always win.
                             ;; Composition reaches the scaffold THROUGH an
                             ;; app's presentation wrapper, so presenting a

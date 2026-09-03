@@ -763,6 +763,32 @@ the READY guard; optional and ungranted capability roots wait."
         (should (equal (mapcar #'car sent) '("widget:required")))
         (should (= widget-builds 1))))))
 
+(ert-deftest jetpacs-floor-snackbar-reaches-a-presented-scaffold ()
+  "A screen presented inside a wrapper keeps its snackbar.
+The slot is reached through the wrapper the same way chrome composes, so a
+design scope around a scaffold no longer degrades every snackbar to a
+toast."
+  (jetpacs-floor-test--with-client
+      (client :granted ["theme" "presentation.toast"]
+              :profiles '(:app (:node_types ["text" "scaffold" "column" "box"]
+                                :builtins [] :features [])))
+    (let ((sent nil) (toasts nil))
+      (cl-letf (((symbol-function 'ebp-client-toast)
+                 (lambda (_c text &rest _) (push text toasts))))
+        (jetpacs-floor-test--recording-push sent
+          (jetpacs-shell-notify "saved" "app:demo")
+          (jetpacs-shell-push
+           "app:demo"
+           :spec '(:t "box"
+                   :children [(:t "scaffold" :body (:t "text" :text "b"))]))
+          (let ((root (nth 1 (car sent))))
+            (should (equal (plist-get root :t) "box"))
+            (should (equal (plist-get (aref (plist-get root :children) 0)
+                                      :snackbar)
+                           "saved")))
+          (should-not toasts)
+          (should-not (gethash "app:demo" jetpacs-shell--snackbars)))))))
+
 (ert-deftest jetpacs-floor-snackbar-scaffold-and-requeue ()
   ;; The toast degrade now rides the GATED jetpacs-toast (JA-2/B7), so
   ;; the fixture must grant presentation.toast for the degrade branch.

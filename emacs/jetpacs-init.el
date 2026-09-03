@@ -182,6 +182,10 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; Jetpacs design language.  Its app is visible only when the connected
 ;; Companion positively advertises `jetpacs.components'.
 (require 'jetpacs-component-catalog nil t)
+;; The platform's own design profile.  When the Companion advertises the
+;; design runtime, every chrome screen in every app wears it unless the
+;; app presents its own; otherwise it is inert.
+(require 'jetpacs-design-baseline nil t)
 ;; Automations is the GUI-over-Lisp workflow editor.  Its runtime was loaded
 ;; above before any connection can replay durable trigger events; this package
 ;; contributes only the separate app surface and editor projections.

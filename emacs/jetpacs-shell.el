@@ -1472,6 +1472,39 @@ spec (SPEC 13.4)" current-view)))
             (unless (gethash surface jetpacs-shell--snackbars)
               (puthash surface snack jetpacs-shell--snackbars)))))))))
 
+(defconst jetpacs-shell-presentation-depth 4
+  "How many presentation wrappers composition descends to reach a scaffold.
+Bounded so a malformed tree cannot make composition walk a deep screen.")
+
+(defun jetpacs-shell-scaffold-apply (node fn &optional depth)
+  "Return NODE with FN applied to the scaffold it presents.
+
+An app may present its screen INSIDE another node -- a downstream design
+scope is the first such wrapper -- and that presentation must not cost the
+screen its host chrome or its snackbar.  A wrapper is any non-scaffold node
+carrying exactly one child; at most `jetpacs-shell-presentation-depth' of
+them are descended, and the chain is rebuilt by copy so the builder's node
+is never mutated.  NODE comes back untouched (`eq') when no scaffold is
+reachable.  No downstream node type is named here: the wrapper is
+recognized by shape, so the foundation stays independent of the
+extensions above it."
+  (let ((depth (or depth jetpacs-shell-presentation-depth)))
+    (cond
+     ((not (jetpacs-root-node-p node)) node)
+     ((equal (plist-get node :t) "scaffold") (funcall fn node))
+     ((<= depth 0) node)
+     (t
+      (let ((children (plist-get node :children)))
+        (if (not (and (vectorp children) (= (length children) 1)))
+            node
+          (let* ((child (aref children 0))
+                 (presented (jetpacs-shell-scaffold-apply
+                             child fn (1- depth))))
+            (if (eq presented child)
+                node
+              (plist-put (copy-sequence node)
+                         :children (vector presented))))))))))
+
 (defun jetpacs-shell--inject-snackbar (spec view snack)
   "SPEC with SNACK in a scaffold `snackbar' slot, or nil if there is none.
 
@@ -1484,19 +1517,25 @@ silently degraded every snackbar in the product to a toast.
 VIEW is the view this push will land on (nil = the spec\='s own
 `initial_view\=').  Returns nil when neither shape offers a scaffold, and
 the caller degrades to a toast as before."
-  (cond
-   ((equal (plist-get spec :t) "scaffold")
-    (append spec (list :snackbar snack)))
-   ((plist-get spec :views)
-    (let* ((views (plist-get spec :views))
-           (vid (or view (plist-get spec :initial_view)))
-           (root (and vid (gethash vid views))))
-      (when (equal (plist-get root :t) "scaffold")
-        ;; Copy-on-write: the caller\='s spec is not ours to mutate, and a
-        ;; refused push must leave it exactly as it was.
-        (let ((copy (copy-hash-table views)))
-          (puthash vid (append root (list :snackbar snack)) copy)
-          (plist-put (copy-sequence spec) :views copy)))))))
+  ;; The slot is reached THROUGH a presentation wrapper, the same way chrome
+  ;; composes: a screen an app presents inside a design scope keeps its
+  ;; snackbar rather than degrading to a toast.
+  (cl-flet ((with-snack (s) (append s (list :snackbar snack))))
+    (let ((presented (jetpacs-shell-scaffold-apply spec #'with-snack)))
+      (cond
+       ((not (eq presented spec)) presented)
+       ((plist-get spec :views)
+        (let* ((views (plist-get spec :views))
+               (vid (or view (plist-get spec :initial_view)))
+               (root (and vid (gethash vid views)))
+               (root-presented (and root (jetpacs-shell-scaffold-apply
+                                          root #'with-snack))))
+          (when (and root (not (eq root-presented root)))
+            ;; Copy-on-write: the caller\='s spec is not ours to mutate, and
+            ;; a refused push must leave it exactly as it was.
+            (let ((copy (copy-hash-table views)))
+              (puthash vid root-presented copy)
+              (plist-put (copy-sequence spec) :views copy)))))))))
 
 (defun jetpacs-shell-refresh (&rest _)
   "Run `jetpacs-shell-refresh-hook', then push.  Hook-safe arity."

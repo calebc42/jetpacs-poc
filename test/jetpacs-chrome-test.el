@@ -1606,6 +1606,50 @@ them.  The wrapper itself stays the root and is copied, never mutated."
             (should-not (plist-member authored :rail))))
       (jetpacs-chrome-remove "app:presented"))))
 
+(ert-deftest jetpacs-chrome-presents-a-bare-scaffold-exactly-once ()
+  "The presentation seam wraps a bare scaffold and composes chrome through
+it; a screen an app already presents keeps its own presentation; a seam
+that signals costs only the presentation."
+  (let ((jetpacs-chrome-drawer-function
+         (lambda (_s) (jetpacs-text "drawer"))))
+    (unwind-protect
+        (progn
+          (with-jetpacs-owner "seam-bare"
+            (jetpacs-chrome-define-root
+             "seam-bare" "bare"
+             (lambda (_back) (jetpacs-chrome-screen "B" (jetpacs-text "b")))))
+          (with-jetpacs-owner "seam-own"
+            (jetpacs-chrome-define-root
+             "seam-own" "own"
+             (lambda (_back)
+               (jetpacs-column
+                (jetpacs-chrome-screen "O" (jetpacs-text "o"))))))
+          (let ((jetpacs-chrome-present-function
+                 (lambda (s) (jetpacs-box s))))
+            (let* ((mv (jetpacs-chrome--build "app:seam-bare"))
+                   (view (gethash "bare" (plist-get mv :views)))
+                   (scaffold (aref (plist-get view :children) 0)))
+              (should (equal (plist-get view :t) "box"))
+              (should (equal (plist-get scaffold :t) "scaffold"))
+              ;; Chrome composed THROUGH the presentation.
+              (should (equal (plist-get (plist-get scaffold :drawer) :text)
+                             "drawer")))
+            (let* ((mv (jetpacs-chrome--build "app:seam-own"))
+                   (view (gethash "own" (plist-get mv :views))))
+              ;; Not a box around a column: the app's wrapper is the root.
+              (should (equal (plist-get view :t) "column"))
+              (should (equal (plist-get (aref (plist-get view :children) 0) :t)
+                             "scaffold"))))
+          (let ((jetpacs-chrome-present-function
+                 (lambda (_s) (error "presentation failed"))))
+            (let* ((mv (jetpacs-chrome--build "app:seam-bare"))
+                   (view (gethash "bare" (plist-get mv :views))))
+              (should (equal (plist-get view :t) "scaffold"))
+              (should (equal (plist-get (plist-get view :drawer) :text)
+                             "drawer")))))
+      (jetpacs-chrome-remove "app:seam-bare")
+      (jetpacs-chrome-remove "app:seam-own"))))
+
 (ert-deftest jetpacs-chrome-presentation-descent-is-bounded ()
   "Only a single-child wrapper within the bound presents a screen.
 A wrapper carrying more than the screen, or nested deeper than
