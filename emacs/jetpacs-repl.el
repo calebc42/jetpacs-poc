@@ -190,9 +190,13 @@ hardware, by a Playground whose button did nothing at all.
 
 The send button is FILLED.  Authored bare it is, per
 `jetpacs-icon-button''s own docstring, \"the plain, container-less icon
-button\" — and a container-less glyph beside a chromeless editor does
-not read as the primary action of the screen.  It was one, and did not
-look like one."
+button\" — and a container-less glyph beside the editor does not read
+as the primary action of the screen.  It was one, and did not look like
+one.
+
+The editor is NOT chromeless.  Material drew an outline regardless, but
+the Foundation renderer honors the flag and drew nothing: an invisible
+strip above the divider that nobody could tell was an input."
   (unless (string-suffix-p ".el" document)
     (error "jetpacs-repl: :document %S must end in `.el' so the elisp capfs answer"
            document))
@@ -200,7 +204,7 @@ look like one."
    (jetpacs-row
     (jetpacs-with-attrs
      (apply #'jetpacs-editor editor-id
-            :document document :complete t :chromeless t :syntax "elisp"
+            :document document :complete t :syntax "elisp"
             :on-enter (jetpacs-action verb :args args)
             (and value (list :value value)))
      :weight 1)
