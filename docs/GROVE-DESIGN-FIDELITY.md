@@ -335,7 +335,9 @@ Material's checked container and badge anchor, and a `badge` decorating
 children keeps Material's anchored `BadgedBox`. An empty state's action reuses
 the design button renderer rather than restating it.
 
-Foundation coverage of the canonical vocabulary is now 16 of 49 node types,
+Foundation coverage of the canonical vocabulary was 12 of 49 node types
+after this slice (an earlier draft of this line said 16, which was a
+miscount; slices 7-11 bring it to 16),
 plus the seven `jetpacs.*` components.
 
 ### Verification record for slice 6
