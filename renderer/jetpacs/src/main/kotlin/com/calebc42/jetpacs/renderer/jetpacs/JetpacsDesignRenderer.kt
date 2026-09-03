@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.ebp.renderer.compose.ComposeThemeRoles
+import com.calebc42.ebp.renderer.compose.LocalComposeChromeStyles
 import com.calebc42.ebp.renderer.compose.LocalComposeThemeRoles
 import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
 import com.calebc42.ebp.renderer.model.RendererContribution
@@ -118,8 +119,18 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
                 jetpacsThemeFor(ambient.roles.overridden(declared), ambient.dark)
             }
         }
+        // The chrome the toolkit draws around scoped content follows the
+        // scope's chrome slots; an unbound scope leaves the enclosing value.
+        val theme = scopedTheme ?: ambient
+        val parentChrome = LocalComposeChromeStyles.current
+        val chrome = remember(scope, theme, parentChrome) {
+            scope.composeChromeStyles(theme.roles) ?: parentChrome
+        }
         if (scopedTheme == null) {
-            CompositionLocalProvider(LocalDesignScope provides scope) {
+            CompositionLocalProvider(
+                LocalDesignScope provides scope,
+                LocalComposeChromeStyles provides chrome,
+            ) {
                 RenderChildren(node, context, modifier, scoped = true)
             }
         } else {
@@ -127,6 +138,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
                 LocalDesignScope provides scope,
                 LocalJetpacsTheme provides scopedTheme,
                 LocalComposeThemeRoles provides scopedTheme.roles.toComposeThemeRoles(),
+                LocalComposeChromeStyles provides chrome,
             ) {
                 RenderChildren(node, context, modifier, scoped = true)
             }

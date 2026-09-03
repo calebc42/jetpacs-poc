@@ -63,7 +63,10 @@
     "editor.surface" "editor.chromeless" "editor.text" "editor.gutter"
     "editor.toolbar" "editor.toolbar-item" "editor.sync-status"
     "editor.completion-list" "editor.completion-item"
-    "editor.candidate-document" "editor.tooling-status")
+    "editor.candidate-document" "editor.tooling-status"
+    "chrome.tab-label" "chrome.tab-indicator"
+    "chrome.rail-label" "chrome.rail-indicator"
+    "chrome.drawer" "chrome.snackbar")
   "Closed semantic-component visual slots accepted by design scopes.")
 
 (defconst jetpacs-design--property-kinds
@@ -261,6 +264,10 @@ most 16 elements.  MOTION names a motion in the effective scope."
                  (plist-member rule :properties))
       (error "jetpacs-design: each rule must come from `jetpacs-design-rule'")))
   (when motion (jetpacs-check-identifier motion "style motion"))
+  ;; An empty style is legal and useful: bound to a slot, it says "the
+  ;; toolkit keeps its own value".  It stays a plain plist here (no
+  ;; `:properties' member) so profiles print, re-read and compare with
+  ;; `equal'; the scope builder supplies the wire's required `{}'.
   (jetpacs-make-node nil
                      :properties (jetpacs-design-properties properties)
                      :rules (vconcat rules)
@@ -399,11 +406,15 @@ THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
           styles 256 "styles"
           (lambda (value name)
             (unless (and (proper-list-p value)
-                         (plist-member value :properties)
                          (vectorp (plist-get value :rules)))
               (error "jetpacs-design: style %s must come from a style builder"
                      name))
-            value)))
+            ;; An empty style carries no `:properties' (the builder's
+            ;; nil-drop); the wire member is required, so it rides as `{}'.
+            (if (plist-member value :properties)
+                value
+              (append (list :properties (make-hash-table :test #'equal))
+                      value)))))
         (motion-map
          (jetpacs-design--sorted-map
           motions 64 "motions"

@@ -213,7 +213,13 @@
         "editor.completion-list",
         "editor.completion-item",
         "editor.candidate-document",
-        "editor.tooling-status"
+        "editor.tooling-status",
+        "chrome.tab-label",
+        "chrome.tab-indicator",
+        "chrome.rail-label",
+        "chrome.rail-indicator",
+        "chrome.drawer",
+        "chrome.snackbar"
       ]
     },
     "component-style-binding": {
@@ -228,7 +234,7 @@
       "type": "array",
       "items": {"type": "ref", "ref": "component-style-binding"},
       "min_items": 0,
-      "max_items": 88
+      "max_items": 94
     },
     "theme-role-map": {
       "type": "identifier-map",

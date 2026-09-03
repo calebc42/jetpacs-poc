@@ -128,7 +128,19 @@ bare scaffold, only under an advertised runtime."
              "{\"slot\":\"text.body\",\"styles\":[\"typography.reading-body\"]}"
              json))
     (should (member "text.body" jetpacs-design-component-style-slots))
-    (should (= (length jetpacs-design-component-style-slots) 88))
+    (should (= (length jetpacs-design-component-style-slots) 94))
+  ;; An empty style is a legal binding that leaves the toolkit's value:
+  ;; a plain plist in the profile, a literal `{}' on the wire.
+  (let ((empty (jetpacs-design-style nil)))
+    (should-not (plist-member empty :properties))
+    (should (hash-table-p
+             (plist-get
+              (cdr (assoc "quiet"
+                          (jetpacs-design--plist-pairs
+                           (plist-get (jetpacs-design-scope
+                                       nil (list (cons "quiet" empty)) nil)
+                                      :styles))))
+              :properties))))
     (should-error (jetpacs-design-component-style "text.unknown" '("x")))))
 
 (ert-deftest jetpacs-design-scope-redeclares-theme-roles-for-chrome ()

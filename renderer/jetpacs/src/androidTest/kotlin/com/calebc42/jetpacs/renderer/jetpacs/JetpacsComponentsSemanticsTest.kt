@@ -8,6 +8,11 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import com.calebc42.ebp.renderer.compose.LocalComposeChromeStyles
+import com.calebc42.ebp.renderer.compose.ComposeChromeStyles
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.platform.testTag
@@ -567,6 +572,58 @@ class JetpacsComponentsSemanticsTest {
                 ) as JsonObject,
             ),
         )
+    }
+
+    @Test
+    fun designScopeResolvesItsChromeSlotsForTheToolkit() {
+        // The scaffold chrome Material draws around presented content reads
+        // the scope's chrome slots through the shared seam: bound slots
+        // resolve, unbound ones stay null so the toolkit keeps its default.
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = designScope(
+            """
+            {
+              "tab": {
+                "properties": {"font_size":{"kind":"dimension","value":"21"}},
+                "rules": [
+                  {"state":"selected",
+                   "properties":{"content_color":{"kind":"color","value":"#FF112233"}}}
+                ]
+              },
+              "toast": {
+                "properties": {
+                  "background_color":{"kind":"color","value":"#FF445566"},
+                  "corner_radius":{"kind":"dimension","value":"12"}
+                },
+                "rules": []
+              }
+            }
+            """,
+            """{"t":"text","text":"under chrome"}""",
+        ).let { scope ->
+            JsonObject(
+                scope + mapOf(
+                    "component_styles" to Json.parseToJsonElement(
+                        """[{"slot":"chrome.tab-label","styles":["tab"]},
+                            {"slot":"chrome.snackbar","styles":["toast"]}]""",
+                    ),
+                ),
+            )
+        }
+        var seen: ComposeChromeStyles? = null
+        context.onScopedChild = { seen = LocalComposeChromeStyles.current }
+        compose.setContent {
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+        compose.onNodeWithText("under chrome").assertIsDisplayed()
+        compose.runOnIdle {
+            val chrome = requireNotNull(seen)
+            assertEquals(21.sp, chrome.tabLabel?.fontSize)
+            assertEquals(Color(0xFF112233), chrome.tabSelectedLabelColor)
+            assertEquals(Color(0xFF445566), chrome.snackbarContainer)
+            assertEquals(RoundedCornerShape(12.dp), chrome.snackbarShape)
+            assertTrue(chrome.railLabel == null && chrome.drawerContainer == null)
+        }
     }
 
     @Test

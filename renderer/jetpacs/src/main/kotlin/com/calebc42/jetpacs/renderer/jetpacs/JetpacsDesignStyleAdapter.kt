@@ -28,6 +28,8 @@ import androidx.compose.foundation.style.selected
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import com.calebc42.ebp.renderer.compose.ComposeChromeStyles
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -196,6 +198,62 @@ internal fun TextStyle.withDesignTextProperties(
     } ?: fontWeight,
     textAlign = properties[DesignProperty.TextAlign]?.textAlign() ?: textAlign,
 )
+
+/**
+ * Resolve the chrome slots of [this] scope into the toolkit-neutral value a
+ * scaffold renderer reads where it draws tabs, rails, drawers and snackbars.
+ *
+ * Each field is null while its slot is unbound, so the toolkit keeps its own
+ * default there. A label's selected color comes from the slot's `selected`
+ * rule. Null when no chrome slot is bound at all, so an inner scope without
+ * chrome bindings leaves an outer scope's value in place.
+ */
+internal fun CompiledDesignScope.composeChromeStyles(
+    roles: JetpacsThemeRoles,
+): ComposeChromeStyles? {
+    fun properties(
+        slot: DesignComponentStyleSlot,
+        states: Set<DesignState> = emptySet(),
+    ): Map<DesignProperty, DesignValue>? = componentStyle(slot)?.resolve(states)?.properties
+
+    fun Map<DesignProperty, DesignValue>.color(property: DesignProperty): Color? =
+        when (val value = this[property]) {
+            is DesignValue.ColorValue -> Color(value.argb)
+            is DesignValue.ThemeRoleValue -> roles[value.value]
+            else -> null
+        }
+
+    fun Map<DesignProperty, DesignValue>.text(): TextStyle? =
+        TextStyle.Default.withDesignTextProperties(this, roles)
+            .takeIf { it != TextStyle.Default }
+
+    fun Map<DesignProperty, DesignValue>.shape(): Shape? =
+        this[DesignProperty.CornerRadius]?.let { RoundedCornerShape(it.dp()) }
+
+    val tabLabel = properties(DesignComponentStyleSlot.ChromeTabLabel)
+    val tabSelected = properties(
+        DesignComponentStyleSlot.ChromeTabLabel,
+        setOf(DesignState.Selected),
+    )
+    val tabIndicator = properties(DesignComponentStyleSlot.ChromeTabIndicator)
+    val railLabel = properties(DesignComponentStyleSlot.ChromeRailLabel)
+    val railIndicator = properties(DesignComponentStyleSlot.ChromeRailIndicator)
+    val drawer = properties(DesignComponentStyleSlot.ChromeDrawer)
+    val snackbar = properties(DesignComponentStyleSlot.ChromeSnackbar)
+    val styles = ComposeChromeStyles(
+        tabLabel = tabLabel?.text(),
+        tabSelectedLabelColor = tabSelected?.color(DesignProperty.ContentColor),
+        tabIndicator = tabIndicator?.color(DesignProperty.BackgroundColor),
+        railLabel = railLabel?.text(),
+        railIndicator = railIndicator?.color(DesignProperty.BackgroundColor),
+        drawerContainer = drawer?.color(DesignProperty.BackgroundColor),
+        drawerShape = drawer?.shape(),
+        snackbarContainer = snackbar?.color(DesignProperty.BackgroundColor),
+        snackbarContent = snackbar?.color(DesignProperty.ContentColor),
+        snackbarShape = snackbar?.shape(),
+    )
+    return styles.takeUnless { it.isEmpty }
+}
 
 /**
  * Resolve one color property of a component slot, or null when it is unbound.

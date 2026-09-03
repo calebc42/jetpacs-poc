@@ -100,6 +100,16 @@
              ("border_color" . ,(tok "color.outline"))
              ("border_width" . ,(dim 1))
              ("corner_radius" . ,(tok "radius.control")))))
+      ;; Bound, but says nothing: the toolkit keeps its own value.  The
+      ;; wire carries no container roles, so a rail indicator painted from
+      ;; `secondary' is a saturated pill where Material's is a pale one.
+      ("base.toolkit" . ,(jetpacs-design-style nil))
+      ;; A toast inverts the surface so it reads over any content.
+      ("base.toast"
+       . ,(jetpacs-design-style
+           `(("background_color" . ,(tok "color.on-surface"))
+             ("content_color" . ,(tok "color.surface"))
+             ("corner_radius" . ,(tok "radius.control")))))
       ;; A row is a region of a list, not an object floating above one:
       ;; no fill, no border, Material's one-line list metrics.  Its
       ;; interaction faces stay the receiver's own.
@@ -322,6 +332,13 @@
     ("month-grid.today" . ("base.today"))
     ("month-grid.range" . ("base.band"))
     ("month-grid.mark" . ("base.accent"))
+    ;; The chrome Material draws around presented content.
+    ("chrome.tab-label" . ("typography.label"))
+    ("chrome.tab-indicator" . ("base.indicator"))
+    ("chrome.rail-label" . ("typography.label"))
+    ("chrome.rail-indicator" . ("base.toolkit"))
+    ("chrome.drawer" . ("base.surface"))
+    ("chrome.snackbar" . ("base.toast"))
     ("action.container" . ("base.interactive" "base.action"))
     ("action.label" . ("typography.label"))
     ("choice.container" . ("base.row"))

@@ -157,6 +157,12 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     EditorCompletionItem("editor.completion-item"),
     EditorCandidateDocument("editor.candidate-document"),
     EditorToolingStatus("editor.tooling-status"),
+    ChromeTabLabel("chrome.tab-label"),
+    ChromeTabIndicator("chrome.tab-indicator"),
+    ChromeRailLabel("chrome.rail-label"),
+    ChromeRailIndicator("chrome.rail-indicator"),
+    ChromeDrawer("chrome.drawer"),
+    ChromeSnackbar("chrome.snackbar"),
     ;
 
     companion object {
