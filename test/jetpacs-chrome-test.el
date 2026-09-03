@@ -19,6 +19,7 @@
 (require 'jetpacs-shell)
 (require 'jetpacs-buffer)
 (require 'jetpacs-chrome)
+(require 'jetpacs-components)
 
 (defconst jetpacs-chrome-test--types
   ["text" "row" "column" "box" "spacer" "divider" "button" "text_input"
@@ -77,19 +78,36 @@
     (should-not (string-search "icon_button" json))))
 
 (ert-deftest jetpacs-chrome-row-shape ()
-  (let ((json (jetpacs-node->canonical-json
-               (jetpacs-chrome-row "Docs" :subtitle "3 files" :icon "folder"
-                                   :key "r1"
-                                   :trailing (jetpacs-icon "chevron_right")
-                                   :on-tap (jetpacs-action
-                                            "files.open"
-                                            :args '(:path "docs"))))))
+  "The hub row is the flat `jetpacs.list_item' the reference profile draws."
+  (let* ((row (jetpacs-chrome-row "Docs" :subtitle "3 files" :icon "folder"
+                                  :key "r1"
+                                  :trailing (jetpacs-icon "chevron_right")
+                                  :on-tap (jetpacs-action
+                                           "files.open"
+                                           :args '(:path "docs"))))
+         (json (jetpacs-node->canonical-json row)))
+    (should (equal (plist-get row :t) "jetpacs.list_item"))
     ;; :key survived (universal attr via with-attrs — the poc drop bug).
     (should (string-match-p "\"key\":\"r1\"" json))
-    (should (string-match-p "\"weight\":1" json))
     (should (string-match-p "\"action\":\"files.open\"" json))
     (should (string-match-p "chevron_right" json))
-    (should (string-match-p "\"style\":\"caption\"" json))))
+    (should (equal (plist-get row :title) "Docs"))
+    (should (equal (plist-get row :subtitle) "3 files"))
+    (should (equal (plist-get (plist-get row :leading) :name) "folder"))))
+
+(ert-deftest jetpacs-chrome-row-falls-back-to-the-canonical-card ()
+  "A receiver without `jetpacs.list_item' gets the card composition."
+  (cl-letf (((symbol-function 'jetpacs-node-advertised-p)
+             (lambda (&rest _) nil)))
+    (let* ((row (jetpacs-chrome-row "Docs" :subtitle "3 files" :icon "folder"
+                                    :key "r1"
+                                    :on-tap (jetpacs-action "files.open")))
+           (json (jetpacs-node->canonical-json row)))
+      (should (equal (plist-get row :t) "card"))
+      (should (string-match-p "\"key\":\"r1\"" json))
+      (should (string-match-p "\"weight\":1" json))
+      (should (string-match-p "\"action\":\"files.open\"" json))
+      (should (string-match-p "\"style\":\"caption\"" json)))))
 
 ;;;; The stack
 

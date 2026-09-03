@@ -208,7 +208,7 @@ below us in the same document), so the view verb is re-exposed here."
                                 (jetpacs-icon-button
                                  "close"
                                  (jetpacs-action "jetpacs.emacs.imenu-clear")
-                                 :content-description "whole buffer")
+                                 :content-description "Show whole buffer")
                                 :align "center"))
                          (jetpacs-results-region-nodes))
                       (jetpacs-render-buffer buf)))))
@@ -221,11 +221,11 @@ below us in the same document), so the view verb is re-exposed here."
          :actions (list (jetpacs-icon-button
                          "toc" (jetpacs-action "jetpacs.emacs.imenu"
                                                :args (list :buffer name))
-                         :content-description "imenu"))
+                         :content-description "Outline"))
          :fab (jetpacs-icon-button
                "keyboard" (jetpacs-action "jetpacs.emacs.palette"
                                           :args (list :buffer name))
-               :content-description "command palette"))))))
+               :content-description "Command palette"))))))
 
 (defun jetpacs-emacs-ui--push-buffer-screen (name)
   "Push NAME's screen onto our stack; call only from a continuation."

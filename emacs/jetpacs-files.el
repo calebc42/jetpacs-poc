@@ -496,8 +496,9 @@ readability stat."
   "A top-bar menu for switching between Files roots, or nil if unnecessary."
   (let ((locations (jetpacs-files--locations)))
     (when (cdr locations)
-      (jetpacs-menu
-       (mapcar
+      (jetpacs-with-semantics
+       (jetpacs-menu
+        (mapcar
         (lambda (location)
           (let ((path (plist-get location :path)))
             (jetpacs-menu-item
@@ -506,8 +507,10 @@ readability stat."
                              :args (list :dir (directory-file-name path)))
              :icon (plist-get location :icon)
              :supporting-text (directory-file-name path))))
-        locations)
-       :icon "folder_open"))))
+         locations)
+        :icon "folder_open")
+       ;; SPEC 16.4: without a name the trigger announces as its icon.
+       :name "Switch location"))))
 
 ;;;; The dired card skin
 
@@ -724,11 +727,15 @@ landing configuration never went through a handler."
                       ;; The F2 entry point: SPEC 14.3 injects submitted text
                       ;; as `value'.  Claim per screen: the same directory may
                       ;; appear in native and guest views of one document.
-                      (jetpacs-text-input
-                       (jetpacs-claim-node-id "files-grep-input")
-                       :hint "Search contents — Enter runs"
-                       :single-line t
-                       :on-submit (jetpacs-action "jetpacs.files.grep")))
+                      ;; SPEC 16.4: a hint is not a name; without one the
+                      ;; field announces as its node type.
+                      (jetpacs-with-semantics
+                       (jetpacs-text-input
+                        (jetpacs-claim-node-id "files-grep-input")
+                        :hint "Search contents — Enter runs"
+                        :single-line t
+                        :on-submit (jetpacs-action "jetpacs.files.grep"))
+                       :name "Search contents"))
                 (cdr content))))
     (ebp-path-refused
      (jetpacs-empty-state :icon "info"

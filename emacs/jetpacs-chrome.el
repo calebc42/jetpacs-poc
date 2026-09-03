@@ -171,7 +171,7 @@ three to five sibling places, never document actions."
                     (append
                      (when back
                        (list (jetpacs-icon-button "arrow_back" back
-                                                  :content-description "back")))
+                                                  :content-description "Back")))
                      (list (jetpacs-with-attrs
                             (jetpacs-text title :style "title")
                             :weight 1))
@@ -187,34 +187,30 @@ three to five sibling places, never document actions."
     (append scaffold (list :top-bar-style "small")))
    :pane-title title))
 
+(declare-function jetpacs-components-list-item "jetpacs-components")
+
 (cl-defun jetpacs-chrome-row (title &key subtitle icon leading trailing
                                     on-tap on-long-tap key)
-  "The hub list-row: card > row > [leading, weighted column, trailing].
+  "The hub list-row: the best list item the live profile can draw.
 TITLE/SUBTITLE are strings; ICON is a convenience when LEADING is nil;
 TRAILING is one node or a list.  KEY (a SPEC 4.4 identifier) rides
 `jetpacs-with-attrs' — like :weight, it is a universal attr the
 container builders silently DROP as a trailing option, the exact poc
-bug this port fixes."
-  (let* ((middle (jetpacs-with-attrs
-                  (apply #'jetpacs-column
-                         (append (list (jetpacs-text title))
-                                 (when subtitle
-                                   (list (jetpacs-text subtitle
-                                                       :style "caption")))
-                                 (list :spacing 2)))
-                  :weight 1))
-         (lead (or leading (and icon (jetpacs-icon icon))))
-         (trail (cond ((null trailing) nil)
-                      ((jetpacs-root-node-p trailing) (list trailing))
-                      (t trailing)))
-         (card (jetpacs-card
-                (list (apply #'jetpacs-row
-                             (append (when lead (list lead))
-                                     (list middle)
-                                     trail
-                                     (list :align "center" :spacing 12))))
-                :on-tap on-tap :on-long-tap on-long-tap)))
-    (if key (jetpacs-with-attrs card :key key) card)))
+bug this port fixes.
+
+With `jetpacs-components' loaded this is `jetpacs-components-list-item':
+the flat `jetpacs.list_item' node when the receiver advertises it, styled
+by the active design profile's `list-item.*' slots, and the canonical
+card composition otherwise.  Without it, the canonical `jetpacs-list-item'
+card.  Either way the row announces once, as its title."
+  (let ((lead (or leading (and icon (jetpacs-icon icon)))))
+    (if (fboundp 'jetpacs-components-list-item)
+        (jetpacs-components-list-item
+         title :subtitle subtitle :leading lead :trailing trailing
+         :on-tap on-tap :on-long-tap on-long-tap :key key)
+      (jetpacs-list-item :leading lead :title title :subtitle subtitle
+                         :trailing trailing :on-tap on-tap
+                         :on-long-tap on-long-tap :key key))))
 
 ;;;; The per-surface screen stack (representation A: one multi_view)
 

@@ -547,7 +547,7 @@ rest — and org's fast tag selection cannot bridge)."
                (get (lambda (k) (car (alist-get k kwds nil nil #'equal))))
                (filetags-str (funcall get "FILETAGS"))
                (filetags (when filetags-str
-                           (split-string filetags-str ":" t "[ 	
+                           (split-string filetags-str ":" t "[  
 
 ]+")))
                (available (cl-remove-duplicates
@@ -559,12 +559,12 @@ rest — and org's fast tag selection cannot bridge)."
                (todo-parts (and todo-str (split-string todo-str "|")))
                (todo-active (if todo-parts
                                 (string-join (split-string (car todo-parts)
-                                                           "[ 	]+" t)
+                                                           "[   ]+" t)
                                              ", ")
                               ""))
                (todo-finished (if (and todo-parts (cadr todo-parts))
                                   (string-join (split-string (cadr todo-parts)
-                                                             "[ 	]+" t)
+                                                             "[         ]+" t)
                                                ", ")
                                 "")))
           (ebp-client-dialog-show
@@ -634,7 +634,7 @@ rest — and org's fast tag selection cannot bridge)."
                             (join-states
                              (lambda (s)
                                (when (stringp s)
-                                 (let ((words (split-string s "[ 	]*,[ 	]*" t)))
+                                 (let ((words (split-string s "[        ]*,[    ]*" t)))
                                    (when words (string-join words " "))))))
                             (active (funcall join-states
                                              (funcall fget :file-prop-todo-active)))
@@ -664,7 +664,7 @@ rest — and org's fast tag selection cannot bridge)."
                           (jetpacs-org-dialogs--update-keyword
                            "ARCHIVE" (funcall fget :file-prop-archive))
                           (goto-char (point-min))
-                          (when (re-search-forward "^[ 	]*#\+CATEGORY:" nil t)
+                          (when (re-search-forward "^[  ]*#\+CATEGORY:" nil t)
                             (ignore-errors (org-element-at-point)))))
                        (ebp-org-cache-invalidate)
                        (when buffer-file-name (with-current-buffer buf (ebp-org-defer-save)))
@@ -679,7 +679,7 @@ rest — and org's fast tag selection cannot bridge)."
 (defun jetpacs-org-dialogs--update-keyword (kwd val)
   "Set, replace, or (VAL empty/nil) remove #+KWD in the current buffer."
   (goto-char (point-min))
-  (if (re-search-forward (format "^[ 	]*#\+%s:[ 	]*\(.*\)$"
+  (if (re-search-forward (format "^[    ]*#\+%s:[       ]*\(.*\)$"
                                  (regexp-quote kwd))
                          nil t)
       (if (and val (not (string-empty-p val)))
@@ -689,7 +689,7 @@ rest — and org's fast tag selection cannot bridge)."
     (when (and val (not (string-empty-p val)))
       (goto-char (point-min))
       (unless (equal kwd "TITLE")
-        (when (re-search-forward "^[ 	]*#\+TITLE:.*$" nil t)
+        (when (re-search-forward "^[    ]*#\+TITLE:.*$" nil t)
           (forward-line 1)))
       (insert (format "#+%s: %s
 " kwd val)))))
@@ -1252,37 +1252,40 @@ and newline-flattened — a multi-line title would smuggle structure."
   "Return the heading `jetpacs-menu` for POS in BUF."
   (let ((buffer-name (buffer-name buf))
         (narrowed (with-current-buffer buf (buffer-narrowed-p))))
-    (jetpacs-menu
-     (delq nil
-           (mapcar
-            (lambda (c)
-              (let ((value (nth 0 c))
-                    (label (nth 1 c))
-                    (icon  (nth 2 c))
-                    (action (jetpacs-action "jetpacs.org.heading"
-                                            :args (list :buffer buffer-name
-                                                        :pos pos
-                                                        :value (nth 0 c)))))
-                (when (equal value "archive")
-                  (setq action (append action (list :confirm "Archive this subtree?"))))
-                (when (equal value "delete")
-                  (setq action (append action (list :confirm "Delete this heading and its subtree?"))))
-                (jetpacs-menu-item label action :icon icon)))
-            (append
-             '(("schedule"   "Schedule…"   "schedule")
-               ("deadline"   "Deadline…"   "event_busy")
-               ("priority"   "Priority…"   "priority_high")
-               ("tags"       "Set tags…"   "label")
-               
-               ("refile"     "Refile…"     "drive_file_move"))
-             (if narrowed
-                 '(("widen" "Widen" "open_in_full"))
-               '(("narrow" "Open" "open_in_new")))
-             '(("duplicate" "Duplicate" "content_copy")
-               ("encrypt" "Encrypt" "lock")
-               ("decrypt" "Decrypt" "lock_open")
-               ("archive" "Archive" "archive")))))
-     :icon "more_vert")))
+    (jetpacs-with-semantics
+     (jetpacs-menu
+      (delq nil
+            (mapcar
+             (lambda (c)
+               (let ((value (nth 0 c))
+                     (label (nth 1 c))
+                     (icon  (nth 2 c))
+                     (action (jetpacs-action "jetpacs.org.heading"
+                                             :args (list :buffer buffer-name
+                                                         :pos pos
+                                                         :value (nth 0 c)))))
+                 (when (equal value "archive")
+                   (setq action (append action (list :confirm "Archive this subtree?"))))
+                 (when (equal value "delete")
+                   (setq action (append action (list :confirm "Delete this heading and its subtree?"))))
+                 (jetpacs-menu-item label action :icon icon)))
+             (append
+              '(("schedule"   "Schedule…"   "schedule")
+                ("deadline"   "Deadline…"   "event_busy")
+                ("priority"   "Priority…"   "priority_high")
+                ("tags"       "Set tags…"   "label")
+                
+                ("refile"     "Refile…"     "drive_file_move"))
+              (if narrowed
+                  '(("widen" "Widen" "open_in_full"))
+                '(("narrow" "Open" "open_in_new")))
+              '(("duplicate" "Duplicate" "content_copy")
+                ("encrypt" "Encrypt" "lock")
+                ("decrypt" "Decrypt" "lock_open")
+                ("archive" "Archive" "archive")))))
+      :icon "more_vert")
+     ;; SPEC 16.4: without a name the trigger announces as its icon.
+     :name "Heading actions")))
 (defun jetpacs-org-dialogs--heading-action (args params)
   "Dispatch the heading action.
 If `:value` is present, handle the inline menu tap directly.

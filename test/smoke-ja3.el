@@ -5,7 +5,7 @@
 ;; registered skin.  Driven by a runner watching the P*-TAP-* markers:
 ;;
 ;;   P1-TAP-ROW      tap the "ja3-target.txt" row in the hub
-;;   P2-TAP-FAB      tap the keyboard FAB (content-desc "command palette"),
+;;   P2-TAP-FAB      tap the keyboard FAB (content-desc "Command palette"),
 ;;                   then in the dialog tap the option containing
 ;;                   "T  ·" and then OK
 ;;   P3-TAP-BACK-MX  tap arrow_back, then the M-x icon (desc "M-x"),
