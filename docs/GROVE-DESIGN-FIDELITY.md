@@ -464,6 +464,54 @@ And the opening-focus selection wrote Compose state during composition, which
 would have left the first row unfocused after the recomposition it triggered;
 that is now decided from the authored order instead.
 
+## Slice 8: amendment #187, `menu` made true
+
+Slice 7 recorded three findings as out of scope. They are closed here, as one
+amendment.
+
+`SPEC.md` §17.4 described the format-6 menu -- `items` required, a MenuItem
+`{label, on_tap, icon, enabled}` -- while the contract, both generated
+vocabularies, the reference validator and the Elisp authoring layer had all
+moved on. `groups`, `footer`, `initial_scroll`, `supporting_text`,
+`trailing_icon`, `checked` and `checked_icon` had shipped with no spec text
+and no amendment at all. The numbering gap explains why: **amendments
+#153-#167 are missing from `SPEC-CHANGES.md` entirely**. That is where the M3
+tier-1 package's prose was drafted
+(`jetpacs/docs/DRAFT-amendments-156-167-m3-tier1.md`) and never landed. Only
+the menu portion is landed here; the other eleven amendments in that package
+remain undocumented, and that is now the largest known spec-sync debt in the
+tree.
+
+Two corrections travel with the sync:
+
+- **`trailing_text` ships.** Draft #167 specified the trailing pair and only
+  half of it landed, so `menus/MenuSample`'s "F11" shortcut had been silently
+  dropped since it was written -- a loss the module's own docstring recorded.
+  The pair is mutually exclusive because a MenuItem has one trailing slot, and
+  it is two typed members rather than one overloaded string because
+  `IconMap.get` cannot report a miss and would draw "F11" as a help glyph with
+  no diagnostic anywhere. Both renderers draw it, and the catalog sample no
+  longer records the loss.
+- **MenuItem `on_tap` is enforced.** §17.4 has required it since format 6, but
+  `SpecValidator` checked only `label`, so a dispatchless row validated,
+  rendered, and did nothing when tapped.
+
+### Verification record for slice 8
+
+- `validate.py` gains a `check_menu_items` arm; 101 widget golden lines
+  validate, one appended (index 106) carrying `trailing_text`,
+  `supporting_text`, `trailing_icon` and `initial_scroll` together.
+- `SpecValidatorCompletenessTest` gains the first `menu` coverage in the
+  tree: both new rules, on the flat form and inside a group.
+- The Elisp builder rejects the trailing pair together and authors index 106
+  byte-identically (`chk "106"`).
+- Renderer unit and screenshot gates, 45 of 45 device tests, 78 Elisp suites,
+  the wire and Material unit suites, and the Companion build: all green.
+
+The `on_tap` enforcement is restricting, but only against senders already
+violating a MUST: no golden, fixture, or in-tree app carried a dispatchless
+item, and the existing 100 golden lines passed the new arm unchanged.
+
 ## Remaining gaps, in order of leverage
 
 1. Chrome colors. Done in slice 3 through scope theme roles. Shapes and
