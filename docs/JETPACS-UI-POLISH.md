@@ -267,3 +267,52 @@ Open items noticed on the tablet, not yet addressed:
 - The tablet's active profile was left at `grove.light` from Design Lab
   testing, so the host wore Grove's palette until reset with
   `(jetpacs-design-set-active-profile nil t)`.
+
+## Slice 6: the catalog's Visual editor on Foundation controls
+
+Landed 2026-09-03 as jetpacs-component-catalog ac67a48. The component
+catalog and the Design Lab already sat inside the presentation seam, so
+every node type the Foundation renderer draws was Foundation-drawn there
+with no code change. What was left to Material was what the Visual
+projection itself emitted: a tri-state dropdown (unset / true / false) for
+every boolean member, and a Jetpacs panel around every compound member.
+Both now use canonical nodes from the Grove program's set.
+
+- **Booleans are switches** on the existing native boolean edit action.
+  A switch is two-state, so an absent member is seeded from its effective
+  default (`enabled` means true when absent; everything else false) and
+  an optional member keeps the "use the default" icon button beside it,
+  the same shape optional strings already had. A presence-only flag
+  (Text's `selectable`) is a switch whose off position removes the member,
+  through a new closed `injected-presence` codec. The boolean edit handler
+  honors that one codec and collapses any other claim on the action to
+  `injected-boolean`, so a control cannot smuggle an arbitrary codec
+  through the boolean path.
+- **Compound members are disclosures.** Padding, corner, border, Semantics
+  and its nested objects, action descriptors, selection, toolbar, and a
+  toolbar item's long press are `collapsible` nodes seeded open only when
+  authored, with a header caption reading Authored or Default so a folded
+  editor still says which members are customized. Root and fixed-child
+  sections stay panels: they are the content, not a member of it.
+- **Closed enums stay dropdowns.** There is no Foundation dropdown yet, so
+  the eleven enum controls (variants, keyboards, offline policy, toolbar
+  operations, Tabs presentation, controlled values) keep Material's. The
+  next slice adds the node; the Design Lab restructuring then builds on it.
+
+### Verification record for slice 6
+
+- Elisp: the four catalog suites, 109 tests, three new: switches across a
+  specimen with an absent `enabled`, the presence codec end to end through
+  the edit document and the boolean handler, and the disclosures' seeding,
+  captions, unique catalog-owned ids and surviving panels.
+- Tablet, Text Field Visual under the baseline: `single_line` drew as the
+  Foundation switch on with its remove button; a tap flipped it, Emacs
+  rebuilt the page, and the Lisp projection read `:single_line
+  :json-false`. `enabled` drew on though absent; `scroll_here` drew off.
+  "Directional padding" drew folded with its chevron and "Default"
+  caption; a tap opened it on "Configure Directional padding". Offline
+  policy and Filter still drew as Material dropdowns, as expected.
+- The tablet's catalog tree had no stale `.elc`; the desktop checkout has
+  three from an interactive session on Aug 29 (gitignored, untouched).
+  The test runner sets `load-prefer-newer`, so they do not shadow the
+  suites, but a bare `emacs -l` does load them.
