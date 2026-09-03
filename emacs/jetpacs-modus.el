@@ -202,7 +202,10 @@ fine — there is a user at the keyboard."
            (delq nil
                  (append
                   (list (jetpacs-section-header "Companion Theme")
-                        (jetpacs-card (list (jetpacs-settings-item 'jetpacs-theme-mode)))
+                        ;; A person reads "Color scheme", not the variable.
+                        (jetpacs-card (list (jetpacs-settings-item
+                                             'jetpacs-theme-mode
+                                             :label "Color scheme")))
                         (jetpacs-section-header "Modus Themes")
                         (jetpacs-modus--current-card current)
                         (jetpacs-modus--actions-row))

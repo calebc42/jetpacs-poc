@@ -445,7 +445,7 @@ behind the consent gate)."
     (if (null req)
         (jetpacs-chrome-screen
          "Edit"
-         (jetpacs-empty-state :icon "info" :title "Nothing being edited")
+         (jetpacs-empty-state :icon "edit_off" :title "Nothing being edited")
          :back back)
       (let ((path (plist-get req :path)))
         (jetpacs-chrome-screen

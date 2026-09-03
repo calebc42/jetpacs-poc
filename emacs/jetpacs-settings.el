@@ -205,9 +205,18 @@ customize browser calls this across arbitrary defcustoms)."
 ;;;; Rendering
 
 (defun jetpacs-settings--doc-line (sym)
-  "First line of SYM's docstring, or nil."
+  "First line of SYM's docstring, or nil.
+A parenthesised spec reference such as \"(SPEC 18.4)\" is a note for
+the developer reading the source, not for the person reading the
+screen, so it is dropped."
   (let ((doc (documentation-property sym 'variable-documentation)))
-    (and doc (car (split-string (substitute-command-keys doc) "\n" t)))))
+    (and doc
+         (let ((line (car (split-string (substitute-command-keys doc)
+                                        "\n" t))))
+           (and line
+                (string-trim
+                 (replace-regexp-in-string
+                  "[ \t]*(\\(?:SPEC\\|§\\)[^)]*)" "" line)))))))
 
 (cl-defun jetpacs-settings-item (sym &key label (id-prefix "setting/")
                                      (set-action "settings.set")

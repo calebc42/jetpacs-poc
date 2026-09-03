@@ -259,7 +259,8 @@ rows: the push-loop report, and Inspect a screen."
                      (jetpacs-text "Clipboard, logs, buffers"
                                    :style "caption")
                      :spacing 2)
-     :weight 1))
+     :weight 1)
+    :align "center" :spacing 12)
    (jetpacs-chrome-row
     "Clipboard" :subtitle "the kill ring" :icon "content_paste"
     :on-tap (jetpacs-shell-open-surface-action "app:jetpacs.clip")

@@ -810,11 +810,14 @@ broken destination list costs that app's nest alone
              (when-let* ((dests (jetpacs-apps-destinations id)))
                (apply #'jetpacs-collapsible
                       (jetpacs-wire-id "apn" id)
+                      ;; The same anatomy as the drawer's plain rows:
+                      ;; the icon, a gap, the centered title.
                       (jetpacs-row
                        (jetpacs-icon (plist-get plist :icon))
                        (jetpacs-with-attrs
                         (jetpacs-text (plist-get plist :label))
-                        :weight 1))
+                        :weight 1)
+                       :align "center" :spacing 12)
                       (append
                        (mapcar (lambda (d)
                                  (jetpacs-apps--destination-row id d))

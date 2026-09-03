@@ -738,13 +738,13 @@ landing configuration never went through a handler."
                        :name "Search contents"))
                 (cdr content))))
     (ebp-path-refused
-     (jetpacs-empty-state :icon "info"
+     (jetpacs-empty-state :icon "folder_off"
                           :title "Can't open folder"
                           :caption (format "refused: %s" (cadr err))))
     (error
      ;; A listing race (deleted underneath us, permission flip) degrades
      ;; in place; the chrome error screen is for builder BUGS.
-     (jetpacs-empty-state :icon "info"
+     (jetpacs-empty-state :icon "folder_off"
                           :title "Can't open folder"
                           :caption (format "error: %s" (jetpacs-error-label err))))))
 
@@ -1013,7 +1013,7 @@ asking (back tapped, new query pushed) lets the sweep cancel the scan."
    "Search"
    (let ((req jetpacs-files--grep-request))
      (if (null req)
-         (jetpacs-empty-state :icon "info" :title "No search"
+         (jetpacs-empty-state :icon "search" :title "No search"
                               :caption "Submit a search from the browser")
        (let ((dir (plist-get req :dir))
              (query (plist-get req :query))
@@ -1031,7 +1031,7 @@ asking (back tapped, new query pushed) lets the sweep cancel the scan."
                                :owner jetpacs-files-owner
                                :push-target surface)
            (`(error . ,e)
-            (jetpacs-empty-state :icon "info" :title "Search failed"
+            (jetpacs-empty-state :icon "error" :title "Search failed"
                                  :caption e))
            (`(ready . ,result) (jetpacs-files--grep-cards result))
            (_ (jetpacs-column
@@ -1368,7 +1368,7 @@ snapshot from replacing live text."
   (let ((req jetpacs-files--edit))
     (if (null req)
         (jetpacs-chrome-screen
-         "Edit" (jetpacs-empty-state :icon "info" :title "Nothing being edited")
+         "Edit" (jetpacs-empty-state :icon "edit_off" :title "Nothing being edited")
          :back back)
       ;; Amendment #169 (R3): re-register the kind verdict on EVERY
       ;; build — the registry's own invariant.  The sync-attach

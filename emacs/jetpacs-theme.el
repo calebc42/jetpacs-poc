@@ -89,7 +89,7 @@ reconnect."
                  (const :tag "Native, forced light" light)
                  (const :tag "Native, forced dark" dark)
                  (const :tag "Mirror the Emacs theme" mirror)
-                 (const :tag "Off — never touch theme.set" off))
+                 (const :tag "Off — leave the Companion's theme alone" off))
   :set (lambda (sym val)
          (set-default sym val)
          ;; Live apply (guarded: :set also runs while this file loads,

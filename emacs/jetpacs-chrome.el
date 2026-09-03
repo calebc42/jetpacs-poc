@@ -262,8 +262,10 @@ EqualWeight default."
                      :alignment "center")
         :width 64 :height 32 :corner 16
         :bg (and selected "secondary"))
+       ;; M3 mutes the unselected label with on_surface_variant, a role
+       ;; the wire does not carry; both labels wear on_surface.
        (jetpacs-text (plist-get item :label) :style "label"
-                     :color (if selected "on_surface" "on_surface"))
+                     :color "on_surface")
        :spacing 4 :align "center")
       :alignment "center"
       :on-tap (plist-get item :on-tap))
