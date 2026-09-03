@@ -823,3 +823,34 @@ private fun JetpacsSwitchStates() {
         }
     }
 }
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 320)
+@Preview(name = "dark", widthDp = 400, heightDp = 320,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 320, fontScale = 1.5f)
+@Composable
+private fun JetpacsCollapsibleStates() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsCollapsible(
+                expanded = false,
+                onExpandedChange = {},
+                header = { BasicText("Inbox", style = JetpacsTheme.typography.choice) },
+            ) {}
+            JetpacsCollapsible(
+                expanded = true,
+                onExpandedChange = {},
+                header = { BasicText("Notes", style = JetpacsTheme.typography.choice) },
+            ) {
+                BasicText("Org remains the source of truth", style = JetpacsTheme.typography.body)
+                BasicText("Properties (2)", style = JetpacsTheme.typography.caption)
+            }
+        }
+    }
+}

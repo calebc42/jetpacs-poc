@@ -167,6 +167,9 @@
         "switch.track",
         "switch.thumb",
         "switch.label",
+        "collapsible.header",
+        "collapsible.chevron",
+        "collapsible.body",
         "action.container",
         "action.label",
         "choice.container",
@@ -217,7 +220,7 @@
       "type": "array",
       "items": {"type": "ref", "ref": "component-style-binding"},
       "min_items": 0,
-      "max_items": 77
+      "max_items": 80
     },
     "theme-role-map": {
       "type": "identifier-map",

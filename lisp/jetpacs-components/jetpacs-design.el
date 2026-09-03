@@ -45,6 +45,7 @@
     "menu.trigger" "menu.container" "menu.item" "menu.item-label"
     "menu.item-supporting" "menu.group-label"
     "switch.track" "switch.thumb" "switch.label"
+    "collapsible.header" "collapsible.chevron" "collapsible.body"
     "action.container" "action.label"
     "choice.container" "choice.indicator" "choice.label"
     "panel.container" "panel.label"

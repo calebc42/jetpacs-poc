@@ -229,6 +229,7 @@ val JetpacsDesignCanonicalOverrides: List<ComposeCanonicalNodeOverride> = listOf
     JetpacsDesignSectionHeaderRenderer,
     JetpacsDesignMenuRenderer,
     JetpacsDesignSwitchRenderer,
+    JetpacsDesignCollapsibleRenderer,
     JetpacsDesignTextInputRenderer,
     JetpacsDesignEditorRenderer,
 )

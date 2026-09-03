@@ -17,6 +17,7 @@ import androidx.compose.foundation.style.scale
 import androidx.compose.foundation.style.selected
 import androidx.compose.foundation.style.state
 import androidx.compose.runtime.Stable
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 
 private val StyleScope.tokens: JetpacsThemeValue
@@ -428,6 +429,28 @@ object JetpacsComponentStyles {
     }
 
     val switchLabel = Style { textStyle(tokens.typography.choice) }
+
+    /** The disclosure header: chevron then the authored header, one row. */
+    val collapsibleHeader = Style {
+        fillWidth()
+        minHeight(48.dp)
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+    }
+
+    /** The chevron's cell: a full target, since it is what toggles. */
+    val collapsibleChevron = Style {
+        width(40.dp)
+        height(48.dp)
+        textStyle(TextStyle(color = tokens.colors.mutedContent))
+    }
+
+    /** The revealed children, indented under the header's content. */
+    val collapsibleBody = Style {
+        fillWidth()
+        contentPadding(horizontal = 0.dp, vertical = 0.dp)
+    }
 
     /** Shared inline layout for controlled tab and section navigators. */
     val navigator = Style {

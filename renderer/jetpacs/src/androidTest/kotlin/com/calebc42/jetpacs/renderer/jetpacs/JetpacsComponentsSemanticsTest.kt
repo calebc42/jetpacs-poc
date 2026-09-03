@@ -38,6 +38,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.longClick
+import androidx.compose.ui.test.performTouchInput
+import androidx.compose.ui.test.onParent
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.performSemanticsAction
@@ -798,6 +801,47 @@ class JetpacsComponentsSemanticsTest {
         compose.onNodeWithContentDescription("Accessibility, 4 of 5")
             .assertIsDisplayed()
             .assertIsFocused()
+    }
+
+    private fun collapsibleNode(collapsed: Boolean): JsonObject = Json.parseToJsonElement(
+        """{"t":"collapsible","id":"outline-1","collapsed":$collapsed,
+            "header":{"t":"text","text":"Inbox heading"},
+            "children":[{"t":"text","text":"Capture quick notes here."}],
+            "on_long_tap":{"action":"grove.outline.menu"}}""",
+    ) as JsonObject
+
+    @Test
+    fun theDisclosureHeaderTogglesAndAnnouncesItsState() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignCollapsibleRenderer.render(collapsibleNode(collapsed = true), context, Modifier)
+            }
+        }
+        // Seeded collapsed: the children are not composed at all.
+        compose.onNodeWithText("Capture quick notes here.").assertDoesNotExist()
+        val header = compose.onNodeWithText("Inbox heading", useUnmergedTree = true)
+            .onParent()
+        header.assertHeightIsAtLeast(48.dp).performClick()
+        compose.onNodeWithText("Capture quick notes here.").assertIsDisplayed()
+        header.performClick()
+        compose.onNodeWithText("Capture quick notes here.").assertDoesNotExist()
+        compose.runOnIdle { assertTrue(context.actionNames.isEmpty()) }
+    }
+
+    @Test
+    fun aLongPressOnTheHeaderDispatchesOnLongTap() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignCollapsibleRenderer.render(collapsibleNode(collapsed = false), context, Modifier)
+            }
+        }
+        compose.onNodeWithText("Inbox heading", useUnmergedTree = true).onParent()
+            .performTouchInput { longClick() }
+        compose.runOnIdle { assertEquals(listOf("grove.outline.menu"), context.actionNames) }
+        // A long press is not a toggle: the children stay.
+        compose.onNodeWithText("Capture quick notes here.").assertIsDisplayed()
     }
 
     private fun switchNode(checked: Boolean = false, enabled: Boolean = true): JsonObject =

@@ -108,6 +108,10 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     SwitchTrack("switch.track"),
     SwitchThumb("switch.thumb"),
     SwitchLabel("switch.label"),
+    /** Canonical `collapsible`: the disclosure header, its chevron, the body. */
+    CollapsibleHeader("collapsible.header"),
+    CollapsibleChevron("collapsible.chevron"),
+    CollapsibleBody("collapsible.body"),
     ActionContainer("action.container"),
     ActionLabel("action.label"),
     ChoiceContainer("choice.container"),
