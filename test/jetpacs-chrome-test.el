@@ -1126,6 +1126,45 @@ persists across drills — while a screen authoring its own bar wins."
                            "mine"))))
       (jetpacs-chrome-remove "app:dockdemo"))))
 
+(ert-deftest jetpacs-chrome-drawer-rides-every-screen-without-an-arrow ()
+  "The drawer seam hangs on the root and on a pushed peer that declined
+the stack's back (a Tier-1 destination beside the rail), and stays off a
+drill that draws its arrow — the hamburger and the arrow are one slot."
+  (let ((jetpacs-chrome-drawer-function
+         (lambda (_s)
+           (jetpacs-collapsible "drawer-nest" (jetpacs-text "drawer")
+                                (jetpacs-text "row")))))
+    (unwind-protect
+        (progn
+          (with-jetpacs-owner "drawerdemo"
+            (jetpacs-chrome-define-root "drawerdemo" "root"
+                                        (lambda (back)
+                                          (jetpacs-chrome-screen
+                                           "R" (jetpacs-text "r") :back back))))
+          (jetpacs-chrome--stack-insert
+           "app:drawerdemo" "peer"
+           (lambda (_back)
+             (jetpacs-chrome-screen "P" (jetpacs-text "p"))))
+          (jetpacs-chrome--stack-insert
+           "app:drawerdemo" "drill"
+           (lambda (back)
+             (jetpacs-chrome-screen "D" (jetpacs-text "d") :back back)))
+          (let* ((mv (jetpacs-chrome--build "app:drawerdemo"))
+                 (views (plist-get mv :views)))
+            (let ((root-drawer (plist-get (gethash "root" views) :drawer))
+                  (peer-drawer (plist-get (gethash "peer" views) :drawer)))
+              (should (equal (plist-get (plist-get root-drawer :header) :text)
+                             "drawer"))
+              (should (equal (plist-get (plist-get peer-drawer :header) :text)
+                             "drawer"))
+              ;; Ids are document-unique: the peer's copy wears its own.
+              (should (equal (plist-get root-drawer :id) "drawer-nest"))
+              (should-not (equal (plist-get peer-drawer :id) "drawer-nest"))
+              ;; Still a SPEC 4.4 identifier (signals otherwise).
+              (jetpacs-check-identifier (plist-get peer-drawer :id) ":id"))
+            (should-not (plist-member (gethash "drill" views) :drawer))))
+      (jetpacs-chrome-remove "app:drawerdemo"))))
+
 (ert-deftest jetpacs-chrome-items-dock-wears-bottom-bar-on-compact ()
   "The data dock: on a compact width the destinations become a real M3
 navigation bar — the catalog-proven item composition, selection as the

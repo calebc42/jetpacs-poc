@@ -226,6 +226,48 @@ must cost the dock, never every chrome surface in the process."
                       (jetpacs-error-label err))
              nil))))
 
+(defun jetpacs-chrome--namespace-ids (node view-id)
+  "Return NODE with every `:id' below it prefixed for VIEW-ID.
+Node ids are document-unique (SPEC 16.1) and one multi_view document
+carries every cached view, so a drawer riding more than one view must
+not repeat its collapsibles' literal ids.  The root keeps the originals;
+each other view wears its own.  Copy-on-write: NODE is not mutated."
+  (cl-labels ((walk (value)
+                (cond
+                 ((vectorp value) (vconcat (mapcar #'walk (append value nil))))
+                 ((and (listp value) (keywordp (car value)))
+                  (let ((out nil))
+                    (cl-loop for (key child) on value by #'cddr
+                             do (push key out)
+                                (push (if (and (eq key :id) (stringp child)
+                                               (stringp (plist-get value :t)))
+                                          (jetpacs-wire-id view-id child)
+                                        (walk child))
+                                      out))
+                    (nreverse out)))
+                 ((listp value) (mapcar #'walk value))
+                 (t value))))
+    (walk node)))
+
+(defun jetpacs-chrome--scaffold-arrow-p (scaffold)
+  "Non-nil when SCAFFOLD's top bar starts with the chrome's back arrow.
+The arrow is the leading `icon_button' named `arrow_back' that
+`jetpacs-chrome-screen' authors from BACK — the same spine the
+Companion reads for the system gesture."
+  (let* ((bar (plist-get scaffold :top_bar))
+         (first (car (append (plist-get bar :children) nil))))
+    (and (jetpacs-node-p first)
+         (equal (plist-get first :t) "icon_button")
+         (equal (plist-get first :icon) "arrow_back"))))
+
+(defun jetpacs-chrome--shows-back-p (node)
+  "Non-nil when the scaffold reachable through NODE draws a back arrow."
+  (let (found)
+    (jetpacs-chrome--scaffold-apply
+     node
+     (lambda (s) (setq found (jetpacs-chrome--scaffold-arrow-p s)) s))
+    found))
+
 (defun jetpacs-chrome--drawer (surface)
   "SURFACE's drawer node from `jetpacs-chrome-drawer-function', or nil.
 A signal or a non-node return degrades to nil — a broken drawer
@@ -868,18 +910,29 @@ views remain in the complete snapshot required by SPEC 13.2."
                                  (list :surface surface :screen id) e))))
                           (let ((n (jetpacs-chrome--present
                                     (funcall (cdr entry) back))))
-                            ;; Root-only drawer; authored slots always win.
-                            ;; Composition reaches the scaffold THROUGH an
-                            ;; app's presentation wrapper, so presenting a
-                            ;; screen never costs it the host's chrome.
-                            (when (and drawer (null back))
-                              (setq n (jetpacs-chrome--scaffold-apply
-                                       n
-                                       (lambda (s)
-                                         (if (plist-member s :drawer)
-                                             s
-                                           (append s
-                                                   (list :drawer drawer)))))))
+                            ;; The drawer hangs on every screen that draws
+                            ;; no back arrow: the root, and a peer
+                            ;; destination that declined the stack's back
+                            ;; (a Tier-1 place beside the rail).  A drill
+                            ;; keeps its arrow and gets no hamburger, as
+                            ;; Material's own navigation icon would.
+                            ;; Authored slots always win.  Composition
+                            ;; reaches the scaffold THROUGH an app's
+                            ;; presentation wrapper, so presenting a screen
+                            ;; never costs it the host's chrome.
+                            (when (and drawer
+                                       (not (jetpacs-chrome--shows-back-p n)))
+                              (let ((mine (if back
+                                              (jetpacs-chrome--namespace-ids
+                                               drawer id)
+                                            drawer)))
+                                (setq n (jetpacs-chrome--scaffold-apply
+                                         n
+                                         (lambda (s)
+                                           (if (plist-member s :drawer)
+                                               s
+                                             (append s
+                                                     (list :drawer mine))))))))
                             ;; Adaptive dock; authored bar/rail opts out.
                             (when dock
                               (setq n (jetpacs-chrome--scaffold-apply
