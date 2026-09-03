@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.input.key.Key
@@ -801,6 +802,74 @@ class JetpacsComponentsSemanticsTest {
         compose.onNodeWithContentDescription("Accessibility, 4 of 5")
             .assertIsDisplayed()
             .assertIsFocused()
+    }
+
+    private fun monthGridNode(month: String, marks: String = "{}", extra: String = ""): JsonObject =
+        Json.parseToJsonElement(
+            """{"t":"month_grid","id":"planning","month":"$month","marks":$marks,
+                "min_date":"2026-09-05","max_month":"2026-10",
+                "on_day_tap":{"action":"planning.pick"},
+                "on_month_change":{"action":"planning.month"}$extra}""",
+        ) as JsonObject
+
+    @Test
+    fun aDayTapDispatchesItsIsoDateAndADisabledDayDoesNot() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMonthGridRenderer.render(monthGridNode("2026-09"), context, Modifier)
+            }
+        }
+        compose.onNodeWithContentDescription("2026-09-10")
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("planning.pick"), context.actionNames)
+            assertEquals(JsonPrimitive("2026-09-10"), context.actions.single().second)
+        }
+        // Before min_date: drawn, announced disabled, never dispatched.
+        compose.onNodeWithContentDescription("2026-09-03").assertIsNotEnabled().performClick()
+        compose.runOnIdle { assertEquals(1, context.actionNames.size) }
+    }
+
+    @Test
+    fun theArrowsChangeTheMonthWithinTheBoundsAndReportIt() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMonthGridRenderer.render(monthGridNode("2026-09"), context, Modifier)
+            }
+        }
+        compose.onNodeWithText("Sep 2026").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Next month").assertIsEnabled().performClick()
+        compose.onNodeWithText("Oct 2026").assertIsDisplayed()
+        compose.runOnIdle {
+            assertEquals(listOf("planning.month"), context.actionNames)
+            assertEquals(JsonPrimitive("2026-10"), context.actions.single().second)
+        }
+        // max_month reached: the arrow is disabled, not merely inert.
+        compose.onNodeWithContentDescription("Next month").assertIsNotEnabled()
+    }
+
+    @Test
+    fun aMarkOnlyRepushKeepsTheBrowsedMonthAndAnAuthoredChangeAdoptsIt() {
+        val context = RecordingContext()
+        val node = mutableStateOf(monthGridNode("2026-09"))
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMonthGridRenderer.render(node.value, context, Modifier)
+            }
+        }
+        compose.onNodeWithContentDescription("Next month").performClick()
+        compose.onNodeWithText("Oct 2026").assertIsDisplayed()
+        // Same authored month, new marks: the user's browse survives.
+        compose.runOnIdle { node.value = monthGridNode("2026-09", marks = """{"2026-10-03":{"dots":1}}""") }
+        compose.onNodeWithText("Oct 2026").assertIsDisplayed()
+        compose.onNodeWithContentDescription("2026-10-03, 1 marked").assertIsDisplayed()
+        // A changed authored month is adopted, browse or no browse.
+        compose.runOnIdle { node.value = monthGridNode("2026-08") }
+        compose.onNodeWithText("Aug 2026").assertIsDisplayed()
     }
 
     private fun collapsibleNode(collapsed: Boolean): JsonObject = Json.parseToJsonElement(

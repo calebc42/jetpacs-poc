@@ -452,6 +452,52 @@ object JetpacsComponentStyles {
         contentPadding(horizontal = 0.dp, vertical = 0.dp)
     }
 
+    /** The calendar card; a profile gives it a surface, this gives it width. */
+    val monthGrid = Style { fillWidth() }
+
+    /** The month label between the two arrows. */
+    val monthGridHeader = Style { textStyle(tokens.typography.choice) }
+
+    /** One month-navigation arrow: a full target, faced like a control. */
+    val monthGridNav = Style {
+        width(48.dp)
+        height(48.dp)
+        shape(tokens.shapes.control)
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** The seven weekday initials over the grid. */
+    val monthGridWeekday = Style { textStyle(tokens.typography.caption) }
+
+    /**
+     * One day cell. Selected and a range cap fill it; a profile's own
+     * `selected` rule is how that face is restated.
+     */
+    val monthGridDay = Style {
+        shape(androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
+        textStyle(tokens.typography.choice)
+        selected {
+            background(tokens.colors.accent)
+            contentColor(tokens.colors.onAccent)
+        }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** Today, when it is not otherwise filled: a ring, never a fill. */
+    val monthGridToday = Style { border(1.5.dp, tokens.colors.accent) }
+
+    /** A day inside a range: the band's face, drawn behind the number. */
+    val monthGridRange = Style { background(tokens.colors.selectedSurface) }
+
+    /** The dots under a marked day; the color is what a profile changes. */
+    val monthGridMark = Style { textStyle(TextStyle(color = tokens.colors.accent)) }
+
     /** Shared inline layout for controlled tab and section navigators. */
     val navigator = Style {
         fillWidth()

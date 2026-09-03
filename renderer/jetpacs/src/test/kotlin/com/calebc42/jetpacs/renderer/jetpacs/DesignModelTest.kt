@@ -294,7 +294,7 @@ class DesignModelTest {
         assertEquals(DesignComponentStyleSlot.TextBody, slotForStyle("unknown"))
         assertEquals(DesignComponentStyleSlot.TextMono, slotForStyle("mono"))
         assertTrue(scope.componentStyle(DesignComponentStyleSlot.TextTitle) == null)
-        assertEquals(80, DesignComponentStyleSlot.entries.size)
+        assertEquals(88, DesignComponentStyleSlot.entries.size)
     }
 
     @Test

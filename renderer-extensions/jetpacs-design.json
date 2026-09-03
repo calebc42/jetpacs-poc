@@ -170,6 +170,14 @@
         "collapsible.header",
         "collapsible.chevron",
         "collapsible.body",
+        "month-grid.container",
+        "month-grid.header",
+        "month-grid.nav",
+        "month-grid.weekday",
+        "month-grid.day",
+        "month-grid.today",
+        "month-grid.range",
+        "month-grid.mark",
         "action.container",
         "action.label",
         "choice.container",
@@ -220,7 +228,7 @@
       "type": "array",
       "items": {"type": "ref", "ref": "component-style-binding"},
       "min_items": 0,
-      "max_items": 80
+      "max_items": 88
     },
     "theme-role-map": {
       "type": "identifier-map",

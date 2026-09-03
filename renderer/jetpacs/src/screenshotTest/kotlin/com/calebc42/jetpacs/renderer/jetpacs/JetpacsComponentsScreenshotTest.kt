@@ -854,3 +854,71 @@ private fun JetpacsCollapsibleStates() {
         }
     }
 }
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 380)
+@Preview(name = "dark", widthDp = 400, heightDp = 380,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 380, fontScale = 1.5f)
+@Composable
+private fun JetpacsMonthGridPlanning() {
+    // Grove's planning shape: a scheduled/deadline range with styled caps,
+    // two marked days, and today.
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsMonthGrid(
+                month = "2026-09",
+                today = "2026-09-01",
+                locale = java.util.Locale.US,
+                days = MonthGridDays(
+                    marks = mapOf(
+                        "2026-09-04" to MonthGridMark(2, null),
+                        "2026-09-06" to MonthGridMark(1, null),
+                        "2026-09-16" to MonthGridMark(3, null),
+                    ),
+                    dayStyles = mapOf(
+                        "2026-09-04" to MonthGridDayStyle("primary", "on_primary"),
+                        "2026-09-08" to MonthGridDayStyle("error", "on_error"),
+                    ),
+                    rangeStart = "2026-09-04",
+                    rangeEnd = "2026-09-08",
+                ),
+                onDayTap = {},
+                onMonthChange = {},
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 380)
+@Composable
+private fun JetpacsMonthGridSelection() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsMonthGrid(
+                month = "2026-09",
+                today = "2026-09-01",
+                locale = java.util.Locale.US,
+                days = MonthGridDays(
+                    selected = "2026-09-15",
+                    maxDate = "2026-09-20",
+                    disabledWeekdays = setOf(0, 6),
+                    maxMonth = "2026-09",
+                ),
+                onDayTap = {},
+                onMonthChange = {},
+            )
+        }
+    }
+}
