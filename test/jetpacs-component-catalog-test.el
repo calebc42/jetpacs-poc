@@ -257,9 +257,9 @@
   (should (equal jetpacs-components-extension "jetpacs.components"))
   (should (equal (cdr (assoc jetpacs-components-extension
                              jetpacs-renderer-extensions))
-                 '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
-                   "jetpacs.scope" "jetpacs.section_navigator"
-                   "jetpacs.tabs")))
+                 '("jetpacs.action" "jetpacs.choice" "jetpacs.list_item"
+                   "jetpacs.panel" "jetpacs.scope"
+                   "jetpacs.section_navigator" "jetpacs.tabs")))
   (should (equal (jetpacs-renderer-target-node-types 'dialog) nil))
   (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
                   "jetpacs.scope" "jetpacs.section_navigator"

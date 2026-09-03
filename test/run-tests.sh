@@ -9,7 +9,8 @@ components_dir=${JETPACS_COMPONENTS_DIR:-"$(pwd)/../jetpacs-components"}
 
 for suite in jetpacs-component-authoring-test \
              jetpacs-component-catalog-actions-test \
-             jetpacs-component-catalog-test; do
+             jetpacs-component-catalog-test \
+             jetpacs-design-lab-test; do
   emacs -Q --batch \
     -L "$ebp_el_dir/lisp" -L "$jetpacs_dir/emacs" \
     -L "$authoring_dir/lisp" -L "$components_dir/lisp/jetpacs-components" \

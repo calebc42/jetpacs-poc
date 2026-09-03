@@ -34,6 +34,7 @@
 (require 'jetpacs-apps)
 (require 'ebp-sync)
 (require 'ebp-complete)
+(require 'jetpacs-design-lab)
 
 (defconst jetpacs-component-catalog-owner "jpcatalog"
   "Owner of the Jetpacs Components catalog surface and actions.")
