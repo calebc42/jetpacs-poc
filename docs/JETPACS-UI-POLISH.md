@@ -108,12 +108,43 @@ override's outermost layout node. Every other override in
   separate test pins the card fallback with advertisement stubbed out. The
   org-render golden regenerated with exactly one change: the menu name.
 
+## Slice 3: chrome polish
+
+- **Focus ring on open.** Opening the drawer hands focus to its first row,
+  and the profile's `focused` rule drew a ring on it. Every Foundation
+  control now attaches its focus interactions through
+  `Modifier.jetpacsFocusable` (`JetpacsFocus.kt`), which feeds the style
+  state only while `LocalInputModeManager` reports keyboard input. The node
+  stays focusable for accessibility and keyboard travel; the ring appears on
+  the first key press and never on a tap. Twelve call sites, one rule.
+- **Drawer anatomy.** The app nests' headers were `row[icon, title]` with no
+  gap and top alignment; they now share the plain rows' anatomy (icon, 12 dp,
+  centered title, subtitle where one exists). The leading chevron still
+  offsets a nest's icon from a plain row's by its own width; that placement
+  is the collapsible renderer's, and Grove's outline relies on it being
+  leading, so it stays.
+- **Dead conditional.** The bottom bar's label color was
+  `(if selected "on_surface" "on_surface")`. M3 mutes the unselected label
+  with `on_surface_variant`, a role the wire does not carry, so the label is
+  `on_surface` unconditionally with the reason recorded beside it.
+- **Theme copy.** The Theme screen rendered the color-scheme option under
+  its variable name with its docstring's spec reference as the caption. The
+  row is labelled "Color scheme", and `jetpacs-settings--doc-line` drops a
+  parenthesised `(SPEC n.n)` note from any option's caption: that note is
+  for the developer reading the source.
+- **Empty states.** Files used the `info` glyph for every state; "Can't open
+  folder", "No search", "Search failed" and "Nothing being edited" now use
+  `folder_off`, `search`, `error` and `edit_off`, all in the icon table the
+  lint test checks.
+
+Not done in this slice: the "stale rail" note from the audit did not
+reproduce on the tablet (the rail selects Eval on the hub, Files on Files,
+nothing on host screens, which is right); Glasspane's back arrow beside the
+rail and its capture FAB next to Files' "+" are Glasspane authoring and move
+to slice 5.
+
 ## Remaining slices
 
-3. Chrome polish: drawer alignment, the dead navigation-bar conditional,
-   the stale rail, Glasspane's back arrow on the rail, Theme copy that leaks
-   `jetpacs-theme-mode` and "(SPEC 18.4)", the duplicate + and FAB, empty
-   states and section headers.
 4. `chrome.*` slots (Kotlin): top bar title and tab label typography and
    shapes, so Material chrome takes the profile's type.
 5. Glasspane: rows through the list item, hex colors to theme roles,
@@ -130,9 +161,7 @@ Open items noticed on the tablet, not yet addressed:
   ebp-compose decision, not a host one, so it is recorded here for a
   separate change.
 
-- The drawer's collapsible header shows a focus ring on open. The Foundation
-  focused rule fires on programmatic focus; it should be gated to keyboard
-  input mode.
+- Resolved in slice 3: the focus ring on the drawer's first row on open.
 - Resolved 2026-09-03: the REPL authored its editor `chromeless`, which
   Material ignored and Foundation honored, leaving an invisible input strip.
   The flag is dropped; the editor wears the `editor.surface` outline. The
