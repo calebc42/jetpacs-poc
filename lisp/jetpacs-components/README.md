@@ -79,6 +79,12 @@ surface is sent.
                           :enabled BOOL :selected BOOL :toggled BOOL)
 ```
 
+The closed vocabularies the builders enforce are public, so an editor can
+offer exactly the values a leaf accepts: `jetpacs-design-states`,
+`jetpacs-design-easings`, `jetpacs-design-font-families`,
+`jetpacs-design-font-weights`, `jetpacs-design-text-aligns`, and the
+property-to-kind table `jetpacs-design-property-kinds`.
+
 `jetpacs-design-material.el` is a small proof library with a filled button,
 passive card, and controlled two-option selector. It remains ordinary Elisp
 authoring over Foundation-backed renderer nodes; it does not expose or depend

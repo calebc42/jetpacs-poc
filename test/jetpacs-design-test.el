@@ -265,5 +265,39 @@ bare scaffold, only under an advertised runtime."
       (jetpacs-design-delete-user-profile "user")
       (should-not jetpacs-design-active-profile-id))))
 
+(ert-deftest jetpacs-design-closed-vocabularies-are-public ()
+  "The closed enums an editor offers are the ones the builders enforce."
+  (should (equal jetpacs-design-states
+                 '("disabled" "selected" "toggled" "hovered" "focused"
+                   "pressed")))
+  (should (equal jetpacs-design-easings
+                 '("linear" "ease-in" "ease-out" "ease-in-out" "spring")))
+  (should (equal jetpacs-design-font-families
+                 '("system" "plex-sans" "plex-serif" "plex-mono")))
+  (should (equal jetpacs-design-font-weights
+                 '(100 200 300 400 500 600 700 800 900)))
+  (should (equal jetpacs-design-text-aligns '("start" "center" "end")))
+  (should (equal (cdr (assoc "fill_width" jetpacs-design-property-kinds))
+                 "boolean"))
+  (dolist (state jetpacs-design-states)
+    (should (equal (plist-get (jetpacs-design-rule state nil) :state) state)))
+  (should-error (jetpacs-design-rule "active" nil))
+  (dolist (easing jetpacs-design-easings)
+    (should (equal (plist-get (jetpacs-design-motion 100 easing) :easing)
+                   easing)))
+  (should-error (jetpacs-design-motion 100 "bounce"))
+  (dolist (family jetpacs-design-font-families)
+    (should (equal (plist-get (jetpacs-design-font-family family) :value)
+                   family)))
+  (should-error (jetpacs-design-font-family "plex-display"))
+  (dolist (weight jetpacs-design-font-weights)
+    (should (equal (plist-get (jetpacs-design-font-weight weight) :value)
+                   (number-to-string weight))))
+  (should-error (jetpacs-design-font-weight 450))
+  (dolist (align jetpacs-design-text-aligns)
+    (should (equal (plist-get (jetpacs-design-text-align align) :value)
+                   align)))
+  (should-error (jetpacs-design-text-align "justify")))
+
 (provide 'jetpacs-design-test)
 ;;; jetpacs-design-test.el ends here

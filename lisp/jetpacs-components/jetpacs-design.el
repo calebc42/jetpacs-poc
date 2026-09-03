@@ -71,7 +71,7 @@
     "chrome.drawer" "chrome.snackbar")
   "Closed semantic-component visual slots accepted by design scopes.")
 
-(defconst jetpacs-design--property-kinds
+(defconst jetpacs-design-property-kinds
   '(("background_color" . "color")
     ("content_color" . "color")
     ("border_color" . "color")
@@ -97,15 +97,28 @@
     ("font_weight" . "font-weight")
     ("text_align" . "text-align")
     ("fill_width" . "boolean"))
-  "Property names paired with their direct value kinds.")
+  "Property names paired with their direct value kinds.
+Public so an editor can offer only the values a property accepts.")
 
-(defconst jetpacs-design--states
+(defconst jetpacs-design-states
   '("disabled" "selected" "toggled" "hovered" "focused" "pressed")
   "Closed state names accepted by an authored style rule.")
 
-(defconst jetpacs-design--easings
+(defconst jetpacs-design-easings
   '("linear" "ease-in" "ease-out" "ease-in-out" "spring")
   "Closed easing names accepted by an authored motion.")
+
+(defconst jetpacs-design-font-families
+  '("system" "plex-sans" "plex-serif" "plex-mono")
+  "Closed font family names a font-family value may carry.")
+
+(defconst jetpacs-design-font-weights
+  '(100 200 300 400 500 600 700 800 900)
+  "Closed font weights, the 100 steps from 100 through 900.")
+
+(defconst jetpacs-design-text-aligns
+  '("start" "center" "end")
+  "Closed text alignments a text-align value may carry.")
 
 (defun jetpacs-design--finite-number-p (value)
   "Return non-nil when VALUE is a finite number."
@@ -161,19 +174,19 @@ MINIMUM and MAXIMUM are inclusive; WHAT identifies the authored field."
 
 (defun jetpacs-design-font-family (value)
   "Build a design font-family VALUE."
-  (unless (member value '("system" "plex-sans" "plex-serif" "plex-mono"))
+  (unless (member value jetpacs-design-font-families)
     (error "jetpacs-design: unknown font family %S" value))
   (jetpacs-design--value "font-family" value))
 
 (defun jetpacs-design-font-weight (value)
   "Build a design font weight VALUE in 100 steps from 100 through 900."
-  (unless (and (integerp value) (<= 100 value 900) (zerop (% value 100)))
+  (unless (memq value jetpacs-design-font-weights)
     (error "jetpacs-design: font weight must be a 100 step from 100 to 900"))
   (jetpacs-design--value "font-weight" (number-to-string value)))
 
 (defun jetpacs-design-text-align (value)
   "Build a design text-alignment VALUE: start, center, or end."
-  (unless (member value '("start" "center" "end"))
+  (unless (member value jetpacs-design-text-aligns)
     (error "jetpacs-design: unknown text alignment %S" value))
   (jetpacs-design--value "text-align" value))
 
@@ -224,7 +237,7 @@ references are resolved when their containing scope is built."
    entries 64 "properties"
    (lambda (value name)
      (jetpacs-design--checked-value value name)
-     (let ((expected (cdr (assoc name jetpacs-design--property-kinds)))
+     (let ((expected (cdr (assoc name jetpacs-design-property-kinds)))
            (actual (plist-get value :kind)))
        (unless expected
          (error "jetpacs-design: unknown property %S" name))
@@ -246,7 +259,7 @@ references are resolved when their containing scope is built."
 (cl-defun jetpacs-design-rule (state properties &key motion)
   "Build a STATE rule over checked property alist PROPERTIES.
 MOTION, when present, names a motion in the effective design scope."
-  (unless (member state jetpacs-design--states)
+  (unless (member state jetpacs-design-states)
     (error "jetpacs-design: unknown state %S" state))
   (when motion (jetpacs-check-identifier motion "rule motion"))
   (jetpacs-make-node nil
@@ -262,7 +275,7 @@ most 16 elements.  MOTION names a motion in the effective scope."
     (error "jetpacs-design: rules must be a proper list of at most 16 rules"))
   (dolist (rule rules)
     (unless (and (proper-list-p rule)
-                 (member (plist-get rule :state) jetpacs-design--states)
+                 (member (plist-get rule :state) jetpacs-design-states)
                  (plist-member rule :properties))
       (error "jetpacs-design: each rule must come from `jetpacs-design-rule'")))
   (when motion (jetpacs-check-identifier motion "style motion"))
@@ -279,7 +292,7 @@ most 16 elements.  MOTION names a motion in the effective scope."
   "Build a motion lasting DURATION-MS with EASING."
   (unless (and (integerp duration-ms) (<= 0 duration-ms 10000))
     (error "jetpacs-design: duration must be an integer from 0 to 10000"))
-  (unless (member easing jetpacs-design--easings)
+  (unless (member easing jetpacs-design-easings)
     (error "jetpacs-design: unknown easing %S" easing))
   (jetpacs-make-node nil :duration_ms duration-ms :easing easing))
 
@@ -424,7 +437,7 @@ THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
             (unless (and (proper-list-p value)
                          (integerp (plist-get value :duration_ms))
                          (member (plist-get value :easing)
-                                 jetpacs-design--easings))
+                                 jetpacs-design-easings))
               (error "jetpacs-design: motion %s must come from a motion builder"
                      name))
             value))))
