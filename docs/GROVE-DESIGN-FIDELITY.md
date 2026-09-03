@@ -512,6 +512,44 @@ The `on_tap` enforcement is restricting, but only against senders already
 violating a MUST: no golden, fixture, or in-tree app carried a dispatchless
 item, and the existing 100 golden lines passed the new arm unchanged.
 
+## Slice 9: a Foundation `switch`
+
+Grove has three switches, all on its settings screen, all the same shape:
+`id`, `checked`, `label`, `on_change`. The Android app draws a 40 x 23 pill
+-- raised surface off, accent on -- with an 18 dp surface thumb that slides.
+
+A design-scoped `switch` override, honoring every member including
+`thumb_icon`, so it never declines. The row is the one toggle target, so the
+label is part of what a screen reader announces and a tap anywhere on the
+row flips it; Material's row is two targets, the label and the control.
+
+State is the host's, mirrored from the choice component and the Material
+renderer alike: the live value is seeded from the store at the node's epoch
+and falls back to the authored `checked`, and a flip publishes
+`state.changed` before `on_change`, in that order. A device test asserts the
+order and that a stored value outranks the authored one.
+
+Three slots, 74 -> 77: `switch.track`, `switch.thumb`, `switch.label`. The
+thumb's travel is measured rather than assumed, so Grove sizes the track and
+thumb through the slot (`width`, `height`, `corner_radius` are design
+properties) and the thumb still rests inset from each end. Two new Grove
+styles carry the app's pill; the renderer's default metrics never learn them.
+
+### Verification record for slice 9
+
+- 61 renderer unit tests; 48 of 48 device tests, 3 new: the row as one
+  48 dp `Switch` target publishing `state:true` then `action`, a disabled
+  row dispatching nothing, and a stored value outranking `checked`.
+- Screenshot references for off, on, on-with-glyph and disabled, in compact,
+  dark and 1.5x font scale.
+- Grove 40 of 40, including the assertion that every slot is bound.
+- Companion configuration test with `switch` in the pinned override set.
+- Tablet: Grove's settings screen draws its three switches as the app's own
+  pill, primary on and raised surface off, sized through the slot. Tapping
+  the LABEL side of "Show drawers initially" flipped it -- Emacs received
+  the change, set the variable, and rebuilt the screen checked -- and a
+  second tap restored it.
+
 ## Remaining gaps, in order of leverage
 
 1. Chrome colors. Done in slice 3 through scope theme roles. Shapes and
