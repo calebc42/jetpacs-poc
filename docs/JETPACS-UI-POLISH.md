@@ -187,6 +187,29 @@ snackbar.
   and rail labels take the seam's font size and keep Material's `titleSmall`
   without it.
 
+### Adversarial review of slice 4
+
+Checked and held: nested scopes merge their parent's component bindings, so
+an inner scope that binds one chrome slot recomputes the whole value from
+the merged bindings rather than dropping the outer scope's fields, and the
+`?: parentChrome` fallback only fires when no chrome slot is bound anywhere.
+The tab colors are computed inside the tab row's composition, so the
+no-seam default (the row's own content color, as Tab's defaults take) is
+unchanged. The empty-style scope compiled on device: the Foundation send
+button proves the scope was live when the rail indicator showed Material's
+default.
+
+Found and fixed: the scrollable tab rows ignored the indicator slot while
+the fixed rows honored it; the wide navigation rail item ignored the rail
+indicator while the narrow item honored it; an unselected tab label ignored
+the label style's own color. All three now match their siblings.
+
+Recorded, not changed: a profile that binds `chrome.snackbar` with a
+background and no `content_color` keeps Material's inverse content color,
+which may not contrast with the chosen background; the baseline binds both
+and a profile author must too. No slot table exists in the docs to go
+stale; the experiment manifest records checkpoint-era commits only.
+
 ## Remaining slices
 
 5. Glasspane: rows through the list item, hex colors to theme roles,
