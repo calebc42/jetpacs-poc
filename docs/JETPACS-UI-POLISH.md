@@ -100,10 +100,11 @@ Open items noticed on the tablet, not yet addressed:
 - The drawer's collapsible header shows a focus ring on open. The Foundation
   focused rule fires on programmatic focus; it should be gated to keyboard
   input mode.
-- An empty chromeless editor draws nothing under the baseline: no
-  outline, no placeholder, so the REPL input is an invisible strip above the
-  divider until it has text. A placeholder or a faint surface belongs in
-  slice 3.
+- Resolved 2026-09-03: the REPL authored its editor `chromeless`, which
+  Material ignored and Foundation honored, leaving an invisible input strip.
+  The flag is dropped; the editor wears the `editor.surface` outline. The
+  dialog prompt editor is still chromeless but dialogs are not presented
+  through the scope, so Material keeps drawing its outline there.
 - The tablet's active profile was left at `grove.light` from Design Lab
   testing, so the host wore Grove's palette until reset with
   `(jetpacs-design-set-active-profile nil t)`.
