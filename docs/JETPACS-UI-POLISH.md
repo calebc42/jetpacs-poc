@@ -427,7 +427,101 @@ Companion pin).
   popup matched the field.
 
 Open after this slice: the Design Lab restructuring on these controls
-(collapsible per entry with a value caption, dropdowns for easing,
-text-align and weight, numeric keyboards on number fields), and the
-catalog's eleven enum controls, which now draw as Foundation dropdowns
-with no Elisp change.
+(slice 8), and the catalog's eleven enum controls, which now draw as
+Foundation dropdowns with no Elisp change.
+
+## Slice 8: the Design Lab on Foundation controls
+
+The Design Lab edited every leaf of a profile through a single-line text
+field inside a flat panel per entry: 10 typography panels of five fields,
+24 style panels, 99 binding panels, and enum spellings (font family, weight,
+text alignment, theme role, easing, rule state) typed by hand and rejected
+only afterwards by validation. Slices 6 and 7 supplied the switch, the
+collapsible and the dropdown, and the scope fix let the Lab's own chrome
+draw them, so this slice rebuilds the authoring sections on them. Scope:
+leaf editing only, as before; adding and removing entries is a later slice.
+
+- **Public vocabularies first** (jetpacs-components 124a9f0). The closed
+  lists the builders enforce were private constants or inline literals.
+  They are public now (`jetpacs-design-states`, `-easings`,
+  `-font-families`, `-font-weights`, `-text-aligns`, and the
+  property-to-kind table `jetpacs-design-property-kinds`), the builders
+  check membership in them, and one test pins each list against its
+  builder. Nothing else referenced the private names.
+- **One disclosure per entry.** Typography roles, tokens, styles, motions
+  and bindings are folded `collapsible`s whose header carries the id and a
+  caption of the value: `system 16 / 400 · lh 24`, `theme-role · primary`,
+  `6 properties · 2 rules · motion quick`, `120 ms · ease-out`, the joined
+  style names. Rules stay inline inside their style's disclosure.
+- **Closed leaves are dropdowns.** Family and weight, text alignment, theme
+  role, easing, a rule's state, and the motion and token references a style
+  may carry. The token list is narrowed to what the property accepts, with a
+  theme role satisfying a color exactly as the runtime allows, and follows
+  token-to-token aliases to their terminal kind. A stored value outside its
+  closed list (a user profile saved before a vocabulary changed) keeps a
+  text field rather than failing to build, since a dropdown's value must be
+  one of its options.
+- **Booleans are switches** on a new `jpdesign.edit.boolean` action that
+  turns the native boolean into the string the ordinary digest-addressed
+  path already parses; the same shape as the catalog's boolean action.
+- **Numbers carry keyboards.** Sizes, dimensions and durations get the
+  decimal or number keyboard and stay non-negative; the `number` kind, whose
+  range is signed, now admits a leading minus. Colors keep a text field with
+  a format hint.
+- **The one optional leaf.** A style's or rule's `:motion` reference has a
+  None option that clears it: the single sentinel in the Lab, kept because
+  the edit is one plist change.
+- **The profile picker is a dropdown**, replacing the per-profile buttons;
+  `jpdesign.profile` takes the picked value.
+- **A status slot that is always there.** The Foundation collapsible keeps
+  its open state by render path. The rejection panel used to appear only on
+  failure, which would have shifted every disclosure's path and folded the
+  one being corrected. The screen now always emits one node after the tabs:
+  the panel on error, a "draft valid" caption otherwise.
+
+### Verification record for slice 8
+
+Landed 2026-09-03 as jetpacs-components 124a9f0 (public vocabularies),
+jetpacs-component-catalog a5a9884 (the Lab) and e2c7acb (the rejection
+reason).
+
+- Elisp: jetpacs-components 11 of 11 with the vocabulary test, byte-compiled
+  with warnings as errors; Grove 40 of 40; the four catalog suites, 115, with
+  six new Design Lab tests: disclosures and captions per domain, dropdown
+  option lists and the token filter, the switch and its action, keyboards and
+  the signed number, the profile picker, and the motion reference edits.
+- Tablet, Design Lab under the baseline: the Profiles picker drew as the
+  Foundation field, its popup opened above it on "Jetpacs", and picking
+  "Grove Light" loaded that draft with the status caption following.
+  Typography drew ten folded rows with captions; opening "body" showed the
+  family dropdown, the decimal size field and the weight dropdown; picking
+  plex-serif rebuilt the page with the caption reading `plex-serif 15 /
+  400 · lh 22` and the disclosure still open. Styles drew 24 folded rows
+  with property and rule counts; grove.interactive opened on its motion
+  dropdown (None), token dropdowns for color and spacing properties, and
+  six rules each with state and motion dropdowns. Motions drew the number
+  keyboard on duration and the easing dropdown; Bindings drew 99 folded
+  rows captioned by their styles.
+- Rejection: submitting `-1` for base.surface's border width through the
+  decimal keypad brought the "LAST EDIT REJECTED" panel into the status
+  slot while the open disclosure stayed open and the field kept the typed
+  value for correction. The first walk showed only "error" in that panel:
+  `jetpacs-error-label` prints just the symbol, which is right for logs
+  that must carry no payload. The Lab's own signals and the runtime's
+  carry the reason and no private data, so the slot now shows the message
+  (e2c7acb); the second walk read "Design Lab: Expected a non-negative
+  number".
+- Two walk mishaps worth recording. Chained `input tap`s through the
+  section navigator's popup are unreliable on the tablet; open the popup,
+  screenshot, then pick. And once the rejection panel gave way to the
+  caption, the Profiles buttons moved and a tap meant for "Reset draft"
+  hit "Apply globally", which set the active profile to the baseline
+  (persisted through Customize). It was reset from the hub REPL with
+  `(jetpacs-design-set-active-profile nil t)`; the Companion restart lands
+  on that REPL, and the rail's Eval item does not switch surfaces from an
+  app. The draft was left on the baseline and the active profile on the
+  applet default.
+
+Open after this slice: adding and removing entries (tokens, styles, rules,
+properties, typography roles), and an ordered multi-reference picker for
+bindings, which still edit as comma-separated text.
