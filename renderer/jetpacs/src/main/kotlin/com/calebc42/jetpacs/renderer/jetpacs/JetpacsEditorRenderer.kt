@@ -100,8 +100,12 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
         val accessibleError = applicableDiagnostics
             ?.firstOrNull { it.severity == "error" }
             ?.message
+        // The incoming modifier carries the parent's layout parent data (a
+        // row or column weight); it belongs on this root, as with Material.
+        // On the field it would be read by this column as a column weight and
+        // the editor would claim every remaining pixel of the body.
         Column(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             presentation.toolbar?.let { toolbar ->
@@ -129,7 +133,7 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
             JetpacsEditor(
                 state = binding.controller.state,
                 modifier = binding.fieldModifier(
-                    modifier.fillMaxWidth(),
+                    Modifier.fillMaxWidth(),
                     errorMessage = accessibleError,
                 ),
                 enabled = presentation.enabled,

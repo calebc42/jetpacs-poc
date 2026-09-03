@@ -34,6 +34,8 @@ import androidx.compose.ui.test.assertWidthIsAtLeast
 import androidx.compose.ui.test.getUnclippedBoundsInRoot
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasTestTag
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -90,6 +92,17 @@ import org.junit.runner.RunWith
 class JetpacsComponentsSemanticsTest {
     @get:Rule
     val compose = createAndroidComposeRule<SemanticsHostActivity>()
+
+    /**
+     * The editable field inside the editor whose root carries [tag]. The
+     * override's modifier lands on its root, as with Material, so the
+     * parent's layout parent data reaches the node the parent measures.
+     */
+    private fun editorFieldIn(tag: String) =
+        compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsProperties.EditableText) and
+                hasAnyAncestor(hasTestTag(tag)),
+        )
 
     @Test
     fun designPressableHasOneMinimumButtonTargetAndOneActionPath() {
@@ -1505,9 +1518,7 @@ class JetpacsComponentsSemanticsTest {
             }
         }
 
-        val editor = compose.onNode(
-            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "editor"),
-        )
+        val editor = editorFieldIn("editor")
         editor.assert(hasSetTextAction()).performTextInput("alpha\nbeta")
         compose.runOnIdle {
             assertEquals(listOf("state:alphabeta"), context.events)
@@ -1563,9 +1574,7 @@ class JetpacsComponentsSemanticsTest {
             }
         }
 
-        val editor = compose.onNode(
-            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "sync-editor"),
-        )
+        val editor = editorFieldIn("sync-editor")
         compose.mainClock.advanceTimeBy(200)
         compose.runOnIdle { assertEquals(1, context.completionRequests) }
         editor.performTextInput("!")
@@ -1647,9 +1656,7 @@ class JetpacsComponentsSemanticsTest {
             }
         }
 
-        val editor = compose.onNode(
-            SemanticsMatcher.expectValue(SemanticsProperties.TestTag, "sync-tooling"),
-        )
+        val editor = editorFieldIn("sync-tooling")
         compose.onAllNodes(hasSetTextAction()).assertCountEquals(1)
         editor.assert(SemanticsMatcher.expectValue(
             SemanticsProperties.Error,
@@ -1776,12 +1783,7 @@ class JetpacsComponentsSemanticsTest {
             }
         }
 
-        compose.onNode(
-            SemanticsMatcher.expectValue(
-                SemanticsProperties.TestTag,
-                "editor-autofocus",
-            ),
-        ).assertIsFocused()
+        editorFieldIn("editor-autofocus").assertIsFocused()
     }
 
     @Test

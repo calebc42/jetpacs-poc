@@ -9,6 +9,36 @@
 (require 'jetpacs-components)
 (require 'jetpacs-design-material)
 (require 'jetpacs-design-profiles)
+(require 'jetpacs-design-baseline)
+
+(ert-deftest jetpacs-design-baseline-binds-every-slot-and-presents-once ()
+  "The platform baseline is theme-neutral, complete, and presents only a
+bare scaffold, only under an advertised runtime."
+  (let ((profile (jetpacs-design-baseline-profile)))
+    (should (equal (plist-get profile :id) jetpacs-design-baseline-id))
+    ;; Every closed slot is bound, so nothing falls to receiver defaults.
+    (should (equal (sort (mapcar #'car (plist-get profile :component-styles))
+                         #'string<)
+                   (sort (copy-sequence jetpacs-design-component-style-slots)
+                         #'string<)))
+    ;; Theme-neutral: no role is re-declared, every color is a role token.
+    (should-not (plist-get profile :theme-roles))
+    (dolist (token (plist-get profile :tokens))
+      (when (string-prefix-p "color." (car token))
+        (should (equal (plist-get (cdr token) :kind) "theme-role"))))
+    (should (jetpacs-design-profile-get jetpacs-design-baseline-id)))
+  (let ((screen (jetpacs-scaffold :body (jetpacs-text "b")))
+        (own (jetpacs-column (jetpacs-scaffold :body (jetpacs-text "o")))))
+    (cl-letf (((symbol-function 'jetpacs-extension-advertised-p)
+               (lambda (&rest _) nil)))
+      (should (eq (jetpacs-design-present screen) screen)))
+    (cl-letf (((symbol-function 'jetpacs-extension-advertised-p)
+               (lambda (&rest _) t)))
+      (let ((presented (jetpacs-design-present screen)))
+        (should (equal (plist-get presented :t) "jetpacs.design_scope"))
+        (should (eq (aref (plist-get presented :children) 0) screen)))
+      ;; An app's own presentation is respected, never wrapped again.
+      (should (eq (jetpacs-design-present own) own)))))
 
 (ert-deftest jetpacs-design-sorts-identifier-maps-deterministically ()
   (let* ((style (jetpacs-design-style
