@@ -235,7 +235,13 @@ stale; the experiment manifest records checkpoint-era commits only.
   the rail beside it, yet it was pushed with a back arrow. The destination
   opener now hands those builders a nil back; drills keep theirs. The
   system gesture at a destination therefore falls to the platform default,
-  the way top-level destinations behave in Material navigation.
+  the way top-level destinations behave in Material navigation. That
+  first exposed a chrome rule: the drawer hung on the stack root only, so
+  a destination without its arrow lost the hamburger too. The chrome now
+  hangs the drawer on every screen that draws no back arrow (it inspects
+  the presented scaffold's top bar, the same spine the Companion reads
+  for the system gesture), so the five main views carry the hamburger and
+  drills carry the arrow: one slot, one of the two.
 - **Capture FAB.** Its glyph is `note_add`, not `add`: the FAB rides the
   Files guest that Resources opens, where a plain plus beside Files' own
   "+" read as the same action.
