@@ -260,7 +260,17 @@
                               :value)
                    "-0.5"))
     (should-error (jetpacs-design-lab--value-with-text
-                   '(:kind "dimension" :value "1") "-0.5"))))
+                   '(:kind "dimension" :value "1") "-0.5"))
+    ;; The rejection slot shows the reason, not just the error symbol.
+    (let ((jetpacs-design-lab--draft-error nil))
+      (jetpacs-design-lab--set-error
+       (condition-case err
+           (jetpacs-design-lab--number "-3" nil)
+         (error err)))
+      (should (equal jetpacs-design-lab--draft-error
+                     "Design Lab: Expected a non-negative number"))
+      (jetpacs-design-lab--set-error '(wrong-type-argument stringp nil))
+      (should (equal jetpacs-design-lab--draft-error "wrong-type-argument")))))
 
 (ert-deftest jetpacs-design-lab-profile-picker-is-a-dropdown ()
   "Profiles are picked from one dropdown that loads the chosen draft."

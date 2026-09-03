@@ -137,9 +137,16 @@
   (jetpacs-app-defer-refresh params))
 
 (defun jetpacs-design-lab--set-error (err)
-  "Retain a bounded label for rejected authoring ERR."
+  "Retain a bounded label for rejected authoring ERR.
+The Lab's own signals and the design runtime's carry the reason in their
+message and no private payload, so the message is shown; any other
+condition shows only its symbol, as `jetpacs-error-label' does for logs."
   (setq jetpacs-design-lab--draft-error
-        (truncate-string-to-width (jetpacs-error-label err) 180 nil nil "…")))
+        (truncate-string-to-width
+         (if (and (consp err) (eq (car err) 'error) (stringp (cadr err)))
+             (error-message-string err)
+           (jetpacs-error-label err))
+         180 nil nil "…")))
 
 (defun jetpacs-design-lab--number (value integer &optional negative)
   "Parse bounded numeric string VALUE; require INTEGER when non-nil.
