@@ -572,11 +572,11 @@ private fun JetpacsNavigatorPopupOption(
     }
 }
 
-private enum class JetpacsChevronDirection { Start, End, Down }
+internal enum class JetpacsChevronDirection { Start, End, Down }
 
 /** A font-independent directional mark that mirrors start/end under RTL. */
 @Composable
-private fun JetpacsChevron(direction: JetpacsChevronDirection) {
+internal fun JetpacsChevron(direction: JetpacsChevronDirection) {
     val layoutDirection = LocalLayoutDirection.current
     val color = JetpacsTheme.colors.content
     Canvas(

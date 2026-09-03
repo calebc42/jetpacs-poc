@@ -555,6 +555,50 @@ object JetpacsComponentStyles {
 
     val navigatorLabel = Style { textStyle(tokens.typography.choice) }
 
+    /** The dropdown's closed field: one full-width target whose selected face means open. */
+    val dropdownField = Style {
+        fillWidth()
+        minHeight(48.dp)
+        shape(tokens.shapes.control)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        selected { background(tokens.colors.selectedSurface) }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val dropdownText = Style { textStyle(tokens.typography.field) }
+
+    val dropdownLabel = Style { textStyle(tokens.typography.fieldLabel) }
+
+    /** The popup surface listing the options, at least as wide as the field. */
+    val dropdownPopup = Style {
+        shape(tokens.shapes.panel)
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+    }
+
+    /** One option row; the selected face marks the current value. */
+    val dropdownItem = Style {
+        fillWidth()
+        background(tokens.colors.surface)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        selected { background(tokens.colors.selectedSurface) }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
     /** Inspectable outline navigator container; behavior remains controlled. */
     val sectionNavigator = Style {
         fillWidth()

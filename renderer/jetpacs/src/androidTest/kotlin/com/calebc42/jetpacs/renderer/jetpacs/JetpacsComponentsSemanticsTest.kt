@@ -30,6 +30,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.assertIsOff
@@ -1045,6 +1046,92 @@ class JetpacsComponentsSemanticsTest {
             }
         }
         compose.onNodeWithTag("switch").assertIsOn()
+    }
+
+    private fun dropdownNode(value: String? = "filled", enabled: Boolean = true): JsonObject =
+        Json.parseToJsonElement(
+            """{"t":"dropdown","id":"variant","label":"Variant","hint":"Pick one",
+                ${if (value != null) "\"value\":\"$value\"," else ""}
+                "enabled":$enabled,"on_change":{"action":"jpcatalog.edit"},
+                "options":[{"label":"Filled","value":"filled"},
+                           {"label":"Tonal","value":"tonal"},
+                           {"label":"Outlined","value":"outlined"}]}""",
+        ) as JsonObject
+
+    @Test
+    fun theDropdownFieldOpensItsOptionsAndAPickPublishesStateBeforeItsAction() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignDropdownRenderer.render(dropdownNode(), context, Modifier.testTag("dropdown"))
+            }
+        }
+
+        compose.onNodeWithTag("dropdown")
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.DropdownList))
+            .assert(hasText("Filled"))
+            .performClick()
+        compose.onNodeWithText("Tonal").assertIsDisplayed().performClick()
+
+        // The popup closes before the pick is published, and the field
+        // shows the new option's label.
+        compose.onNodeWithText("Outlined").assertDoesNotExist()
+        compose.onNodeWithTag("dropdown").assert(hasText("Tonal"))
+        compose.runOnIdle {
+            // SPEC 17.4: state.changed, then on_change carrying the value.
+            assertEquals(listOf("variant" to JsonPrimitive("tonal")), context.states)
+            assertEquals(listOf("jpcatalog.edit"), context.actionNames)
+            assertEquals(JsonPrimitive("tonal"), context.actions.single().second)
+            assertEquals(listOf("state:tonal", "action:jpcatalog.edit"), context.events.take(2))
+        }
+    }
+
+    @Test
+    fun aDisabledDropdownAnnouncesItselfAndOpensNothing() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignDropdownRenderer.render(
+                    dropdownNode(enabled = false), context, Modifier.testTag("dropdown"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("dropdown").assertIsNotEnabled().performClick()
+        compose.onNodeWithText("Tonal").assertDoesNotExist()
+        compose.runOnIdle {
+            assertTrue(context.states.isEmpty())
+            assertTrue(context.actionNames.isEmpty())
+        }
+    }
+
+    @Test
+    fun aStoredDropdownValueOutranksTheAuthoredOne() {
+        // The authored `value` seeds a fresh node only; a value already in
+        // the store at this epoch is what the user last picked.
+        val context = RecordingContext().apply { store["variant"] = JsonPrimitive("outlined") }
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignDropdownRenderer.render(
+                    dropdownNode(value = "filled"), context, Modifier.testTag("dropdown"),
+                )
+            }
+        }
+        compose.onNodeWithTag("dropdown").assert(hasText("Outlined"))
+    }
+
+    @Test
+    fun aDropdownWithoutAValueShowsItsHint() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignDropdownRenderer.render(
+                    dropdownNode(value = null), context, Modifier.testTag("dropdown"),
+                )
+            }
+        }
+        compose.onNodeWithTag("dropdown").assert(hasText("Pick one"))
     }
 
     /** A grouped menu exercising every wire member the node carries. */

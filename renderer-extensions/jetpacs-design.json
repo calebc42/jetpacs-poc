@@ -203,6 +203,11 @@
         "text-field.placeholder",
         "text-field.supporting",
         "text-field.affix",
+        "dropdown.field",
+        "dropdown.text",
+        "dropdown.label",
+        "dropdown.popup",
+        "dropdown.item",
         "editor.surface",
         "editor.chromeless",
         "editor.text",
@@ -234,7 +239,7 @@
       "type": "array",
       "items": {"type": "ref", "ref": "component-style-binding"},
       "min_items": 0,
-      "max_items": 94
+      "max_items": 99
     },
     "theme-role-map": {
       "type": "identifier-map",

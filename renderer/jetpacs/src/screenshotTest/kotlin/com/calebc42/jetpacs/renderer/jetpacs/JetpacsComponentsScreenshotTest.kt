@@ -824,6 +824,65 @@ private fun JetpacsSwitchStates() {
     }
 }
 
+private val dropdownVariants = listOf(
+    JetpacsDropdownOption("Filled", "filled"),
+    JetpacsDropdownOption("Tonal", "tonal"),
+    JetpacsDropdownOption("Outlined", "outlined"),
+    JetpacsDropdownOption("Text", "text"),
+)
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 300)
+@Preview(name = "dark", widthDp = 400, heightDp = 300,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 300, fontScale = 1.5f)
+@Composable
+private fun JetpacsDropdownStates() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            JetpacsDropdown(dropdownVariants, "tonal", onSelect = {}, label = "Variant")
+            JetpacsDropdown(
+                dropdownVariants, null, onSelect = {},
+                label = "Keyboard", placeholder = "Default / unset",
+            )
+            JetpacsDropdown(
+                dropdownVariants, "filled", onSelect = {},
+                label = "Unavailable", enabled = false,
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 260)
+@Preview(name = "dark", widthDp = 400, heightDp = 260,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun JetpacsDropdownPopupOpen() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsDropdownPopupContent(
+                options = dropdownVariants,
+                value = "tonal",
+                enabled = true,
+                onSelect = {},
+                minWidth = 280.dp,
+            )
+        }
+    }
+}
+
 @PreviewTest
 @Preview(name = "compact", widthDp = 400, heightDp = 320)
 @Preview(name = "dark", widthDp = 400, heightDp = 320,

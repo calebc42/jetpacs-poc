@@ -128,7 +128,7 @@ bare scaffold, only under an advertised runtime."
              "{\"slot\":\"text.body\",\"styles\":[\"typography.reading-body\"]}"
              json))
     (should (member "text.body" jetpacs-design-component-style-slots))
-    (should (= (length jetpacs-design-component-style-slots) 94))
+    (should (= (length jetpacs-design-component-style-slots) 99))
   ;; An empty style is a legal binding that leaves the toolkit's value:
   ;; a plain plist in the profile, a literal `{}' on the wire.
   (let ((empty (jetpacs-design-style nil)))

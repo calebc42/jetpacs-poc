@@ -21,12 +21,14 @@ from the `text.<style>` slot for its EBP style name, then from the nearest
 enclosing `jetpacs.styled` or `jetpacs.pressable` program (resolved against
 that face's live state), and finally from the node's own `color` and
 `font_weight` members. The scope also selects Foundation presentation for canonical
-`icon`, `button` (by variant), `chip`, `divider`, and `section_header`, each
-with its own slots, and for the Foundation text field and editor, so the
-`text-field.*` and `editor.*` bindings take effect without a separate
-`jetpacs.scope`. An override declines members it cannot honor (toggle
-buttons, collapsing FABs, connected groups, badged icons, avatar chips), and
-those nodes keep their Material presentation. Named glyphs come from the
+`icon`, `button` (by variant), `chip`, `divider`, `section_header`, `menu`,
+`switch`, `collapsible`, `month_grid`, and the closed single-select
+`dropdown`, each with its own slots, and for the Foundation text field and
+editor, so the `text-field.*` and `editor.*` bindings take effect without a
+separate `jetpacs.scope`. An override declines members it cannot honor
+(toggle buttons, collapsing FABs, connected groups, badged icons, avatar
+chips, editable dropdowns), and those nodes keep their Material
+presentation. Named glyphs come from the
 `ComposeIconResolver` the composition root installs through `ebp-compose`.
 
 `jetpacs.list_item` is the row primitive: leading, a flexible

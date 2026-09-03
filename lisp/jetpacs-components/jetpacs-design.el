@@ -60,6 +60,8 @@
     "text-field.outlined" "text-field.filled" "text-field.text"
     "text-field.label" "text-field.placeholder" "text-field.supporting"
     "text-field.affix"
+    "dropdown.field" "dropdown.text" "dropdown.label" "dropdown.popup"
+    "dropdown.item"
     "editor.surface" "editor.chromeless" "editor.text" "editor.gutter"
     "editor.toolbar" "editor.toolbar-item" "editor.sync-status"
     "editor.completion-list" "editor.completion-item"

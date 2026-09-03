@@ -146,6 +146,12 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     TextFieldPlaceholder("text-field.placeholder"),
     TextFieldSupporting("text-field.supporting"),
     TextFieldAffix("text-field.affix"),
+    /** Canonical `dropdown`: the closed field, its value text and label, the popup and its rows. */
+    DropdownField("dropdown.field"),
+    DropdownText("dropdown.text"),
+    DropdownLabel("dropdown.label"),
+    DropdownPopup("dropdown.popup"),
+    DropdownItem("dropdown.item"),
     EditorSurface("editor.surface"),
     EditorChromeless("editor.chromeless"),
     EditorText("editor.text"),
