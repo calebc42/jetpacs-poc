@@ -305,14 +305,129 @@ Both now use canonical nodes from the Grove program's set.
   specimen with an absent `enabled`, the presence codec end to end through
   the edit document and the boolean handler, and the disclosures' seeding,
   captions, unique catalog-owned ids and surviving panels.
-- Tablet, Text Field Visual under the baseline: `single_line` drew as the
-  Foundation switch on with its remove button; a tap flipped it, Emacs
-  rebuilt the page, and the Lisp projection read `:single_line
-  :json-false`. `enabled` drew on though absent; `scroll_here` drew off.
-  "Directional padding" drew folded with its chevron and "Default"
-  caption; a tap opened it on "Configure Directional padding". Offline
-  policy and Filter still drew as Material dropdowns, as expected.
+- Tablet, Text Field Visual under the baseline: `single_line` drew as a
+  switch on with its remove button; a tap flipped it, Emacs rebuilt the
+  page, and the Lisp projection read `:single_line :json-false`.
+  `enabled` drew on though absent; `scroll_here` drew off. "Directional
+  padding" drew folded with its chevron and "Default" caption; a tap
+  opened it on "Configure Directional padding". Offline policy and Filter
+  drew as Material dropdowns, as expected.
+- Correction, found in slice 7: those switches and disclosures were
+  Material's, not Foundation's. The catalog body sits inside
+  `jetpacs.scope`, and an extension's scoped children take that
+  extension's id as their design scope, replacing the enclosing
+  `jetpacs.design`, so no `jetpacs.design` override applied there. The
+  node choice in this slice stands (the editor now emits the canonical
+  nodes the Foundation set draws); slice 7 makes the scope nesting honor
+  them.
 - The tablet's catalog tree had no stale `.elc`; the desktop checkout has
   three from an interactive session on Aug 29 (gitignored, untouched).
   The test runner sets `load-prefer-newer`, so they do not shadow the
   suites, but a bare `emacs -l` does load them.
+
+## Slice 7: a Foundation `dropdown`
+
+The catalog's Visual editor and the Design Lab pick from closed enums
+everywhere: variants, keyboards, offline policies, toolbar operations, Tabs
+presentations, controlled values, easing names, font weights. Every one of
+them was Material's exposed dropdown. This slice adds the node to the
+Foundation set, 16 -> 17 of 49, so the Design Lab restructuring that follows
+can build on it.
+
+`dropdown` has two forms. The closed single-select form (`id`, `options`,
+`value`, `label`, `hint`, `on_change`, `enabled`) is what both editors use
+and is what the override draws: a field showing the selected option's label
+(or the hint, muted, when nothing is selected) with a chevron, and a popup
+as wide as the field listing the options, opening on the selected
+row, bounded to the larger of the space above and below, dismissing on back
+press and outside tap, and handing focus back to the field. The field is
+the one target and carries the host's name and role (`DropdownList`), with
+an Expanded / Collapsed state; the label above it is decoration. The
+editable form (`editable`, and with it `report_caret`) is a completion text
+field rather than a select, and declines to Material the way an avatar chip
+does.
+
+State is the host's, mirrored from the switch: the live value is seeded
+from the store at the node's epoch and falls back to the authored `value`,
+and a pick closes the popup, then publishes `state.changed` before
+`on_change`. What it publishes is the option value's text. An `EnumOption`
+value may be a string, number or boolean; the Material renderer publishes
+its text, and an app must receive the same thing whichever renderer drew
+the control, so the Foundation one does too, and a unit test pins that a
+numeric or boolean option value goes out as its text.
+
+Five slots, 94 -> 99: `dropdown.field`, `dropdown.text` (the selected
+label in the field and each row's label), `dropdown.label`,
+`dropdown.popup`, `dropdown.item`. The Elisp slot list, the manifest and
+the Kotlin enum are the three mirrors, and the manifest's binding bound
+moved with them. The baseline binds them to `base.field`, `typography.body`,
+`typography.label`, `base.popup` and `base.interactive`; Grove to its
+`grove.field`, `grove.popup` and `grove.interactive`, so both
+every-slot-bound tests stay green. The navigator's chevron became
+`internal` so the field could reuse it rather than draw a second one.
+
+### Finding: `jetpacs.scope` inside a design scope dropped every design override
+
+The first tablet walk with the new Companion showed the catalog's Offline
+policy and Filter controls still on Material. The switches beside them
+had looked right in slice 6, so the override registration was suspected
+first; the Companion pin test and the registry said it was there. The
+cause is in the Material dispatcher: an extension's scoped children are
+rendered with the extension's own id as their design scope
+(`inDesignScope(extensionId)` in the `MaterialExtensionRenderContext`),
+which replaces rather than nests. The catalog wraps every body in
+`jetpacs.scope` to select the Foundation text field and editor, so under
+the presented `jetpacs.design_scope` its children were looked up in the
+`jetpacs.components` scope, which owns only those two nodes. Every other
+Foundation override, including slice 6's switch and collapsible, fell
+through to Material there.
+
+The fix is in the components renderer, not the dispatcher. Inside an
+active design scope (`LocalDesignScope` is set) the boundary is redundant:
+the design scope registers delegating overrides for the text field and
+editor and everything else besides. So `jetpacs.scope` now renders its
+children through the ordinary child path when a design scope is active,
+keeping the enclosing scope, and through its scoped path otherwise, exactly
+as before. A device test pins each branch. No Elisp changed, and the
+Design Lab preview, which also nests `jetpacs.scope` inside the draft
+profile's scope, gains the same behavior.
+
+
+### Verification record for slice 7
+
+Landed 2026-09-03 as jetpacs-components e1bb4cf (the node), 5afcd0d (the
+scope fix) and bee68ad (popup width); grove 45d090b; jetpacs 2ec3740 (the
+Companion pin).
+
+- 75 renderer unit tests, 4 new. 59 of 59 device tests on the Pixel
+  Tablet, 5 new: the field as one 48 dp `DropdownList` target showing the
+  selected label, opening its options, and a pick closing the popup before
+  publishing `state:tonal` then the action; a disabled field opening
+  nothing; a stored value outranking the authored one; the hint without a
+  value; and `jetpacs.scope` under a design scope rendering its children
+  through the enclosing scope.
+- Screenshot references for the closed states (value, hint, disabled) in
+  compact, dark and 1.5x, and the open popup in compact and dark; the 52
+  existing references unchanged.
+- Elisp: components 10 of 10 with the slot count at 99 and the baseline
+  binding every slot; Grove 40 of 40 with every slot bound; the 79 jetpacs
+  suites (1841 tests); the four catalog suites (109).
+- Companion: the renderer installation test pins `dropdown` in the design
+  override set.
+- Tablet, Text Field Visual under the baseline, after the scope fix: the
+  Reset and Arm buttons drew as Foundation outlined buttons for the first
+  time, the switches as the Foundation pill, and Offline policy as the
+  Foundation field with the baseline's label typography (the first walk
+  drew the label in Plex Mono because the tablet's Elisp had not been
+  pushed and no binding covered the new slot). The popup opened on the
+  selected row; picking Queue closed it, Emacs rebuilt the page with the
+  queue policy's Dedupe and TTL fields, and the Lisp projection read
+  `:when_offline "queue" :ttl_s 3600`. The first popup spanned the window
+  and clamped to its left edge, which is the width fix above; after it the
+  popup matched the field.
+
+Open after this slice: the Design Lab restructuring on these controls
+(collapsible per entry with a value caption, dropdowns for easing,
+text-align and weight, numeric keyboards on number fields), and the
+catalog's eleven enum controls, which now draw as Foundation dropdowns
+with no Elisp change.
