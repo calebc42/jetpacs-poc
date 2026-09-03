@@ -19,6 +19,7 @@
 (require 'jetpacs-authoring)
 (require 'jetpacs-components)
 (require 'jetpacs-design-profiles)
+(require 'jetpacs-design-baseline)
 (require 'jetpacs-apps)
 (require 'jetpacs-chrome)
 (require 'jetpacs-shell)
@@ -74,78 +75,8 @@
   "Only symbols an inert canonical profile source may contain.")
 
 (defun jetpacs-design-lab--baseline-profile ()
-  "Return the immutable toolkit-neutral Design Lab preset."
-  (jetpacs-design-make-profile
-   "jetpacs.baseline" "Jetpacs baseline"
-   :tokens
-   `(("space.control" . ,(jetpacs-design-dimension 10))
-     ("radius.control" . ,(jetpacs-design-dimension 8))
-     ("surface" . ,(jetpacs-design-theme-role "surface"))
-     ("content" . ,(jetpacs-design-theme-role "on_surface"))
-     ("outline" . ,(jetpacs-design-theme-role "outline"))
-     ("accent" . ,(jetpacs-design-theme-role "primary")))
-   :typography
-   '(("body" . (:family "plex-sans" :size 15 :weight 400
-                :line-height 20 :letter-spacing 0))
-     ("label" . (:family "plex-sans" :size 14 :weight 600
-                 :line-height 18 :letter-spacing 0))
-     ("code" . (:family "plex-mono" :size 13 :weight 400
-                :line-height 18 :letter-spacing 0)))
-   :styles
-   `(("container"
-      . ,(jetpacs-design-style
-          `(("background_color" . ,(jetpacs-design-token "surface"))
-            ("content_color" . ,(jetpacs-design-token "content"))
-            ("border_color" . ,(jetpacs-design-token "outline"))
-            ("border_width" . ,(jetpacs-design-dimension 1))
-            ("corner_radius" . ,(jetpacs-design-token "radius.control")))))
-     ("interactive"
-      . ,(jetpacs-design-style
-          `(("padding" . ,(jetpacs-design-token "space.control"))
-            ("min_height" . ,(jetpacs-design-dimension 48)))
-          :rules
-          (list
-           (jetpacs-design-rule
-            "focused"
-            `(("border_color" . ,(jetpacs-design-token "accent"))
-              ("border_width" . ,(jetpacs-design-dimension 2)))
-            :motion "quick")
-           (jetpacs-design-rule
-            "pressed" `(("scale" . ,(jetpacs-design-number 0.98)))
-            :motion "press")
-           (jetpacs-design-rule
-            "disabled" `(("alpha" . ,(jetpacs-design-number 0.38)))
-            :motion "quick"))))
-     ("indicator"
-      . ,(jetpacs-design-style
-          `(("background_color" . ,(jetpacs-design-token "accent"))
-            ("corner_radius" . ,(jetpacs-design-dimension 3))))))
-   :motions
-   `(("press" . ,(jetpacs-design-motion 90 "ease-out"))
-     ("quick" . ,(jetpacs-design-motion 120 "ease-out"))
-     ("selection" . ,(jetpacs-design-motion 160 "ease-in-out")))
-   :component-styles
-   '(("action.container" . ("container" "interactive"))
-     ("action.label" . ("typography.label"))
-     ("choice.container" . ("container" "interactive"))
-     ("choice.indicator" . ("indicator"))
-     ("choice.label" . ("typography.body"))
-     ("panel.container" . ("container"))
-     ("panel.label" . ("typography.label"))
-     ("tabs.container" . ("container"))
-     ("tabs.item" . ("interactive"))
-     ("tabs.indicator" . ("indicator"))
-     ("tabs.label" . ("typography.label"))
-     ("section-navigator.container" . ("container"))
-     ("section-navigator.option" . ("interactive"))
-     ("section-navigator.label" . ("typography.body"))
-     ("text-field.outlined" . ("container"))
-     ("text-field.filled" . ("container"))
-     ("text-field.text" . ("typography.body"))
-     ("text-field.label" . ("typography.label"))
-     ("editor.surface" . ("container"))
-     ("editor.text" . ("typography.code"))
-     ("editor.gutter" . ("typography.code")))))
+  "Return the platform baseline preset the Lab edits copies of."
+  (jetpacs-design-baseline-profile))
 
 (defun jetpacs-design-lab--ensure-draft ()
   "Ensure the selected profile has one last-valid process-local draft."
@@ -773,7 +704,7 @@
 
 (defun jetpacs-design-lab-register ()
   "Register Design Lab preset, actions, surface, and app identity."
-  (jetpacs-design-register-profile (jetpacs-design-lab--baseline-profile))
+  (jetpacs-design-baseline-register)
   (with-jetpacs-owner jetpacs-design-lab-owner
     (jetpacs-defaction
      "jpdesign.section" #'jetpacs-design-lab--on-section
@@ -831,11 +762,11 @@
    :order 92))
 
 (defun jetpacs-design-lab-unregister ()
-  "Remove Design Lab actions, surface, app, and immutable baseline preset."
+  "Remove Design Lab actions, surface, and app.
+The baseline preset belongs to the platform and stays registered."
   (dolist (verb jetpacs-design-lab--verbs) (jetpacs-undefaction verb))
   (jetpacs-apps-unregister jetpacs-design-lab-owner)
   (jetpacs-chrome-remove jetpacs-design-lab-owner)
-  (jetpacs-design-unregister-profile "jetpacs.baseline")
   (setq jetpacs-design-lab--draft nil
         jetpacs-design-lab--draft-error nil
         jetpacs-design-lab--section "profiles"

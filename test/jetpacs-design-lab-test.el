@@ -55,7 +55,11 @@
                               (plist-get jetpacs-design-lab--draft
                                          :typography)))
                   :size)
-                 15)))
+                 (plist-get
+                  (cdr (assoc "body"
+                              (plist-get (jetpacs-design-baseline-profile)
+                                         :typography)))
+                  :size))))
     (should-error
      (jetpacs-design-lab--edited-profile
       (plist-put (copy-sequence args) :value "not-a-number")))))
