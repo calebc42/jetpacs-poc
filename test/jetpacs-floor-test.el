@@ -712,22 +712,56 @@ success path."
 
 (ert-deftest jetpacs-floor-before-replay-pushes-required ()
   "SPEC 10.3 step 3: required roots push during `syncing', bypassing
-the READY guard; optional roots wait."
+the READY guard; optional and ungranted capability roots wait."
   (jetpacs-floor-test--with-client (client)
     (setf (ebp-client-state client) 'syncing)
-    (let ((sent nil))
+    (let ((sent nil)
+          (widget-builds 0))
       (jetpacs-floor-test--recording-push sent
         (with-jetpacs-owner "grocy"
           (jetpacs-shell-define-root "grocy" (lambda () (jetpacs-text "r"))
                                      :required t))
         (with-jetpacs-owner "extra"
           (jetpacs-shell-define-root "extra" (lambda () (jetpacs-text "o"))))
+        (with-jetpacs-owner "widget-owner"
+          (jetpacs-shell-define-root
+           "widget:required"
+           (lambda ()
+             (cl-incf widget-builds)
+             (jetpacs-widget-surface "Required" (jetpacs-text "w")))
+           :required t))
         ;; Not READY: a normal push is a silent no-op…
         (should-not (jetpacs-shell-push "grocy"))
         (should-not sent)
-        ;; …the barrier path pushes exactly the required roots.
+        ;; …the barrier pushes the required app root, but does not even build
+        ;; the required widget because this session did not grant its target.
         (jetpacs-shell--before-replay client)
-        (should (equal (mapcar #'car sent) '("app:grocy")))))))
+        (should (equal (mapcar #'car sent) '("app:grocy")))
+        (should (zerop widget-builds))))))
+
+(ert-deftest jetpacs-floor-before-replay-pushes-granted-required-widget ()
+  "A required widget joins the reconnect barrier when its capability exists."
+  (jetpacs-floor-test--with-client
+      (client :granted ["theme" "surfaces.widget"]
+              :profiles
+              `(:app (:node_types ,jetpacs-floor-test--core-types
+                      :builtins ["view.switch"] :features [] :extensions [])
+                :widget (:node_types ["text"]
+                         :builtins [] :features [] :extensions [])))
+    (setf (ebp-client-state client) 'syncing)
+    (let ((sent nil)
+          (widget-builds 0))
+      (jetpacs-floor-test--recording-push sent
+        (with-jetpacs-owner "widget-owner"
+          (jetpacs-shell-define-root
+           "widget:required"
+           (lambda ()
+             (cl-incf widget-builds)
+             (jetpacs-widget-surface "Required" (jetpacs-text "w")))
+           :required t))
+        (jetpacs-shell--before-replay client)
+        (should (equal (mapcar #'car sent) '("widget:required")))
+        (should (= widget-builds 1))))))
 
 (ert-deftest jetpacs-floor-snackbar-scaffold-and-requeue ()
   ;; The toast degrade now rides the GATED jetpacs-toast (JA-2/B7), so

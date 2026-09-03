@@ -28,6 +28,7 @@ import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignSemanticValidator
+import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignCanonicalOverrides
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsEditorRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsTextInputRenderer
 import com.calebc42.jetpacs.renderer.glance.GlanceRendererContribution
@@ -161,8 +162,16 @@ object CompanionRenderer {
             dialogExtensions = dialogProfile.extensions,
             pinnedNodeMembers = JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS,
             extensions = ComposeExtensionRegistry(extensionRenderers),
+            // The design scope re-selects canonical text and the Foundation
+            // field/editor for its whole subtree, so authored typography and
+            // the text-field/editor slots take effect only when the runtime
+            // is installed; the disabled installation keeps Material text.
             canonicalOverrides = ComposeCanonicalOverrideRegistry(
-                listOf(JetpacsTextInputRenderer, JetpacsEditorRenderer),
+                buildList {
+                    add(JetpacsTextInputRenderer)
+                    add(JetpacsEditorRenderer)
+                    if (designRuntimeEnabled) addAll(JetpacsDesignCanonicalOverrides)
+                },
             ),
         )
         return CompanionRendererInstallation(

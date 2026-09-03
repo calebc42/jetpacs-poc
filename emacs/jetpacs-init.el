@@ -453,7 +453,7 @@ the hub forward without creating a competing client."
    :pairing-id jetpacs-pairing-id
    :token (ebp-decode-pairing-token jetpacs-pairing-token)
    :wants '("theme" "presentation.toast" "presentation.snackbar"
-            "surfaces.dialog" "surfaces.notification"
+            "surfaces.dialog" "surfaces.notification" "surfaces.widget"
             "reminders.owner" "reminders.actions" "offline.wake" "editor.sync"
             "triggers" "capabilities")
    :receipt-file (expand-file-name "receipts.sqlite"

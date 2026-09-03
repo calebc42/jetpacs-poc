@@ -618,9 +618,11 @@ $payload/examples/python $payload/bootstrap" \
   # linger; the device-side installer swaps the distribution subtrees.
     stage_elisp_tree "$REPO_ROOT/emacs" "$payload/emacs" \
       "Jetpacs Emacs host"
-    stage_elisp_tree "$JETPACS_PROJECTS_ROOT/ebp.el/lisp" "$payload/emacs" \
+    # The same sources the Companion's StageOnboardingAssets task bundles:
+    # ebp.el and ebp-org live under the umbrella's ebp-poc/, not beside it.
+    stage_elisp_tree "$JETPACS_POC_ROOT/ebp-poc/ebp.el/lisp" "$payload/emacs" \
       "ebp.el"
-    stage_elisp_tree "$JETPACS_PROJECTS_ROOT/ebp-org/lisp" "$payload/emacs" \
+    stage_elisp_tree "$JETPACS_POC_ROOT/ebp-poc/ebp-org/lisp" "$payload/emacs" \
       "ebp-org"
     stage_elisp_tree \
       "$JETPACS_POC_ROOT/glasspane-material3/lisp/glasspane-material3" \
@@ -643,6 +645,11 @@ $payload/examples/python $payload/bootstrap" \
       "Jetpacs Component Catalog"
     stage_elisp_tree "$JETPACS_POC_ROOT/glasspane" \
       "$payload/emacs/apps/glasspane" "Glasspane"
+    # Mirrors the Companion's StageOnboardingAssets task: Grove is the second
+    # packaged applet named by emacs/apps/packaged-apps and must ship with
+    # the tree, or Manage Apps offers an entry whose feature cannot load.
+    stage_elisp_tree "$JETPACS_PROJECTS_ROOT/../grove/elisp" \
+      "$payload/emacs/apps/grove" "Grove"
 
     log "staging device/py/ as managed examples/python/"
     tar -C "$REPO_ROOT/device/py" -czf - . \

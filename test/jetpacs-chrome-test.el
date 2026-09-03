@@ -1555,6 +1555,83 @@ bottom bar is injected — the NavigationSuiteScaffold swap
                                     (format "%S" rail)))))
       (jetpacs-chrome-remove "app:raildemo"))))
 
+(ert-deftest jetpacs-chrome-composes-into-a-presented-screen ()
+  "An app may present its root INSIDE another node and keep host chrome.
+The drawer, the adaptive rail, the app FAB and the shell globals are all
+composed into the scaffold the wrapper presents — the regression a design
+scope introduced, where a presented screen silently lost every one of
+them.  The wrapper itself stays the root and is copied, never mutated."
+  (let ((jetpacs-chrome-drawer-function
+         (lambda (_s) (jetpacs-text "drawer")))
+        (jetpacs-chrome-dock-items-function
+         (lambda (_s)
+           (list (list :label "A" :icon "home"
+                       :on-tap (jetpacs-action "jetpacs.noop") :selected t))))
+        (jetpacs-chrome-app-fab-function
+         (lambda (_owner _s)
+           (jetpacs-icon-button "add" (jetpacs-action "jetpacs.noop")
+                                :content-description "New")))
+        (jetpacs-chrome-global-actions-function
+         (lambda (_s)
+           (list (jetpacs-icon-button "terminal" (jetpacs-action "jetpacs.mx")
+                                      :content-description "M-x"))))
+        (authored nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'jetpacs-window-class)
+                   (lambda (_axis) "medium")))
+          (with-jetpacs-owner "presented"
+            (jetpacs-chrome-define-root
+             "presented" "root"
+             (lambda (_back)
+               (setq authored
+                     (jetpacs-chrome-screen "P" (jetpacs-text "p")))
+               ;; Any single-child wrapper; the foundation names no
+               ;; downstream node type, so a plain box stands in for the
+               ;; design scope an applet really presents through.
+               (jetpacs-box authored))))
+          (let* ((mv (jetpacs-chrome--build "app:presented"))
+                 (view (gethash "root" (plist-get mv :views)))
+                 (scaffold (aref (plist-get view :children) 0)))
+            (should (equal (plist-get view :t) "box"))
+            (should (equal (plist-get scaffold :t) "scaffold"))
+            (should (equal (plist-get (plist-get scaffold :drawer) :text)
+                           "drawer"))
+            (should (equal (plist-get (plist-get scaffold :rail) :t)
+                           "navigation_rail"))
+            (should (equal (plist-get (plist-get scaffold :fab) :icon) "add"))
+            (should (string-search "jetpacs.mx"
+                                   (format "%S" (plist-get scaffold :top_bar))))
+            ;; The builder's own node is untouched by composition.
+            (should-not (plist-member authored :drawer))
+            (should-not (plist-member authored :rail))))
+      (jetpacs-chrome-remove "app:presented"))))
+
+(ert-deftest jetpacs-chrome-presentation-descent-is-bounded ()
+  "Only a single-child wrapper within the bound presents a screen.
+A wrapper carrying more than the screen, or nested deeper than
+`jetpacs-chrome-presentation-depth', composes nothing — the same
+untouched pass-through a non-scaffold root has always taken."
+  (let* ((scaffold (jetpacs-chrome-screen "P" (jetpacs-text "p")))
+         (mark (lambda (s) (append s (list :drawer (jetpacs-text "d")))))
+         (deep (let ((n scaffold))
+                 (dotimes (_ (1+ jetpacs-chrome-presentation-depth) n)
+                   (setq n (jetpacs-box n))))))
+    (should (plist-member
+             (jetpacs-chrome--scaffold-apply (jetpacs-box scaffold) mark)
+             :children))
+    (should (plist-member
+             (aref (plist-get (jetpacs-chrome--scaffold-apply
+                               (jetpacs-box scaffold) mark)
+                              :children)
+                   0)
+             :drawer))
+    (should (equal (jetpacs-chrome--scaffold-apply deep mark) deep))
+    (should (equal (jetpacs-chrome--scaffold-apply
+                    (jetpacs-box scaffold (jetpacs-text "x")) mark)
+                   (jetpacs-box scaffold (jetpacs-text "x"))))
+    (should (equal (jetpacs-chrome--scaffold-apply (jetpacs-text "t") mark)
+                   (jetpacs-text "t")))))
+
 (ert-deftest jetpacs-chrome-node-dock-outranks-items-and-stays-bottom ()
   "`jetpacs-chrome-dock-function' is the raw-node override: when both
 are set the finished node wins, and it stays a bottom bar even on an

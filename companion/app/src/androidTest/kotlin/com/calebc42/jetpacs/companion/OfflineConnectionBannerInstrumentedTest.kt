@@ -4,7 +4,7 @@ package com.calebc42.jetpacs.companion
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.junit4.v2.createComposeRule
+import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -16,7 +16,7 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class OfflineConnectionBannerInstrumentedTest {
     @get:Rule
-    val compose = createComposeRule()
+    val compose = createAndroidComposeRule<CompanionTestHostActivity>()
 
     @Test
     fun cachedSurfaceKeepsReceiverSettingsAndEmacsReachable() {

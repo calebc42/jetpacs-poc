@@ -223,6 +223,23 @@ owner and maps to `app:<owner>'."
     (prefix (error "jetpacs: unknown surface namespace %S (SPEC 13.1)"
                    prefix))))
 
+(defun jetpacs-shell--surface-capability (surface)
+  "Return the negotiated capability required to push SURFACE, or nil.
+App surfaces are part of the core session.  The other namespaces are
+capability-gated even when their roots are marked `:required'."
+  (pcase (jetpacs-shell--surface-target surface)
+    (:notification "surfaces.notification")
+    (:widget "surfaces.widget")
+    (:tile "surfaces.tile")
+    (_ nil)))
+
+(defun jetpacs-shell--surface-capability-granted-p (surface &optional client)
+  "Non-nil when SURFACE is core or its target capability was granted.
+CLIENT defaults to the attached client.  This predicate is for automatic
+registry replay; explicit pushes retain Gate 3's loud sender failure."
+  (let ((capability (jetpacs-shell--surface-capability surface)))
+    (or (null capability) (jetpacs-granted-p capability client))))
+
 ;; Defined with the view machinery at the end of the file; declared here
 ;; because the registry, the push path and teardown all sweep them.
 (defvar jetpacs-shell--current-view)
@@ -235,8 +252,9 @@ owner and maps to `app:<owner>'."
   "Register BUILDER (nullary -> root Node or SurfaceSpec) for SURFACE.
 SURFACE takes the `jetpacs-shell--resolve-surface' forms (a bare owner
 names `app:<owner>').  REQUIRED roots are re-pushed on reconnect before
-`queue.replay' (SPEC 10.3 step 3).  Replaces an existing entry;
-schedules a debounced repush on a live session.  Returns SURFACE."
+`queue.replay' (SPEC 10.3 step 3) when their target capability was granted.
+Replaces an existing entry; schedules a debounced repush on a live session.
+Returns SURFACE."
   (let ((surface (jetpacs-shell--resolve-surface surface)))
     (jetpacs--claim "surface" surface)
     (remhash surface jetpacs-shell--tombstoned)
@@ -369,7 +387,8 @@ re-registering push when that matters."
   "Debounce a repush of SURFACE after a registry mutation (0.5 s idle).
 No-op while disconnected: the reconnect barrier push carries the
 registrations."
-  (when (jetpacs-connected-p)
+  (when (and (jetpacs-connected-p)
+             (jetpacs-shell--surface-capability-granted-p surface))
     (cl-pushnew surface jetpacs-shell--repush-pending :test #'equal)
     (unless (timerp jetpacs-shell--repush-timer)
       (setq jetpacs-shell--repush-timer
@@ -388,7 +407,7 @@ registrations."
                      (error (message "jetpacs: repush of %s failed: %s"
                                      s (jetpacs-error-label err))))))))))))
 
-(defun jetpacs-shell--on-ready (_client)
+(defun jetpacs-shell--on-ready (client)
   "Drain pushes that SYNCING refused, now that the session is READY.
 On `jetpacs-ready-functions' at depth 90.  Replayed events conclude
 before `session.ready' (SPEC 10.3 step 4 precedes step 5), so every
@@ -398,10 +417,11 @@ the registered builder, so collapsed duplicates are harmless."
   (let ((surfaces (nreverse jetpacs-shell--repush-pending)))
     (setq jetpacs-shell--repush-pending nil)
     (dolist (s surfaces)
-      (condition-case err
-          (jetpacs-shell-push s)
-        (error (message "jetpacs: READY drain push of %s failed: %s"
-                        s (jetpacs-error-label err)))))))
+      (when (jetpacs-shell--surface-capability-granted-p s client)
+        (condition-case err
+            (jetpacs-shell-push s)
+          (error (message "jetpacs: READY drain push of %s failed: %s"
+                          s (jetpacs-error-label err))))))))
 
 ;; Pinned LATE: the content drain runs after everything else on READY.
 ;; The pair's other end is theme at depth -50 — the palette frame must
@@ -1172,11 +1192,7 @@ sender MUST is loud."
 
 (defun jetpacs-shell--gate-capability (client surface)
   "GATE 3: a non-app namespace needs its granted surface capability."
-  (let ((need (pcase (jetpacs-shell--surface-target surface)
-                (:notification "surfaces.notification")
-                (:widget "surfaces.widget")
-                (:tile "surfaces.tile")
-                (_ nil))))
+  (let ((need (jetpacs-shell--surface-capability surface)))
     (when (and need (not (jetpacs-granted-p need client)))
       (error "jetpacs: %s push requires the ungranted %S capability"
              surface need))))
@@ -1529,10 +1545,11 @@ text changes."
 
 ;;;; Reconnect (SPEC 10.3 step 3, installed by `jetpacs-connect')
 
-(defun jetpacs-shell--before-replay (_client)
-  "Push every :required root before `queue.replay', while `syncing'.
-The barrier flag bypasses the READY guard: SPEC 10.3 step 3 orders
-required surface pushes ahead of replay."
+(defun jetpacs-shell--before-replay (client)
+  "Push each eligible :required root before `queue.replay', while `syncing'.
+The barrier flag bypasses the READY guard: SPEC 10.3 step 3 orders required
+surface pushes ahead of replay.  A required capability-gated root remains
+registered but is skipped when this session did not grant its target."
   (let ((jetpacs-shell--in-barrier t))
     ;; A navigation owed from the PREVIOUS session is unknowable-stale:
     ;; Companion-local `view.switch' while not READY is never reported,
@@ -1557,7 +1574,8 @@ required surface pushes ahead of replay."
            (message "jetpacs: deferred removal of %s failed: %s"
                     surface (jetpacs-error-label err))))))
     (pcase-dolist (`(,surface . ,entry) jetpacs-shell--roots)
-      (when (plist-get entry :required)
+      (when (and (plist-get entry :required)
+                 (jetpacs-shell--surface-capability-granted-p surface client))
         (condition-case err
             (jetpacs-shell-push surface)
           (error (message "jetpacs: reconnect push of %s failed: %s"

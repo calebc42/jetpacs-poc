@@ -291,35 +291,73 @@ yields items.")
                       (jetpacs-error-label err))
              nil))))
 
+(defconst jetpacs-chrome-presentation-depth 4
+  "How many presentation wrappers chrome descends to reach a scaffold.
+Bounded so a malformed tree cannot make composition walk a deep screen.")
+
+(defun jetpacs-chrome--scaffold-apply (node fn &optional depth)
+  "Return NODE with FN applied to the scaffold it presents.
+
+Chrome composes the drawer, the adaptive dock, the app FAB and the shell
+globals into a scaffold.  An app may present its screen INSIDE another
+node — a downstream design scope is the first such wrapper — and that
+presentation must not cost the screen its host chrome.  A wrapper is any
+non-scaffold node carrying exactly one child; at most
+`jetpacs-chrome-presentation-depth' of them are descended, and the chain
+is rebuilt by copy so the builder's node is never mutated.  NODE comes
+back untouched when no scaffold is reachable, which is the pre-existing
+behavior for a screen that is not a scaffold at all.
+
+Chrome names no downstream node type here: the wrapper is recognized by
+shape, so the foundation stays independent of the extensions above it."
+  (let ((depth (or depth jetpacs-chrome-presentation-depth)))
+    (cond
+     ((not (jetpacs-root-node-p node)) node)
+     ((equal (plist-get node :t) "scaffold") (funcall fn node))
+     ((<= depth 0) node)
+     (t
+      (let ((children (plist-get node :children)))
+        (if (not (and (vectorp children) (= (length children) 1)))
+            node
+          (let* ((child (aref children 0))
+                 (presented (jetpacs-chrome--scaffold-apply
+                             child fn (1- depth))))
+            (if (eq presented child)
+                node
+              (plist-put (copy-sequence node)
+                         :children (vector presented))))))))))
+
 (defun jetpacs-chrome--join-global-actions (n globals)
   "Append GLOBALS to scaffold N's top-bar row, de-duped by action name.
 Nodes whose `:on_tap' action already appears anywhere in the authored
-top bar are skipped — the author's own copy wins.  Non-scaffold nodes
-and bar-less scaffolds pass through untouched; `append'/`vconcat'
+top bar are skipped — the author's own copy wins.  Bar-less scaffolds and
+screens presenting no scaffold pass through untouched; `append'/`vconcat'
 copy, so the builder's node is never mutated."
-  (if-let* ((globals)
-            ((jetpacs-root-node-p n))
-            ((equal (plist-get n :t) "scaffold"))
-            (bar (plist-get n :top_bar))
-            (kids (plist-get bar :children)))
-      (let* ((authored (format "%S" bar))
-             (missing (cl-remove-if
-                       (lambda (g)
-                         (when-let* ((action (plist-get
-                                              (plist-get g :on_tap)
-                                              :action)))
-                           ;; Printed WITH its quotes so the token is
-                           ;; delimited: an authored ...mxyz must not
-                           ;; swallow the ...mx global.
-                           (string-search (format "%S" action) authored)))
-                       globals)))
-        (if (null missing)
-            n
-          (let ((bar* (plist-put (copy-sequence bar)
-                                 :children
-                                 (vconcat kids missing))))
-            (plist-put (copy-sequence n) :top_bar bar*))))
-    n))
+  (if (null globals)
+      n
+    (jetpacs-chrome--scaffold-apply
+     n
+     (lambda (s)
+       (if-let* ((bar (plist-get s :top_bar))
+                 (kids (plist-get bar :children)))
+           (let* ((authored (format "%S" bar))
+                  (missing (cl-remove-if
+                            (lambda (g)
+                              (when-let* ((action (plist-get
+                                                   (plist-get g :on_tap)
+                                                   :action)))
+                                ;; Printed WITH its quotes so the token is
+                                ;; delimited: an authored ...mxyz must not
+                                ;; swallow the ...mx global.
+                                (string-search (format "%S" action) authored)))
+                            globals)))
+             (if (null missing)
+                 s
+               (let ((bar* (plist-put (copy-sequence bar)
+                                      :children
+                                      (vconcat kids missing))))
+                 (plist-put (copy-sequence s) :top_bar bar*))))
+         s)))))
 
 (defcustom jetpacs-chrome-global-actions-placement 'top-bar
   "Where the shell globals ride on every chrome screen (S10).
@@ -494,39 +532,40 @@ authored bars beside it are already made of."
   ;; outrank the globals here for the same reason a screen does: the
   ;; FAB's contract is the primary creation act, and a shell global is
   ;; a guest in that slot, welcome only while it stands empty.
-  (cond
-   ((or (null items)
-        (not (jetpacs-root-node-p n))
-        (not (equal (plist-get n :t) "scaffold")))
-    n)
-   ((plist-member n :fab)
-    (jetpacs-chrome--join-global-actions
-     n (condition-case err
-           (jetpacs-chrome--global-item-buttons items)
-         (error (message "jetpacs-chrome: global fab fallback failed: %s"
-                         (jetpacs-error-label err))
-                nil))))
-   (t
-    (let* ((authored (format "%S" (plist-get n :top_bar)))
-           (missing (cl-remove-if
-                     (lambda (item)
-                       (when-let* ((action (plist-get
-                                            (plist-get item :on-tap)
-                                            :action)))
-                         ;; Printed WITH its quotes so the token is
-                         ;; delimited, as in the top-bar join.
-                         (string-search (format "%S" action) authored)))
-                     items))
-           (fab (and missing
-                     (condition-case err
-                         (jetpacs-chrome--global-fab missing)
-                       (error (message "jetpacs-chrome: global fab \
+  (if (null items)
+      n
+    (jetpacs-chrome--scaffold-apply
+     n
+     (lambda (s)
+       (cond
+        ((plist-member s :fab)
+         (jetpacs-chrome--join-global-actions
+          s (condition-case err
+                (jetpacs-chrome--global-item-buttons items)
+              (error (message "jetpacs-chrome: global fab fallback failed: %s"
+                              (jetpacs-error-label err))
+                     nil))))
+        (t
+         (let* ((authored (format "%S" (plist-get s :top_bar)))
+                (missing (cl-remove-if
+                          (lambda (item)
+                            (when-let* ((action (plist-get
+                                                 (plist-get item :on-tap)
+                                                 :action)))
+                              ;; Printed WITH its quotes so the token is
+                              ;; delimited, as in the top-bar join.
+                              (string-search (format "%S" action) authored)))
+                          items))
+                (fab (and missing
+                          (condition-case err
+                              (jetpacs-chrome--global-fab missing)
+                            (error (message "jetpacs-chrome: global fab \
 failed: %s" (jetpacs-error-label err))
-                              nil)))))
-      (if (and fab
-               (ignore-errors (jetpacs-chrome--gate-view surface fab) t))
-          (append n (list :fab fab))
-        n)))))
+                                   nil)))))
+           (if (and fab
+                    (ignore-errors (jetpacs-chrome--gate-view surface fab) t))
+               (append s (list :fab fab))
+             s))))))))
 
 (defun jetpacs-chrome--join-globals (surface n globals)
   "Join GLOBALS — `jetpacs-chrome--global-slot''s cons — into screen N.
@@ -834,17 +873,27 @@ views remain in the complete snapshot required by SPEC 13.2."
                                  (list :surface surface :screen id) e))))
                           (let ((n (funcall (cdr entry) back)))
                             ;; Root-only drawer; authored slots always win.
-                            (when (and drawer (null back)
-                                       (jetpacs-root-node-p n)
-                                       (equal (plist-get n :t) "scaffold")
-                                       (not (plist-member n :drawer)))
-                              (setq n (append n (list :drawer drawer))))
+                            ;; Composition reaches the scaffold THROUGH an
+                            ;; app's presentation wrapper, so presenting a
+                            ;; screen never costs it the host's chrome.
+                            (when (and drawer (null back))
+                              (setq n (jetpacs-chrome--scaffold-apply
+                                       n
+                                       (lambda (s)
+                                         (if (plist-member s :drawer)
+                                             s
+                                           (append s
+                                                   (list :drawer drawer)))))))
                             ;; Adaptive dock; authored bar/rail opts out.
-                            (when (and dock (jetpacs-root-node-p n)
-                                       (equal (plist-get n :t) "scaffold")
-                                       (not (plist-member n :bottom_bar))
-                                       (not (plist-member n :rail)))
-                              (setq n (append n (list (car dock) (cdr dock)))))
+                            (when dock
+                              (setq n (jetpacs-chrome--scaffold-apply
+                                       n
+                                       (lambda (s)
+                                         (if (or (plist-member s :bottom_bar)
+                                                 (plist-member s :rail))
+                                             s
+                                           (append s (list (car dock)
+                                                           (cdr dock))))))))
                             (setq n (jetpacs-chrome--join-app-fab surface id n))
                             (setq n (jetpacs-chrome--join-globals
                                      surface n globals))
@@ -1042,24 +1091,26 @@ fall back to the owner that registered the surface root."
 Authored-wins is absolute.  The seam receives the screen owner rather
 than inferring an app from SURFACE, which is what keeps host defaults
 off S4 guests."
-  (if (or (null jetpacs-chrome-app-fab-function)
-          (not (jetpacs-root-node-p node))
-          (not (equal (plist-get node :t) "scaffold"))
-          (plist-member node :fab))
+  (if (null jetpacs-chrome-app-fab-function)
       node
-    (let ((fab
-           (condition-case err
-               (funcall jetpacs-chrome-app-fab-function
-                        (jetpacs-chrome--screen-owner surface id)
-                        surface)
-             (error
-              (message "jetpacs-chrome: app fab failed: %s"
-                       (jetpacs-error-label err))
-              nil))))
-      (if (and (jetpacs-root-node-p fab)
-               (ignore-errors (jetpacs-chrome--gate-view surface fab) t))
-          (append node (list :fab fab))
-        node))))
+    (jetpacs-chrome--scaffold-apply
+     node
+     (lambda (s)
+       (if (plist-member s :fab)
+           s
+         (let ((fab
+                (condition-case err
+                    (funcall jetpacs-chrome-app-fab-function
+                             (jetpacs-chrome--screen-owner surface id)
+                             surface)
+                  (error
+                   (message "jetpacs-chrome: app fab failed: %s"
+                            (jetpacs-error-label err))
+                   nil))))
+           (if (and (jetpacs-root-node-p fab)
+                    (ignore-errors (jetpacs-chrome--gate-view surface fab) t))
+               (append s (list :fab fab))
+             s)))))))
 
 (defun jetpacs-chrome--guest-delegate-p (owner surface)
   "Non-nil when OWNER has a guest screen live on SURFACE's stack.

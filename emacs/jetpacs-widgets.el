@@ -1515,6 +1515,53 @@ Companion has always drawn)."
                    :swipe_end swipe-end
                    :variant variant)))
 
+(cl-defun jetpacs-list-item (&key leading title subtitle overline trailing
+                                  on-tap on-long-tap swipe-start swipe-end
+                                  padding key (spacing 12) (variant "outlined"))
+  "An elevated list-item card with a flexible middle and pinned edges.
+The standard \"leading · title/subtitle · trailing\" list row, laid out
+so the trailing controls are never pushed off-screen.
+
+LEADING is an optional node at the start (an icon, checkbox, or avatar).
+OVERLINE / TITLE / SUBTITLE build the flexible text column (any
+subset).  They can be plain strings (which receive default styling) or
+pre-built `jetpacs-text' nodes.
+TRAILING is a single node, or a list of nodes, pinned at the end (a status
+badge, icon buttons) — each keeps its intrinsic width.
+ON-TAP makes the whole card tappable; ON-LONG-TAP fires on long-press;
+SWIPE-START / SWIPE-END attach swipe actions; PADDING pads the card; SPACING
+is the gap between the row's parts; VARIANT defaults to outlined.
+KEY rides the outer card as its stable `lazy_column' identity (see
+`jetpacs-card') — give every dynamic list row one (the org id, the
+file path) so reorders and inserts never smear state across rows.
+
+The middle column carries the flex weight, so the trailing children keep
+their width — the layout trap a bare `(jetpacs-row (jetpacs-column …) …)'
+falls into, since a `column' renders `fillMaxWidth'.  Composes existing
+nodes (`card' > `row' > weighted `column'); it is not a new wire node type."
+  (let* ((ensure-text (lambda (node style)
+                        (if (stringp node) (jetpacs-text node :style style) node)))
+         (texts (delq nil
+                      (list (and overline (funcall ensure-text overline "label"))
+                            (and title    (funcall ensure-text title "body"))
+                            (and subtitle (funcall ensure-text subtitle "caption")))))
+         (middle (jetpacs-with-attrs (apply #'jetpacs-column (append texts (list :spacing 2))) :weight 1))
+         (trailing-nodes (cond ((null trailing) nil)
+                               ((jetpacs-node-p trailing) (list trailing))
+                               (t (append trailing nil))))
+         (children (delq nil (append (list leading middle) trailing-nodes)))
+         (row (apply #'jetpacs-row (append children (list :align "center" :spacing spacing))))
+         (card-args (delq nil (list row (when on-tap :on-tap) on-tap
+                                    (when on-long-tap :on-long-tap) on-long-tap
+                                    (when swipe-start :swipe-start) swipe-start
+                                    (when swipe-end :swipe-end) swipe-end
+                                    :variant variant)))
+         (card (apply #'jetpacs-card card-args)))
+    (if (or key padding)
+        (apply #'jetpacs-with-attrs card (delq nil (list (when key :key) key (when padding :padding) padding)))
+      card)))
+
+
 (cl-defun jetpacs-collapsible (id header &rest args)
   "A collapsible section with required ID and HEADER node, plus children (§17.3).
 Trailing options: :collapsed (t or :json-false), :on-long-tap, :swipe-start,

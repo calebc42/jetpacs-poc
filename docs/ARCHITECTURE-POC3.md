@@ -78,8 +78,33 @@ dispatcher takes its normal fallback. Scoped selection never changes node
 validation or target profiles, and roots discard inherited scope. The current
 registrations replace canonical `text_input` and `editor` presentation inside
 app-authored `jetpacs.scope`, including an editor carrying the standard
-synchronized `document` member. Dialogs do not admit the app scope, and every
-canonical control outside it continues through Glasspane Material.
+synchronized `document` member. When the experimental design runtime is
+installed, `jetpacs.design_scope` is a second selection boundary: its whole
+authored subtree renders under the `jetpacs.design` scope, which re-selects
+canonical `text` through the Foundation text override (typography from the
+profile's `text.<style>` slots, the enclosing styled or pressable face, then
+the node's own members), re-selects `icon`, `button`, `chip`, `divider`, and
+`section_header` through Foundation presentations that decline members they
+cannot honor, and re-selects the same Foundation `text_input` and `editor`
+presentation so a profile's field and editor slots take effect. Named glyphs
+are resolved through the `ComposeIconResolver` the composition root installs
+in `:renderer:compose`, so no design renderer depends on the Material icon
+artifact. A scope may re-declare the 13 neutral EBP roles for its subtree;
+the design renderer publishes the resolved `ComposeThemeRoles` through
+`:renderer:compose`, and Glasspane's scoped-child dispatch re-derives its
+Material scheme from them with the same derivation the pushed theme uses.
+Roles change colors only: polarity, density, layout direction, and syntax
+colors remain the receiver theme's.
+
+Presenting a screen inside such a scope does not cost it host chrome. Chrome
+composes its drawer, adaptive dock, app FAB and shell globals into the
+scaffold a screen presents, descending a bounded number of single-child
+wrapper nodes, and the receiver's back reader descends the same way. The
+wrapper is recognized by shape, so the foundation still names no downstream
+extension. A
+malformed scope renders its children unscoped. Dialogs do not admit either
+app scope, and every canonical control outside them continues through
+Glasspane Material.
 
 The Material renderer's version is pinned by
 `companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's

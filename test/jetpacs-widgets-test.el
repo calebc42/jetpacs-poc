@@ -416,6 +416,27 @@
                        (jetpacs-menu-item "Delete" (jetpacs-action "demo.delete")
                                           :enabled :json-false :icon "delete"))
                  :icon "more"))
+      ;; The grouped shape with a footer and a checkable item: the members
+      ;; the flat golden above never reaches.
+      (chk "93" (jetpacs-menu
+                 nil :icon "more_vert"
+                 :footer (jetpacs-text "footer")
+                 :groups
+                 (list
+                  (jetpacs-menu-group
+                   "Modification"
+                   (list
+                    (jetpacs-menu-item "Edit" (jetpacs-action "demo.tap")
+                                       :checked t :checked-icon "edit"
+                                       :icon "edit"
+                                       :supporting-text "Edit mode")
+                    (jetpacs-menu-item "Settings" (jetpacs-action "demo.tap")
+                                       :icon "settings")))
+                  (jetpacs-menu-group
+                   "Navigation"
+                   (list
+                    (jetpacs-menu-item "Home" (jetpacs-action "demo.tap")
+                                       :trailing-icon "home"))))))
       (chk "42" (jetpacs-text-input "title"))
       (chk "43" (jetpacs-text-input "title"
                                     :autofocus t :clear-on-submit t :enabled t

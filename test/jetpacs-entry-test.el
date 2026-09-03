@@ -122,5 +122,20 @@
       (jetpacs-ready-landing nil)
       (should (= hubs 1)))))
 
+(ert-deftest jetpacs-entry-start-requests-widget-surfaces ()
+  "The packaged dialer negotiates the target used by Grove's widget roots."
+  (let (connect-args)
+    (cl-letf (((symbol-function 'jetpacs-connect)
+               (lambda (&rest args)
+                 (setq connect-args args)
+                 'stub-client))
+              ((symbol-function 'ebp-decode-pairing-token)
+               (lambda (_token) "decoded")))
+      (let ((jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (should (eq (jetpacs--start-1) 'stub-client))))
+    (should (member "surfaces.widget"
+                    (plist-get (nthcdr 2 connect-args) :wants)))))
+
 (provide 'jetpacs-entry-test)
 ;;; jetpacs-entry-test.el ends here

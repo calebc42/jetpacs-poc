@@ -139,6 +139,20 @@ class CompanionRendererTest {
             CompanionRenderer.composeConfiguration.canonicalOverrides
                 .nodeTypesFor(JETPACS_COMPONENTS_EXTENSION),
         )
+        val designOverrides = CompanionRenderer.installation(designRuntimeEnabled = true)
+            .composeConfiguration.canonicalOverrides
+        assertEquals(
+            setOf(JETPACS_COMPONENTS_EXTENSION, JETPACS_DESIGN_EXTENSION),
+            designOverrides.designScopes,
+        )
+        assertEquals(
+            setOf(
+                "text", "card", "icon", "icon_button", "badge", "empty_state",
+                "button", "chip", "divider", "section_header", "menu",
+                "text_input", "editor",
+            ),
+            designOverrides.nodeTypesFor(JETPACS_DESIGN_EXTENSION),
+        )
         assertTrue(owned.none { it in CompanionRenderer.DIALOG_NODE_TYPES })
     }
 

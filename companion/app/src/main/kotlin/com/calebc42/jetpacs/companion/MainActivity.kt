@@ -29,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import com.calebc42.glasspane.material3.EbpTheme
 import com.calebc42.glasspane.material3.RenderDialogRoot
 import com.calebc42.glasspane.material3.RenderPieMenu
+import com.calebc42.ebp.renderer.compose.ComposeIconResolver
+import com.calebc42.ebp.renderer.compose.LocalComposeIconResolver
+import com.calebc42.glasspane.material3.IconMap
 import com.calebc42.jetpacs.renderer.jetpacs.ProvideJetpacsTheme
 import kotlinx.serialization.json.JsonObject
 
@@ -87,6 +90,9 @@ class MainActivity : ComponentActivity() {
             androidx.compose.runtime.CompositionLocalProvider(
                 LocalCompanionRendererConfiguration provides
                     rendererInstallation.composeConfiguration,
+                // One glyph set for both renderers: the Material-free design
+                // renderer draws the same named icons Glasspane resolves.
+                LocalComposeIconResolver provides ComposeIconResolver(IconMap::get),
             ) {
                 EbpTheme(themePayload) {
                     ProvideJetpacsTheme(themePayload) {
