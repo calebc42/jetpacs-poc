@@ -550,6 +550,51 @@ styles carry the app's pill; the renderer's default metrics never learn them.
   the change, set the variable, and rebuilt the screen checked -- and a
   second tap restored it.
 
+## Slice 10: a Foundation `collapsible`
+
+Grove has two: the outline heading, whose header is the swipeable list row
+itself, and the document's Properties drawer. The app discloses a heading
+from a small muted triangle that turns to point down.
+
+A design-scoped `collapsible` override honoring every member -- `collapsed`,
+`on_long_tap`, both swipe sides -- so it never declines. Three things about
+this node are unlike the others and are worth recording.
+
+The host hands a collapsible a modifier WITHOUT the semantics projection,
+because the header owns it with the live expanded state; the override
+applies `ebpSemantics` on the header row itself, so a screen reader hears one
+disclosure row with an expanded/collapsed state rather than a chevron and
+some text.
+
+Expansion is Companion-local presentation state. `collapsed` seeds only a new
+presentation identity and the user's state survives later snapshots at the
+same path (SPEC 17.3), which is `rememberSaveable(context.path)` and nothing
+more.
+
+The chevron toggles and the header content keeps its own targets: an inner
+click consumes before the header row sees it, so Grove's outline heading
+still opens on tap and expands from its chevron, exactly as the app does.
+The expanded header carries the `toggled` design state, so a profile can give
+an open heading its own face.
+
+Three slots, 77 -> 80: `collapsible.header`, `collapsible.chevron`,
+`collapsible.body`. Grove binds the chevron muted and indents the body 20 dp.
+
+### Verification record for slice 10
+
+- 50 of 50 device tests, 2 new: seeded collapsed composes no children, the
+  header toggles them in and out and dispatches nothing doing so; a long
+  press dispatches `on_long_tap` without toggling.
+- Screenshot references for collapsed and expanded, in compact, dark and
+  1.5x font scale.
+- Grove 40 of 40, 78 Elisp suites, the Companion pin with `collapsible`.
+- Tablet: in the outline, the one heading with children draws the muted
+  triangle; tapping it turns the triangle down and reveals the two child
+  headings indented 20 dp with their badges and kebabs intact, and tapping
+  the heading text still opens the document instead of toggling. That
+  document's "Properties (1)" drawer is the second collapsible, seeded
+  collapsed.
+
 ## Remaining gaps, in order of leverage
 
 1. Chrome colors. Done in slice 3 through scope theme roles. Shapes and
