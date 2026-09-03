@@ -877,7 +877,7 @@ private fun JetpacsDropdownPopupOpen() {
                 value = "tonal",
                 enabled = true,
                 onSelect = {},
-                minWidth = 280.dp,
+                fieldWidth = 280.dp,
             )
         }
     }

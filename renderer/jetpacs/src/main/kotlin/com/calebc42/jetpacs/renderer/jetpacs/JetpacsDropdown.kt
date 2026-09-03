@@ -99,8 +99,8 @@ internal fun jetpacsDropdownLabel(options: List<JetpacsDropdownOption>, value: S
  *
  * The field is the one target and carries the host's name and role; the
  * label above it is decoration. Open state is receiver-local and never
- * crosses the wire. The popup is at least as wide as the field, bounded to
- * the larger of the space above and below it, and scrolls inside that; it
+ * crosses the wire. The popup is as wide as the field, bounded to the
+ * larger of the space above and below it, and scrolls inside that; it
  * opens on the selected row, dismisses on back press and outside tap, and
  * hands focus back to the field afterwards.
  *
@@ -262,7 +262,7 @@ fun JetpacsDropdown(
                         options = options,
                         value = value,
                         enabled = enabled,
-                        minWidth = fieldWidth,
+                        fieldWidth = fieldWidth,
                         availableHeight = availablePopupHeight,
                         requestInitialFocus = LocalWindowInfo.current.isWindowFocused,
                         onSelect = { option ->
@@ -289,7 +289,7 @@ internal fun JetpacsDropdownPopupContent(
     enabled: Boolean,
     onSelect: (JetpacsDropdownOption) -> Unit,
     modifier: Modifier = Modifier,
-    minWidth: Dp? = null,
+    fieldWidth: Dp? = null,
     availableHeight: Dp? = null,
     requestInitialFocus: Boolean = false,
     popupStyle: Style = Style,
@@ -304,7 +304,13 @@ internal fun JetpacsDropdownPopupContent(
     )
     val windowSize = LocalWindowInfo.current.containerDpSize
     val popupMaxWidth = windowSize.width
-    val popupMinWidth = minOf(minWidth ?: 220.dp, popupMaxWidth)
+    // The popup takes the field's width, as a platform dropdown does; a
+    // fixture without a field keeps a sensible bounded width.
+    val widthModifier = if (fieldWidth != null) {
+        Modifier.width(minOf(fieldWidth, popupMaxWidth))
+    } else {
+        Modifier.widthIn(min = minOf(220.dp, popupMaxWidth), max = popupMaxWidth)
+    }
     val popupMaxHeight = minOf(
         (48 * MAX_VISIBLE_DROPDOWN_OPTIONS).dp,
         windowSize.height,
@@ -313,7 +319,7 @@ internal fun JetpacsDropdownPopupContent(
     LazyColumn(
         state = listState,
         modifier = modifier
-            .widthIn(min = popupMinWidth, max = popupMaxWidth)
+            .then(widthModifier)
             .heightIn(max = popupMaxHeight)
             .styleable(
                 remember { MutableStyleState(null) },
