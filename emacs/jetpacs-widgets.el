@@ -2276,25 +2276,33 @@ long press."
                    :on_action on-action :shown shown)))
 
 (cl-defun jetpacs-menu-item (label on-tap &key icon enabled supporting-text
-                                   trailing-icon checked checked-icon)
+                                   trailing-icon trailing-text
+                                   checked checked-icon)
   "A MenuItem for `jetpacs-menu' (SPEC §17.4).
 Besides LABEL, ON-TAP, :icon and :enabled: :supporting-text is a second
-line under the label; :trailing-icon sits at the row end.  :checked (t or
-:json-false) makes the item CHECKABLE — checked is authored presentation
-state like a chip\='s :selected, so ON-TAP should flip your own state and
-rebuild; while checked, :checked-icon (default check) replaces the
-leading icon, and a tap keeps the popup open the way M3 checkable menus
-do."
+line under the label; :trailing-icon and :trailing-text sit at the row
+end and are mutually exclusive, because the item has ONE trailing slot —
+:trailing-text is for a short hint such as a keyboard shortcut.
+:checked (t or :json-false) makes the item CHECKABLE — checked is
+authored presentation state like a chip\='s :selected, so ON-TAP should
+flip your own state and rebuild; while checked, :checked-icon (default
+check) replaces the leading icon, and a tap keeps the popup open the way
+M3 checkable menus do."
   (jetpacs-require-string label ":label")
   (jetpacs-check-descriptor on-tap ":on-tap")
   (when icon (jetpacs-check-identifier icon ":icon"))
   (when enabled (jetpacs-check-bool enabled ":enabled"))
   (when supporting-text (jetpacs-require-string supporting-text ":supporting-text"))
   (when trailing-icon (jetpacs-check-identifier trailing-icon ":trailing-icon"))
+  (when trailing-text (jetpacs-require-string trailing-text ":trailing-text"))
+  ;; SPEC 17.4: one trailing slot, so the pair cannot both be drawn.
+  (when (and trailing-icon trailing-text)
+    (error "jetpacs-menu-item: :trailing-icon and :trailing-text are mutually exclusive"))
   (when checked (jetpacs-check-bool checked ":checked"))
   (when checked-icon (jetpacs-check-identifier checked-icon ":checked-icon"))
   (jetpacs-make-node nil :label label :on_tap on-tap :icon icon :enabled enabled
                  :supporting_text supporting-text :trailing_icon trailing-icon
+                 :trailing_text trailing-text
                  :checked checked :checked_icon checked-icon))
 
 (cl-defun jetpacs-menu-group (label items)

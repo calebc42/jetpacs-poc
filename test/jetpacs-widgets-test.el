@@ -437,6 +437,18 @@
                    (list
                     (jetpacs-menu-item "Home" (jetpacs-action "demo.tap")
                                        :trailing-icon "home"))))))
+      ;; The trailing pair: an icon on one row, a shortcut hint on the next,
+      ;; plus the scroll position a long popup opens at.
+      (chk "106" (jetpacs-menu
+                  (list
+                   (jetpacs-menu-item "Edit mode" (jetpacs-action "demo.edit")
+                                      :icon "edit"
+                                      :supporting-text "Opens the editor"
+                                      :trailing-icon "chevron_right")
+                   (jetpacs-menu-item "Send feedback"
+                                      (jetpacs-action "demo.feedback")
+                                      :icon "email" :trailing-text "F11"))
+                  :icon "more_vert" :initial-scroll "end"))
       (chk "42" (jetpacs-text-input "title"))
       (chk "43" (jetpacs-text-input "title"
                                     :autofocus t :clear-on-submit t :enabled t
