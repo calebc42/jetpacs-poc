@@ -28,7 +28,8 @@ tidied to the same standard.
 
 ## Slice 1: baseline profile and the presentation seam
 
-Files (uncommitted at the time of writing):
+Landed 2026-09-03 as jetpacs-components d33750b, jetpacs f163528,
+jetpacs-component-catalog 5c0c041. Files:
 
 - `jetpacs-components/lisp/jetpacs-components/jetpacs-design-baseline.el`
   (new): the profile, `jetpacs-design-present`, and
