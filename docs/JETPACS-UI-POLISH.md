@@ -210,10 +210,36 @@ which may not contrast with the chosen background; the baseline binds both
 and a profile author must too. No slot table exists in the docs to go
 stale; the experiment manifest records checkpoint-era commits only.
 
-## Remaining slices
+## Slice 5: Glasspane
 
-5. Glasspane: rows through the list item, hex colors to theme roles,
-   sections, menus.
+- **Rows.** Seven card-shaped rows became `jetpacs-chrome-row` (the list
+  item under the profile): contextual note, mention (with its "Link it"
+  button trailing), stale note, recent clock task, saved view (delete
+  trailing), saved search (edit and delete trailing), and the journal's
+  carried-over task (Today and Pick trailing). The rich item cards on the
+  agenda, tasks and detail screens stay cards: their headline is rich text
+  with a priority badge, their body carries chip rows and date rows, and
+  they swipe. A list item's title is a string.
+- **Colors.** Twenty hex literals became theme roles: overdue, deadline and
+  archive in `error`; priority in `warning`; done and cycle in `success`;
+  the selected calendar day and tag spans in `primary`/`on_primary`; the
+  neutral scheduled glyph and unranked priority in `outline`. Glasspane now
+  authors no hex at all, so the profile and the Companion's own palette
+  decide every color.
+- **Menus.** Both menus carry `semantics.name`: "Move to column" on a board
+  card, "Heading actions" in the reader.
+- **Sections.** Already section headers throughout; the remaining title-
+  styled texts are dialog titles, which is right.
+- **Back arrow beside the rail.** A Tier-1 destination (Projects, Areas,
+  Resources, Archive, Review) is a peer of the Agenda root, reached from
+  the rail beside it, yet it was pushed with a back arrow. The destination
+  opener now hands those builders a nil back; drills keep theirs. The
+  system gesture at a destination therefore falls to the platform default,
+  the way top-level destinations behave in Material navigation.
+- **Capture FAB.** Its glyph is `note_add`, not `add`: the FAB rides the
+  Files guest that Resources opens, where a plain plus beside Files' own
+  "+" read as the same action.
+
 
 Open items noticed on the tablet, not yet addressed:
 
