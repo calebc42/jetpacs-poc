@@ -784,6 +784,7 @@ private fun JetpacsMenuRichItems() {
                         supportingText = "/data/data/com.termux/files/home",
                     ),
                     JetpacsMenuItem("Home", trailingIcon = "home"),
+                    JetpacsMenuItem("Send feedback", icon = "email", trailingText = "F11"),
                 ),
                 onSelect = {},
             )

@@ -125,6 +125,25 @@ class JetpacsMenuTest {
     }
 
     @Test
+    fun theTrailingSlotCarriesEitherAGlyphOrAHint() {
+        // SPEC 17.4 makes the pair mutually exclusive, so the renderer never
+        // has to choose between them; it only has to read both.
+        val icon = jetpacsMenuItems(
+            array("""[{"label":"Open","trailing_icon":"chevron_right"}]"""),
+            Recorder().dispatch,
+        )[0]
+        assertEquals("chevron_right", icon.trailingIcon)
+        assertNull(icon.trailingText)
+
+        val hint = jetpacsMenuItems(
+            array("""[{"label":"Send feedback","trailing_text":"F11"}]"""),
+            Recorder().dispatch,
+        )[0]
+        assertEquals("F11", hint.trailingText)
+        assertNull(hint.trailingIcon)
+    }
+
+    @Test
     fun supportingTextSurvivesOnAnOrdinaryItem() {
         // The Material renderer computes this and then drops it on the
         // non-checkable overload; the Foundation row honors it on every item.

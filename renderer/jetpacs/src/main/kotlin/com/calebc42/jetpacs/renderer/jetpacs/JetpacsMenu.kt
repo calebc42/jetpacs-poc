@@ -80,6 +80,7 @@ data class JetpacsMenuItem(
     val label: String,
     val icon: String? = null,
     val trailingIcon: String? = null,
+    val trailingText: String? = null,
     val supportingText: String? = null,
     val enabled: Boolean = true,
     val checked: Boolean? = null,
@@ -464,9 +465,20 @@ private fun JetpacsMenuRow(
                 }
             }
         }
+        // One trailing slot: the wire makes the pair mutually exclusive, and a
+        // shortcut hint is text rather than a glyph the icon set would have to
+        // contain.
         if (!item.trailingIcon.isNullOrEmpty()) {
             Spacer(Modifier.width(12.dp))
             DesignGlyph(item.trailingIcon, labelStyle.color, MenuGlyphSize)
+        } else if (!item.trailingText.isNullOrEmpty()) {
+            Spacer(Modifier.width(12.dp))
+            BasicText(
+                item.trailingText,
+                style = supportingStyle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -532,6 +544,7 @@ internal fun jetpacsMenuItems(
             label = label,
             icon = item.menuText("icon").takeIf(String::isNotEmpty),
             trailingIcon = item.menuText("trailing_icon").takeIf(String::isNotEmpty),
+            trailingText = item.menuText("trailing_text").takeIf(String::isNotEmpty),
             supportingText = item.menuText("supporting_text").takeIf(String::isNotEmpty),
             enabled = item.menuFlag("enabled", true),
             // Presence, not value: a `checked` member makes the row checkable.
