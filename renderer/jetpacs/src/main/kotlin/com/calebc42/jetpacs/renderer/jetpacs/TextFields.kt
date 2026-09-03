@@ -83,6 +83,11 @@ fun JetpacsTextField(
     onKeyboardAction: KeyboardActionHandler? = null,
     lineLimits: TextFieldLineLimits = TextFieldLineLimits.Default,
     interactionSource: MutableInteractionSource? = null,
+    inputStyle: Style = Style,
+    labelStyle: Style = Style,
+    placeholderStyle: Style = Style,
+    supportingStyle: Style = Style,
+    affixStyle: Style = Style,
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val styleState = rememberUpdatedStyleState(source) {
@@ -97,10 +102,11 @@ fun JetpacsTextField(
         Style { contentPadding(inset) }
     } ?: Style
     val colors = JetpacsTheme.colors
-    val typography = JetpacsTheme.typography
-    val textStyle = (if (monospace) typography.code else typography.field).copy(
-        color = colors.content,
-    )
+    val baseInputTextStyle = (if (monospace) {
+        JetpacsTheme.typography.code
+    } else {
+        JetpacsTheme.typography.field
+    }).copy(color = colors.content)
     val decorator = TextFieldDecorator { innerTextField ->
         JetpacsTextFieldDecoration(
             textIsEmpty = state.text.isEmpty(),
@@ -117,17 +123,31 @@ fun JetpacsTextField(
             baseStyle = baseStyle,
             paddingStyle = paddingStyle,
             callerStyle = style,
+            labelStyle = labelStyle,
+            placeholderStyle = placeholderStyle,
+            supportingStyle = supportingStyle,
+            affixStyle = affixStyle,
             innerTextField = innerTextField,
         )
     }
-    val fieldModifier = modifier.heightIn(min = 48.dp)
+    val fieldModifier = modifier
+        .heightIn(min = 48.dp)
+        .styleable(
+            styleState,
+            designComponentNonTextStyle(DesignComponentStyleSlot.TextFieldText),
+            inputStyle,
+        )
     if (secure) {
         BasicSecureTextField(
             state = state,
             modifier = fieldModifier,
             enabled = enabled,
             inputTransformation = inputTransformation,
-            textStyle = textStyle,
+            textStyle = resolvedDesignTextStyle(
+                DesignComponentStyleSlot.TextFieldText,
+                baseInputTextStyle,
+                styleState,
+            ),
             keyboardOptions = keyboardOptions,
             onKeyboardAction = onKeyboardAction,
             interactionSource = source,
@@ -142,7 +162,11 @@ fun JetpacsTextField(
             enabled = enabled,
             readOnly = false,
             inputTransformation = inputTransformation,
-            textStyle = textStyle,
+            textStyle = resolvedDesignTextStyle(
+                DesignComponentStyleSlot.TextFieldText,
+                baseInputTextStyle,
+                styleState,
+            ),
             keyboardOptions = keyboardOptions,
             onKeyboardAction = onKeyboardAction,
             lineLimits = lineLimits,
@@ -182,6 +206,11 @@ internal fun JetpacsMaskedTextField(
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     lineLimits: TextFieldLineLimits = TextFieldLineLimits.Default,
     interactionSource: MutableInteractionSource? = null,
+    inputStyle: Style = Style,
+    labelStyle: Style = Style,
+    placeholderStyle: Style = Style,
+    supportingStyle: Style = Style,
+    affixStyle: Style = Style,
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val styleState = rememberUpdatedStyleState(source) {
@@ -196,18 +225,29 @@ internal fun JetpacsMaskedTextField(
         Style { contentPadding(inset) }
     } ?: Style
     val colors = JetpacsTheme.colors
-    val typography = JetpacsTheme.typography
-    val textStyle = (if (monospace) typography.code else typography.field).copy(
-        color = colors.content,
-    )
+    val baseInputTextStyle = (if (monospace) {
+        JetpacsTheme.typography.code
+    } else {
+        JetpacsTheme.typography.field
+    }).copy(color = colors.content)
     val multiLine = lineLimits as? TextFieldLineLimits.MultiLine
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .styleable(
+                styleState,
+                designComponentNonTextStyle(DesignComponentStyleSlot.TextFieldText),
+                inputStyle,
+            ),
         enabled = enabled,
         readOnly = false,
-        textStyle = textStyle,
+        textStyle = resolvedDesignTextStyle(
+            DesignComponentStyleSlot.TextFieldText,
+            baseInputTextStyle,
+            styleState,
+        ),
         keyboardOptions = keyboardOptions,
         keyboardActions = keyboardActions,
         singleLine = lineLimits == TextFieldLineLimits.SingleLine,
@@ -232,6 +272,10 @@ internal fun JetpacsMaskedTextField(
                 baseStyle = baseStyle,
                 paddingStyle = paddingStyle,
                 callerStyle = style,
+                labelStyle = labelStyle,
+                placeholderStyle = placeholderStyle,
+                supportingStyle = supportingStyle,
+                affixStyle = affixStyle,
                 innerTextField = innerTextField,
             )
         },
@@ -254,23 +298,53 @@ private fun JetpacsTextFieldDecoration(
     baseStyle: Style,
     paddingStyle: Style,
     callerStyle: Style,
+    labelStyle: Style,
+    placeholderStyle: Style,
+    supportingStyle: Style,
+    affixStyle: Style,
     innerTextField: @Composable () -> Unit,
 ) {
     val colors = JetpacsTheme.colors
-    val typography = JetpacsTheme.typography
     Column(verticalArrangement = Arrangement.spacedBy(JetpacsTheme.spacing.unit)) {
         label?.let {
-            BasicText(
-                it,
-                modifier = Modifier.clearAndSetSemantics { },
-                style = typography.fieldLabel.copy(
-                    color = if (isError) colors.error else colors.mutedContent,
-                ),
-            )
+            Box(
+                modifier = Modifier
+                    .clearAndSetSemantics { }
+                    .styleable(
+                        styleState,
+                        designComponentNonTextStyle(
+                            DesignComponentStyleSlot.TextFieldLabel,
+                        ),
+                        labelStyle,
+                    ),
+            ) {
+                BasicText(
+                    it,
+                    style = resolvedDesignTextStyle(
+                        DesignComponentStyleSlot.TextFieldLabel,
+                        JetpacsTheme.typography.fieldLabel.copy(
+                            color = if (isError) colors.error else colors.mutedContent,
+                        ),
+                        styleState,
+                    ),
+                )
+            }
         }
         Row(
             modifier = Modifier
-                .styleable(styleState, baseStyle, paddingStyle, callerStyle),
+                .styleable(
+                    styleState,
+                    baseStyle,
+                    designComponentStyle(
+                        if (baseStyle === JetpacsTheme.styles.textFieldFilled) {
+                            DesignComponentStyleSlot.TextFieldFilled
+                        } else {
+                            DesignComponentStyleSlot.TextFieldOutlined
+                        },
+                    ),
+                    paddingStyle,
+                    callerStyle,
+                ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             leadingDecoration?.let {
@@ -278,34 +352,84 @@ private fun JetpacsTextFieldDecoration(
                 Spacer(Modifier.width(8.dp))
             }
             prefix?.let {
-                BasicText(
-                    it,
-                    modifier = Modifier.clearAndSetSemantics { },
-                    style = typography.field.copy(color = colors.mutedContent),
-                )
+                Box(
+                    modifier = Modifier
+                        .clearAndSetSemantics { }
+                        .styleable(
+                            styleState,
+                            designComponentNonTextStyle(
+                                DesignComponentStyleSlot.TextFieldAffix,
+                            ),
+                            affixStyle,
+                        ),
+                ) {
+                    BasicText(
+                        it,
+                        style = resolvedDesignTextStyle(
+                            DesignComponentStyleSlot.TextFieldAffix,
+                            JetpacsTheme.typography.field.copy(
+                                color = colors.mutedContent,
+                            ),
+                            styleState,
+                        ),
+                    )
+                }
                 Spacer(Modifier.width(4.dp))
             }
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
                 if (textIsEmpty) {
                     placeholder?.let {
-                        BasicText(
-                            it,
+                        Box(
                             modifier = Modifier
                                 .alpha(if (enabled) 1f else 0.7f)
-                                .clearAndSetSemantics { },
-                            style = typography.field.copy(color = colors.mutedContent),
-                        )
+                                .clearAndSetSemantics { }
+                                .styleable(
+                                    styleState,
+                                    designComponentNonTextStyle(
+                                        DesignComponentStyleSlot.TextFieldPlaceholder,
+                                    ),
+                                    placeholderStyle,
+                                ),
+                        ) {
+                            BasicText(
+                                it,
+                                style = resolvedDesignTextStyle(
+                                    DesignComponentStyleSlot.TextFieldPlaceholder,
+                                    JetpacsTheme.typography.field.copy(
+                                        color = colors.mutedContent,
+                                    ),
+                                    styleState,
+                                ),
+                            )
+                        }
                     }
                 }
                 innerTextField()
             }
             suffix?.let {
                 Spacer(Modifier.width(4.dp))
-                BasicText(
-                    it,
-                    modifier = Modifier.clearAndSetSemantics { },
-                    style = typography.field.copy(color = colors.mutedContent),
-                )
+                Box(
+                    modifier = Modifier
+                        .clearAndSetSemantics { }
+                        .styleable(
+                            styleState,
+                            designComponentNonTextStyle(
+                                DesignComponentStyleSlot.TextFieldAffix,
+                            ),
+                            affixStyle,
+                        ),
+                ) {
+                    BasicText(
+                        it,
+                        style = resolvedDesignTextStyle(
+                            DesignComponentStyleSlot.TextFieldAffix,
+                            JetpacsTheme.typography.field.copy(
+                                color = colors.mutedContent,
+                            ),
+                            styleState,
+                        ),
+                    )
+                }
             }
             trailingDecoration?.let {
                 Spacer(Modifier.width(8.dp))
@@ -313,13 +437,28 @@ private fun JetpacsTextFieldDecoration(
             }
         }
         supportingText?.let {
-            BasicText(
-                it,
-                modifier = Modifier.clearAndSetSemantics { },
-                style = typography.fieldSupporting.copy(
-                    color = if (isError) colors.error else colors.mutedContent,
-                ),
-            )
+            Box(
+                modifier = Modifier
+                    .clearAndSetSemantics { }
+                    .styleable(
+                        styleState,
+                        designComponentNonTextStyle(
+                            DesignComponentStyleSlot.TextFieldSupporting,
+                        ),
+                        supportingStyle,
+                    ),
+            ) {
+                BasicText(
+                    it,
+                    style = resolvedDesignTextStyle(
+                        DesignComponentStyleSlot.TextFieldSupporting,
+                        JetpacsTheme.typography.fieldSupporting.copy(
+                            color = if (isError) colors.error else colors.mutedContent,
+                        ),
+                        styleState,
+                    ),
+                )
+            }
         }
     }
 }
@@ -352,6 +491,10 @@ internal fun JetpacsTextFieldFocusFixture(
         baseStyle = JetpacsTheme.styles.textFieldOutlined,
         paddingStyle = Style,
         callerStyle = Style,
+        labelStyle = Style,
+        placeholderStyle = Style,
+        supportingStyle = Style,
+        affixStyle = Style,
         innerTextField = {
             BasicText(state.text.toString(), style = JetpacsTheme.typography.field)
         },

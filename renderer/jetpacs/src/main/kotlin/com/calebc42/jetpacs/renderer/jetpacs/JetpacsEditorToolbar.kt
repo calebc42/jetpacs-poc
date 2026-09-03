@@ -128,7 +128,11 @@ internal fun JetpacsEditorToolbar(
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .styleable(styleState, JetpacsTheme.styles.editorToolbar),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.editorToolbar,
+                designComponentStyle(DesignComponentStyleSlot.EditorToolbar),
+            ),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -180,6 +184,7 @@ private fun JetpacsEditorToolbarItem(
                         modifier = Modifier.styleable(
                             remember { MutableStyleState(null) },
                             JetpacsTheme.styles.panel,
+                            designComponentStyle(DesignComponentStyleSlot.EditorToolbar),
                         ),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -243,7 +248,11 @@ private fun JetpacsEditorToolbarButton(
                 },
                 onClick = onClick,
             )
-            .styleable(styleState, JetpacsTheme.styles.editorToolbarItem),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.editorToolbarItem,
+                designComponentStyle(DesignComponentStyleSlot.EditorToolbarItem),
+            ),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
     ) {
@@ -252,7 +261,14 @@ private fun JetpacsEditorToolbarButton(
             if (label.isNotEmpty()) Spacer(Modifier.width(4.dp))
         }
         if (label.isNotEmpty()) {
-            BasicText(label, style = JetpacsTheme.typography.fieldLabel)
+            BasicText(
+                label,
+                style = resolvedDesignTextStyle(
+                    DesignComponentStyleSlot.EditorToolbarItem,
+                    JetpacsTheme.typography.fieldLabel,
+                    styleState,
+                ),
+            )
         }
     }
 }
@@ -321,7 +337,11 @@ internal fun JetpacsEditorToolbarFixture() {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .styleable(styleState, JetpacsTheme.styles.editorToolbar),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.editorToolbar,
+                designComponentStyle(DesignComponentStyleSlot.EditorToolbar),
+            ),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         listOf(

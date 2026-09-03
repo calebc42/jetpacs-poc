@@ -41,9 +41,50 @@ data class JetpacsColors(
     val error: Color,
 )
 
+/** Exact EBP roles retained beside Jetpacs' locally derived color tokens. */
+@Immutable
+data class JetpacsThemeRoles(
+    val primary: Color,
+    val onPrimary: Color,
+    val secondary: Color,
+    val onSecondary: Color,
+    val error: Color,
+    val onError: Color,
+    val background: Color,
+    val onBackground: Color,
+    val surface: Color,
+    val onSurface: Color,
+    val outline: Color,
+    val success: Color,
+    val warning: Color,
+) {
+    operator fun get(role: DesignThemeRole): Color = when (role) {
+        DesignThemeRole.Primary -> primary
+        DesignThemeRole.OnPrimary -> onPrimary
+        DesignThemeRole.Secondary -> secondary
+        DesignThemeRole.OnSecondary -> onSecondary
+        DesignThemeRole.Error -> error
+        DesignThemeRole.OnError -> onError
+        DesignThemeRole.Background -> background
+        DesignThemeRole.OnBackground -> onBackground
+        DesignThemeRole.Surface -> surface
+        DesignThemeRole.OnSurface -> onSurface
+        DesignThemeRole.Outline -> outline
+        DesignThemeRole.Success -> success
+        DesignThemeRole.Warning -> warning
+    }
+}
+
 /** Typography used by the first Jetpacs-owned controls. */
 @Immutable
 data class JetpacsTypography(
+    /** Canonical `text` fallbacks for the six EBP style names in a design scope. */
+    val body: TextStyle,
+    val title: TextStyle,
+    val headline: TextStyle,
+    val caption: TextStyle,
+    val label: TextStyle,
+    val mono: TextStyle,
     val action: TextStyle,
     val choice: TextStyle,
     val panelLabel: TextStyle,
@@ -91,11 +132,14 @@ data class JetpacsSyntaxColors(
 /** Complete private theme value consumed by Jetpacs component Styles. */
 @Immutable
 data class JetpacsThemeValue(
+    val roles: JetpacsThemeRoles,
     val colors: JetpacsColors,
     val typography: JetpacsTypography,
     val shapes: JetpacsShapes,
     val spacing: JetpacsSpacing,
     val syntax: JetpacsSyntaxColors,
+    /** Polarity the palette was derived for; a re-derived scope theme keeps it. */
+    val dark: Boolean = false,
 )
 
 private val lightDefaults = JetpacsColors(
@@ -128,7 +172,8 @@ private val darkDefaults = JetpacsColors(
     error = Color(0xFFFFB4AB),
 )
 
-private fun parseHexColor(value: String): Color? {
+/** Parse a `#RGB`, `#RGBA`, `#RRGGBB`, or `#RRGGBBAA` wire color, else null. */
+internal fun parseHexColor(value: String): Color? {
     if (!value.startsWith('#')) return null
     val hex = value.drop(1)
     if (hex.length !in setOf(3, 4, 6, 8) || hex.any { it.digitToIntOrNull(16) == null }) {
@@ -160,6 +205,33 @@ private fun JsonObject?.role(name: String): Color? =
 private fun legibleOn(background: Color): Color =
     if (background.luminance() < 0.5f) Color.White else Color(0xFF171A1F)
 
+/** Preserve all thirteen neutral EBP roles for dynamic design references. */
+fun deriveJetpacsThemeRoles(colors: JsonObject?, dark: Boolean): JetpacsThemeRoles {
+    val base = if (dark) darkDefaults else lightDefaults
+    val primary = colors.role("primary") ?: base.accent
+    val secondary = colors.role("secondary") ?: primary
+    val error = colors.role("error") ?: base.error
+    val background = colors.role("background") ?: base.background
+    val surface = colors.role("surface") ?: base.surface
+    return JetpacsThemeRoles(
+        primary = primary,
+        onPrimary = colors.role("on_primary") ?: legibleOn(primary),
+        secondary = secondary,
+        onSecondary = colors.role("on_secondary") ?: legibleOn(secondary),
+        error = error,
+        onError = colors.role("on_error") ?: legibleOn(error),
+        background = background,
+        onBackground = colors.role("on_background") ?: base.content,
+        surface = surface,
+        onSurface = colors.role("on_surface") ?: base.content,
+        outline = colors.role("outline") ?: base.outline,
+        success = colors.role("success")
+            ?: if (dark) Color(0xFF7FD8A2) else Color(0xFF236B3B),
+        warning = colors.role("warning")
+            ?: if (dark) Color(0xFFFFC56A) else Color(0xFF8A5700),
+    )
+}
+
 /**
  * Derive Jetpacs-private colors from EBP's neutral role map.
  *
@@ -167,32 +239,93 @@ private fun legibleOn(background: Color): Color =
  * presentation tokens and never become accepted EBP color names.
  */
 fun deriveJetpacsColors(colors: JsonObject?, dark: Boolean): JetpacsColors {
+    val roles = deriveJetpacsThemeRoles(colors, dark)
+    // A pushed surface without a background has always doubled as the
+    // background for the private palette; keep that reading here.
+    val background = colors.role("background") ?: colors.role("surface") ?: roles.background
+    return deriveJetpacsColors(roles.copy(background = background), dark)
+}
+
+/**
+ * Derive Jetpacs-private colors from already resolved [roles].
+ *
+ * This is the path a design scope takes when it re-declares theme roles for
+ * its subtree: the same derivation as the receiver theme, from the scope's
+ * roles instead of the pushed Emacs palette.
+ */
+fun deriveJetpacsColors(roles: JetpacsThemeRoles, dark: Boolean): JetpacsColors {
     val base = if (dark) darkDefaults else lightDefaults
-    val accent = colors.role("primary") ?: base.accent
-    val surface = colors.role("surface") ?: base.surface
-    val content = colors.role("on_surface") ?: colors.role("on_background")
-        ?: base.content
-    val outline = colors.role("outline") ?: base.outline
+    val accent = roles.primary
+    val surface = roles.surface
+    val content = roles.onSurface
+    val outline = roles.outline
     return base.copy(
-        background = colors.role("background") ?: colors.role("surface")
-            ?: base.background,
+        background = roles.background,
         content = content,
         mutedContent = lerp(content, surface, if (dark) 0.36f else 0.42f),
         accent = accent,
-        onAccent = colors.role("on_primary") ?: legibleOn(accent),
+        onAccent = roles.onPrimary,
         surface = surface,
         raisedSurface = lerp(surface, accent, if (dark) 0.08f else 0.05f),
         selectedSurface = lerp(surface, accent, if (dark) 0.23f else 0.16f),
         pressedSurface = lerp(surface, content, if (dark) 0.12f else 0.08f),
         outline = outline,
         focus = accent,
-        error = colors.role("error") ?: base.error,
+        error = roles.error,
     )
 }
 
-private fun defaultTheme(colors: JetpacsColors) = JetpacsThemeValue(
+/** The complete private theme a design scope installs for re-declared [roles]. */
+internal fun jetpacsThemeFor(roles: JetpacsThemeRoles, dark: Boolean): JetpacsThemeValue =
+    defaultTheme(deriveJetpacsColors(roles, dark), roles, dark)
+
+private fun defaultTheme(
+    colors: JetpacsColors,
+    roles: JetpacsThemeRoles,
+    dark: Boolean = false,
+) = JetpacsThemeValue(
+    roles = roles,
     colors = colors,
+    dark = dark,
     typography = JetpacsTypography(
+        body = TextStyle(
+            color = colors.content,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 16.sp,
+            lineHeight = 24.sp,
+        ),
+        title = TextStyle(
+            color = colors.content,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 28.sp,
+        ),
+        headline = TextStyle(
+            color = colors.content,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 24.sp,
+            lineHeight = 32.sp,
+        ),
+        caption = TextStyle(
+            color = colors.mutedContent,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 12.sp,
+            lineHeight = 16.sp,
+        ),
+        label = TextStyle(
+            color = colors.content,
+            fontFamily = FontFamily.SansSerif,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            lineHeight = 16.sp,
+        ),
+        mono = TextStyle(
+            color = colors.content,
+            fontFamily = FontFamily.Monospace,
+            fontSize = 14.sp,
+            lineHeight = 20.sp,
+        ),
         action = TextStyle(
             color = colors.content,
             fontFamily = FontFamily.SansSerif,
@@ -276,11 +409,13 @@ private fun defaultTheme(colors: JetpacsColors) = JetpacsThemeValue(
 )
 
 internal val LocalJetpacsTheme = staticCompositionLocalOf {
-    defaultTheme(lightDefaults)
+    defaultTheme(lightDefaults, deriveJetpacsThemeRoles(null, false))
 }
 
 /** Stable access to the active Jetpacs design tokens and component Styles. */
 object JetpacsTheme {
+    val roles: JetpacsThemeRoles
+        @Composable @ReadOnlyComposable get() = LocalJetpacsTheme.current.roles
     val colors: JetpacsColors
         @Composable @ReadOnlyComposable get() = LocalJetpacsTheme.current.colors
     val typography: JetpacsTypography
@@ -303,8 +438,9 @@ fun ProvideJetpacsTheme(payload: JsonObject?, content: @Composable () -> Unit) {
     val forcedDark = (payload?.get("dark") as? JsonPrimitive)?.booleanOrNull
     val dark = forcedDark ?: isSystemInDarkTheme()
     val colors = deriveJetpacsColors(payload?.get("colors") as? JsonObject, dark)
+    val roles = deriveJetpacsThemeRoles(payload?.get("colors") as? JsonObject, dark)
     CompositionLocalProvider(
-        LocalJetpacsTheme provides defaultTheme(colors),
+        LocalJetpacsTheme provides defaultTheme(colors, roles, dark),
         LocalTextSelectionColors provides TextSelectionColors(
             handleColor = colors.accent,
             backgroundColor = colors.accent.copy(alpha = 0.28f),

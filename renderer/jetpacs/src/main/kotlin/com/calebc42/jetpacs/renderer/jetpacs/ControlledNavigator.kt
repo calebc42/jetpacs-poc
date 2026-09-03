@@ -118,6 +118,11 @@ internal fun JetpacsControlledNavigator(
     modifier: Modifier = Modifier,
     optionStyle: Style = Style,
     enabled: Boolean = true,
+    labelStyle: Style = Style,
+    buttonStyle: Style = Style,
+    selectorStyle: Style = Style,
+    popupStyle: Style = Style,
+    popupItemStyle: Style = Style,
 ) {
     if (options.isEmpty()) return
 
@@ -166,6 +171,11 @@ internal fun JetpacsControlledNavigator(
                 .styleable(
                     remember { MutableStyleState(null) },
                     JetpacsTheme.styles.navigator,
+                    if (semantics == JetpacsNavigatorSemantics.Sections) {
+                        designComponentStyle(DesignComponentStyleSlot.SectionNavigatorOption)
+                    } else {
+                        Style
+                    },
                 ),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -174,6 +184,8 @@ internal fun JetpacsControlledNavigator(
                 towardStart = true,
                 enabled = previousEnabled,
                 contentDescription = "Previous $destinationName",
+                semantics = semantics,
+                style = buttonStyle,
                 onClick = { onValueChange(options[selectedIndex - 1].value) },
             )
             JetpacsNavigatorSelector(
@@ -182,8 +194,11 @@ internal fun JetpacsControlledNavigator(
                 optionCount = options.size,
                 expanded = expanded,
                 enabled = enabled,
+                semantics = semantics,
                 focusRequester = triggerFocusRequester,
                 optionStyle = optionStyle,
+                labelStyle = labelStyle,
+                selectorStyle = selectorStyle,
                 onClick = { expanded = !expanded },
                 modifier = Modifier.weight(1f),
             )
@@ -191,6 +206,8 @@ internal fun JetpacsControlledNavigator(
                 towardStart = false,
                 enabled = nextEnabled,
                 contentDescription = "Next $destinationName",
+                semantics = semantics,
+                style = buttonStyle,
                 onClick = { onValueChange(options[selectedIndex + 1].value) },
             )
         }
@@ -222,6 +239,9 @@ internal fun JetpacsControlledNavigator(
                     semantics = semantics,
                     enabled = enabled,
                     optionStyle = optionStyle,
+                    labelStyle = labelStyle,
+                    popupStyle = popupStyle,
+                    popupItemStyle = popupItemStyle,
                     requestInitialFocus = LocalWindowInfo.current.isWindowFocused,
                     availableHeight = availablePopupHeight,
                     onOptionClick = { option ->
@@ -244,6 +264,9 @@ internal fun JetpacsNavigatorPopupContent(
     optionStyle: Style = Style,
     requestInitialFocus: Boolean = false,
     availableHeight: Dp? = null,
+    labelStyle: Style = Style,
+    popupStyle: Style = Style,
+    popupItemStyle: Style = Style,
     onOptionClick: (JetpacsNavigatorOption) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -280,6 +303,12 @@ internal fun JetpacsNavigatorPopupContent(
             .styleable(
                 remember { MutableStyleState(null) },
                 JetpacsTheme.styles.navigatorPopup,
+                if (semantics == JetpacsNavigatorSemantics.Sections) {
+                    designComponentStyle(DesignComponentStyleSlot.SectionNavigatorPopup)
+                } else {
+                    Style
+                },
+                popupStyle,
             ),
     ) {
         itemsIndexed(
@@ -296,6 +325,8 @@ internal fun JetpacsNavigatorPopupContent(
                 selectedFocusRequester = selectedFocusRequester,
                 requestInitialFocus = requestInitialFocus,
                 optionStyle = optionStyle,
+                labelStyle = labelStyle,
+                popupItemStyle = popupItemStyle,
                 onClick = { onOptionClick(option) },
             )
         }
@@ -309,8 +340,11 @@ private fun JetpacsNavigatorSelector(
     optionCount: Int,
     expanded: Boolean,
     enabled: Boolean,
+    semantics: JetpacsNavigatorSemantics,
     focusRequester: FocusRequester,
     optionStyle: Style,
+    labelStyle: Style,
+    selectorStyle: Style,
     onClick: () -> Unit,
     modifier: Modifier,
 ) {
@@ -339,17 +373,46 @@ private fun JetpacsNavigatorSelector(
             .styleable(
                 styleState,
                 JetpacsTheme.styles.navigatorSelector,
+                if (semantics == JetpacsNavigatorSemantics.Sections) {
+                    designComponentStyle(DesignComponentStyleSlot.SectionNavigatorSelector)
+                } else {
+                    designComponentStyle(DesignComponentStyleSlot.TabsItem)
+                },
                 optionStyle,
+                selectorStyle,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(
-            text = text,
-            modifier = Modifier.weight(1f),
-            style = JetpacsTheme.typography.choice,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .styleable(
+                    styleState,
+                    if (semantics == JetpacsNavigatorSemantics.Sections) {
+                        designComponentNonTextStyle(
+                            DesignComponentStyleSlot.SectionNavigatorLabel,
+                        )
+                    } else {
+                        designComponentNonTextStyle(DesignComponentStyleSlot.TabsLabel)
+                    },
+                    labelStyle,
+                ),
+        ) {
+            BasicText(
+                text = text,
+                style = resolvedDesignTextStyle(
+                    if (semantics == JetpacsNavigatorSemantics.Sections) {
+                        DesignComponentStyleSlot.SectionNavigatorLabel
+                    } else {
+                        DesignComponentStyleSlot.TabsLabel
+                    },
+                    JetpacsTheme.typography.choice,
+                    styleState,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         Spacer(Modifier.width(8.dp))
         JetpacsChevron(JetpacsChevronDirection.Down)
     }
@@ -360,6 +423,8 @@ private fun JetpacsNavigatorArrow(
     towardStart: Boolean,
     enabled: Boolean,
     contentDescription: String,
+    semantics: JetpacsNavigatorSemantics,
+    style: Style,
     onClick: () -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
@@ -375,7 +440,16 @@ private fun JetpacsNavigatorArrow(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .styleable(styleState, JetpacsTheme.styles.navigatorButton),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.navigatorButton,
+                if (semantics == JetpacsNavigatorSemantics.Sections) {
+                    designComponentStyle(DesignComponentStyleSlot.SectionNavigatorButton)
+                } else {
+                    designComponentStyle(DesignComponentStyleSlot.TabsItem)
+                },
+                style,
+            ),
         contentAlignment = Alignment.Center,
     ) {
         JetpacsChevron(
@@ -399,6 +473,8 @@ private fun JetpacsNavigatorPopupOption(
     selectedFocusRequester: FocusRequester,
     requestInitialFocus: Boolean,
     optionStyle: Style,
+    labelStyle: Style,
+    popupItemStyle: Style,
     onClick: () -> Unit,
 ) {
     val source = remember { MutableInteractionSource() }
@@ -446,20 +522,54 @@ private fun JetpacsNavigatorPopupOption(
             .styleable(
                 styleState,
                 JetpacsTheme.styles.navigatorPopupItem,
+                if (semantics == JetpacsNavigatorSemantics.Sections) {
+                    designComponentStyle(DesignComponentStyleSlot.SectionNavigatorOption)
+                } else {
+                    designComponentStyle(DesignComponentStyleSlot.TabsItem)
+                },
+                if (semantics == JetpacsNavigatorSemantics.Sections) {
+                    designComponentStyle(DesignComponentStyleSlot.SectionNavigatorPopupItem)
+                } else {
+                    Style
+                },
                 optionStyle,
+                popupItemStyle,
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (semantics == JetpacsNavigatorSemantics.Sections && option.level > 1) {
             Spacer(Modifier.width(((option.level - 1) * 12).dp))
         }
-        BasicText(
-            text = option.label,
-            modifier = Modifier.weight(1f),
-            style = JetpacsTheme.typography.choice,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .styleable(
+                    styleState,
+                    if (semantics == JetpacsNavigatorSemantics.Sections) {
+                        designComponentNonTextStyle(
+                            DesignComponentStyleSlot.SectionNavigatorLabel,
+                        )
+                    } else {
+                        designComponentNonTextStyle(DesignComponentStyleSlot.TabsLabel)
+                    },
+                    labelStyle,
+                ),
+        ) {
+            BasicText(
+                text = option.label,
+                style = resolvedDesignTextStyle(
+                    if (semantics == JetpacsNavigatorSemantics.Sections) {
+                        DesignComponentStyleSlot.SectionNavigatorLabel
+                    } else {
+                        DesignComponentStyleSlot.TabsLabel
+                    },
+                    JetpacsTheme.typography.choice,
+                    styleState,
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }
 

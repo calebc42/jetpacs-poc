@@ -13,6 +13,7 @@ import androidx.compose.foundation.style.fillWidth
 import androidx.compose.foundation.style.focused
 import androidx.compose.foundation.style.hovered
 import androidx.compose.foundation.style.pressed
+import androidx.compose.foundation.style.scale
 import androidx.compose.foundation.style.selected
 import androidx.compose.foundation.style.state
 import androidx.compose.runtime.Stable
@@ -60,6 +61,221 @@ object JetpacsComponentStyles {
         disabled { alpha(0.38f) }
     }
 
+    val actionLabel = Style { textStyle(tokens.typography.action) }
+
+    /** Shared geometry of every canonical `button` variant: a pill with a full target. */
+    private fun StyleScope.buttonBase() {
+        shape(androidx.compose.foundation.shape.RoundedCornerShape(50))
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal + tokens.spacing.unit,
+            vertical = tokens.spacing.controlVertical,
+        )
+        hovered { alpha(0.92f) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { scale(0.98f) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val buttonFilled = Style {
+        buttonBase()
+        background(tokens.colors.accent)
+        contentColor(tokens.colors.onAccent)
+    }
+
+    val buttonTonal = Style {
+        buttonBase()
+        background(tokens.colors.selectedSurface)
+        contentColor(tokens.colors.content)
+    }
+
+    /** No shadow model exists in the design language; elevation reads as a raised surface. */
+    val buttonElevated = Style {
+        buttonBase()
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+        contentColor(tokens.colors.accent)
+    }
+
+    val buttonOutlined = Style {
+        buttonBase()
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentColor(tokens.colors.accent)
+    }
+
+    val buttonText = Style {
+        buttonBase()
+        background(androidx.compose.ui.graphics.Color.Transparent)
+        contentColor(tokens.colors.accent)
+    }
+
+    val buttonLabel = Style { textStyle(tokens.typography.action) }
+
+    /** Canonical `chip`: a compact selectable pill with a selected face. */
+    val chip = Style {
+        shape(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentColor(tokens.colors.content)
+        contentPadding(horizontal = tokens.spacing.controlHorizontal, vertical = 6.dp)
+        selected {
+            animate {
+                background(tokens.colors.selectedSurface)
+                border(1.dp, tokens.colors.accent)
+                contentColor(tokens.colors.accent)
+            }
+        }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val chipLabel = Style { textStyle(tokens.typography.choice) }
+
+    /** Canonical `divider`: a hairline in the outline color. */
+    val divider = Style {
+        fillWidth()
+        background(tokens.colors.outline)
+    }
+
+    val sectionHeader = Style {
+        fillWidth()
+        contentPadding(horizontal = 0.dp, vertical = tokens.spacing.unit)
+    }
+
+    /** Shared geometry of every canonical `card` variant. */
+    private fun StyleScope.cardBase() {
+        fillWidth()
+        shape(tokens.shapes.panel)
+        contentPadding(tokens.spacing.panel)
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val cardFilled = Style {
+        cardBase()
+        background(tokens.colors.selectedSurface)
+        contentColor(tokens.colors.content)
+    }
+
+    /** No shadow model exists here; elevation reads as a raised surface. */
+    val cardElevated = Style {
+        cardBase()
+        background(tokens.colors.raisedSurface)
+        contentColor(tokens.colors.content)
+    }
+
+    val cardOutlined = Style {
+        cardBase()
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        contentColor(tokens.colors.content)
+    }
+
+    /**
+     * One list row.
+     *
+     * Deliberately flat by default — no border, no raised fill — because a
+     * row is a region of a list rather than an object floating above it. A
+     * profile that wants cards binds `list-item.container` to a surface style.
+     */
+    val listItem = Style {
+        fillWidth()
+        shape(tokens.shapes.control)
+        background(androidx.compose.ui.graphics.Color.Transparent)
+        contentColor(tokens.colors.content)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        selected { animate { background(tokens.colors.selectedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val listItemOverline = Style {
+        textStyle(tokens.typography.fieldLabel)
+        contentColor(tokens.colors.mutedContent)
+    }
+
+    val listItemTitle = Style { textStyle(tokens.typography.choice) }
+
+    val listItemSubtitle = Style {
+        textStyle(tokens.typography.fieldSupporting)
+        contentColor(tokens.colors.mutedContent)
+    }
+
+    /** The hairline a list draws between rows. */
+    val listItemSeparator = Style {
+        fillWidth()
+        background(tokens.colors.outline)
+    }
+
+    /**
+     * A bare icon target.
+     *
+     * Transparent by default: most icon buttons live in a bar or a row where
+     * a container would be visual noise. `variant` opts into a filled or
+     * outlined face, as the canonical member says.
+     */
+    val iconButton = Style {
+        shape(androidx.compose.foundation.shape.RoundedCornerShape(50))
+        background(androidx.compose.ui.graphics.Color.Transparent)
+        contentColor(tokens.colors.content)
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val iconButtonFilled = Style {
+        background(tokens.colors.accent)
+        contentColor(tokens.colors.onAccent)
+    }
+
+    val iconButtonOutlined = Style {
+        border(1.dp, tokens.colors.outline)
+        contentColor(tokens.colors.accent)
+    }
+
+    /** A compact status pill; an empty label is the bare attention dot. */
+    val badge = Style {
+        shape(androidx.compose.foundation.shape.RoundedCornerShape(50))
+        background(tokens.colors.selectedSurface)
+        contentColor(tokens.colors.content)
+        contentPadding(horizontal = 6.dp, vertical = 2.dp)
+    }
+
+    val badgeLabel = Style { textStyle(tokens.typography.fieldLabel) }
+
+    val emptyState = Style {
+        fillWidth()
+        contentColor(tokens.colors.mutedContent)
+        contentPadding(tokens.spacing.panel + tokens.spacing.panel)
+    }
+
+    val emptyStateTitle = Style {
+        textStyle(tokens.typography.choice)
+        contentColor(tokens.colors.content)
+    }
+
+    val emptyStateCaption = Style {
+        textStyle(tokens.typography.fieldSupporting)
+        contentColor(tokens.colors.mutedContent)
+    }
+
+    val swipeCell = Style { background(tokens.colors.selectedSurface) }
+
+    val swipeLabel = Style { textStyle(tokens.typography.fieldLabel) }
+
+    val sectionHeaderTitle = Style {
+        textStyle(tokens.typography.panelLabel)
+        contentColor(tokens.colors.accent)
+    }
+
     val choice = Style {
         fillWidth()
         shape(tokens.shapes.control)
@@ -81,6 +297,19 @@ object JetpacsComponentStyles {
         disabled { alpha(0.38f) }
     }
 
+    val choiceIndicator = Style {
+        shape(tokens.shapes.indicator)
+        background(tokens.colors.surface)
+        border(1.dp, tokens.colors.outline)
+        selected {
+            background(tokens.colors.accent)
+            border(1.dp, tokens.colors.accent)
+            contentColor(tokens.colors.onAccent)
+        }
+    }
+
+    val choiceLabel = Style { textStyle(tokens.typography.choice) }
+
     val panel = Style {
         fillWidth()
         shape(tokens.shapes.panel)
@@ -88,6 +317,8 @@ object JetpacsComponentStyles {
         border(1.dp, tokens.colors.outline)
         contentPadding(tokens.spacing.panel)
     }
+
+    val panelLabel = Style { textStyle(tokens.typography.panelLabel) }
 
     /** Page-free projection strip; selection behavior remains in [JetpacsTabs]. */
     val tabs = Style {
@@ -117,6 +348,55 @@ object JetpacsComponentStyles {
     val tabIndicator = Style {
         shape(tokens.shapes.indicator)
         background(tokens.colors.accent)
+    }
+
+    val tabLabel = Style {
+        textStyle(tokens.typography.choice)
+        textAlign(androidx.compose.ui.text.style.TextAlign.Center)
+    }
+
+    /** The overflow control that opens a menu; a full target in every mode. */
+    val menuTrigger = Style {
+        shape(tokens.shapes.control)
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    /** The window-bounded menu surface; its own padding frames the rows. */
+    val menuPopup = Style {
+        shape(tokens.shapes.panel)
+        background(tokens.colors.raisedSurface)
+        border(1.dp, tokens.colors.outline)
+        contentPadding(horizontal = 0.dp, vertical = tokens.spacing.unit)
+    }
+
+    /** One menu row, checkable or not, with the shared five-state face. */
+    val menuItem = Style {
+        fillWidth()
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
+        selected { background(tokens.colors.selectedSurface) }
+        hovered { background(tokens.colors.raisedSurface) }
+        focused { border(2.dp, tokens.colors.focus) }
+        pressed { animate { background(tokens.colors.pressedSurface) } }
+        disabled { alpha(0.38f) }
+    }
+
+    val menuItemLabel = Style { textStyle(tokens.typography.choice) }
+
+    val menuItemSupporting = Style { textStyle(tokens.typography.caption) }
+
+    /** A group heading inside a menu, above its hairline. */
+    val menuGroupLabel = Style {
+        textStyle(tokens.typography.label)
+        contentPadding(
+            horizontal = tokens.spacing.controlHorizontal,
+            vertical = tokens.spacing.controlVertical,
+        )
     }
 
     /** Shared inline layout for controlled tab and section navigators. */
@@ -174,6 +454,8 @@ object JetpacsComponentStyles {
         disabled { alpha(0.38f) }
     }
 
+    val navigatorLabel = Style { textStyle(tokens.typography.choice) }
+
     /** Inspectable outline navigator container; behavior remains controlled. */
     val sectionNavigator = Style {
         fillWidth()
@@ -218,6 +500,19 @@ object JetpacsComponentStyles {
         disabled { alpha(0.38f) }
     }
 
+    val textFieldText = Style { textStyle(tokens.typography.field) }
+    val textFieldCode = Style {
+        textStyle(tokens.typography.code)
+        contentColor(tokens.colors.content)
+    }
+    val textFieldLabel = Style { textStyle(tokens.typography.fieldLabel) }
+    val textFieldPlaceholder = Style {
+        textStyle(tokens.typography.field)
+        contentColor(tokens.colors.mutedContent)
+    }
+    val textFieldSupporting = Style { textStyle(tokens.typography.fieldSupporting) }
+    val textFieldAffix = Style { textStyle(tokens.typography.fieldLabel) }
+
     /** Stable editor work-surface visuals; text layout never participates in animation. */
     val editor = Style {
         fillWidth()
@@ -238,6 +533,15 @@ object JetpacsComponentStyles {
         contentPadding(horizontal = 0.dp, vertical = tokens.spacing.unit)
         editorReadOnly { background(tokens.colors.raisedSurface) }
         disabled { alpha(0.38f) }
+    }
+
+    val editorText = Style {
+        textStyle(tokens.typography.code)
+        contentColor(tokens.colors.content)
+    }
+    val editorGutter = Style {
+        textStyle(tokens.typography.code)
+        contentColor(tokens.colors.mutedContent)
     }
 
     /** Non-animated rail containing independently accessible editor actions. */

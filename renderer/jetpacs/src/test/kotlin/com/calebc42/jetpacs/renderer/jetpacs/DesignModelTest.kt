@@ -171,6 +171,184 @@ class DesignModelTest {
     }
 
     @Test
+    fun themeRolesAndComponentBindingsAreClosedAndNestedBindingsReplace() {
+        val parent = DesignModel.compileScope(
+            scope(
+                """
+                {
+                  "tokens":{"ink":{"kind":"theme-role","value":"on_surface"}},
+                  "styles":{
+                    "label":{"properties":{"content_color":{"kind":"token","value":"ink"}},"rules":[]},
+                    "compact":{"properties":{"padding":{"kind":"dimension","value":"6"}},"rules":[]}
+                  },
+                  "component_styles":[
+                    {"slot":"action.container","styles":["compact"]},
+                    {"slot":"action.label","styles":["label"]}
+                  ],
+                  "children":[]
+                }
+                """,
+            ),
+        )
+        assertEquals(
+            DesignValue.ThemeRoleValue(DesignThemeRole.OnSurface),
+            parent.componentStyle(DesignComponentStyleSlot.ActionLabel)
+                ?.resolve()
+                ?.properties
+                ?.get(DesignProperty.ContentColor),
+        )
+
+        val child = DesignModel.compileScope(
+            scope(
+                """
+                {
+                  "tokens":{},
+                  "styles":{"wide":{"properties":{"padding":{"kind":"dimension","value":"14"}},"rules":[]}},
+                  "component_styles":[
+                    {"slot":"action.container","styles":["wide"]}
+                  ],
+                  "children":[]
+                }
+                """,
+            ),
+            parent,
+            "root.children[0]",
+        )
+        assertEquals(
+            DesignValue.DimensionValue(14.0),
+            child.componentStyle(DesignComponentStyleSlot.ActionContainer)
+                ?.resolve()
+                ?.properties
+                ?.get(DesignProperty.Padding),
+        )
+        assertTrue(child.componentStyle(DesignComponentStyleSlot.ActionLabel) != null)
+
+        val duplicate = assertThrows(ContentInvalid::class.java) {
+            DesignModel.compileScope(
+                scope(
+                    """
+                    {"tokens":{},"styles":{"x":{"properties":{},"rules":[]}},
+                     "component_styles":[
+                       {"slot":"panel.container","styles":["x"]},
+                       {"slot":"panel.container","styles":["x"]}
+                     ],"children":[]}
+                    """,
+                ),
+            )
+        }
+        assertEquals("root.component_styles[1].slot", duplicate.path)
+
+        val unresolved = assertThrows(ContentInvalid::class.java) {
+            DesignModel.compileScope(
+                scope(
+                    """
+                    {"tokens":{},"styles":{},
+                     "component_styles":[
+                       {"slot":"action.label","styles":["missing"]}
+                     ],"children":[]}
+                    """,
+                ),
+            )
+        }
+        assertEquals("root.component_styles[0].styles[0]", unresolved.path)
+    }
+
+    @Test
+    fun canonicalTextSlotsBindPerStyleNameAndUnknownStyleIsBody() {
+        val scope = DesignModel.compileScope(
+            scope(
+                """
+                {
+                  "tokens":{},
+                  "styles":{
+                    "serif":{"properties":{
+                      "font_family":{"kind":"font-family","value":"plex-serif"},
+                      "font_size":{"kind":"dimension","value":"16"},
+                      "line_height":{"kind":"dimension","value":"26"}
+                    },"rules":[]},
+                    "small":{"properties":{
+                      "font_size":{"kind":"dimension","value":"12.5"}
+                    },"rules":[]}
+                  },
+                  "component_styles":[
+                    {"slot":"text.body","styles":["serif"]},
+                    {"slot":"text.caption","styles":["small"]}
+                  ],
+                  "children":[]
+                }
+                """,
+            ),
+        )
+        val body = scope.componentStyle(slotForStyle("body"))?.resolve()?.properties
+        assertEquals(
+            DesignValue.FontFamilyValue(DesignFontFamily.PlexSerif),
+            body?.get(DesignProperty.FontFamily),
+        )
+        assertEquals(DesignValue.DimensionValue(26.0), body?.get(DesignProperty.LineHeight))
+        assertEquals(
+            DesignValue.DimensionValue(12.5),
+            scope.componentStyle(slotForStyle("caption"))
+                ?.resolve()?.properties?.get(DesignProperty.FontSize),
+        )
+        assertEquals(DesignComponentStyleSlot.TextBody, slotForStyle(""))
+        assertEquals(DesignComponentStyleSlot.TextBody, slotForStyle("unknown"))
+        assertEquals(DesignComponentStyleSlot.TextMono, slotForStyle("mono"))
+        assertTrue(scope.componentStyle(DesignComponentStyleSlot.TextTitle) == null)
+        assertEquals(74, DesignComponentStyleSlot.entries.size)
+    }
+
+    @Test
+    fun themeRolesResolveToColorsAndInheritThroughNestedScopes() {
+        val parent = DesignModel.compileScope(
+            scope(
+                """
+                {
+                  "tokens":{"paper":{"kind":"color","value":"#F3EDE1"}},
+                  "styles":{},
+                  "theme_roles":{
+                    "background":{"kind":"token","value":"paper"},
+                    "primary":{"kind":"color","value":"#8A5A2B"},
+                    "on_primary":{"kind":"theme-role","value":"on_surface"}
+                  },
+                  "children":[]
+                }
+                """,
+            ),
+        )
+        assertEquals(
+            DesignValue.ColorValue(0xFFF3EDE1L),
+            parent.themeRoles[DesignThemeRole.Background],
+        )
+        assertEquals(
+            DesignValue.ThemeRoleValue(DesignThemeRole.OnSurface),
+            parent.themeRoles[DesignThemeRole.OnPrimary],
+        )
+        assertEquals(3, parent.themeRoles.size)
+
+        val child = DesignModel.compileScope(
+            scope("""{"tokens":{},"styles":{},"theme_roles":{"primary":{"kind":"color","value":"#000000"}},"children":[]}"""),
+            parent,
+            "root.children[0]",
+        )
+        assertEquals(DesignValue.ColorValue(0xFF000000L), child.themeRoles[DesignThemeRole.Primary])
+        assertEquals(DesignValue.ColorValue(0xFFF3EDE1L), child.themeRoles[DesignThemeRole.Background])
+        assertTrue(DesignModel.compileScope(scope("""{"tokens":{},"styles":{},"children":[]}""")).themeRoles.isEmpty())
+
+        val unknown = assertThrows(ContentInvalid::class.java) {
+            DesignModel.compileScope(
+                scope("""{"tokens":{},"styles":{},"theme_roles":{"tint":{"kind":"color","value":"#000000"}},"children":[]}"""),
+            )
+        }
+        assertEquals("root.theme_roles.tint", unknown.path)
+        val notColor = assertThrows(ContentInvalid::class.java) {
+            DesignModel.compileScope(
+                scope("""{"tokens":{},"styles":{},"theme_roles":{"primary":{"kind":"dimension","value":"4"}},"children":[]}"""),
+            )
+        }
+        assertEquals("root.theme_roles.primary", notColor.path)
+    }
+
+    @Test
     fun allSixStatesResolveIndependently() {
         val rules = DesignState.entries.mapIndexed { index, state ->
             val wire = state.name.lowercase()

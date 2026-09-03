@@ -133,4 +133,25 @@ class JetpacsDesignVocabularyTest {
         }
         error("$relative not found")
     }
+
+    @Test
+    fun everySlotWireNameMatchesTheManifestEnum() {
+        // The slot set is mirrored three times — this enum, the manifest, and
+        // the Elisp list. Only the count was pinned, so a typo'd wire name
+        // would silently disable a binding instead of failing.
+        val manifest = Json.parseToJsonElement(
+            repositoryFile("renderer-extensions/jetpacs-design.json").readText(),
+        ).jsonObject
+            .getValue("definitions").jsonObject
+            .getValue("component-style-slot").jsonObject
+            .getValue("values").jsonArray
+            .map { it.jsonPrimitive.content }
+
+        val declared = DesignComponentStyleSlot.entries.map { it.wireName }
+        // Order carries no meaning — bindings are keyed and sorted — so the
+        // invariant is that both sides name exactly the same slots, with the
+        // sizes compared separately so a duplicate cannot hide in the set.
+        assertEquals(manifest.sorted(), declared.sorted())
+        assertEquals(manifest.size, declared.size)
+    }
 }

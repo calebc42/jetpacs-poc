@@ -33,6 +33,43 @@ import com.calebc42.ebp.renderer.model.FontifySet
 import com.android.tools.screenshot.PreviewTest
 
 @PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 420)
+@Preview(name = "dark", widthDp = 400, heightDp = 420,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 420, fontScale = 1.5f)
+@Composable
+private fun JetpacsListItemRows() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            JetpacsListItem(title = "Plain row")
+            JetpacsListItem(
+                title = "inbox",
+                subtitle = "Notebooks",
+                leading = { BasicText("[]", style = JetpacsTheme.typography.code) },
+                trailing = { BasicText("3", style = JetpacsTheme.typography.fieldLabel) },
+                onClick = {},
+            )
+            JetpacsListItem(
+                title = "With an overline",
+                overline = "YESTERDAY",
+                subtitle = "Two supporting lines keep their own bound so a long "
+                    + "one truncates instead of pushing the trailing edge away.",
+                subtitleMaxLines = 2,
+                onClick = {},
+            )
+            JetpacsListItem(title = "Selected", subtitle = "Tab role", selected = true, onClick = {})
+            JetpacsListItem(title = "Disabled", subtitle = "No target", enabled = false, onClick = {})
+        }
+    }
+}
+
+@PreviewTest
 @Preview(name = "compact", widthDp = 400, heightDp = 620)
 @Preview(name = "expanded", widthDp = 900, heightDp = 620)
 @Composable
@@ -671,6 +708,84 @@ private fun JetpacsEditorToolingGallery() {
                 diagnostic = null,
                 eldoc = EldocLine("fixture", 4, "message: (message FORMAT &rest ARGS)"),
                 diagnosticColors = diagnosticColors,
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 620)
+@Preview(name = "dark", widthDp = 400, heightDp = 620,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 620, fontScale = 1.5f)
+@Composable
+private fun JetpacsMenuGroupedPopup() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsMenuPopupContent(
+                groups = listOf(
+                    JetpacsMenuGroup(
+                        label = "Add",
+                        items = listOf(
+                            JetpacsMenuItem("Insert above", icon = "vertical_align_top"),
+                            JetpacsMenuItem("Insert below", icon = "vertical_align_bottom"),
+                        ),
+                    ),
+                    JetpacsMenuGroup(
+                        label = "Clipboard",
+                        items = listOf(
+                            JetpacsMenuItem("Cut", icon = "content_cut"),
+                            JetpacsMenuItem(
+                                "Paste under",
+                                icon = "content_paste",
+                                enabled = false,
+                            ),
+                        ),
+                    ),
+                ),
+                onSelect = {},
+            )
+        }
+    }
+}
+
+@PreviewTest
+@Preview(name = "compact", widthDp = 400, heightDp = 480)
+@Preview(name = "dark", widthDp = 400, heightDp = 480,
+    uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "large-text", widthDp = 400, heightDp = 480, fontScale = 1.5f)
+@Composable
+private fun JetpacsMenuRichItems() {
+    ProvideJetpacsTheme(null) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .background(JetpacsTheme.colors.background)
+                .padding(16.dp),
+        ) {
+            JetpacsMenuPopupContent(
+                items = listOf(
+                    JetpacsMenuItem(
+                        "Edit",
+                        icon = "edit",
+                        supportingText = "Edit mode",
+                        checked = true,
+                        checkedIcon = "check",
+                    ),
+                    JetpacsMenuItem("Settings", icon = "settings", checked = false),
+                    JetpacsMenuItem(
+                        "Termux home",
+                        icon = "home",
+                        supportingText = "/data/data/com.termux/files/home",
+                    ),
+                    JetpacsMenuItem("Home", trailingIcon = "home"),
+                ),
+                onSelect = {},
             )
         }
     }

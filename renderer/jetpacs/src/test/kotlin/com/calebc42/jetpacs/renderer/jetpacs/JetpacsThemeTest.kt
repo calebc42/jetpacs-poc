@@ -10,6 +10,35 @@ import org.junit.Test
 
 class JetpacsThemeTest {
     @Test
+    fun allExactEbpRolesRemainAvailableToDynamicDesignValues() {
+        val payload = Json.parseToJsonElement(
+            """{
+                "primary":"#010101","on_primary":"#020202",
+                "secondary":"#030303","on_secondary":"#040404",
+                "error":"#050505","on_error":"#060606",
+                "background":"#070707","on_background":"#080808",
+                "surface":"#090909","on_surface":"#0a0a0a",
+                "outline":"#0b0b0b","success":"#0c0c0c",
+                "warning":"#0d0d0d"
+            }""",
+        ).jsonObject
+        val roles = deriveJetpacsThemeRoles(payload, dark = false)
+
+        DesignThemeRole.entries.forEachIndexed { index, role ->
+            val channel = index + 1
+            assertEquals(
+                Color(
+                    red = channel,
+                    green = channel,
+                    blue = channel,
+                    alpha = 255,
+                ),
+                roles[role],
+            )
+        }
+    }
+
+    @Test
     fun authoredEbpRolesOverridePrivateBaseTokens() {
         val roles = Json.parseToJsonElement(
             """{"primary":"#123456","on_primary":"#ffffff","surface":"#f0f0f0","on_surface":"#101010","outline":"#778899"}""",

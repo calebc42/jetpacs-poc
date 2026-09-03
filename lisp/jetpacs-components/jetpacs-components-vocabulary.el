@@ -18,6 +18,7 @@
   '(
     ("jetpacs.action" ("label" "on_tap") ("enabled"))
     ("jetpacs.choice" ("checked" "id" "label" "on_change") ("enabled"))
+    ("jetpacs.list_item" ("title") ("enabled" "leading" "on_long_tap" "on_tap" "overline" "selected" "subtitle" "subtitle_max_lines" "swipe_end" "swipe_start" "title_max_lines" "trailing"))
     ("jetpacs.panel" ("children" "label") ())
     ("jetpacs.scope" ("children") ())
     ("jetpacs.section_navigator" ("id" "on_change" "options" "value") ("enabled" "pinned"))
@@ -26,7 +27,7 @@
 
 (defconst jetpacs-components-target-node-types
   '(
-    (app . ("jetpacs.action" "jetpacs.choice" "jetpacs.panel" "jetpacs.scope" "jetpacs.section_navigator" "jetpacs.tabs"))
+    (app . ("jetpacs.action" "jetpacs.choice" "jetpacs.list_item" "jetpacs.panel" "jetpacs.scope" "jetpacs.section_navigator" "jetpacs.tabs"))
     (dialog . ())
     (notification . ()))
   "Jetpacs Components node types supported by each renderer target.")

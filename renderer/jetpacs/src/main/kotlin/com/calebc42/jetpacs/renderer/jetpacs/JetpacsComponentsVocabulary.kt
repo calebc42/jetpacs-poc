@@ -13,6 +13,7 @@ const val JETPACS_COMPONENTS_EXTENSION = "jetpacs.components"
 val JETPACS_COMPONENTS_NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "jetpacs.action" to NodeRow(setOf("label", "on_tap"), setOf("enabled")),
     "jetpacs.choice" to NodeRow(setOf("id", "label", "checked", "on_change"), setOf("enabled")),
+    "jetpacs.list_item" to NodeRow(setOf("title"), setOf("overline", "subtitle", "title_max_lines", "subtitle_max_lines", "leading", "trailing", "on_tap", "on_long_tap", "swipe_start", "swipe_end", "selected", "enabled")),
     "jetpacs.panel" to NodeRow(setOf("label", "children"), setOf()),
     "jetpacs.scope" to NodeRow(setOf("children"), setOf()),
     "jetpacs.section_navigator" to NodeRow(setOf("id", "options", "value", "on_change"), setOf("enabled", "pinned")),
@@ -20,7 +21,7 @@ val JETPACS_COMPONENTS_NODE_SCHEMA: Map<String, NodeRow> = mapOf(
 )
 
 val JETPACS_COMPONENTS_TARGET_NODE_TYPES: Map<String, Set<String>> = mapOf(
-    "app" to setOf("jetpacs.action", "jetpacs.choice", "jetpacs.panel", "jetpacs.scope", "jetpacs.section_navigator", "jetpacs.tabs"),
+    "app" to setOf("jetpacs.action", "jetpacs.choice", "jetpacs.list_item", "jetpacs.panel", "jetpacs.scope", "jetpacs.section_navigator", "jetpacs.tabs"),
     "dialog" to setOf(),
     "notification" to setOf(),
 )

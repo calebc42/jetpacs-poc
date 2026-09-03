@@ -24,8 +24,42 @@
 
 (defconst jetpacs-design--value-kinds
   '("boolean" "color" "dimension" "font-family" "font-weight"
-    "number" "text-align" "token")
+    "number" "theme-role" "text-align" "token")
   "Closed value-kind spellings accepted by the design runtime.")
+
+(defconst jetpacs-design-component-style-slots
+  '("text.body" "text.title" "text.headline" "text.caption" "text.label"
+    "text.mono"
+    "card.filled" "card.elevated" "card.outlined"
+    "list-item.container" "list-item.overline" "list-item.title"
+    "list-item.subtitle"
+    "swipe.cell" "swipe.label"
+    "icon-button.container"
+    "badge.container" "badge.label"
+    "empty-state.container" "empty-state.title" "empty-state.caption"
+    "button.filled" "button.tonal" "button.elevated" "button.outlined"
+    "button.text" "button.label"
+    "chip.container" "chip.label"
+    "divider.line"
+    "section-header.container" "section-header.title"
+    "menu.trigger" "menu.container" "menu.item" "menu.item-label"
+    "menu.item-supporting" "menu.group-label"
+    "action.container" "action.label"
+    "choice.container" "choice.indicator" "choice.label"
+    "panel.container" "panel.label"
+    "tabs.container" "tabs.item" "tabs.indicator" "tabs.label"
+    "section-navigator.container" "section-navigator.option"
+    "section-navigator.label" "section-navigator.button"
+    "section-navigator.selector" "section-navigator.popup"
+    "section-navigator.popup-item"
+    "text-field.outlined" "text-field.filled" "text-field.text"
+    "text-field.label" "text-field.placeholder" "text-field.supporting"
+    "text-field.affix"
+    "editor.surface" "editor.chromeless" "editor.text" "editor.gutter"
+    "editor.toolbar" "editor.toolbar-item" "editor.sync-status"
+    "editor.completion-list" "editor.completion-item"
+    "editor.candidate-document" "editor.tooling-status")
+  "Closed semantic-component visual slots accepted by design scopes.")
 
 (defconst jetpacs-design--property-kinds
   '(("background_color" . "color")
@@ -98,6 +132,12 @@ MINIMUM and MAXIMUM are inclusive; WHAT identifies the authored field."
                 value))
     (error "jetpacs-design: color must be #RRGGBB or #AARRGGBB"))
   (jetpacs-design--value "color" value))
+
+(defun jetpacs-design-theme-role (value)
+  "Build a dynamic design color referencing EBP theme role VALUE."
+  (unless (member value jetpacs-theme-roles)
+    (error "jetpacs-design: unknown EBP theme role %S" value))
+  (jetpacs-design--value "theme-role" value))
 
 (defun jetpacs-design-dimension (value)
   "Build a non-negative design dimension VALUE in density-independent units."
@@ -178,7 +218,10 @@ references are resolved when their containing scope is built."
            (actual (plist-get value :kind)))
        (unless expected
          (error "jetpacs-design: unknown property %S" name))
-       (unless (or (equal actual "token") (equal actual expected))
+       (unless (or (equal actual "token")
+                   (equal actual expected)
+                   (and (equal expected "color")
+                        (equal actual "theme-role")))
          (error "jetpacs-design: property %s needs %s, not %s"
                 name expected actual))
        (when (and (member name '("alpha" "scale"))
@@ -241,6 +284,35 @@ most 16 elements.  MOTION names a motion in the effective scope."
   (dolist (style styles) (jetpacs-check-identifier style "style reference"))
   (vconcat styles))
 
+(defun jetpacs-design-component-style (slot styles)
+  "Bind component visual SLOT to ordered style identifiers STYLES."
+  (unless (member slot jetpacs-design-component-style-slots)
+    (error "jetpacs-design: unknown component style slot %S" slot))
+  (jetpacs-make-node
+   nil :slot slot :styles (jetpacs-design--style-references styles)))
+
+(defun jetpacs-design--component-styles (bindings)
+  "Return deterministic vector of checked component style BINDINGS."
+  (unless (and (proper-list-p bindings)
+               (<= (length bindings)
+                   (length jetpacs-design-component-style-slots)))
+    (error "jetpacs-design: component styles must be a bounded proper list"))
+  (let ((sorted (sort (copy-sequence bindings)
+                      (lambda (left right)
+                        (string< (plist-get left :slot)
+                                 (plist-get right :slot)))))
+        previous)
+    (dolist (binding sorted)
+      (unless (and (proper-list-p binding)
+                   (member (plist-get binding :slot)
+                           jetpacs-design-component-style-slots)
+                   (vectorp (plist-get binding :styles)))
+        (error "jetpacs-design: component binding must come from `jetpacs-design-component-style'"))
+      (when (equal previous (plist-get binding :slot))
+        (error "jetpacs-design: duplicate component style slot %S" previous))
+      (setq previous (plist-get binding :slot)))
+    (vconcat sorted)))
+
 (defun jetpacs-design--plist-pairs (map)
   "Return string-keyed alist pairs from identifier plist MAP."
   (cl-loop for (key value) on map by #'cddr
@@ -285,12 +357,34 @@ most 16 elements.  MOTION names a motion in the effective scope."
             (check-properties (plist-get rule :properties))
             (check-motion (plist-get rule :motion))))))))
 
+(defun jetpacs-design--theme-roles (roles)
+  "Return a sorted identifier plist for the EBP role alist ROLES.
+Each entry pairs one of the 13 role names with a color, token, or theme-role
+design value; the receiver re-derives its toolkit theme for the scope from
+these, so chrome follows the profile instead of the ambient Emacs theme."
+  (unless (and (proper-list-p roles) (<= (length roles) (length jetpacs-theme-roles)))
+    (error "jetpacs-design: theme roles must be an alist of at most %d roles"
+           (length jetpacs-theme-roles)))
+  (jetpacs-design--sorted-map
+   roles (length jetpacs-theme-roles) "theme roles"
+   (lambda (value name)
+     (unless (member name jetpacs-theme-roles)
+       (error "jetpacs-design: %S is not an EBP theme role" name))
+     (let ((checked (jetpacs-design--checked-value value name)))
+       (unless (member (plist-get checked :kind) '("color" "token" "theme-role"))
+         (error "jetpacs-design: theme role %s needs a color value" name))
+       checked))))
+
 (cl-defun jetpacs-design-scope
-    (tokens styles children &key motions)
+    (tokens styles children &key motions component-styles theme-roles)
   "Build a design scope from identifier alists TOKENS, STYLES, and MOTIONS.
 CHILDREN is a proper list of ordinary EBP nodes.  Identifier maps are sorted
-lexically and all locally declared token and motion references are checked."
-  (let ((token-map
+lexically and all locally declared token and motion references are checked.
+COMPONENT-STYLES is an optional list of closed component slot bindings.
+THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
+`jetpacs-design--theme-roles'."
+  (let ((role-map (and theme-roles (jetpacs-design--theme-roles theme-roles)))
+        (token-map
          (jetpacs-design--sorted-map
           tokens 256 "tokens"
           (lambda (value name)
@@ -317,12 +411,24 @@ lexically and all locally declared token and motion references are checked."
                      name))
             value))))
     (jetpacs-design--validate-local-references token-map style-map motion-map)
+    (dolist (pair (jetpacs-design--plist-pairs role-map))
+      (when (equal (plist-get (cdr pair) :kind) "token")
+        (unless (plist-get token-map (intern (concat ":" (plist-get (cdr pair) :value))))
+          (error "jetpacs-design: theme role %s references unresolved token %s"
+                 (car pair) (plist-get (cdr pair) :value)))))
+    ;; `tokens' and `styles' are required wire members.  A nested scope that
+    ;; only rebinds component slots declares neither, so an empty map must
+    ;; survive `jetpacs-make-node's nil-drop as a literal `{}'.
     (jetpacs-make-node
      "jetpacs.design_scope"
-     :tokens token-map
-     :styles style-map
+     :tokens (or token-map (make-hash-table :test #'equal))
+     :styles (or style-map (make-hash-table :test #'equal))
      :children (jetpacs-design--children children 10000 "scope children")
-     :motions (and motions motion-map))))
+     :motions (and motions motion-map)
+     :component_styles
+     (and component-styles
+          (jetpacs-design--component-styles component-styles))
+     :theme_roles role-map)))
 
 (defun jetpacs-design-styled (styles children)
   "Apply base-only STYLES to the child modifier of CHILDREN."

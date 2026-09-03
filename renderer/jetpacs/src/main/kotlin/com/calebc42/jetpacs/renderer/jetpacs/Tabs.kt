@@ -22,16 +22,17 @@ import androidx.compose.foundation.style.rememberUpdatedStyleState
 import androidx.compose.foundation.style.styleable
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -69,6 +70,9 @@ internal const val MAX_MEASURED_ADAPTIVE_TAB_OPTIONS =
 
 /** Platform minimum width retained by every independently focusable tab. */
 internal val MINIMUM_JETPACS_TAB_TARGET_WIDTH = 48.dp
+
+private val LocalJetpacsTabLabelStyle = staticCompositionLocalOf<Style> { Style }
+private val LocalJetpacsTabIndicatorStyle = staticCompositionLocalOf<Style> { Style }
 
 /** Whether fixed equal cells would violate the platform minimum target width. */
 internal fun fixedTabsRequireScrollableFallback(
@@ -158,6 +162,8 @@ fun JetpacsTabs(
     enabled: Boolean = true,
     scrollable: Boolean = false,
     variant: JetpacsTabVariant? = null,
+    labelStyle: Style = Style,
+    indicatorStyle: Style = Style,
 ) {
     validateJetpacsControlledOptions(
         componentName = "JetpacsTabs",
@@ -175,17 +181,34 @@ fun JetpacsTabs(
         modifier = modifier.styleable(
             remember { MutableStyleState(null) },
             JetpacsTheme.styles.tabs,
+            designComponentStyle(DesignComponentStyleSlot.TabsContainer),
             style,
         ),
     ) {
-        JetpacsTabsPresentation(
-            options = options,
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            variant = selectedVariant,
-            tabStyle = tabStyle,
-        )
+        if (labelStyle === Style && indicatorStyle === Style) {
+            JetpacsTabsPresentation(
+                options = options,
+                value = value,
+                onValueChange = onValueChange,
+                enabled = enabled,
+                variant = selectedVariant,
+                tabStyle = tabStyle,
+            )
+        } else {
+            CompositionLocalProvider(
+                LocalJetpacsTabLabelStyle provides labelStyle,
+                LocalJetpacsTabIndicatorStyle provides indicatorStyle,
+            ) {
+                JetpacsTabsPresentation(
+                    options = options,
+                    value = value,
+                    onValueChange = onValueChange,
+                    enabled = enabled,
+                    variant = selectedVariant,
+                    tabStyle = tabStyle,
+                )
+            }
+        }
     }
 }
 
@@ -378,6 +401,7 @@ private fun JetpacsTabsNavigator(
         onValueChange = onValueChange,
         semantics = JetpacsNavigatorSemantics.Tabs,
         optionStyle = tabStyle,
+        labelStyle = LocalJetpacsTabLabelStyle.current,
         enabled = enabled,
     )
 }
@@ -516,6 +540,10 @@ private fun JetpacsTabLayout(
     styleState: StyleState,
     singleLine: Boolean,
 ) {
+    val callerLabelStyle = LocalJetpacsTabLabelStyle.current
+    val hasCustomLabel =
+        LocalDesignScope.current?.componentStyle(DesignComponentStyleSlot.TabsLabel) != null ||
+            callerLabelStyle !== Style
     Box(
         modifier = modifier
             .heightIn(min = 48.dp)
@@ -527,16 +555,49 @@ private fun JetpacsTabLayout(
                 indication = null,
                 onClick = onClick,
             )
-            .styleable(styleState, JetpacsTheme.styles.tab, style),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.tab,
+                designComponentStyle(DesignComponentStyleSlot.TabsItem),
+                style,
+            ),
         contentAlignment = Alignment.Center,
     ) {
-        BasicText(
-            text = label,
-            modifier = Modifier.fillMaxWidth(),
-            style = JetpacsTheme.typography.choice.copy(textAlign = TextAlign.Center),
-            maxLines = if (singleLine) 1 else 2,
-            overflow = TextOverflow.Ellipsis,
-        )
+        if (hasCustomLabel) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .styleable(
+                        styleState,
+                        designComponentNonTextStyle(DesignComponentStyleSlot.TabsLabel),
+                        callerLabelStyle,
+                    ),
+            ) {
+                BasicText(
+                    text = label,
+                    modifier = Modifier.fillMaxWidth(),
+                    style = resolvedDesignTextStyle(
+                        DesignComponentStyleSlot.TabsLabel,
+                        JetpacsTheme.typography.choice.copy(
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        ),
+                        styleState,
+                    ),
+                    maxLines = if (singleLine) 1 else 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            BasicText(
+                text = label,
+                modifier = Modifier.fillMaxWidth(),
+                style = JetpacsTheme.typography.choice.copy(
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                ),
+                maxLines = if (singleLine) 1 else 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (selected) {
             Box(
                 Modifier
@@ -544,8 +605,10 @@ private fun JetpacsTabLayout(
                     .fillMaxWidth()
                     .height(3.dp)
                     .styleable(
-                        remember { MutableStyleState(null) },
+                        styleState,
                         JetpacsTheme.styles.tabIndicator,
+                        designComponentStyle(DesignComponentStyleSlot.TabsIndicator),
+                        LocalJetpacsTabIndicatorStyle.current,
                     ),
             )
         }

@@ -52,6 +52,7 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
                     }
                 }
             }
+            "jetpacs.list_item" -> RenderListItem(node, context, modifier)
             "jetpacs.section_navigator" -> RenderSectionNavigator(node, context, modifier)
             "jetpacs.tabs" -> RenderTabs(node, context, modifier)
             "jetpacs.scope" -> {

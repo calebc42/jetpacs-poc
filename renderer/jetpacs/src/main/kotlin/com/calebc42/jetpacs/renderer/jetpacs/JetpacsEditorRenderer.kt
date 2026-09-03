@@ -4,6 +4,7 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.style.MutableStyleState
@@ -202,13 +203,26 @@ internal fun editorSyncStatusText(phase: EditorSyncPhase): String? = when (phase
 internal fun JetpacsEditorSyncStatus(phase: EditorSyncPhase) {
     val text = editorSyncStatusText(phase) ?: return
     val styleState = remember { MutableStyleState(null) }
-    BasicText(
-        text = text,
-        style = JetpacsTheme.typography.fieldSupporting.copy(
-            color = JetpacsTheme.colors.mutedContent,
-        ),
+    Box(
         modifier = Modifier
-            .styleable(styleState, JetpacsTheme.styles.editorSyncStatus)
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.editorSyncStatus,
+                designComponentNonTextStyle(
+                    DesignComponentStyleSlot.EditorSyncStatus,
+                ),
+            )
             .semantics { liveRegion = LiveRegionMode.Polite },
-    )
+    ) {
+        BasicText(
+            text = text,
+            style = resolvedDesignTextStyle(
+                DesignComponentStyleSlot.EditorSyncStatus,
+                JetpacsTheme.typography.fieldSupporting.copy(
+                    color = JetpacsTheme.colors.mutedContent,
+                ),
+                styleState,
+            ),
+        )
+    }
 }

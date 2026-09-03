@@ -7,6 +7,7 @@ import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.sizeIn
+import androidx.compose.foundation.style.StyleState
 import androidx.compose.foundation.style.rememberUpdatedStyleState
 import androidx.compose.foundation.style.styleable
 import androidx.compose.runtime.Composable
@@ -20,7 +21,10 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.compose.ComposeThemeRoles
+import com.calebc42.ebp.renderer.compose.LocalComposeThemeRoles
 import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
 import com.calebc42.ebp.renderer.model.RendererContribution
 import kotlinx.serialization.json.JsonArray
@@ -34,7 +38,43 @@ val JetpacsDesignContribution = RendererContribution(
     extensions = setOf(JETPACS_DESIGN_EXTENSION),
 )
 
-private val LocalDesignScope = staticCompositionLocalOf<CompiledDesignScope?> { null }
+internal val LocalDesignScope = staticCompositionLocalOf<CompiledDesignScope?> { null }
+
+/**
+ * The nearest enclosing `jetpacs.styled` or `jetpacs.pressable` text program.
+ *
+ * Foundation Styles reach layout and drawing through modifiers; text
+ * attributes must instead be read by the canonical `text` override, which
+ * resolves [computed] against the live [state] so a selected or disabled face
+ * recolors its label without any Emacs round trip.
+ */
+internal class DesignTextContext(
+    val computed: ComputedDesignStyle,
+    val state: StyleState?,
+)
+
+internal val LocalDesignTextContext = staticCompositionLocalOf<DesignTextContext?> { null }
+
+/** Resolve one optional semantic-component style from the effective scope. */
+@Composable
+internal fun designComponentStyle(slot: DesignComponentStyleSlot): androidx.compose.foundation.style.Style {
+    val computed = LocalDesignScope.current?.componentStyle(slot)
+    return remember(computed?.layers) {
+        computed?.toFoundationStyle() ?: androidx.compose.foundation.style.Style
+    }
+}
+
+/** Apply label layout/draw properties without double-applying text attributes. */
+@Composable
+internal fun designComponentNonTextStyle(
+    slot: DesignComponentStyleSlot,
+): androidx.compose.foundation.style.Style {
+    val computed = LocalDesignScope.current?.componentStyle(slot)
+    return remember(computed?.layers) {
+        computed?.toFoundationStyle(includeTextProperties = false)
+            ?: androidx.compose.foundation.style.Style
+    }
+}
 
 /** Foundation implementation of the bounded `jetpacs.design` extension. */
 object JetpacsDesignRenderer : ComposeNodeExtension {
@@ -70,8 +110,27 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
             FallbackChildren(node, context, modifier)
             return
         }
-        CompositionLocalProvider(LocalDesignScope provides scope) {
-            RenderChildren(node, context, modifier)
+        val ambient = LocalJetpacsTheme.current
+        // Re-declared roles re-derive both palettes for this subtree: the
+        // private Jetpacs theme here, and whichever toolkit theme the
+        // dispatcher installs from the shared roles at its scope boundary.
+        val scopedTheme = remember(scope, ambient) {
+            scope.themeRoles.takeIf { it.isNotEmpty() }?.let { declared ->
+                jetpacsThemeFor(ambient.roles.overridden(declared), ambient.dark)
+            }
+        }
+        if (scopedTheme == null) {
+            CompositionLocalProvider(LocalDesignScope provides scope) {
+                RenderChildren(node, context, modifier, scoped = true)
+            }
+        } else {
+            CompositionLocalProvider(
+                LocalDesignScope provides scope,
+                LocalJetpacsTheme provides scopedTheme,
+                LocalComposeThemeRoles provides scopedTheme.roles.toComposeThemeRoles(),
+            ) {
+                RenderChildren(node, context, modifier, scoped = true)
+            }
         }
     }
 
@@ -100,7 +159,10 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource)
         val childStyle = Modifier.styleable(styleState, style)
-        RenderChildren(node, context, modifier, childStyle)
+        val textContext = remember(computed) { DesignTextContext(computed, null) }
+        CompositionLocalProvider(LocalDesignTextContext provides textContext) {
+            RenderChildren(node, context, modifier, childStyle, scoped = true)
+        }
     }
 
     @Composable
@@ -161,9 +223,14 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
                 }
                 .styleable(styleState, style),
         ) {
+            val textContext = remember(computed, styleState) {
+                DesignTextContext(computed, styleState)
+            }
             val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
-            children.forEachIndexed { index, child ->
-                (child as? JsonObject)?.let { context.renderChild(it, index) }
+            CompositionLocalProvider(LocalDesignTextContext provides textContext) {
+                children.forEachIndexed { index, child ->
+                    (child as? JsonObject)?.let { context.renderScopedChild(it, index) }
+                }
             }
         }
     }
@@ -177,25 +244,75 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
         RenderChildren(node, context, modifier)
     }
 
+    /**
+     * Render authored children. A compiled scope renders them [scoped], so the
+     * canonical `text`, `text_input`, and `editor` overrides registered under
+     * `jetpacs.design` select Foundation presentation for the whole subtree;
+     * the malformed-configuration fallback renders unscoped so nothing
+     * authored against a broken scope gains styling or interaction.
+     */
     @Composable
     private fun RenderChildren(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         outerModifier: Modifier,
         childModifier: Modifier = Modifier,
+        scoped: Boolean = false,
     ) {
         val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
         children.forEachIndexed { index, child ->
             (child as? JsonObject)?.let {
-                context.renderChild(
-                    it,
-                    index,
-                    if (index == 0) outerModifier.then(childModifier) else childModifier,
-                )
+                val childModifierAt =
+                    if (index == 0) outerModifier.then(childModifier) else childModifier
+                if (scoped) {
+                    context.renderScopedChild(it, index, childModifierAt)
+                } else {
+                    context.renderChild(it, index, childModifierAt)
+                }
             }
         }
     }
 }
+
+/** Apply a scope's re-declared roles over the ambient ones; references resolve against the ambient set. */
+internal fun JetpacsThemeRoles.overridden(declared: Map<DesignThemeRole, DesignValue>): JetpacsThemeRoles {
+    fun pick(role: DesignThemeRole): Color = when (val value = declared[role]) {
+        is DesignValue.ColorValue -> Color(value.argb)
+        is DesignValue.ThemeRoleValue -> this[value.value]
+        else -> this[role]
+    }
+    return JetpacsThemeRoles(
+        primary = pick(DesignThemeRole.Primary),
+        onPrimary = pick(DesignThemeRole.OnPrimary),
+        secondary = pick(DesignThemeRole.Secondary),
+        onSecondary = pick(DesignThemeRole.OnSecondary),
+        error = pick(DesignThemeRole.Error),
+        onError = pick(DesignThemeRole.OnError),
+        background = pick(DesignThemeRole.Background),
+        onBackground = pick(DesignThemeRole.OnBackground),
+        surface = pick(DesignThemeRole.Surface),
+        onSurface = pick(DesignThemeRole.OnSurface),
+        outline = pick(DesignThemeRole.Outline),
+        success = pick(DesignThemeRole.Success),
+        warning = pick(DesignThemeRole.Warning),
+    )
+}
+
+internal fun JetpacsThemeRoles.toComposeThemeRoles(): ComposeThemeRoles = ComposeThemeRoles(
+    primary = primary,
+    onPrimary = onPrimary,
+    secondary = secondary,
+    onSecondary = onSecondary,
+    error = error,
+    onError = onError,
+    background = background,
+    onBackground = onBackground,
+    surface = surface,
+    onSurface = onSurface,
+    outline = outline,
+    success = success,
+    warning = warning,
+)
 
 private inline fun <T> modelOrNull(block: () -> T): T? = try {
     block()

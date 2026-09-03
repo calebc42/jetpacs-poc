@@ -62,6 +62,7 @@ fun JetpacsEditor(
     onKeyboardAction: KeyboardActionHandler? = null,
     lineLimits: TextFieldLineLimits = TextFieldLineLimits.MultiLine(3, Int.MAX_VALUE),
     interactionSource: MutableInteractionSource? = null,
+    inputStyle: Style = Style,
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val styleState = rememberUpdatedStyleState(source) {
@@ -83,17 +84,34 @@ fun JetpacsEditor(
             scrollState = scrollState,
             styleState = styleState,
             baseStyle = baseStyle,
+            designSurfaceStyle = designComponentStyle(
+                if (chromeless) {
+                    DesignComponentStyleSlot.EditorChromeless
+                } else {
+                    DesignComponentStyleSlot.EditorSurface
+                },
+            ),
             callerStyle = style,
             innerTextField = innerTextField,
         )
     }
     BasicTextField(
         state = state,
-        modifier = modifier.heightIn(min = 48.dp),
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .styleable(
+                styleState,
+                designComponentNonTextStyle(DesignComponentStyleSlot.EditorText),
+                inputStyle,
+            ),
         enabled = enabled,
         readOnly = readOnly,
         inputTransformation = inputTransformation,
-        textStyle = JetpacsTheme.typography.code.copy(color = JetpacsTheme.colors.content),
+        textStyle = resolvedDesignTextStyle(
+            DesignComponentStyleSlot.EditorText,
+            JetpacsTheme.typography.code.copy(color = JetpacsTheme.colors.content),
+            styleState,
+        ),
         keyboardOptions = keyboardOptions,
         onKeyboardAction = onKeyboardAction,
         lineLimits = lineLimits,
@@ -114,12 +132,17 @@ private fun JetpacsEditorDecoration(
     scrollState: ScrollState,
     styleState: StyleState,
     baseStyle: Style,
+    designSurfaceStyle: Style,
     callerStyle: Style,
     innerTextField: @Composable () -> Unit,
 ) {
     val lineStarts = remember(text) { logicalLineStarts(text) }
-    val gutterStyle = JetpacsTheme.typography.code.copy(
-        color = JetpacsTheme.colors.mutedContent,
+    val gutterStyle = resolvedDesignTextStyle(
+        DesignComponentStyleSlot.EditorGutter,
+        JetpacsTheme.typography.code.copy(
+            color = JetpacsTheme.colors.mutedContent,
+        ),
+        styleState,
     )
     val gutterDivider = JetpacsTheme.colors.outline.copy(alpha = 0.55f)
     val measurer = rememberTextMeasurer()
@@ -133,14 +156,18 @@ private fun JetpacsEditorDecoration(
         widest.size.width.toDp()
     } + 20.dp
     if (!lineNumbers) {
-        Box(modifier = Modifier.styleable(styleState, baseStyle, callerStyle)) {
+        Box(
+            modifier = Modifier.styleable(
+                styleState, baseStyle, designSurfaceStyle, callerStyle,
+            ),
+        ) {
             innerTextField()
         }
         return
     }
     Layout(
         modifier = Modifier
-            .styleable(styleState, baseStyle, callerStyle)
+            .styleable(styleState, baseStyle, designSurfaceStyle, callerStyle)
             .drawWithContent {
                 drawContent()
                 val gutterWidthPx = gutterWidth.toPx()
@@ -241,6 +268,7 @@ internal fun JetpacsEditorReadOnlyFixture(
         scrollState = rememberScrollState(),
         styleState = styleState,
         baseStyle = JetpacsTheme.styles.editor,
+        designSurfaceStyle = Style,
         callerStyle = Style,
         innerTextField = {
             BasicText(
@@ -270,6 +298,7 @@ internal fun JetpacsEditorFocusFixture(state: TextFieldState) {
         scrollState = rememberScrollState(),
         styleState = styleState,
         baseStyle = JetpacsTheme.styles.editor,
+        designSurfaceStyle = Style,
         callerStyle = Style,
         innerTextField = {
             BasicText(

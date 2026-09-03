@@ -17,6 +17,12 @@
 (require 'jetpacs-components-vocabulary)
 (require 'jetpacs-widgets)
 
+;; The session layer answers what the live profile advertises.  It is a soft
+;; dependency: this package builds nodes and must stay loadable without a
+;; session, so the row builder degrades when the predicate is absent.
+(declare-function jetpacs-node-advertised-p "jetpacs-surfaces"
+                  (type &optional target))
+
 (jetpacs-register-renderer-extension
  jetpacs-components-extension
  jetpacs-components-node-schema
@@ -63,6 +69,116 @@ their semantics and actions remain independent descendants of the panel."
     (error "jetpacs-component-panel: CHILDREN must be a proper list of nodes"))
   (jetpacs-make-node "jetpacs.panel"
                      :label label :children (vconcat children)))
+
+(cl-defun jetpacs-component-list-item
+    (title &key overline subtitle title-max-lines subtitle-max-lines
+           leading trailing on-tap on-long-tap swipe-start swipe-end
+           selected enabled)
+  "Build a Jetpacs list row titled TITLE.
+
+A row is LEADING, then the flexible OVERLINE/TITLE/SUBTITLE text column,
+then TRAILING — one node or a bounded list — laid out so the trailing
+children keep their intrinsic width.  TITLE-MAX-LINES and
+SUBTITLE-MAX-LINES bound their text.  ON-TAP and ON-LONG-TAP are ordinary
+descriptors; SWIPE-START and SWIPE-END take `jetpacs-swipe' sides.
+SELECTED and ENABLED are t or `:json-false' when present.
+
+The row is flat unless the active design profile binds
+`list-item.container' to a surface style, and its typography comes from
+the profile's `list-item.*' slots.  Requires the receiver extension
+`jetpacs.components'; `jetpacs-components-list-item' chooses this node or
+the canonical composition for you."
+  (jetpacs-components--non-empty-label title ":title")
+  (dolist (pair `((,overline . ":overline") (,subtitle . ":subtitle")))
+    (when (car pair) (jetpacs-require-string (car pair) (cdr pair))))
+  (dolist (pair `((,title-max-lines . ":title-max-lines")
+                  (,subtitle-max-lines . ":subtitle-max-lines")))
+    (when (car pair)
+      (unless (and (integerp (car pair)) (> (car pair) 0))
+        (error "jetpacs-components: %s must be a positive integer"
+               (cdr pair)))))
+  (when leading
+    (unless (jetpacs-root-node-p leading)
+      (error "jetpacs-components: :leading must be a node")))
+  (progn
+    (when (and trailing (not (jetpacs-root-node-p trailing)))
+      ;; One node, as SPEC 17.2 types every `trailing' member; a row wanting
+      ;; two affordances composes them with `jetpacs-row' itself.
+      (error "jetpacs-components: :trailing must be a single node"))
+    (when on-tap (jetpacs-check-descriptor on-tap ":on-tap"))
+    (when on-long-tap (jetpacs-check-descriptor on-long-tap ":on-long-tap"))
+    (when swipe-start (jetpacs--check-swipe swipe-start ":swipe-start"))
+    (when swipe-end (jetpacs--check-swipe swipe-end ":swipe-end"))
+    (when selected (jetpacs-check-bool selected ":selected"))
+    (when enabled (jetpacs-check-bool enabled ":enabled"))
+    (jetpacs-make-node "jetpacs.list_item"
+                       :title title :overline overline :subtitle subtitle
+                       :title_max_lines title-max-lines
+                       :subtitle_max_lines subtitle-max-lines
+                       :leading leading
+                       :trailing trailing
+                       :on_tap on-tap :on_long_tap on-long-tap
+                       :swipe_start swipe-start :swipe_end swipe-end
+                       :selected selected :enabled enabled)))
+
+(cl-defun jetpacs-components-list-item
+    (title &key overline subtitle title-max-lines subtitle-max-lines
+           leading trailing on-tap on-long-tap swipe-start swipe-end
+           selected enabled key padding (target :app))
+  "Return the best available list row for TITLE on the live profile.
+
+TARGET is the render target the row is bound for and defaults to `:app';
+a widget or notification surface advertises a different node set, so a
+caller building for one must say so or it would emit a node that target
+cannot draw.
+
+The `jetpacs.list_item' node is an optional receiver node, so a sender
+MUST ask before emitting it (SPEC 16.2).  When it is advertised this is
+that node; otherwise it is the canonical `jetpacs-list-item'
+composition, which every receiver can draw.  KEY and PADDING ride the
+result as universal attributes, so a caller places the row in a
+`lazy_column' the same way either way."
+  (let* ((target (or target :app))
+         ;; The manifest names its targets as plain symbols; callers name
+         ;; them as EBP keywords, as every other Jetpacs seam does.
+         (manifest-target (if (keywordp target)
+                              (intern (substring (symbol-name target) 1))
+                            target))
+         (row
+          (if (and
+               ;; The manifest is the first gate and holds offline: this node
+               ;; is declared for the app target only, so a widget or
+               ;; notification row takes the canonical composition even when
+               ;; no session is attached to ask.
+               (member "jetpacs.list_item"
+                       (alist-get manifest-target
+                                  jetpacs-components-target-node-types))
+               (fboundp 'jetpacs-node-advertised-p)
+               (jetpacs-node-advertised-p "jetpacs.list_item" target))
+             (jetpacs-component-list-item
+              title :overline overline :subtitle subtitle
+              :title-max-lines title-max-lines
+              :subtitle-max-lines subtitle-max-lines
+              :leading leading :trailing trailing
+              :on-tap on-tap :on-long-tap on-long-tap
+              :swipe-start swipe-start :swipe-end swipe-end
+              :selected selected :enabled enabled)
+           (jetpacs-list-item
+            :leading leading
+            :overline overline
+            :title (jetpacs-text title :style "body"
+                                 :max-lines title-max-lines)
+            :subtitle (and subtitle
+                           (jetpacs-text subtitle :style "caption"
+                                         :max-lines subtitle-max-lines))
+            :trailing trailing
+            :on-tap on-tap :on-long-tap on-long-tap
+            :swipe-start swipe-start :swipe-end swipe-end))))
+    (if (or key padding)
+        (apply #'jetpacs-with-attrs row
+               (append (and key (list :key key))
+                       (and padding (list :padding padding))))
+      row)))
 
 (defun jetpacs-component-tab (label value)
   "Build one Jetpacs tab option labeled LABEL with string VALUE.

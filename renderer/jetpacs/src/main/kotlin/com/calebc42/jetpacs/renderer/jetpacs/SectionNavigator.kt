@@ -71,6 +71,11 @@ fun JetpacsSectionNavigator(
     style: Style = Style,
     sectionStyle: Style = Style,
     enabled: Boolean = true,
+    labelStyle: Style = Style,
+    buttonStyle: Style = Style,
+    selectorStyle: Style = Style,
+    popupStyle: Style = Style,
+    popupItemStyle: Style = Style,
 ) {
     validateJetpacsControlledOptions(
         componentName = "JetpacsSectionNavigator",
@@ -83,6 +88,7 @@ fun JetpacsSectionNavigator(
         modifier = modifier.styleable(
             remember { MutableStyleState(null) },
             JetpacsTheme.styles.sectionNavigator,
+            designComponentStyle(DesignComponentStyleSlot.SectionNavigatorContainer),
             style,
         ),
     ) {
@@ -99,6 +105,11 @@ fun JetpacsSectionNavigator(
             onValueChange = onValueChange,
             semantics = JetpacsNavigatorSemantics.Sections,
             optionStyle = sectionStyle,
+            labelStyle = labelStyle,
+            buttonStyle = buttonStyle,
+            selectorStyle = selectorStyle,
+            popupStyle = popupStyle,
+            popupItemStyle = popupItemStyle,
             enabled = enabled,
         )
     }

@@ -25,11 +25,128 @@ enum class DesignState {
 sealed interface DesignValue {
     data class BooleanValue(val value: Boolean) : DesignValue
     data class ColorValue(val argb: Long) : DesignValue
+    data class ThemeRoleValue(val value: DesignThemeRole) : DesignValue
     data class DimensionValue(val value: Double) : DesignValue
     data class NumberValue(val value: Double) : DesignValue
     data class FontFamilyValue(val value: DesignFontFamily) : DesignValue
     data class FontWeightValue(val value: Int) : DesignValue
     data class TextAlignValue(val value: DesignTextAlign) : DesignValue
+}
+
+/** Exact neutral color roles mirrored by EBP `theme.set`. */
+enum class DesignThemeRole(val wireName: String) {
+    Primary("primary"),
+    OnPrimary("on_primary"),
+    Secondary("secondary"),
+    OnSecondary("on_secondary"),
+    Error("error"),
+    OnError("on_error"),
+    Background("background"),
+    OnBackground("on_background"),
+    Surface("surface"),
+    OnSurface("on_surface"),
+    Outline("outline"),
+    Success("success"),
+    Warning("warning"),
+    ;
+
+    companion object {
+        private val byWireName = entries.associateBy(DesignThemeRole::wireName)
+
+        internal fun fromWireName(value: String): DesignThemeRole? = byWireName[value]
+    }
+}
+
+/** Closed semantic-component visual slots exposed to design profiles. */
+enum class DesignComponentStyleSlot(val wireName: String) {
+    /** Canonical `text` presentation keyed by the node's `style` member. */
+    TextBody("text.body"),
+    TextTitle("text.title"),
+    TextHeadline("text.headline"),
+    TextCaption("text.caption"),
+    TextLabel("text.label"),
+    TextMono("text.mono"),
+    /** Canonical `icon_button`, `badge` and `empty_state` presentation. */
+    IconButtonContainer("icon-button.container"),
+    BadgeContainer("badge.container"),
+    BadgeLabel("badge.label"),
+    EmptyStateContainer("empty-state.container"),
+    EmptyStateTitle("empty-state.title"),
+    EmptyStateCaption("empty-state.caption"),
+    /** Canonical `card` containers keyed by variant. */
+    CardFilled("card.filled"),
+    CardElevated("card.elevated"),
+    CardOutlined("card.outlined"),
+    /** The Jetpacs list row and its text slots. */
+    ListItemContainer("list-item.container"),
+    ListItemOverline("list-item.overline"),
+    ListItemTitle("list-item.title"),
+    ListItemSubtitle("list-item.subtitle"),
+    /** One revealed swipe cell and its label, shared by card and list item. */
+    SwipeCell("swipe.cell"),
+    SwipeLabel("swipe.label"),
+    /** Canonical `button` containers keyed by variant, plus its label. */
+    ButtonFilled("button.filled"),
+    ButtonTonal("button.tonal"),
+    ButtonElevated("button.elevated"),
+    ButtonOutlined("button.outlined"),
+    ButtonText("button.text"),
+    ButtonLabel("button.label"),
+    ChipContainer("chip.container"),
+    ChipLabel("chip.label"),
+    DividerLine("divider.line"),
+    SectionHeaderContainer("section-header.container"),
+    SectionHeaderTitle("section-header.title"),
+    /** Canonical `menu`: its anchor, popup surface, rows and group heads. */
+    MenuTrigger("menu.trigger"),
+    MenuContainer("menu.container"),
+    MenuItem("menu.item"),
+    MenuItemLabel("menu.item-label"),
+    MenuItemSupporting("menu.item-supporting"),
+    MenuGroupLabel("menu.group-label"),
+    ActionContainer("action.container"),
+    ActionLabel("action.label"),
+    ChoiceContainer("choice.container"),
+    ChoiceIndicator("choice.indicator"),
+    ChoiceLabel("choice.label"),
+    PanelContainer("panel.container"),
+    PanelLabel("panel.label"),
+    TabsContainer("tabs.container"),
+    TabsItem("tabs.item"),
+    TabsIndicator("tabs.indicator"),
+    TabsLabel("tabs.label"),
+    SectionNavigatorContainer("section-navigator.container"),
+    SectionNavigatorOption("section-navigator.option"),
+    SectionNavigatorLabel("section-navigator.label"),
+    SectionNavigatorButton("section-navigator.button"),
+    SectionNavigatorSelector("section-navigator.selector"),
+    SectionNavigatorPopup("section-navigator.popup"),
+    SectionNavigatorPopupItem("section-navigator.popup-item"),
+    TextFieldOutlined("text-field.outlined"),
+    TextFieldFilled("text-field.filled"),
+    TextFieldText("text-field.text"),
+    TextFieldLabel("text-field.label"),
+    TextFieldPlaceholder("text-field.placeholder"),
+    TextFieldSupporting("text-field.supporting"),
+    TextFieldAffix("text-field.affix"),
+    EditorSurface("editor.surface"),
+    EditorChromeless("editor.chromeless"),
+    EditorText("editor.text"),
+    EditorGutter("editor.gutter"),
+    EditorToolbar("editor.toolbar"),
+    EditorToolbarItem("editor.toolbar-item"),
+    EditorSyncStatus("editor.sync-status"),
+    EditorCompletionList("editor.completion-list"),
+    EditorCompletionItem("editor.completion-item"),
+    EditorCandidateDocument("editor.candidate-document"),
+    EditorToolingStatus("editor.tooling-status"),
+    ;
+
+    companion object {
+        private val byWireName = entries.associateBy(DesignComponentStyleSlot::wireName)
+
+        internal fun fromWireName(value: String): DesignComponentStyleSlot? = byWireName[value]
+    }
 }
 
 enum class DesignFontFamily {
@@ -152,7 +269,16 @@ class CompiledDesignScope internal constructor(
     internal val tokens: Map<String, JsonElement>,
     internal val styleDeclarations: Map<String, JsonElement>,
     internal val motionDeclarations: Map<String, JsonElement>,
+    internal val componentStyleDeclarations: Map<String, JsonElement>,
+    internal val themeRoleDeclarations: Map<String, JsonElement>,
     private val styles: Map<String, CompiledStyle>,
+    private val componentStyles: Map<DesignComponentStyleSlot, ComputedDesignStyle>,
+    /**
+     * EBP theme roles this scope re-declares for its subtree. Each value is a
+     * literal color or a reference to an ambient role, so a scope can alias
+     * one role to another as well as fix a palette.
+     */
+    val themeRoles: Map<DesignThemeRole, DesignValue>,
 ) {
     val canonicalContent: String
         get() = canonical.value
@@ -167,6 +293,10 @@ class CompiledDesignScope internal constructor(
         }
         return ComputedDesignStyle(layers.toList())
     }
+
+    /** Return the effective authored program for [slot], when one is bound. */
+    fun componentStyle(slot: DesignComponentStyleSlot): ComputedDesignStyle? =
+        componentStyles[slot]
 }
 
 /** Pure compiler shared by admission and rendering. */
@@ -176,9 +306,11 @@ object DesignModel {
     private const val MAX_CACHE_ENTRIES = 32
 
     private class ScopeContentKey(
+        val componentStyles: Map<String, JsonElement>,
         val motions: Map<String, JsonElement>,
         val styles: Map<String, JsonElement>,
         val tokens: Map<String, JsonElement>,
+        val themeRoles: Map<String, JsonElement>,
         private val contentHash: Int,
     ) {
         override fun hashCode(): Int = contentHash
@@ -186,6 +318,8 @@ object DesignModel {
         override fun equals(other: Any?): Boolean =
             other is ScopeContentKey &&
                 contentHash == other.contentHash &&
+                themeRoles == other.themeRoles &&
+                componentStyles == other.componentStyles &&
                 motions == other.motions &&
                 styles == other.styles &&
                 tokens == other.tokens
@@ -211,13 +345,29 @@ object DesignModel {
         val localTokens = requiredObject(node, "tokens", path)
         val localStyles = requiredObject(node, "styles", path)
         val localMotions = optionalObject(node, "motions", path) ?: JsonObject(emptyMap())
+        val localComponentStyles = componentStyleBindings(node, path)
+        val localThemeRoles = themeRoleDeclarations(node, path)
 
         val tokens = merge(parent?.tokens, localTokens, 256, "$path.tokens")
         val styles = merge(parent?.styleDeclarations, localStyles, 256, "$path.styles")
         val motions = merge(parent?.motionDeclarations, localMotions, 64, "$path.motions")
+        val componentStyles = merge(
+            parent?.componentStyleDeclarations,
+            JsonObject(localComponentStyles),
+            DesignComponentStyleSlot.entries.size,
+            "$path.component_styles",
+        )
+        val themeRoles = merge(
+            parent?.themeRoleDeclarations,
+            JsonObject(localThemeRoles),
+            DesignThemeRole.entries.size,
+            "$path.theme_roles",
+        )
         val canonicalValues = mapOf(
+            "component_styles" to JsonObject(componentStyles),
             "motions" to JsonObject(motions),
             "styles" to JsonObject(styles),
+            "theme_roles" to JsonObject(themeRoles),
             "tokens" to JsonObject(tokens),
         )
         val canonicalMetrics = canonicalMetrics(JsonObject(canonicalValues))
@@ -226,9 +376,11 @@ object DesignModel {
             invalid(path, "design configuration exceeds 256 KiB")
         }
         val contentKey = ScopeContentKey(
+            componentStyles,
             motions,
             styles,
             tokens,
+            themeRoles,
             canonicalMetrics.contentHash,
         )
         cache[contentKey]?.let { return it }
@@ -242,6 +394,17 @@ object DesignModel {
             tokens = tokenResolver,
             path = path,
         )
+        validateLocalComponentStyleReferences(
+            declarations = localComponentStyles,
+            scopeStyles = compiledStyles,
+            path = path,
+        )
+        val compiledComponentStyles = compileComponentStyles(
+            declarations = componentStyles,
+            scopeStyles = compiledStyles,
+            path = path,
+        )
+        val compiledThemeRoles = compileThemeRoles(themeRoles, tokenResolver, path)
         return CompiledDesignScope(
             canonical = lazy(LazyThreadSafetyMode.PUBLICATION) {
                 canonicalObject(canonicalValues)
@@ -250,7 +413,11 @@ object DesignModel {
             tokens = tokens,
             styleDeclarations = styles,
             motionDeclarations = motions,
+            componentStyleDeclarations = componentStyles,
+            themeRoleDeclarations = themeRoles,
             styles = compiledStyles,
+            componentStyles = compiledComponentStyles,
+            themeRoles = compiledThemeRoles,
         ).also { cache[contentKey] = it }
     }
 
@@ -277,11 +444,86 @@ object DesignModel {
         }
     }
 
+    private fun componentStyleBindings(
+        node: JsonObject,
+        path: String,
+    ): Map<String, JsonElement> {
+        val values = node["component_styles"] ?: return emptyMap()
+        val bindings = values as? JsonArray
+            ?: invalid("$path.component_styles", "must be an array")
+        if (bindings.size > DesignComponentStyleSlot.entries.size) {
+            invalid(
+                "$path.component_styles",
+                "contains more than ${DesignComponentStyleSlot.entries.size} bindings",
+            )
+        }
+        val result = LinkedHashMap<String, JsonElement>(bindings.size)
+        bindings.forEachIndexed { index, value ->
+            val bindingPath = "$path.component_styles[$index]"
+            val binding = value as? JsonObject ?: invalid(bindingPath, "must be an object")
+            val slot = requiredString(binding, "slot", bindingPath)
+            DesignComponentStyleSlot.fromWireName(slot)
+                ?: invalid("$bindingPath.slot", "has an unknown component style slot")
+            if (slot in result) {
+                invalid("$bindingPath.slot", "duplicates component style slot '$slot'")
+            }
+            val styles = binding["styles"] as? JsonArray
+                ?: invalid("$bindingPath.styles", "must be an array")
+            if (styles.size !in 1..16) {
+                invalid("$bindingPath.styles", "must contain 1 to 16 styles")
+            }
+            styles.forEachIndexed { styleIndex, style ->
+                val stylePath = "$bindingPath.styles[$styleIndex]"
+                requireIdentifier(string(style, stylePath), stylePath)
+            }
+            result[slot] = styles
+        }
+        return result
+    }
+
     @Synchronized
     internal fun clearCacheForTest() = cache.clear()
 
     @Synchronized
     internal fun cacheKeysForTest(): List<String> = cache.values.map { it.canonicalContent }
+
+    /** Read `theme_roles`: a closed map from EBP role name to a color-valued design value. */
+    private fun themeRoleDeclarations(node: JsonObject, path: String): Map<String, JsonElement> {
+        val values = node["theme_roles"] ?: return emptyMap()
+        val map = values as? JsonObject ?: invalid("$path.theme_roles", "must be an object")
+        if (map.size > DesignThemeRole.entries.size) {
+            invalid("$path.theme_roles", "contains more than ${DesignThemeRole.entries.size} roles")
+        }
+        for ((name, value) in map) {
+            DesignThemeRole.fromWireName(name)
+                ?: invalid("$path.theme_roles.$name", "is not an EBP theme role")
+            if (value !is JsonObject) {
+                invalid("$path.theme_roles.$name", "must be a design value object")
+            }
+        }
+        return map
+    }
+
+    /** Resolve every re-declared role to a literal color or an ambient role reference. */
+    private fun compileThemeRoles(
+        declarations: Map<String, JsonElement>,
+        tokens: TokenResolver,
+        path: String,
+    ): Map<DesignThemeRole, DesignValue> {
+        if (declarations.isEmpty()) return emptyMap()
+        val result = LinkedHashMap<DesignThemeRole, DesignValue>(declarations.size)
+        for ((name, declaration) in declarations) {
+            val rolePath = "$path.theme_roles.$name"
+            val role = DesignThemeRole.fromWireName(name)
+                ?: invalid(rolePath, "is not an EBP theme role")
+            val value = parseValue(declaration as JsonObject, tokens, rolePath)
+            if (value !is DesignValue.ColorValue && value !is DesignValue.ThemeRoleValue) {
+                invalid(rolePath, "must resolve to a color")
+            }
+            result[role] = value
+        }
+        return result.toMap()
+    }
 
     private fun merge(
         inherited: Map<String, JsonElement>?,
@@ -400,6 +642,49 @@ object DesignModel {
         return result
     }
 
+    private fun compileComponentStyles(
+        declarations: Map<String, JsonElement>,
+        scopeStyles: Map<String, CompiledStyle>,
+        path: String,
+    ): Map<DesignComponentStyleSlot, ComputedDesignStyle> {
+        val result = LinkedHashMap<DesignComponentStyleSlot, ComputedDesignStyle>()
+        for ((slotName, element) in declarations) {
+            val slot = DesignComponentStyleSlot.fromWireName(slotName)
+                ?: invalid("$path.component_styles.$slotName", "has an unknown component style slot")
+            val references = element as? JsonArray
+                ?: invalid("$path.component_styles.$slotName", "must be an array")
+            val layers = mutableListOf<DesignStyleLayer>()
+            references.forEachIndexed { index, reference ->
+                val referencePath = "$path.component_styles.$slotName[$index]"
+                val styleName = string(reference, referencePath)
+                val style = scopeStyles[styleName]
+                    ?: invalid(referencePath, "unresolved style '$styleName'")
+                layers += DesignStyleLayer(null, style.base, style.motion)
+                layers += style.rules
+            }
+            result[slot] = ComputedDesignStyle(layers.toList())
+        }
+        return result.toMap()
+    }
+
+    private fun validateLocalComponentStyleReferences(
+        declarations: Map<String, JsonElement>,
+        scopeStyles: Map<String, CompiledStyle>,
+        path: String,
+    ) {
+        declarations.entries.forEachIndexed { bindingIndex, (_, element) ->
+            val references = element as JsonArray
+            references.forEachIndexed { styleIndex, reference ->
+                val referencePath =
+                    "$path.component_styles[$bindingIndex].styles[$styleIndex]"
+                val styleName = string(reference, referencePath)
+                if (styleName !in scopeStyles) {
+                    invalid(referencePath, "unresolved style '$styleName'")
+                }
+            }
+        }
+    }
+
     private fun motionReference(
         element: JsonElement?,
         motions: Map<String, DesignMotion>,
@@ -470,7 +755,7 @@ object DesignModel {
 
     private fun matches(kind: ValueKind, value: DesignValue): Boolean = when (kind) {
         ValueKind.Boolean -> value is DesignValue.BooleanValue
-        ValueKind.Color -> value is DesignValue.ColorValue
+        ValueKind.Color -> value is DesignValue.ColorValue || value is DesignValue.ThemeRoleValue
         ValueKind.Dimension -> value is DesignValue.DimensionValue
         ValueKind.Number -> value is DesignValue.NumberValue
         ValueKind.FontFamily -> value is DesignValue.FontFamilyValue
@@ -523,6 +808,10 @@ object DesignModel {
                 else -> invalid("$path.value", "must be true or false")
             }
             "color" -> DesignValue.ColorValue(parseColor(raw, "$path.value"))
+            "theme-role" -> DesignValue.ThemeRoleValue(
+                DesignThemeRole.fromWireName(raw)
+                    ?: invalid("$path.value", "has an unknown EBP theme role"),
+            )
             "dimension" -> DesignValue.DimensionValue(
                 parseFinite(raw, 0.0, 10_000.0, "$path.value"),
             )

@@ -121,32 +121,36 @@ private fun TextFieldBuffer.addLocalSyntaxStyles(
     colors: JetpacsSyntaxColors,
 ) {
     projectSyntaxSpans(language, source).forEach { span ->
-        val color = when (span.role) {
-            SyntaxRole.Plain -> Color.Unspecified
-            SyntaxRole.Comment -> colors.comment
-            SyntaxRole.String -> colors.string
-            SyntaxRole.Keyword -> colors.keyword
-            SyntaxRole.Function -> colors.function
-            SyntaxRole.Constant -> colors.constant
-            SyntaxRole.Number -> colors.number
-            SyntaxRole.Link -> colors.link
-            SyntaxRole.Preprocessor -> colors.preprocessor
-            SyntaxRole.Tag -> colors.tag
-            SyntaxRole.Todo -> colors.todo
-            SyntaxRole.Done -> colors.done
-            SyntaxRole.Heading -> colors.heading[span.variant.mod(colors.heading.size)]
-            SyntaxRole.Parenthesis ->
-                colors.parenthesis[span.variant.mod(colors.parenthesis.size)]
-        }
-        addStyle(
-            SpanStyle(
-                color = color,
-                fontWeight = FontWeight.Bold.takeIf { span.bold },
-                fontStyle = FontStyle.Italic.takeIf { span.italic },
-                textDecoration = TextDecoration.Underline.takeIf { span.underline },
-            ),
-            span.start,
-            span.end,
-        )
+        addStyle(jetpacsLocalSyntaxSpanStyle(span, colors), span.start, span.end)
     }
+}
+
+/** Jetpacs palette mapping for one locally projected syntax [span]. */
+internal fun jetpacsLocalSyntaxSpanStyle(
+    span: com.calebc42.ebp.renderer.compose.SyntaxSpan,
+    colors: JetpacsSyntaxColors,
+): SpanStyle {
+    val color = when (span.role) {
+        SyntaxRole.Plain -> Color.Unspecified
+        SyntaxRole.Comment -> colors.comment
+        SyntaxRole.String -> colors.string
+        SyntaxRole.Keyword -> colors.keyword
+        SyntaxRole.Function -> colors.function
+        SyntaxRole.Constant -> colors.constant
+        SyntaxRole.Number -> colors.number
+        SyntaxRole.Link -> colors.link
+        SyntaxRole.Preprocessor -> colors.preprocessor
+        SyntaxRole.Tag -> colors.tag
+        SyntaxRole.Todo -> colors.todo
+        SyntaxRole.Done -> colors.done
+        SyntaxRole.Heading -> colors.heading[span.variant.mod(colors.heading.size)]
+        SyntaxRole.Parenthesis ->
+            colors.parenthesis[span.variant.mod(colors.parenthesis.size)]
+    }
+    return SpanStyle(
+        color = color,
+        fontWeight = FontWeight.Bold.takeIf { span.bold },
+        fontStyle = FontStyle.Italic.takeIf { span.italic },
+        textDecoration = TextDecoration.Underline.takeIf { span.underline },
+    )
 }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.heightIn
@@ -22,12 +23,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.text.BasicText
 
@@ -45,12 +48,15 @@ fun JetpacsAction(
     style: Style = Style,
     enabled: Boolean = true,
     interactionSource: MutableInteractionSource? = null,
+    labelStyle: Style = Style,
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val styleState = rememberUpdatedStyleState(source) {
         it.isEnabled = enabled
     }
-    JetpacsActionLayout(label, onClick, modifier, style, enabled, source, styleState)
+    JetpacsActionLayout(
+        label, onClick, modifier, style, labelStyle, enabled, source, styleState,
+    )
 }
 
 @Composable
@@ -59,6 +65,7 @@ private fun JetpacsActionLayout(
     onClick: () -> Unit,
     modifier: Modifier,
     style: Style,
+    labelStyle: Style,
     enabled: Boolean,
     interactionSource: MutableInteractionSource,
     styleState: StyleState,
@@ -73,10 +80,30 @@ private fun JetpacsActionLayout(
                 role = Role.Button,
                 onClick = onClick,
             )
-            .styleable(styleState, JetpacsTheme.styles.action, style),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.action,
+                designComponentStyle(DesignComponentStyleSlot.ActionContainer),
+                style,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(label, style = JetpacsTheme.typography.action)
+        Box(
+            modifier = Modifier.styleable(
+                styleState,
+                designComponentNonTextStyle(DesignComponentStyleSlot.ActionLabel),
+                labelStyle,
+            ),
+        ) {
+            BasicText(
+                label,
+                style = resolvedDesignTextStyle(
+                    DesignComponentStyleSlot.ActionLabel,
+                    JetpacsTheme.typography.action,
+                    styleState,
+                ),
+            )
+        }
     }
 }
 
@@ -94,6 +121,8 @@ fun JetpacsChoice(
     style: Style = Style,
     enabled: Boolean = true,
     interactionSource: MutableInteractionSource? = null,
+    indicatorStyle: Style = Style,
+    labelStyle: Style = Style,
 ) {
     val source = interactionSource ?: remember { MutableInteractionSource() }
     val styleState = rememberUpdatedStyleState(source) {
@@ -106,6 +135,8 @@ fun JetpacsChoice(
         onCheckedChange,
         modifier,
         style,
+        indicatorStyle,
+        labelStyle,
         enabled,
         source,
         styleState,
@@ -119,11 +150,22 @@ private fun JetpacsChoiceLayout(
     onCheckedChange: (Boolean) -> Unit,
     modifier: Modifier,
     style: Style,
+    indicatorStyle: Style,
+    labelStyle: Style,
     enabled: Boolean,
     interactionSource: MutableInteractionSource,
     styleState: StyleState,
 ) {
     val colors = JetpacsTheme.colors
+    val hasCustomIndicator =
+        LocalDesignScope.current?.componentStyle(
+            DesignComponentStyleSlot.ChoiceIndicator,
+        ) != null || indicatorStyle !== Style
+    val indicatorContentColor = resolvedDesignTextStyle(
+        DesignComponentStyleSlot.ChoiceIndicator,
+        TextStyle(color = colors.onAccent),
+        styleState,
+    ).color
     Row(
         modifier = modifier
             .heightIn(min = 48.dp)
@@ -135,22 +177,44 @@ private fun JetpacsChoiceLayout(
                 indication = null,
                 onValueChange = onCheckedChange,
             )
-            .styleable(styleState, JetpacsTheme.styles.choice, style),
+            .styleable(
+                styleState,
+                JetpacsTheme.styles.choice,
+                designComponentStyle(DesignComponentStyleSlot.ChoiceContainer),
+                style,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Canvas(Modifier.size(18.dp)) {
-            drawRoundRect(
-                color = if (checked) colors.accent else colors.surface,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
-            )
-            drawRoundRect(
-                color = if (checked) colors.accent else colors.outline,
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
-                style = Stroke(width = 1.dp.toPx()),
-            )
+        Canvas(
+            Modifier
+                .size(18.dp)
+                .let { base ->
+                    if (hasCustomIndicator) {
+                        base.styleable(
+                            styleState,
+                            JetpacsTheme.styles.choiceIndicator,
+                            designComponentStyle(DesignComponentStyleSlot.ChoiceIndicator),
+                            indicatorStyle,
+                        )
+                    } else {
+                        base
+                    }
+                },
+        ) {
+            if (!hasCustomIndicator) {
+                drawRoundRect(
+                    color = if (checked) colors.accent else colors.surface,
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                )
+                drawRoundRect(
+                    color = if (checked) colors.accent else colors.outline,
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                    style = Stroke(width = 1.dp.toPx()),
+                )
+            }
             if (checked) {
                 drawLine(
-                    color = colors.onAccent,
+                    color = indicatorContentColor,
                     start = Offset(size.width * 0.23f, size.height * 0.52f),
                     end = Offset(size.width * 0.43f, size.height * 0.72f),
                     strokeWidth = 2.dp.toPx(),
@@ -166,7 +230,22 @@ private fun JetpacsChoiceLayout(
             }
         }
         Spacer(Modifier.width(8.dp))
-        BasicText(label, style = JetpacsTheme.typography.choice)
+        Box(
+            modifier = Modifier.styleable(
+                styleState,
+                designComponentNonTextStyle(DesignComponentStyleSlot.ChoiceLabel),
+                labelStyle,
+            ),
+        ) {
+            BasicText(
+                label,
+                style = resolvedDesignTextStyle(
+                    DesignComponentStyleSlot.ChoiceLabel,
+                    JetpacsTheme.typography.choice,
+                    styleState,
+                ),
+            )
+        }
     }
 }
 
@@ -180,7 +259,7 @@ internal fun JetpacsActionFocusFixture(label: String) {
             isFocused = true
         }
     }
-    JetpacsActionLayout(label, {}, Modifier, Style, true, source, state)
+    JetpacsActionLayout(label, {}, Modifier, Style, Style, true, source, state)
 }
 
 /** Stable final interaction states used only by deterministic visual tests. */
@@ -193,7 +272,9 @@ internal fun JetpacsChoiceHoverFixture(label: String) {
             isHovered = true
         }
     }
-    JetpacsChoiceLayout(label, false, {}, Modifier, Style, true, source, state)
+    JetpacsChoiceLayout(
+        label, false, {}, Modifier, Style, Style, Style, true, source, state,
+    )
 }
 
 /**
@@ -206,18 +287,36 @@ fun JetpacsPanel(
     label: String,
     modifier: Modifier = Modifier,
     style: Style = Style,
+    labelStyle: Style = Style,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val styleState = remember { MutableStyleState(null) }
     Column(
-        modifier = modifier.styleable(styleState, JetpacsTheme.styles.panel, style),
+        modifier = modifier.styleable(
+            styleState,
+            JetpacsTheme.styles.panel,
+            designComponentStyle(DesignComponentStyleSlot.PanelContainer),
+            style,
+        ),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        BasicText(
-            label,
-            modifier = Modifier.semantics { heading() },
-            style = JetpacsTheme.typography.panelLabel,
-        )
+        Box(
+            modifier = Modifier.styleable(
+                styleState,
+                designComponentNonTextStyle(DesignComponentStyleSlot.PanelLabel),
+                labelStyle,
+            ),
+        ) {
+            BasicText(
+                label,
+                modifier = Modifier.semantics { heading() },
+                style = resolvedDesignTextStyle(
+                    DesignComponentStyleSlot.PanelLabel,
+                    JetpacsTheme.typography.panelLabel,
+                    styleState,
+                ),
+            )
+        }
         content()
     }
 }

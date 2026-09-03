@@ -7,6 +7,7 @@ import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -73,6 +74,7 @@ internal fun JetpacsEditorCompletion(
         modifier = Modifier.styleable(
             remember { MutableStyleState(null) },
             JetpacsTheme.styles.editorCompletionList,
+            designComponentStyle(DesignComponentStyleSlot.EditorCompletionList),
         ),
         verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
@@ -88,20 +90,34 @@ internal fun JetpacsEditorCompletion(
             )
         }
         if (candidateDocumentVisible(document, offer.epoch, visible.map { it.index })) {
-            BasicText(
-                text = document!!.text,
-                style = JetpacsTheme.typography.code.copy(
-                    color = JetpacsTheme.colors.mutedContent,
-                ),
+            val visibleDocument = document!!
+            Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .heightIn(max = 128.dp)
-                    .verticalScroll(remember(document.index, document.epoch) { ScrollState(0) })
+                    .verticalScroll(
+                        remember(visibleDocument.index, visibleDocument.epoch) {
+                            ScrollState(0)
+                        },
+                    )
                     .styleable(
                         remember { MutableStyleState(null) },
                         JetpacsTheme.styles.editorCandidateDocument,
+                        designComponentNonTextStyle(
+                            DesignComponentStyleSlot.EditorCandidateDocument,
+                        ),
                     ),
-            )
+            ) {
+                BasicText(
+                    text = visibleDocument.text,
+                    style = resolvedDesignTextStyle(
+                        DesignComponentStyleSlot.EditorCandidateDocument,
+                        JetpacsTheme.typography.code.copy(
+                            color = JetpacsTheme.colors.mutedContent,
+                        ),
+                    ),
+                )
+            }
         }
     }
 }
@@ -125,6 +141,18 @@ private fun JetpacsCompletionRow(
             append(it.replace('-', ' '))
         }
     }
+    val itemTextStyle = resolvedDesignTextStyle(
+        DesignComponentStyleSlot.EditorCompletionItem,
+        JetpacsTheme.typography.field,
+        state,
+    )
+    val itemSupportingStyle = resolvedDesignTextStyle(
+        DesignComponentStyleSlot.EditorCompletionItem,
+        JetpacsTheme.typography.fieldSupporting.copy(
+            color = JetpacsTheme.colors.mutedContent,
+        ),
+        state,
+    )
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -138,7 +166,11 @@ private fun JetpacsCompletionRow(
                 onLongClick = onLongClick,
                 onClick = onClick,
             )
-            .styleable(state, JetpacsTheme.styles.editorCompletionItem),
+            .styleable(
+                state,
+                JetpacsTheme.styles.editorCompletionItem,
+                designComponentStyle(DesignComponentStyleSlot.EditorCompletionItem),
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         completionKindGlyph(candidate.kind)?.let { glyph ->
@@ -153,14 +185,12 @@ private fun JetpacsCompletionRow(
             )
             Spacer(Modifier.width(4.dp))
         }
-        BasicText(candidate.label, style = JetpacsTheme.typography.field)
+        BasicText(candidate.label, style = itemTextStyle)
         candidate.annotation?.takeIf { it.isNotEmpty() }?.let { annotation ->
             Spacer(Modifier.width(8.dp))
             BasicText(
                 annotation,
-                style = JetpacsTheme.typography.fieldSupporting.copy(
-                    color = JetpacsTheme.colors.mutedContent,
-                ),
+                style = itemSupportingStyle,
             )
         }
     }
@@ -196,6 +226,7 @@ internal fun JetpacsEditorToolingStatus(
     diagnosticColors: JetpacsDiagnosticColors,
 ) {
     val text = diagnostic?.message ?: eldoc?.text?.takeIf { it.isNotEmpty() } ?: return
+    val styleState = remember { MutableStyleState(null) }
     val accessibleText = diagnostic?.let {
         "${it.severity.replaceFirstChar(Char::uppercaseChar)}: $text"
     } ?: text
@@ -203,8 +234,9 @@ internal fun JetpacsEditorToolingStatus(
         modifier = Modifier
             .fillMaxWidth()
             .styleable(
-                remember { MutableStyleState(null) },
+                styleState,
                 JetpacsTheme.styles.editorToolingStatus,
+                designComponentStyle(DesignComponentStyleSlot.EditorToolingStatus),
             )
             .semantics {
                 contentDescription = accessibleText
@@ -224,13 +256,19 @@ internal fun JetpacsEditorToolingStatus(
         }
         BasicText(
             text,
-            style = if (diagnostic == null) {
-                JetpacsTheme.typography.code.copy(color = JetpacsTheme.colors.mutedContent)
-            } else {
-                JetpacsTheme.typography.fieldSupporting.copy(
-                    color = JetpacsTheme.colors.mutedContent,
-                )
-            },
+            style = resolvedDesignTextStyle(
+                DesignComponentStyleSlot.EditorToolingStatus,
+                if (diagnostic == null) {
+                    JetpacsTheme.typography.code.copy(
+                        color = JetpacsTheme.colors.mutedContent,
+                    )
+                } else {
+                    JetpacsTheme.typography.fieldSupporting.copy(
+                        color = JetpacsTheme.colors.mutedContent,
+                    )
+                },
+                styleState,
+            ),
             maxLines = 2,
         )
     }

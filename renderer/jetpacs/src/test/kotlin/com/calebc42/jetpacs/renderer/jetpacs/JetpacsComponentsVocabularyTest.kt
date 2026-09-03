@@ -60,6 +60,7 @@ class JetpacsComponentsVocabularyTest {
             setOf(
                 "jetpacs.action",
                 "jetpacs.choice",
+                "jetpacs.list_item",
                 "jetpacs.panel",
                 "jetpacs.scope",
                 "jetpacs.section_navigator",

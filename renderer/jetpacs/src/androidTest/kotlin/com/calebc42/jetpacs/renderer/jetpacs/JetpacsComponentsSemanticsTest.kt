@@ -26,6 +26,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsSelectable
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.assertWidthIsAtLeast
@@ -49,6 +50,7 @@ import com.calebc42.ebp.wire.SafeAdmissionEvidence
 import com.calebc42.ebp.wire.ScalarPos
 import com.calebc42.ebp.wire.UnsafeAdmissionReason
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.compose.RevealSwipeDirection
 import com.calebc42.ebp.renderer.compose.ebpSemantics
 import com.calebc42.ebp.renderer.model.ActionHandoff
 import com.calebc42.ebp.renderer.model.CandidateDocument
@@ -71,6 +73,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -174,6 +179,409 @@ class JetpacsComponentsSemanticsTest {
             .getUnclippedBoundsInRoot()
         assertTrue(styled.right - styled.left > plain.right - plain.left)
         compose.onAllNodes(hasClickAction()).assertCountEquals(0)
+    }
+
+    @Test
+    fun designTextOverrideAppliesTheBoundSlotTypographyAndCanonicalMembers() {
+        val scope = DesignModel.compileScope(
+            designScope(
+                """
+                {"display":{"properties":{
+                   "font_size":{"kind":"dimension","value":"48"},
+                   "line_height":{"kind":"dimension","value":"56"},
+                   "font_family":{"kind":"font-family","value":"plex-serif"}
+                 },"rules":[]}}
+                """,
+                """{"t":"text","text":"unused"}""",
+            ).let { node ->
+                Json.parseToJsonElement(
+                    """
+                    {"t":"jetpacs.design_scope","tokens":{},
+                     "styles":${node["styles"]},
+                     "component_styles":[{"slot":"text.title","styles":["display"]}],
+                     "children":[]}
+                    """,
+                ) as JsonObject
+            },
+            null,
+            "root",
+        )
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val titled = Json.parseToJsonElement(
+            """{"t":"text","text":"Designed title","style":"title","max_lines":1}""",
+        ) as JsonObject
+        val plain = Json.parseToJsonElement(
+            """{"t":"text","text":"Designed body"}""",
+        ) as JsonObject
+        compose.setContent {
+            CompositionLocalProvider(LocalDesignScope provides scope) {
+                Column {
+                    JetpacsDesignTextRenderer.render(titled, context, Modifier.testTag("title"))
+                    JetpacsDesignTextRenderer.render(plain, context, Modifier.testTag("body"))
+                }
+            }
+        }
+
+        compose.onNodeWithText("Designed title").assertIsDisplayed()
+        compose.onNodeWithTag("title").assertHeightIsAtLeast(56.dp)
+        val body = compose.onNodeWithTag("body").getUnclippedBoundsInRoot()
+        assertTrue(body.bottom - body.top < 56.dp)
+        compose.onAllNodes(hasClickAction()).assertCountEquals(0)
+    }
+
+    @Test
+    fun fillWidthFalseNeverCollapsesAPressableFace() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = designScope(
+            """
+            {"pill":{"properties":{
+               "fill_width":{"kind":"boolean","value":"false"},
+               "padding_horizontal":{"kind":"dimension","value":"14"}
+             },"rules":[]}}
+            """,
+            """
+            {"t":"jetpacs.pressable","styles":["pill"],
+             "on_tap":{"action":"design.run"},
+             "children":[{"t":"text","text":"Pill face"}]}
+            """,
+        )
+        compose.setContent {
+            Column(Modifier.fillMaxWidth().testTag("host")) {
+                JetpacsDesignRenderer.render(node, context, Modifier)
+            }
+        }
+
+        val host = compose.onNodeWithTag("host").getUnclippedBoundsInRoot()
+        val pill = compose.onNodeWithText("Pill face").getUnclippedBoundsInRoot()
+        assertTrue(pill.right - pill.left > 48.dp)
+        assertTrue(pill.right - pill.left < (host.right - host.left) / 2)
+        compose.onNodeWithText("Pill face").assertHeightIsAtLeast(48.dp)
+    }
+
+    @Test
+    fun designButtonIsOneTargetThatDispatchesOnceAndHonorsSize() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val scope = DesignModel.compileScope(
+            designScope("""{"face":{"properties":{},"rules":[]}}""", """{"t":"text","text":"x"}"""),
+            null,
+            "root",
+        )
+        val filled = Json.parseToJsonElement(
+            """{"t":"button","label":"Filled","on_tap":{"action":"design.tap"},"variant":"filled"}""",
+        ) as JsonObject
+        val large = Json.parseToJsonElement(
+            """{"t":"button","label":"Large","on_tap":{"action":"design.large"},"variant":"outlined","size":"large","icon":"edit"}""",
+        ) as JsonObject
+        val disabled = Json.parseToJsonElement(
+            """{"t":"button","label":"Off","on_tap":{"action":"design.off"},"enabled":false}""",
+        ) as JsonObject
+        compose.setContent {
+            CompositionLocalProvider(LocalDesignScope provides scope) {
+                Column {
+                    JetpacsDesignButtonRenderer.render(filled, context, Modifier)
+                    JetpacsDesignButtonRenderer.render(large, context, Modifier)
+                    JetpacsDesignButtonRenderer.render(disabled, context, Modifier)
+                }
+            }
+        }
+
+        compose.onNodeWithText("Filled")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+            .performClick()
+        compose.onNodeWithText("Large").assertHeightIsAtLeast(96.dp)
+        compose.onNodeWithText("Off").assertIsNotEnabled().performClick()
+        compose.runOnIdle {
+            assertEquals(listOf("design.tap"), context.actionNames)
+        }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(3)
+        assertTrue(JetpacsDesignButtonRenderer.appliesTo(filled))
+        assertTrue(
+            !JetpacsDesignButtonRenderer.appliesTo(
+                Json.parseToJsonElement(
+                    """{"t":"button","id":"t","label":"Toggle","on_tap":{"action":"x"},"checked":true}""",
+                ) as JsonObject,
+            ),
+        )
+    }
+
+    @Test
+    fun designChipExposesSelectionAndDispatchesItsTap() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val scope = DesignModel.compileScope(
+            designScope("""{"face":{"properties":{},"rules":[]}}""", """{"t":"text","text":"x"}"""),
+            null,
+            "root",
+        )
+        val chip = Json.parseToJsonElement(
+            """{"t":"chip","label":"Work","selected":true,"icon":"check","on_tap":{"action":"chip.tap"}}""",
+        ) as JsonObject
+        val passive = Json.parseToJsonElement(
+            """{"t":"chip","label":"Tag"}""",
+        ) as JsonObject
+        compose.setContent {
+            CompositionLocalProvider(LocalDesignScope provides scope) {
+                Column {
+                    JetpacsDesignChipRenderer.render(chip, context, Modifier)
+                    JetpacsDesignChipRenderer.render(passive, context, Modifier)
+                }
+            }
+        }
+
+        compose.onNodeWithText("Work").assertIsSelected().performClick()
+        compose.onNodeWithText("Tag").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(listOf("chip.tap"), context.actionNames) }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+    }
+
+    @Test
+    fun designIconDrawsThroughTheInstalledResolverAndSectionHeaderRendersTrailing() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val scope = DesignModel.compileScope(
+            designScope("""{"face":{"properties":{},"rules":[]}}""", """{"t":"text","text":"x"}"""),
+            null,
+            "root",
+        )
+        val icon = Json.parseToJsonElement(
+            """{"t":"icon","name":"star","size":40}""",
+        ) as JsonObject
+        val header = Json.parseToJsonElement(
+            """{"t":"section_header","title":"Notebooks","trailing":{"t":"text","text":"3"}}""",
+        ) as JsonObject
+        val star = androidx.compose.ui.graphics.vector.ImageVector.Builder(
+            name = "star",
+            defaultWidth = 24.dp,
+            defaultHeight = 24.dp,
+            viewportWidth = 24f,
+            viewportHeight = 24f,
+        ).build()
+        compose.setContent {
+            CompositionLocalProvider(
+                LocalDesignScope provides scope,
+                com.calebc42.ebp.renderer.compose.LocalComposeIconResolver provides
+                    com.calebc42.ebp.renderer.compose.ComposeIconResolver { name ->
+                        star.takeIf { name == "star" }
+                    },
+            ) {
+                Column {
+                    JetpacsDesignIconRenderer.render(icon, context, Modifier.testTag("glyph"))
+                    JetpacsDesignSectionHeaderRenderer.render(header, context, Modifier)
+                    JetpacsDesignDividerRenderer.render(
+                        Json.parseToJsonElement("""{"t":"divider","thickness":2}""") as JsonObject,
+                        context,
+                        Modifier.testTag("rule"),
+                    )
+                }
+            }
+        }
+
+        compose.onNodeWithTag("glyph").assertHeightIsAtLeast(40.dp).assertWidthIsAtLeast(40.dp)
+        compose.onNodeWithText("Notebooks").assertIsDisplayed()
+        compose.onNodeWithTag("rendered:3:0").assertIsDisplayed()
+        val rule = compose.onNodeWithTag("rule").getUnclippedBoundsInRoot()
+        assertTrue(rule.bottom - rule.top >= 2.dp)
+        compose.onAllNodes(hasClickAction()).assertCountEquals(0)
+    }
+
+    @Test
+    fun designScopeThemeRolesReachBothPalettesBeneathIt() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = Json.parseToJsonElement(
+            """
+            {"t":"jetpacs.design_scope","tokens":{},"styles":{},
+             "theme_roles":{
+               "primary":{"kind":"color","value":"#8A5A2B"},
+               "background":{"kind":"color","value":"#F3EDE1"},
+               "on_primary":{"kind":"theme-role","value":"surface"}
+             },
+             "children":[{"t":"text","text":"themed"}]}
+            """,
+        ) as JsonObject
+        var sharedRoles: com.calebc42.ebp.renderer.compose.ComposeThemeRoles? = null
+        var privateAccent: androidx.compose.ui.graphics.Color? = null
+        var ambientSurface: androidx.compose.ui.graphics.Color? = null
+        context.onScopedChild = {
+            sharedRoles = com.calebc42.ebp.renderer.compose.LocalComposeThemeRoles.current
+            privateAccent = JetpacsTheme.colors.accent
+        }
+        compose.setContent {
+            ambientSurface = JetpacsTheme.roles.surface
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+
+        compose.onNodeWithText("themed").assertIsDisplayed()
+        compose.runOnIdle {
+            val roles = sharedRoles ?: error("scope did not publish theme roles")
+            assertEquals(androidx.compose.ui.graphics.Color(0xFF8A5A2B), roles.primary)
+            assertEquals(androidx.compose.ui.graphics.Color(0xFFF3EDE1), roles.background)
+            // A theme-role value aliases an ambient role rather than a literal.
+            assertEquals(ambientSurface, roles.onPrimary)
+            assertEquals(androidx.compose.ui.graphics.Color(0xFF8A5A2B), privateAccent)
+        }
+    }
+
+    @Test
+    fun listItemIsOneTargetThatAnnouncesItsRowAndItsSwipeActions() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """
+            {"t":"jetpacs.list_item","title":"inbox","subtitle":"Notebooks",
+             "on_tap":{"action":"row.open"},
+             "swipe_end":{"actions":[
+               {"label":"Rename","on_trigger":{"action":"row.rename"}}]}}
+            """,
+        ) as JsonObject
+        compose.setContent {
+            RenderListItem(node, context, Modifier.testTag("row"))
+        }
+
+        compose.onNodeWithTag("row")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assertHeightIsAtLeast(48.dp)
+        // The row announces itself once, not as three separate labels.
+        compose.onNodeWithContentDescription("inbox. Notebooks").assertIsDisplayed()
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+        compose.onNodeWithTag("row").performClick()
+        compose.runOnIdle { assertEquals(listOf("row.open"), context.actionNames) }
+    }
+
+    @Test
+    fun listItemSwipeActionInjectsItsDirectionExactlyOnce() {
+        val context = RecordingContext()
+        val node = Json.parseToJsonElement(
+            """
+            {"t":"jetpacs.list_item","title":"row",
+             "swipe_end":{"actions":[
+               {"label":"Done","on_trigger":{"action":"row.done"}}]}}
+            """,
+        ) as JsonObject
+        compose.setContent {
+            RenderListItem(node, context, Modifier.testTag("row"))
+        }
+
+        // Reachable without the gesture: the row carries its sides as
+        // accessibility actions, which is how a screen reader runs them.
+        compose.onNodeWithTag("row").assert(
+            SemanticsMatcher.keyIsDefined(SemanticsActions.CustomActions),
+        )
+        val actions = compose.onNodeWithTag("row")
+            .fetchSemanticsNode()
+            .config[SemanticsActions.CustomActions]
+        assertEquals(listOf("Done"), actions.map { it.label })
+        compose.runOnIdle { actions.first().action?.invoke() }
+        compose.runOnIdle {
+            assertEquals(listOf("row.done"), context.actionNames)
+            // The side it was run from travels with the occurrence, so an
+            // accessibility run and a finger swipe are the same event.
+            assertEquals(listOf(RevealSwipeDirection.End), context.swipeDirections)
+        }
+    }
+
+    @Test
+    fun designIconButtonIsOneFullTargetAndDeclinesAToggle() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val plain = Json.parseToJsonElement(
+            """{"t":"icon_button","icon":"refresh","on_tap":{"action":"bar.refresh"},
+                "content_description":"Refresh"}""",
+        ) as JsonObject
+        compose.setContent {
+            JetpacsDesignIconButtonRenderer.render(plain, context, Modifier.testTag("bar"))
+        }
+
+        compose.onNodeWithTag("bar")
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .performClick()
+        compose.runOnIdle { assertEquals(listOf("bar.refresh"), context.actionNames) }
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+
+        // A toggle keeps its checked container and shape morph in Material.
+        assertTrue(JetpacsDesignIconButtonRenderer.appliesTo(plain))
+        assertTrue(
+            !JetpacsDesignIconButtonRenderer.appliesTo(
+                Json.parseToJsonElement(
+                    """{"t":"icon_button","id":"t","icon":"star",
+                        "on_tap":{"action":"x"},"checked":true}""",
+                ) as JsonObject,
+            ),
+        )
+        assertTrue(
+            !JetpacsDesignIconButtonRenderer.appliesTo(
+                Json.parseToJsonElement(
+                    """{"t":"icon_button","icon":"mail","on_tap":{"action":"x"},
+                        "badge":"3"}""",
+                ) as JsonObject,
+            ),
+        )
+    }
+
+    @Test
+    fun designEmptyStateOffersItsActionAndBadgeDrawsItsLabel() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val empty = Json.parseToJsonElement(
+            """{"t":"empty_state","icon":"event_available","title":"Nothing scheduled",
+                "caption":"Capture something.","action_label":"Capture",
+                "on_tap":{"action":"grove.capture"}}""",
+        ) as JsonObject
+        val badge = Json.parseToJsonElement(
+            """{"t":"badge","label":"A","color":"error"}""",
+        ) as JsonObject
+        compose.setContent {
+            Column {
+                JetpacsDesignEmptyStateRenderer.render(empty, context, Modifier)
+                JetpacsDesignBadgeRenderer.render(badge, context, Modifier.testTag("badge"))
+            }
+        }
+
+        compose.onNodeWithText("Nothing scheduled").assertIsDisplayed()
+        compose.onNodeWithText("Capture something.").assertIsDisplayed()
+        compose.onNodeWithText("A").assertIsDisplayed()
+        // The empty state's own call to action is its only target.
+        compose.onAllNodes(hasClickAction()).assertCountEquals(1)
+        compose.onNodeWithText("Capture").performClick()
+        compose.runOnIdle { assertEquals(listOf("grove.capture"), context.actionNames) }
+
+        // A badge decorating children is Material's anchored form.
+        assertTrue(JetpacsDesignBadgeRenderer.appliesTo(badge))
+        assertTrue(
+            !JetpacsDesignBadgeRenderer.appliesTo(
+                Json.parseToJsonElement(
+                    """{"t":"badge","label":"3","children":[{"t":"icon","name":"mail"}]}""",
+                ) as JsonObject,
+            ),
+        )
+    }
+
+    @Test
+    fun designScopeRendersEveryChildThroughTheOwnedScope() {
+        val context = RecordingContext(JETPACS_DESIGN_EXTENSION)
+        val node = designScope(
+            """{"face":{"properties":{},"rules":[]}}""",
+            """
+            {"t":"row","children":[
+              {"t":"text","text":"scoped"},
+              {"t":"jetpacs.styled","styles":["face"],
+               "children":[{"t":"text","text":"styled"}]}
+            ]}
+            """,
+        )
+        compose.setContent {
+            JetpacsDesignRenderer.render(node, context, Modifier)
+        }
+
+        compose.onNodeWithText("scoped").assertIsDisplayed()
+        compose.onNodeWithText("styled").assertIsDisplayed()
+        compose.runOnIdle {
+            // The scope's direct child and the styled wrapper's child both
+            // pass through the scoped path; the fake's own row recursion uses
+            // the unscoped path, which is the dispatcher's concern.
+            assertEquals(
+                listOf("row", "text"),
+                context.scopedChildren.map { (child, _) ->
+                    (child["t"] as? JsonPrimitive)?.content
+                },
+            )
+        }
     }
 
     @Test
@@ -390,6 +798,142 @@ class JetpacsComponentsSemanticsTest {
         compose.onNodeWithContentDescription("Accessibility, 4 of 5")
             .assertIsDisplayed()
             .assertIsFocused()
+    }
+
+    /** A grouped menu exercising every wire member the node carries. */
+    private fun groupedMenuNode(): JsonObject = Json.parseToJsonElement(
+        """{
+          "t":"menu","icon":"more_vert",
+          "groups":[
+            {"label":"Arrange","items":[
+              {"label":"Move up","icon":"arrow_upward",
+               "on_tap":{"action":"demo.up"}},
+              {"label":"Paste under","icon":"content_paste","enabled":false,
+               "on_tap":{"action":"demo.paste"}}]},
+            {"label":"View","items":[
+              {"label":"Wrap lines","checked":false,
+               "on_tap":{"action":"demo.wrap"}}]}
+          ]
+        }""",
+    ) as JsonObject
+
+    @Test
+    fun theMenuTriggerIsOneTargetThatReportsItsExpansion() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMenuRenderer.render(
+                    groupedMenuNode(),
+                    context,
+                    Modifier.testTag("menu"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("menu")
+            .assertHeightIsAtLeast(48.dp)
+            .assertWidthIsAtLeast(48.dp)
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.Role,
+                    Role.DropdownList,
+                ),
+            )
+            .assert(
+                SemanticsMatcher.expectValue(
+                    SemanticsProperties.StateDescription,
+                    "Collapsed",
+                ),
+            )
+            .performClick()
+
+        compose.onNodeWithTag("menu").assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                "Expanded",
+            ),
+        )
+        // A group heading is structure, not another choice.
+        compose.onNodeWithText("Arrange")
+            .assert(SemanticsMatcher.keyIsDefined(SemanticsProperties.Heading))
+    }
+
+    @Test
+    fun anOrdinaryItemDispatchesOnceAndClosesTheMenu() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMenuRenderer.render(
+                    groupedMenuNode(),
+                    context,
+                    Modifier.testTag("menu"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("menu").performClick()
+        compose.onNodeWithText("Move up")
+            .assertHeightIsAtLeast(48.dp)
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .performClick()
+
+        compose.runOnIdle {
+            assertEquals(listOf("demo.up"), context.actionNames)
+        }
+        compose.onNodeWithText("Move up").assertDoesNotExist()
+        compose.onNodeWithTag("menu").assert(
+            SemanticsMatcher.expectValue(
+                SemanticsProperties.StateDescription,
+                "Collapsed",
+            ),
+        )
+    }
+
+    @Test
+    fun aDisabledItemAnnouncesItselfAndDispatchesNothing() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMenuRenderer.render(
+                    groupedMenuNode(),
+                    context,
+                    Modifier.testTag("menu"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("menu").performClick()
+        compose.onNodeWithText("Paste under").assertIsNotEnabled().performClick()
+
+        compose.runOnIdle { assertTrue(context.actionNames.isEmpty()) }
+        // SPEC 17.4: a disabled item must not dispatch, and the menu it sits
+        // in has no reason to close.
+        compose.onNodeWithText("Paste under").assertIsDisplayed()
+    }
+
+    @Test
+    fun aCheckableItemReportsItsStateAndKeepsTheMenuOpen() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMenuRenderer.render(
+                    groupedMenuNode(),
+                    context,
+                    Modifier.testTag("menu"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("menu").performClick()
+        compose.onNodeWithText("Wrap lines")
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Checkbox))
+            .assertIsOff()
+            .performClick()
+
+        compose.runOnIdle { assertEquals(listOf("demo.wrap"), context.actionNames) }
+        // `checked` is authored state: Emacs flips it on the next snapshot,
+        // and the popup stays up so a second toggle needs no reopening.
+        compose.onNodeWithText("Wrap lines").assertIsDisplayed().assertIsOff()
     }
 
     @Test
@@ -1140,6 +1684,16 @@ class JetpacsComponentsSemanticsTest {
             return ActionHandoff.HandedOff
         }
 
+        val swipeDirections = mutableListOf<RevealSwipeDirection>()
+
+        override fun swipeAction(
+            descriptor: JsonObject?,
+            direction: RevealSwipeDirection,
+        ) {
+            swipeDirections += direction
+            actionNames += (descriptor?.get("action") as? JsonPrimitive)?.content.orEmpty()
+        }
+
         override fun state(
             id: String,
             value: JsonElement?,
@@ -1235,6 +1789,8 @@ class JetpacsComponentsSemanticsTest {
             }
         }
 
+        var onScopedChild: (@Composable () -> Unit)? = null
+
         @Composable
         override fun renderScopedChild(
             child: JsonObject,
@@ -1242,7 +1798,11 @@ class JetpacsComponentsSemanticsTest {
             modifier: Modifier,
         ) {
             scopedChildren += child to index
-            BasicText((child["text"] as? JsonPrimitive)?.content.orEmpty(), modifier)
+            onScopedChild?.invoke()
+            // The design renderer now scopes its whole subtree; keep the
+            // recording fake's plain presentation so existing assertions on
+            // tagged text and layout remain meaningful.
+            renderChild(child, index, modifier)
         }
     }
 
