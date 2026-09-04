@@ -214,7 +214,7 @@ is the finished state."
 (defun jetpacs-org-settings--todo-keywords-apply (seqs)
   "Make SEQS the effective and persisted `org-todo-keywords'.
 Live org buffers cache the keywords buffer-locally at mode init
-(`org-todo-keywords-1', `org-todo-regexp', ...), so each one is
+\(`org-todo-keywords-1', `org-todo-regexp', ...), so each one is
 restarted, and the whole org memo is dropped — the foundation seam's
 rule: new states stale EVERY consumer's task views, not one app's.
 Returns non-nil when persisting succeeded."
@@ -242,12 +242,17 @@ Returns non-nil when persisting succeeded."
   (memq (car-safe entry) '(:endgroup :endgrouptag)))
 
 (defun jetpacs-org-settings-tag-group-members (group &optional alist)
-  "Return GROUP's direct members from tag ALIST or `org-tag-alist'."
+  "Return GROUP's direct members from tag ALIST.
+ALIST defaults to `org-tag-persistent-alist' followed by
+`org-tag-alist', the same precedence Org uses when it builds a
+buffer's tag groups, so a group finds its members wherever it lives."
   (condition-case nil
       (copy-sequence
        (cdr (assoc-string group
                           (org-tag-alist-to-groups
-                           (or alist org-tag-alist))
+                           (or alist
+                               (append org-tag-persistent-alist
+                                       org-tag-alist)))
                           t)))
     (error nil)))
 
@@ -380,21 +385,44 @@ fast-selection keys and every unrelated group block survive unchanged."
                       (list (or (jetpacs-org-settings--tag-entry tag alist)
                                 tag))))))))
 
-(defun jetpacs-org-settings--tag-alist-apply (alist)
-  "Persist ALIST and refresh every live Org tag cache and derived memo."
-  (setq org-tag-alist alist)
-  (prog1 (jetpacs-settings-save-variable 'org-tag-alist org-tag-alist)
-    (dolist (buffer (buffer-list))
-      (with-current-buffer buffer
-        (when (derived-mode-p 'org-mode)
-          (ignore-errors (org-mode-restart)))))
-    (ebp-org-cache-invalidate)))
+(defun jetpacs-org-settings--tag-alist-apply (alist &optional variable)
+  "Persist ALIST as VARIABLE and refresh every live Org tag cache and memo.
+VARIABLE defaults to `org-tag-alist'; pass `org-tag-persistent-alist' to
+place tags where a file's own `#+TAGS' lines cannot shadow them."
+  (let ((variable (or variable 'org-tag-alist)))
+    (set variable alist)
+    (prog1 (jetpacs-settings-save-variable variable alist)
+      (dolist (buffer (buffer-list))
+        (with-current-buffer buffer
+          (when (derived-mode-p 'org-mode)
+            (ignore-errors (org-mode-restart)))))
+      (ebp-org-cache-invalidate))))
 
-(defun jetpacs-org-settings-set-tag-group-members (group members)
-  "Set global non-exclusive tag GROUP to MEMBERS and persist it."
-  (jetpacs-org-settings--tag-alist-apply
-   (jetpacs-org-settings--tag-alist-with-group
-    group members org-tag-alist)))
+(defun jetpacs-org-settings-set-tag-group-members (group members
+                                                        &optional variable)
+  "Set global non-exclusive tag GROUP to MEMBERS and persist it.
+VARIABLE names the alist the group lives in and defaults to
+`org-tag-alist'.  With `org-tag-persistent-alist' the group is merged
+into every Org buffer, so a file carrying its own `#+TAGS' lines still
+sees it; any same-named block is then removed from `org-tag-alist' so
+the group has exactly one home."
+  (let ((variable (or variable 'org-tag-alist)))
+    (cond
+     ((eq variable 'org-tag-persistent-alist)
+      ;; Clearing the group globally keeps its retired members as
+      ;; ordinary tags, the same courtesy a same-home edit extends.
+      (when (assoc-string group (org-tag-alist-to-groups org-tag-alist) t)
+        (jetpacs-org-settings--tag-alist-apply
+         (jetpacs-org-settings--tag-alist-with-group
+          group nil org-tag-alist)))
+      (jetpacs-org-settings--tag-alist-apply
+       (jetpacs-org-settings--tag-alist-with-group
+        group members org-tag-persistent-alist)
+       'org-tag-persistent-alist))
+     (t
+      (jetpacs-org-settings--tag-alist-apply
+       (jetpacs-org-settings--tag-alist-with-group
+        group members org-tag-alist))))))
 
 (defun jetpacs-org-settings-tag-options ()
   "The global tag names from `org-tag-alist', strings only, distinct.
@@ -466,8 +494,9 @@ SPEC 23.3 label, not the raw error text."
 
 (defun jetpacs-org-settings--show-todo-dialog (idx params)
   "Show the TODO-sequence editor for sequence IDX (-1 = new).
-The sequence is re-read HERE, not in the dispatching handler: the
-show runs deferred, and the list may have changed in between."
+PARAMS is the dispatch context.  The sequence is re-read HERE, not in
+the dispatching handler: the show runs deferred, and the list may have
+changed in between."
   (let* ((seqs (or (default-value 'org-todo-keywords)
                    '((sequence "TODO" "DONE"))))
          (seq (if (>= idx 0) (nth idx seqs) '(sequence "TODO" "|" "DONE"))))
@@ -545,7 +574,7 @@ the client, and the sequence list grows without bound."
                 (jetpacs-org-settings--tags-enum)))))
 
 (defun jetpacs-org-settings--workflow-screen (back)
-  "The pushed Org-workflow screen."
+  "The pushed Org-workflow screen, wired to BACK."
   (jetpacs-chrome-screen "Org workflow"
                          (jetpacs-org-settings--workflow-body)
                          :back back))
@@ -561,7 +590,7 @@ the client, and the sequence list grows without bound."
 ;;;; Handlers (S4 — every one answers accepted/stale/rejected)
 
 (defun jetpacs-org-settings--on-workflow-open (_args params)
-  "Push the org-workflow screen onto the tapped surface."
+  "Push the org-workflow screen onto the surface named by PARAMS."
   (let ((surface (or (plist-get params :surface)
                      jetpacs-settings-surface)))
     (jetpacs-flow-continue
@@ -576,7 +605,7 @@ the client, and the sequence list grows without bound."
     'accepted))
 
 (defun jetpacs-org-settings--on-tags (args _params)
-  "Rebuild `org-tag-alist' from the multi-select `:value' (a vector).
+  "Rebuild `org-tag-alist' from ARGS' multi-select `:value' (a vector).
 Existing alist entries keep their fast-select keys.  Deselecting every
 chip sends a well-formed empty vector and writes nothing (the v1
 contract — clearing every chip is not a bulk delete): that is
@@ -598,7 +627,8 @@ members."
           'accepted)))))
 
 (defun jetpacs-org-settings--on-todo-edit (args params)
-  "Open the sequence editor dialog for `:index' (-1 = new)."
+  "Open the sequence editor dialog for ARGS' `:index' (-1 = new).
+PARAMS is the dispatch context."
   (let ((idx (plist-get args :index)))
     ;; A whole-valued integer can arrive as a float after the JSON
     ;; round trip (org.json emits the trailing .0).
@@ -629,8 +659,8 @@ the app-era origin-params tracking has no successor here."
 
 (defun jetpacs-org-settings--on-todo-save (args params)
   "Write one global TODO sequence from the editor dialog's capture.
-`:index'/`:type' ride the Save action's args; the states arrive as
-captured fields (S2/S3) — no ui-state round trip."
+`:index'/`:type' ride the Save action's ARGS; the states arrive as
+PARAMS' captured fields (S2/S3) — no ui-state round trip."
   (let* ((idx (plist-get args :index))
          (idx (if (numberp idx) (truncate idx) idx))
          (type (pcase (plist-get args :type)
@@ -665,7 +695,7 @@ captured fields (S2/S3) — no ui-state round trip."
         'accepted)))))
 
 (defun jetpacs-org-settings--on-todo-delete (args _params)
-  "Delete the global TODO sequence at `:index'.
+  "Delete the global TODO sequence at ARGS' `:index'.
 Fired from a workflow card or the edit dialog's Delete button."
   (let* ((idx (plist-get args :index))
          (idx (if (numberp idx) (truncate idx) idx))

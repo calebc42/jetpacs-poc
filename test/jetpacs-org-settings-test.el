@@ -223,6 +223,54 @@ build-time distinctness check); the chip list builds and serializes."
                      '("Hot" "Cold")))
       (should (equal (last flat 2) '("work" ("home" . ?h)))))))
 
+(ert-deftest jetpacs-org-settings-tag-group-persistent-home ()
+  "A group placed in `org-tag-persistent-alist' has one home and
+survives a file's own #+TAGS line, which shadows `org-tag-alist'."
+  (let ((org-tag-alist '(("home" . ?h)
+                         (:startgrouptag) ("Area") (:grouptags)
+                         ("Stale") (:endgrouptag)))
+        (org-tag-persistent-alist nil)
+        (saved nil))
+    (cl-letf (((symbol-function 'jetpacs-settings-save-variable)
+               (lambda (sym val) (push (cons sym val) saved) val))
+              ((symbol-function 'org-mode-restart) (lambda () nil)))
+      ;; The reader merges both homes, so the stale global block reads.
+      (should (equal (jetpacs-org-settings-tag-group-members "Area")
+                     '("Stale")))
+      (jetpacs-org-settings-set-tag-group-members
+       "Area" '("House" "Auto") 'org-tag-persistent-alist)
+      (should (equal org-tag-persistent-alist
+                     '((:startgrouptag) ("Area") (:grouptags)
+                       ("House") ("Auto") (:endgrouptag))))
+      ;; The stale block left the global alist; its member stays a tag.
+      (should-not (assoc-string "Area" (org-tag-alist-to-groups
+                                        org-tag-alist)
+                                t))
+      (should (member '("Stale") org-tag-alist))
+      (should (assq 'org-tag-persistent-alist saved))
+      (should (assq 'org-tag-alist saved))
+      (should (equal (jetpacs-org-settings-tag-group-members "Area")
+                     '("House" "Auto")))
+      ;; The default placement is unchanged: the group lands globally.
+      (setq saved nil)
+      (jetpacs-org-settings-set-tag-group-members "State" '("Hot"))
+      (should (equal (cdr (assoc-string "State" (org-tag-alist-to-groups
+                                                 org-tag-alist)
+                                        t))
+                     '("Hot")))
+      (should (equal (mapcar #'car saved) '(org-tag-alist))))
+    ;; Load-bearing: a buffer with its own #+TAGS line still sees the
+    ;; persistent group, and would not see a global-only one.
+    (cl-flet ((buffer-sees-area-p ()
+                (with-temp-buffer
+                  (insert "#+TAGS: foo bar\n* Heading\n")
+                  (org-mode)
+                  (and (assoc-string "Area" org-tag-groups-alist t) t))))
+      (should (buffer-sees-area-p))
+      (let ((org-tag-alist (append org-tag-persistent-alist org-tag-alist))
+            (org-tag-persistent-alist nil))
+        (should-not (buffer-sees-area-p))))))
+
 (ert-deftest jetpacs-org-settings-workflow-verbs ()
   "The whole family registered OWNERLESS at load — present in the
 handler table, absent from the any-surface set (ownerless is
