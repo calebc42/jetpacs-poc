@@ -7,7 +7,7 @@ remains the research and hand-rewrite repository.
 | Local checkout | Intended GitHub repository | Role |
 |---|---|---|
 | `~/workspace/jetpacs-poc/` | `calebc42/jetpacs-poc` | POC platform, Foundation components, optional Material 3, automations and catalog, developer tools |
-| `~/workspace/ebp/` | `calebc42/ebp` | Normative protocol specification and conformance data |
+| `~/workspace/ebp/` | `calebc42/ebp-poc` | Normative protocol specification and conformance data |
 | `~/workspace/ebp.el/` | `calebc42/ebp.el` | Emacs endpoint |
 | `~/workspace/ebp-kmp/` | `calebc42/ebp-kmp` | Kotlin protocol implementation |
 | `~/workspace/ebp-compose/` | `calebc42/ebp-compose` | Neutral model and Compose Foundation renderer |
@@ -26,6 +26,27 @@ the Android app. See `../grove-native/README.md` relative to the POC root.
 The future hand rewrite uses `calebc42/jetpacs`.
 The developer tools and Material 3 remain inside `jetpacs-poc`; they do not need
 separate remotes.
+
+## Main integration (2026-09-06)
+
+All twelve local repositories now use `main`. The EBP checkout keeps its local
+name `ebp/` and source namespace `ebp/`; its fetch and push remote is now
+`git@github.com:calebc42/ebp-poc.git` after the GitHub rename.
+
+POC main joins the consolidated implementation, the previous main, the former
+umbrella head, and all three consolidated module heads. EBP main joins its
+published POC specification with its previous main. Glasspane main joins the
+published consolidated applet with the old bundled/submodule history. These
+merge commits deliberately retain the verified consolidated source trees;
+predecessor implementations remain available in their parent histories. The
+separate Jetpacs rewrite's existing master tip also becomes main. The other
+eight repositories were already on main.
+
+Every pre-integration source tree was compared with its resulting main tree
+and matched exactly before this documentation update. No runtime code or
+protocol semantics changed. Existing historical branches and tags remain
+preserved. The records below describe earlier migration stages; references
+to former branches and remote names in those records are historical.
 
 ## Components and automations consolidation (2026-09-06)
 
@@ -95,7 +116,7 @@ The external Org checkout remains read-only and separate from runtime loading.
 ## Preserved history and recovery evidence
 
 The canonical Jetpacs Git database, index, working changes, branches and tags
-were promoted intact. Its current branch remains `slop-fork/main`.
+were promoted intact. At that stage the branch remained `slop-fork/main`.
 The former umbrella history is also retained in the active repository under
 `refs/archive/umbrella/heads/*` and `refs/archive/umbrella/tags/*`.
 No branches were merged and no commits or pushes were made by this migration.

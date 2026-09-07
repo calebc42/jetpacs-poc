@@ -58,9 +58,10 @@ affected conformance tests before treating the implementation as compliant.
   this branch.
 - **`poc/v3-pre-split`** — the last committed POC 3 snapshot before the
   multi-repository extraction working tree.
-- **`slop-fork/main`** (this standalone repository) — the current Room-first
-  architecture carrying the ported POC 2 sprint and repository split.
-- **`main`** — the spec-driven implementation track. It may reuse code from
+- **`slop-fork/main`** — the preserved Room-first consolidation lineage,
+  now integrated into `main` with the prior repository histories.
+- **`main`** — the current consolidated POC and spec-driven implementation
+  track. It may reuse code from
   any of the preceding lineages under the same conformance rule.
 
 ## Rules of construction
