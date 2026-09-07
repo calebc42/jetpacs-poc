@@ -63,6 +63,57 @@
                        (buffer-name buffer) "app:a")))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest jetpacs-org-render-drawers-share-controls-and-revalidate-ranges ()
+  "Real drawers expose tonal controls; forged extents cannot hide other text."
+  (with-temp-buffer
+    (insert "* Parent\n:PROPERTIES:\n:ID: parent\n:END:\n:logbook:\nEntry\n:end:\n#+begin_src text\n:LOGBOOK:\nExample\n:END:\n#+end_src\n** Child\n:PROPERTIES:\n:ID: child\n:END:\n")
+    (org-mode)
+    (let* ((jetpacs-buffer-exposed (make-hash-table :test #'equal))
+           (drawers (jetpacs-org-render-heading-drawers (point-min)))
+           (controls (jetpacs-org-render-drawer-controls drawers (buffer-name)))
+           (args (plist-get (plist-get (car controls) :on_tap) :args)))
+      (should (equal (mapcar (lambda (drawer) (plist-get drawer :name)) drawers)
+                     '("PROPERTIES" "LOGBOOK")))
+      (should (equal (mapcar (lambda (control) (plist-get control :variant)) controls)
+                     '("tonal" "tonal")))
+      (should (eq (jetpacs-org-render--toggle-drawer
+                   (plist-put (copy-sequence args) :end (point-max)) nil)
+                  'stale))
+      (should-not (overlays-in (point-min) (point-max))))))
+
+(ert-deftest jetpacs-org-render-exclusive-drawers-switch-and-close ()
+  "Exclusive selection normalizes legacy visibility without changing source."
+  (with-temp-buffer
+    (insert "* Parent\n:PROPERTIES:\n:ID: parent\n:END:\n:LOGBOOK:\nEntry\n:END:\n** Child\n:PROPERTIES:\n:ID: child\n:END:\n")
+    (org-mode)
+    (let* ((original (buffer-string))
+           (jetpacs-buffer-exposed (make-hash-table :test #'equal))
+           (drawers (jetpacs-org-render-heading-drawers 1))
+           (snapshot (copy-tree drawers))
+           (controls (jetpacs-org-render-drawer-controls drawers (buffer-name) t))
+           (props (plist-get (plist-get (car controls) :on_tap) :args))
+           (log (plist-get (plist-get (cadr controls) :on_tap) :args))
+           (child (save-excursion (goto-char 1) (re-search-forward "^\*\* Child")
+                                  (line-beginning-position))))
+      (should (equal drawers snapshot))
+      (should-not (overlays-in 1 (point-max)))
+      (should (equal (mapcar (lambda (node) (plist-get node :variant)) controls)
+                     '("tonal" nil)))
+      (cl-letf (((symbol-function 'jetpacs-buffer-defer-refresh) #'ignore))
+        (dolist (step (list (cons log '(t nil)) (cons log '(t t))
+                           (cons props '(nil t)) (cons props '(t t))))
+          (should (eq (jetpacs-org-render--toggle-drawer (car step) nil) 'accepted))
+          (should (equal (mapcar (lambda (drawer) (and (plist-get drawer :hidden) t))
+                                (jetpacs-org-render-heading-drawers 1))
+                         (cdr step)))
+          (should-not (plist-get (car (jetpacs-org-render-heading-drawers child)) :hidden)))
+        ;; A missing exposure never grants permission to modify a sibling.
+        (jetpacs-buffer-forget-exposed (buffer-name))
+        (jetpacs-org-render-drawer-controls (list (cadr drawers)) (buffer-name) t)
+        (should (eq (jetpacs-org-render--toggle-drawer log nil) 'accepted))
+        (should (plist-get (car (jetpacs-org-render-heading-drawers 1)) :hidden)))
+      (should (equal original (buffer-string))))))
+
 ;;;; Fixtures
 
 (defconst jetpacs-org-render-test--png
@@ -324,6 +375,33 @@ records mirror the wire, not the builder's attempt (SPEC 23.1)."
 
 ;;;; Tables
 
+(ert-deftest jetpacs-org-render-public-table-budgets-and-formatting ()
+  "The reusable table builder hides only cookie rows and shares budgets."
+  (with-temp-buffer
+    (insert "| <l18> | <r12> |\n| Name | Count |\n|------+-------|\n| A | 12 |\n| | |\n")
+    (org-mode)
+    (goto-char (point-min))
+    (let* ((source (buffer-string))
+           (element (org-element-at-point))
+           (jetpacs-buffer-budget (cons 6 100000))
+           (jetpacs-buffer-extra-budget (list (cons :max_table_cells 6)))
+           (node (jetpacs-org-render-table element t)))
+      (should (equal (plist-get node :aligns) ["start" "end"]))
+      (should (equal (mapcar (lambda (row) (plist-get row :kind))
+                            (append (plist-get node :rows) nil))
+                     '("header" "rule" "data" "data")))
+      (should (= (car jetpacs-buffer-budget) 0))
+      (should (= (cdr (assq :max_table_cells jetpacs-buffer-extra-budget)) 0))
+      (let ((before (copy-tree (list jetpacs-buffer-budget jetpacs-buffer-extra-budget))))
+        (should-not (jetpacs-org-render-table element t))
+        (should (equal before (list jetpacs-buffer-budget jetpacs-buffer-extra-budget))))
+      (let ((jetpacs-buffer-budget nil) (jetpacs-buffer-extra-budget nil))
+        ;; Opt-in formatting leaves the stock conversion untouched.
+        (should (= (length (plist-get (jetpacs-org-render-table element) :rows)) 5))
+        (cl-letf (((symbol-function 'jetpacs-node-advertised-p) (lambda (&rest _) nil)))
+          (should-not (jetpacs-org-render-table element t))))
+      (should (equal source (buffer-string))))))
+
 (ert-deftest jetpacs-org-render-table-aligns-cookie ()
   "Explicit <l>/<c>/<r> cookies win over the numeric heuristic."
   (should (equal (jetpacs-org-render--table-aligns
@@ -348,6 +426,51 @@ collapses to nil so the node stays minimal."
       (should (jetpacs-org-render-test--nodes-of nodes "rich_text")))))
 
 ;;;; Images
+
+(ert-deftest jetpacs-org-render-source-play-saves-and-rejects-stale ()
+  "Play executes Babel once, saves results, and rejects changed source."
+  (jetpacs-org-render-test--with-file f
+      "#+begin_src emacs-lisp\n(+ 2 3)\n#+end_src\n"
+    (let ((buffer (jetpacs-org-render-test--buffer f))
+          (jetpacs-buffer-exposed (make-hash-table :test #'equal)))
+      (with-current-buffer buffer
+        (goto-char 1)
+        (let* ((node (jetpacs-org-render-source-block (org-element-at-point)))
+               (header (aref (plist-get node :children) 0))
+               (button (aref (plist-get header :children) 1))
+               (args (plist-get (plist-get button :on_tap) :args)))
+          (cl-letf (((symbol-function 'jetpacs-buffer-defer-refresh) #'ignore)
+                    ((symbol-function 'jetpacs-shell-notify) #'ignore))
+            (should (eq (jetpacs-org-render--execute-src-block args nil) 'accepted))
+            (should-not (buffer-modified-p))
+            (should (string-search ": 5" (with-temp-buffer
+                                           (insert-file-contents f) (buffer-string))))
+            (cl-letf (((symbol-function 'org-babel-execute-src-block)
+                       (lambda (&rest _) (ert-fail "Stale block executed"))))
+              (should (eq (jetpacs-org-render--execute-src-block args nil) 'stale)))))))))
+
+(ert-deftest jetpacs-org-render-public-image-caption-and-budget ()
+  "Reusable images retain captions and spend only available shared bytes."
+  (with-temp-buffer
+    (insert "#+CAPTION: A picture\n#+ATTR_ORG: :width 640\n[[https://picsum.photos/seed/glasspane-org/640/320.jpg]]\n")
+    (org-mode)
+    (goto-char (point-min))
+    (let* ((source (buffer-string))
+           (element (org-element-at-point))
+           (jetpacs-buffer-budget (cons 100 10000))
+           (node (jetpacs-org-render-image element))
+           (children (plist-get node :children)))
+      (should (equal (plist-get (aref children 0) :t) "image"))
+      (should (equal (plist-get (aref children 1) :text) "A picture"))
+      (should (equal (plist-get (aref children 1) :style) "caption"))
+      (should (< (cdr jetpacs-buffer-budget) 10000))
+      (should (= (car jetpacs-buffer-budget) 100))
+      (let ((jetpacs-buffer-budget (cons 100 1)))
+        (should-not (jetpacs-org-render-image element))
+        (should (equal jetpacs-buffer-budget '(100 . 1))))
+      (cl-letf (((symbol-function 'jetpacs-feature-advertised-p) (lambda (&rest _) nil)))
+        (should-not (jetpacs-org-render-image element)))
+      (should (equal source (buffer-string))))))
 
 (ert-deftest jetpacs-org-render-image-https-passthrough ()
   "An https image link passes through for the device to fetch; http

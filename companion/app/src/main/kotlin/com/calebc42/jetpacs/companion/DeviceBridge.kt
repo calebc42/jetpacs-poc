@@ -8,9 +8,9 @@
 // with onboarding). Not a secret and not a deployment configuration.
 package com.calebc42.jetpacs.companion
 
-import com.calebc42.glasspane.material3.ImageCache
-import com.calebc42.glasspane.material3.MaterialRendererHost
-import com.calebc42.glasspane.material3.RetainedPresentationIncarnationTracker
+import com.calebc42.jetpacs.material3.ImageCache
+import com.calebc42.jetpacs.material3.MaterialRendererHost
+import com.calebc42.jetpacs.material3.RetainedPresentationIncarnationTracker
 import com.calebc42.ebp.renderer.model.objOrNull
 import com.calebc42.ebp.renderer.model.stringOr
 import com.calebc42.ebp.wire.CompletionNarrowing
@@ -373,11 +373,11 @@ class DeviceBridge(
             // SPEC 4.5/17.2: the three image limits are REQUIRED whenever image
             // is advertised — the same constants the loader enforces (no drift).
             put("max_image_bytes",
-                com.calebc42.glasspane.material3.ImageLoader.MAX_IMAGE_BYTES)
+                com.calebc42.jetpacs.material3.ImageLoader.MAX_IMAGE_BYTES)
             put("max_decoded_image_bytes",
-                com.calebc42.glasspane.material3.ImageLoader.MAX_DECODED_IMAGE_BYTES)
+                com.calebc42.jetpacs.material3.ImageLoader.MAX_DECODED_IMAGE_BYTES)
             put("max_image_pixels",
-                com.calebc42.glasspane.material3.ImageLoader.MAX_IMAGE_PIXELS)
+                com.calebc42.jetpacs.material3.ImageLoader.MAX_IMAGE_PIXELS)
             // SPEC 4.5/17.5: REQUIRED whenever chart/canvas are advertised.
             put("max_chart_points", 4096)
             put("max_canvas_ops", 4096)
@@ -1636,8 +1636,8 @@ class DeviceBridge(
             // snackbar leaves the screen; the reply is a socket write, so it
             // marshals through the dispatch executor like every other
             // UI-originated engine call.
-            com.calebc42.glasspane.material3.SnackbarRaises.flow.value =
-                com.calebc42.glasspane.material3.SnackbarRaises.Raise(
+            com.calebc42.jetpacs.material3.SnackbarRaises.flow.value =
+                com.calebc42.jetpacs.material3.SnackbarRaises.Raise(
                     message, action, duration) { outcome ->
                     dispatchExecutor.execute { respond(outcome) }
                 }

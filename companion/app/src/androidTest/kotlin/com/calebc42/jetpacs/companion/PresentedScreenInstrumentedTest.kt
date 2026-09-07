@@ -22,8 +22,8 @@ import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.ebp.wire.CompletionOfferView
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.ScalarPos
-import com.calebc42.glasspane.material3.MaterialRendererHost
-import com.calebc42.glasspane.material3.RenderNode
+import com.calebc42.jetpacs.material3.MaterialRendererHost
+import com.calebc42.jetpacs.material3.RenderNode
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.Json
@@ -91,7 +91,9 @@ class PresentedScreenInstrumentedTest {
     }
 }
 
-private class InertHost : MaterialRendererHost {
+internal class InertHost : MaterialRendererHost {
+    val actions = mutableListOf<RendererActionRequest>()
+    val publishedFields = mutableMapOf<String, JsonElement?>()
     override val inputDisplays =
         MutableStateFlow<Map<Pair<String, String>, InputDisplay>>(emptyMap())
     override val maxFieldBytes = 65_536
@@ -116,8 +118,13 @@ private class InertHost : MaterialRendererHost {
     override fun dispatch(
         request: RendererActionRequest,
         onOutcome: (RendererActionOutcome) -> Unit,
-    ): ActionHandoff = ActionHandoff.HandedOff
-    override fun publishState(surface: String, id: String, value: JsonElement?, caret: Int?) = Unit
+    ): ActionHandoff {
+        actions += request
+        return ActionHandoff.HandedOff
+    }
+    override fun publishState(surface: String, id: String, value: JsonElement?, caret: Int?) {
+        publishedFields[id] = value
+    }
     override fun dialogDefaults(dialogId: String): JsonObject? = null
     override fun submitDialog(
         dialogId: String,

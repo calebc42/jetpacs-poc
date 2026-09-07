@@ -1,110 +1,119 @@
 # Repository boundaries
 
-This document is the extraction manifest for the POC 3 monolith.  A
-directory is a repository boundary only when it has an independent authority,
-dependency direction, release surface, or downstream application lifecycle.
-Small implementation modules which share Jetpacs ownership and release cadence
-remain modules rather than becoming repositories.
+Jetpacs is one repository in a multi-repository workspace. A boundary exists
+where authority, dependency direction, release surface, or downstream app
+lifecycle differs. Internal modules that share Jetpacs ownership and release
+cadence remain modules.
+
+Each direct repository has its own Git status and local instructions. A status
+from the Jetpacs repository does not describe sibling dirtiness.
 
 ## Dependency graph
 
 ```text
 ebp                         normative protocol, contract, and conformance data
-|-- ebp.el                  canonical Emacs endpoint implementation
-|   `-- ebp-org             reusable Org engine/integration
-`-- ebp-kmp                 canonical Kotlin endpoint implementation
+|-- ebp.el                  Emacs endpoint and independent SQLite durability
+|   `-- ebp-org             reusable Org protocol engine
+`-- ebp-kmp                 Kotlin durable model, reducers, wire/session code
     `-- ebp-compose         neutral renderer model + Foundation reference UI
-
-Jetpacs                     product policy, Room/Nav/platform adapters, app shell
-|-- consumes ebp.el, ebp-org, ebp-kmp, and ebp-compose
-|-- composes glasspane-material3 and jetpacs-components
-|-- hosts downstream Elisp apps through its public app/surface APIs
-`-- packages selected downstream applets without owning their source
-
-glasspane-material3         downstream Material renderer extension + M3 catalog
-jetpacs-components          Jetpacs-owned Foundation design extension
-jetpacs-authoring           shared, inert Elisp authoring/inspection support
-|-- jetpacs-automations     downstream applet and automation runtime
-`-- jetpacs-component-catalog
-glasspane                   downstream personal-information applet
-`-- glasspane-ef            optional Modus-family theme provider module
-grove                       downstream Org applet and Android UI reference
+          |
+          v
+Jetpacs                     Room/Nav/platform adapters and Elisp app shell
+|-- owns Foundation jetpacs-components and optional jetpacs-material3
+|-- contains optional jetpacs-automations and jetpacs-component-catalog using public host APIs
+|-- consumes jetpacs-authoring helpers where selected
+`-- hosts independently owned Elisp applets through public APIs
+          |
+          +-- glasspane
+          +-- grove-native
+          +-- orgzly-native
+          `-- harp-native
 ```
 
-Consumption flows downward through the diagram: implementations consume the
-specification, Jetpacs consumes the implementations, and applets consume
-Jetpacs.  No upper layer may acquire a reverse dependency on a lower one.  In
-particular:
+Consumption flows downward. No upper layer acquires a reverse dependency on a
+lower layer:
 
-- `ebp`, `ebp.el`, and `ebp-kmp` may not depend on or define Jetpacs,
-  Glasspane, Room, Navigation, Android policy, or a design system.
-- `ebp-compose` may depend on `ebp-kmp` and Compose Foundation/UI, but not
-  Material, Jetpacs policy, or a downstream extension.
-- renderer-extension manifests and their generated Kotlin/Elisp projections
-  belong to the extension owner.  EBP treats extension identifiers as opaque.
-- the Jetpacs application is the composition root which selects installed
-  renderers and applets; that selection does not transfer ownership to Jetpacs.
+- EBP specifications and endpoint libraries do not name Jetpacs, Room,
+  Navigation, Android policy, Compose design systems, or applets.
+- `ebp-compose` may use the EBP Kotlin model and Compose Foundation/UI, but not
+  Material, Jetpacs policy, or a downstream renderer extension.
+- Renderer-extension manifests and their generated Kotlin/Elisp projections
+  belong to the owning module or repository. EBP treats their identifiers as opaque.
+- Jetpacs is the Android composition root and Elisp host; selecting a renderer
+  or applet does not transfer ownership into Jetpacs.
+- Applets may depend on public Jetpacs APIs. Jetpacs foundation source does not
+  name an applet or encode its domain policy.
 
-## Physical repositories
+## Physical repositories and modules
 
-| Repository | Canonical workspace path | Source extracted from `llm-poc-3` |
+Paths below are relative to the Jetpacs repository root.
+
+| Repository | Workspace path | Owns |
 |---|---|---|
-| `ebp` | `../ebp-poc/ebp` | POC specification, contract, goldens, and conformance tools |
-| `ebp.el` | `../ebp-poc/ebp.el` | `emacs/ebp.el`, `ebp-sync.el`, `ebp-complete.el`, `ebp-store.el`, `ebp-sqlite.el`, `ebp-path.el`, and their pure ERT suites |
-| `ebp-org` | `../ebp-poc/ebp-org` | `emacs/ebp-org.el` and `test/ebp-org-test.el` |
-| `ebp-kmp` | `../ebp-poc/ebp-kmp` | `companion/ebp-kmp`, `companion/wire`, their tests, and the Kotlin vocabulary generator |
-| `ebp-compose` | `../ebp-poc/ebp-compose` | `companion/renderer/model`, `companion/renderer/compose`, and renderer-extension projection tooling |
-| `glasspane` | `../glasspane` | the already extracted applet, its EF Themes provider module, remaining legacy tests, and plans |
-| `grove` | `../../../grove/elisp` | the Elisp-authored rebuild; the sibling Android tree remains its visual/workflow reference |
-| `glasspane-material3` | `../glasspane-material3` | `companion/renderer/material3`, `emacs/apps/glasspane-material3`, the M3 catalog, its manifest/golden, tests, and lookup tooling |
-| `jetpacs-components` | `../jetpacs-components` | `companion/renderer/jetpacs`, `emacs/apps/jetpacs-components`, and the `jetpacs.components` manifest/golden |
-| `jetpacs-authoring` | `../jetpacs-authoring` | shared `jetpacs-authoring.el`, `jetpacs-elisp-source.el`, and `jetpacs-catalog-inspection.el` |
-| `jetpacs-automations` | `../jetpacs-automations` | automation model, runtime, applet, and tests |
-| `jetpacs-component-catalog` | `../jetpacs-component-catalog` | component authoring/catalog applet and tests |
+| `ebp` | `../ebp` | Normative spec, contract projection, goldens, validator, conformance data |
+| `ebp.el` | `../ebp.el` | Emacs session/wire endpoint, sync/completion, durable store, path helpers, ERT |
+| `ebp-org` | `../ebp-org` | Reusable Org protocol engine and tests |
+| `ebp-kmp` | `../ebp-kmp` | `:ebp-kmp`, `:wire`, generators, and Kotlin tests |
+| `ebp-compose` | `../ebp-compose` | `:renderer:model`, `:renderer:compose`, and generic extension projection tooling |
+| Jetpacs module | `jetpacs-components` | Foundation design renderer, `jetpacs.components` and `jetpacs.design` manifests/projections, builders/tests |
+| `jetpacs-authoring` | `../jetpacs-authoring` | Shared inert Elisp authoring and source-inspection support |
+| Jetpacs module | `jetpacs-automations` | Automation model/runtime, applet, and tests |
+| Jetpacs module | `jetpacs-component-catalog` | Component catalog/design-lab applet and tests |
+| `glasspane` | `../glasspane` | Personal-information applet, its optional EF theme provider, and tests |
+| `orgzly-native` | `../orgzly-native` | Restored Orgzly Elisp applet, Foundation style profiles and tests |
+| `grove-native` | `../grove-native` | Grove Jetpacs Elisp applet, design presets, workflow guide and tests |
+| Jetpacs module | `jetpacs-platform-tools` | Read-only platform workbench, CLI, and MCP server |
+| Jetpacs module | `jetpacs-applet-mcp` | Static applet analysis and explicitly trusted launcher tooling |
 
-`jetpacs-platform-tools` and `jetpacs-applet-mcp` are already physically
-separate workspace projects and remain workspace-only developer tooling.
+The developer tools are tracked modules of `jetpacs-poc`, not independent
+repositories or runtime dependencies. The POC repositories all live
+directly under `~/workspace/`; `~/workspace/jetpacs/` is the separate hand rewrite.
+Set `JETPACS_REPOSITORIES_ROOT` to use a different collection directory.
+The Material 3 library remains optional and lives inside `jetpacs-poc`.
 
-## What remains in Jetpacs
+## What Jetpacs owns
 
-The following are module seams, not repository seams:
+The following stay in this repository:
 
-- `companion/core/*`: Jetpacs read models, Room database/store, repositories,
-  Navigation keys, and shared product tests;
+- `companion/core/*`: product read models, Room database/store, data
+  projections, Navigation keys, and shared product tests;
+- `companion/renderer/glance`: the Jetpacs home-screen widget renderer;
+- `companion/renderer/material3`, `emacs/apps/jetpacs-material3`, and
+  `emacs/apps/m3-catalog`: optional Material rendering, authoring, and catalog;
+- `renderer-extensions/jetpacs-material3.json`: the Material extension authority;
 - `companion/app`: Android composition root and platform adapters;
-- the general `emacs/jetpacs-*.el` surface, shell, navigation, files, reader,
-  editor, Org presentation adapters, app host, and device integration;
-- the renderer selection/composition policy which consumes extension-owned
-  generated projections;
-- `device/`, `org/`, onboarding, packaging, and product-specific goldens; and
-- historical audits and cross-repository architecture plans.  History may
-  describe several owners without becoming source authority for any of them.
+- `emacs/jetpacs-*.el`: surface builders, shell, chrome, navigation, files,
+  reader/editor hosts, Org presentation adapters, app host, and device policy;
+- composition policy that selects extension-owned generated projections;
+- `device/`, `org/`, onboarding, product-specific fixtures, and packaging; and
+- integration tests that prove the selected sibling repositories work together.
 
-The Android product uses the Kotlin namespace and application ID
-`com.calebc42.jetpacs.companion`. Protocol implementation code consumed from
-`ebp-kmp` remains under `com.calebc42.ebp.*`; the application must not claim
-that upstream namespace. The former `com.calebc42.ebp.companion` application
-ID is not upgrade-compatible and should be uninstalled separately on devices
-that still have the POC-era package.
+The Android namespace and application ID are
+`com.calebc42.jetpacs.companion`. Consumed protocol code remains under
+`com.calebc42.ebp.*`. The old `com.calebc42.ebp.companion` package is a
+different POC-era application and is not upgrade-compatible.
 
-Ad-hoc patch scripts, rejected patches, editor backups, bytecode, and build
-outputs are working-tree artifacts, not repository candidates.  Extraction
-must preserve them without promoting them to source authority.
+## Workspace composition
 
-## Workspace consumption
+`companion/settings.gradle.kts` maps stable Gradle project paths to the owning
+local modules and sibling repositories. This preserves type-safe accessors
+while keeping each source under its owner. The Elisp aggregate runner similarly points at sibling
+source/test roots and runs their owner suites before Jetpacs integration.
 
-During the local multi-repository transition, Gradle project directories and
-Emacs load paths resolve the canonical neighboring checkouts.  Standalone
-upstream builds use the same relative workspace layout.  Publishing or remote
-checkout coordinates may replace those local paths later without changing the
-ownership graph.
+A standalone or hosted build must check out the same graph or replace local
+paths with published coordinates without changing dependency direction. The
+Jetpacs monolith is not a fallback copy of extracted code.
 
-Until those repositories have remotes and release coordinates, hosted CI must
-check out the same workspace graph before running Jetpacs.  The local sibling
-paths are deliberately explicit; the monolith is no longer a fallback source
-of extracted code.
+Generated projections are checked in to their owner and regenerated there.
+Build outputs, `.elc` files, editor backups, rejected patches, and historical
+working-tree copies are not source boundaries merely because they are nearby.
 
-Each extracted repository retains the relevant committed history and then
-overlays the current working tree.  Existing modifications therefore remain
-modifications in their new owner rather than being silently committed or
-discarded.
+Grove's independent Android implementation remains in `../grove/`. Its Jetpacs
+implementation and relevant Git history were extracted into `../grove-native/`;
+runtime `grove-*` features and the `grove` app identity remain unchanged.
+
+`../harp-native` restores the archived Harp Personal Health Record applet as an
+independent sibling. Its Org schema adapter and health workflows remain Elisp;
+the reusable chart implementation belongs to `jetpacs-components`. Harp is an
+optional, inactive packaged entry. See `../harp-native/docs/RESTORATION.md` for
+verification results and remaining migration work.

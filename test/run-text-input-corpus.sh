@@ -2,8 +2,10 @@
 # Generate once, then replay the exact bytes through Python and public Elisp.
 set -eu
 cd "$(dirname "$0")/.."
-spec_dir=${EBP_SPEC_DIR:-"$(pwd)/../ebp-poc/ebp"}
-ebp_el_dir=${EBP_EL_DIR:-"$(pwd)/../ebp-poc/ebp.el"}
+repositories_root=$(tools/repositories-root.sh)
+export JETPACS_REPOSITORIES_ROOT="$repositories_root"
+spec_dir=${EBP_SPEC_DIR:-"$repositories_root/ebp"}
+ebp_el_dir=${EBP_EL_DIR:-"$repositories_root/ebp.el"}
 
 corpus_dir=$(mktemp -d)
 trap 'rm -rf "$corpus_dir"' EXIT

@@ -50,15 +50,15 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
-JETPACS_PROJECTS_ROOT="$(cd "$REPO_ROOT/../.." >/dev/null 2>&1 && pwd)"
-JETPACS_POC_ROOT="$(cd "$REPO_ROOT/.." >/dev/null 2>&1 && pwd)"
+JETPACS_REPOSITORIES_ROOT="$("$REPO_ROOT/tools/repositories-root.sh")"
+export JETPACS_REPOSITORIES_ROOT
 
 usage() {
   cat >&2 <<EOF
 usage: tools/onboard-tablet.sh [OPTIONS] [SERIAL]
 
   --vault MODE      shared | emacs | termux
-                    shared: /sdcard (recommended for Org Mode workflows)
+                    shared: /sdcard/Jetpacs (recommended for Org Mode workflows)
                     emacs: user content in Local Emacs private home
                     termux: user content in Termux private home
   --emacs-home MODE emacs | termux | remote
@@ -82,7 +82,7 @@ Environment:
                      (default 420 -- a cold 'pkg install' on a slow link
                      genuinely takes minutes)
 
-With no options, Recommended selects Local Emacs HOME plus an /sdcard Vault.
+With no options, Recommended selects Local Emacs HOME plus an /sdcard/Jetpacs Vault.
 Advanced chooses the Emacs host first and then an eligible Vault. Explicit
 flags retain the lower-level path controls for automation. Remove/reset-home
 require both choices when no terminal is available. .emacs.d is always in one
@@ -177,7 +177,7 @@ choose_vault_mode() {
   if [ -n "$VAULT_MODE" ]; then return; fi
   if [ -t 0 ]; then
     printf '\nWhere should your Vault be?\n\n' >&2
-    printf '  1. /sdcard\n' >&2
+    printf '  1. /sdcard/Jetpacs\n' >&2
     printf '     Persistent user content; apps with "All files" access can read it.\n\n' >&2
     if [ "$EMACS_HOME_MODE" = emacs ]; then
       printf '  2. Local Emacs home\n' >&2
@@ -203,7 +203,7 @@ choose_vault_mode() {
     esac
   elif [ "$ACTION" = install ]; then
     VAULT_MODE=shared
-    log "no terminal and no --vault; using the /sdcard Vault default"
+    log "no terminal and no --vault; using the /sdcard/Jetpacs Vault default"
   else
     die "$ACTION requires --vault shared|emacs|termux in non-interactive use"
   fi
@@ -225,7 +225,7 @@ if [ "$ACTION" = install ] && [ -t 0 ] \
      && [ -z "$EMACS_HOME_MODE" ] && [ -z "$VAULT_MODE" ]; then
   printf '\nWhere should your HOME directory/Vault be?\n\n' >&2
   printf '  1. Recommended\n' >&2
-  printf '     Local Emacs HOME + /sdcard Vault.\n\n' >&2
+  printf '     Local Emacs HOME + /sdcard/Jetpacs Vault.\n\n' >&2
   printf '  2. Advanced\n' >&2
   printf '     Choose the Emacs host, then an eligible Vault.\n\n' >&2
   printf 'Choice [1]: ' >&2
@@ -619,37 +619,32 @@ $payload/examples/python $payload/bootstrap" \
     stage_elisp_tree "$REPO_ROOT/emacs" "$payload/emacs" \
       "Jetpacs Emacs host"
     # The same sources the Companion's StageOnboardingAssets task bundles:
-    # ebp.el and ebp-org live under the umbrella's ebp-poc/, not beside it.
-    stage_elisp_tree "$JETPACS_POC_ROOT/ebp-poc/ebp.el/lisp" "$payload/emacs" \
+    # Protocol and app libraries live in independent external checkouts.
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/ebp.el/lisp" "$payload/emacs" \
       "ebp.el"
-    stage_elisp_tree "$JETPACS_POC_ROOT/ebp-poc/ebp-org/lisp" "$payload/emacs" \
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/ebp-org/lisp" "$payload/emacs" \
       "ebp-org"
     stage_elisp_tree \
-      "$JETPACS_POC_ROOT/glasspane-material3/lisp/glasspane-material3" \
-      "$payload/emacs/apps/glasspane-material3" "Glasspane Material 3 API"
-    stage_elisp_tree \
-      "$JETPACS_POC_ROOT/glasspane-material3/lisp/m3-catalog" \
-      "$payload/emacs/apps/m3-catalog" "Material 3 catalog"
-    ssh_run "cat > $payload/emacs/apps/m3-catalog/jetpacs-m3-catalog.el" \
-      < "$JETPACS_POC_ROOT/glasspane-material3/lisp/jetpacs-m3-catalog.el" \
-      || die "transfer of the Material 3 catalog entry failed"
-    stage_elisp_tree \
-      "$JETPACS_POC_ROOT/jetpacs-components/lisp/jetpacs-components" \
+      "$REPO_ROOT/jetpacs-components/lisp/jetpacs-components" \
       "$payload/emacs/apps/jetpacs-components" "Jetpacs Components"
-    stage_elisp_tree "$JETPACS_POC_ROOT/jetpacs-authoring/lisp" \
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/jetpacs-authoring/lisp" \
       "$payload/emacs/apps/jetpacs-authoring" "Jetpacs authoring"
-    stage_elisp_tree "$JETPACS_POC_ROOT/jetpacs-automations/lisp" \
+    stage_elisp_tree "$REPO_ROOT/jetpacs-automations/lisp" \
       "$payload/emacs/apps/jetpacs-automations" "Jetpacs Automations"
-    stage_elisp_tree "$JETPACS_POC_ROOT/jetpacs-component-catalog/lisp" \
+    stage_elisp_tree "$REPO_ROOT/jetpacs-component-catalog/lisp" \
       "$payload/emacs/apps/jetpacs-component-catalog" \
       "Jetpacs Component Catalog"
-    stage_elisp_tree "$JETPACS_POC_ROOT/glasspane" \
-      "$payload/emacs/apps/glasspane" "Glasspane"
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/glasspane" \
+      "$payload/emacs/apps/glasspane" "Jetpacs"
     # Mirrors the Companion's StageOnboardingAssets task: Grove is the second
     # packaged applet named by emacs/apps/packaged-apps and must ship with
     # the tree, or Manage Apps offers an entry whose feature cannot load.
-    stage_elisp_tree "$JETPACS_PROJECTS_ROOT/../grove/elisp" \
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/grove-native/elisp" \
       "$payload/emacs/apps/grove" "Grove"
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/orgzly-native/emacs/apps/orgzly" \
+      "$payload/emacs/apps/orgzly" "Orgzly"
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/harp-native/emacs/apps/harp" \
+      "$payload/emacs/apps/harp" "Harp"
 
     log "staging device/py/ as managed examples/python/"
     tar -C "$REPO_ROOT/device/py" -czf - . \
@@ -771,7 +766,7 @@ phase_verify() {
   case "$ACTION" in
     install)
       echo "REMAINING:" >&2
-      echo "  1. Grant Emacs 'All files' access if the Vault is /sdcard." >&2
+      echo "  1. Grant Emacs 'All files' access if the Vault is /sdcard/Jetpacs." >&2
       echo "  2. Force-stop and relaunch org.gnu.emacs, then open the" >&2
       echo "     Jetpacs Companion. Emacs reads the private early-init redirect," >&2
       echo "     then the private init and managed root above. User content" >&2

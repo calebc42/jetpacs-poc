@@ -1,0 +1,43 @@
+# -*- mode: org; coding: utf-8 -*-
+#+TITLE: Jetpacs Color Roles Reference
+#+AUTHOR: Maintained from ebp/contract.json
+#+DATE: 2026-08-27
+#+STARTUP: showall
+#+OPTIONS: ^:nil
+
+* Jetpacs Color Roles Reference
+
+EBP 3 carries 13 design-neutral color roles.  The Material renderer maps those
+roles to =ColorScheme= inputs and derives its additional container, tertiary,
+variant, and foreground colors privately.  Those derived Material tokens are
+not wire roles and an app must not author them.
+
+** Authority
+
+=ebp/contract.json.theme_roles= owns the wire list.  The generated Kotlin and
+Elisp vocabularies must match it.  This table documents only how the optional
+Material renderer consumes those neutral roles; =ColorModel.kt= is an
+implementation, not the source of the wire vocabulary.
+
+** Color Roles Mapping
+
+| Wire Role | M3 / Jetpacs Property |
+|---+---|
+| primary | scheme.primary |
+| on_primary | scheme.onPrimary |
+| secondary | scheme.secondary |
+| on_secondary | scheme.onSecondary |
+| error | scheme.error |
+| on_error | scheme.onError |
+| background | scheme.background |
+| on_background | scheme.onBackground |
+| surface | scheme.surface |
+| on_surface | scheme.onSurface |
+| outline | scheme.outline |
+| success | ext.success |
+| warning | ext.warning |
+|---+---|
+
+# Local Variables:
+# org-confirm-babel-evaluate: nil
+# End:

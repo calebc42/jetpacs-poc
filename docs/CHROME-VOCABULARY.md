@@ -1,169 +1,146 @@
-# Chrome vocabulary and functional contracts — v4 (v1 ratified 2026-07-28; v2 ratified with the chrome-polish rescope; v3's two-pole section ratified 2026-08-14, the S7 seam; v4's full-bar form + drawer-injection rule ratified 2026-08-15, the PARA plan)
+# Chrome vocabulary and functional contracts
 
-*v2 change: element names are now the **Material 3 component names**, 1:1
-(m3.material.io; `material3` 1.4.0 per Glasspane Material's
-`docs/lookup-tables/M3-COMPONENT-LOOKUP.org`).  The functional contracts are
-unchanged — they are the Emacs-side discipline M3 does not provide.  Scope:
-the Jetpacs base layer — docstrings, user-facing docs, commit messages, and
-the conventions base apps follow.  The EBP wire names (SPEC §17.6) are frozen
-and are not renamed.  Tier-1 apps may deviate; the base does not — HOW an app may deviate is
-now a contract of its own: see "The two integration poles" below.*
+This document names the application chrome that Elisp authors and records how
+`jetpacs-chrome.el` composes it into EBP scaffolds. The names follow Android
+and Material terminology; the behavioral rules are Jetpacs policy.
 
-## The three name layers
+## Vocabulary
 
-| Layer | Names | Owned by |
-|---|---|---|
-| Wire | `top_bar` `bottom_bar` `fab` `floating_toolbar` `drawer` (scaffold slots) | SPEC §17.6 — frozen |
-| Elisp API | `jetpacs-chrome-screen` keywords, `jetpacs-chrome-dock-items-function` (and the raw-node `jetpacs-chrome-dock-function`) | base — stable |
-| Vocabulary | the M3 component names below | this document |
-
-1:1 holds at the vocabulary layer ONLY.  The wire layer is deliberately not
-1:1 (the lookup table's own note: `scaffold` bundles 8+ composables;
-`OutlinedTextField` serves two wire types) and the contracts are Jetpacs',
-not Material's.  A convention here is a *naming and placement* rule, never a
-capability rule: chrome is structural content with no hidden behavior
-(SPEC §17.6), and every chrome affordance maps to a command reachable
-without it (M-x parity, JA-3).  Chrome is a projection of commands.
-
-## The vocabulary (1:1 with M3)
-
-| Element | M3 name | Wire slot | Retired names |
+| User-facing element | Canonical term | EBP representation | Purpose |
 |---|---|---|---|
-| slide-in panel behind the hamburger | **Navigation drawer** ("drawer" in running text) | `scaffold.drawer` | App Menu, hamburger menu |
-| bar across the top | **Top app bar** ("top bar") | `scaffold.top_bar` | Menu bar, Contextual Actions Bar |
-| docked bottom bar of destinations | **Navigation bar** | `scaffold.bottom_bar` (via the dock seam) | View switcher, Bottom nav bar |
-| start-edge column of destinations on a wide window | **Navigation rail** | `scaffold.rail` (the same dock seam, medium width and up) | — |
-| floating cluster of contextual actions | **Toolbar — floating** | `scaffold.floating_toolbar` | Contextual Actions Bar |
-| bottom-anchored row of actions | **Toolbar — docked** | `scaffold.bottom_bar` holding actions | — |
-| round primary-action button | **FAB** | `scaffold.fab` | — |
-| any `more_vert`-anchored menu | **Menu** (the pattern: **overflow menu**) | `menu` node | Action menu, kebab menu |
+| Side sheet opened from the leading menu affordance | Navigation drawer | `scaffold.drawer` | App-level destinations |
+| Titled bar at the top | Top app bar | `scaffold.top_bar` | Identity, back/menu affordance, screen actions, shell globals |
+| Compact bottom destinations | Navigation bar form | `scaffold.bottom_bar` | Three to five persistent places |
+| Medium/expanded start-edge destinations | Navigation rail | `scaffold.rail` with `navigation_rail` | The same places adapted to window class |
+| Contextual action strip | Toolbar | `scaffold.floating_toolbar` or an authored docked bar | Mode/selection actions |
+| One prominent creation action | FAB | `scaffold.fab` | Primary create/add action |
+| Anchor-scoped action list | Menu; overflow menu in a top bar | `menu` | Secondary actions |
 
-## Per-element contract (unchanged from v1 except as keyed)
+A destination changes place; an action changes state. Drawers, navigation bars,
+and rails contain destinations. Toolbars, FABs, and menus contain actions.
 
-**Navigation drawer** — app-level *destinations* (screens, roots, the
-launcher rows), never actions that mutate a document.  Everything in it is
-reachable elsewhere (M-x parity).  Fewer than three destinations: no drawer.
-The composed host drawer is injected into the stack-BOTTOM scaffold ONLY —
-the root wears the hamburger and a drilled screen wears the back arrow (the
-M3 top-level rule); a guest screen, never the bottom, can never wear the
-host's drawer; a screen that authors its own `drawer` slot wins
-(single-slot authored-wins).  The v4 ratification of the S8 rule.
+## Placement contracts
 
-**Top app bar** — identity and globals: title, back affordance or drawer
-button on the left, at most two or three screen-scope action icons on the
-right (M-x sits top-right), plus at most one overflow menu.  It never
-changes contents in response to a selection (that is the floating toolbar's
-job).
+### Navigation drawer
 
-**Navigation bar / navigation rail** — three to five *destinations*, the
-selected one always indicated; items are places, never actions.  In Jetpacs
-the places are the `multi_view`/`view.switched` machinery, and the
-destinations persist across every screen via the dock seam — a navigation
-bar that vanishes on drill is a defect, not a style.  Author the
-destinations as data with `jetpacs-chrome-dock-items-function` and chrome
-wears them per SPEC 20.1.1: a real M3 navigation bar on a compact
-window (either axis compact — a phone in any orientation; the
-catalog-proven item composition: icon above label, the
-secondary-container active indicator, 80dp container), a start-edge
-navigation rail (`scaffold.rail`) on medium and expanded windows — the
-M3 NavigationSuiteScaffold behavior, one authoring.  The raw-node
-`jetpacs-chrome-dock-function` remains as an override for a hand-built bar
-(always `bottom_bar`, never adaptive), and wins when both are set.
+The drawer contains app-level destinations, not document mutations. Chrome
+injects the host drawer into the stack-bottom scaffold only: a root can show
+the hamburger, while a drilled screen shows back. A guest screen cannot inherit
+the host drawer. A screen-authored drawer wins.
 
-**Toolbar** — *actions*, in two variants exactly as M3 draws them:
-**floating** (the `floating_toolbar` slot) for mode- or selection-contextual
-actions keyed to the buffer (the org toolbar is the archetype); **docked**
-(action nodes in `bottom_bar`) when a screen needs bottom-anchored actions.
-A screen shows a navigation bar or a docked toolbar, never both, and a
-toolbar never duplicates the top app bar's globals.
+Drawer builders must use verbs valid on every surface where they appear. A
+builder error or malformed result removes the drawer only; it does not fail the
+surface.
 
-**FAB** — exactly one, verb-shaped, the screen's single primary *creation*
-action.  Never a menu, never a toggle; no natural creation act, no FAB.
+### Top app bar
 
-**Menu** — anchored to `more_vert`, scoped to its anchor: on the top app
-bar it is the overflow menu (screen-scope actions that did not earn an
-icon); on a row or card it holds that item's actions.  Destructive entries
-sit last and carry `:confirm`.
+The top app bar carries the title, a leading back or menu affordance, a small
+set of screen actions, and optional shell globals. Contextual selection actions
+belong in a toolbar. Secondary actions belong in an overflow menu.
 
-## The two integration poles (v3 — the S7 ratification)
+`jetpacs-chrome-screen` builds a small styled top bar by default. Authored
+actions are retained, and global actions are de-duplicated by their exact
+action name.
 
-An app relates to the shell's chrome at one of two poles, and both are
-legitimate.  The pole names below are the vocabulary the scaffold
-seams (the debt-and-scaffold plan's S1–S6) implement; where a
-mechanism has not landed yet it is keyed to its seam, so this section
-ratifies NAMES and CONTRACTS without overclaiming capability.
+### Navigation bar and rail
 
-**Build-within** — the app composes INTO the shell and its surfaces
-read as Jetpacs screens.  This is the DEFAULT pole: today the shell
-dock already persists into every app unless a screen authors its own
-slot, and defapp/drawer/theming/resume all compose.  What the pole
-grows into: the app CONTRIBUTES destinations to the host hub through
-the defapp registry (S1 — the poc-1 `:views` mechanism restored;
-llm-poc/emacs/core/jetpacs-apps.el:88 is the reference); the dock can
-go APP-PRIMARY — core remains intact and the app's own destinations fill
-the remaining M3 3–5 budget — or, with `:dock-core nil`, core contributes
-none and the app's destinations fill the budget whole. With
-`:drawer-core`, the app declares which suppressed core destinations
-relocate to the navigation drawer and must explicitly account for every
-other suppressed destination through an app destination that subsumes it
-(M-x parity is the floor, not the bar) (S2); shell
-globals (M-x) persist into the app's top bar (S3); and a screen pushed
-onto a FOREIGN stack is a sanctioned GUEST — scoped event delegation,
-prefixed ids, foreign-stack teardown — never an `:any-surface` workaround
-(S4).  Glasspane is the exemplar.
+Author shared destinations as data through
+`jetpacs-chrome-dock-items-function`. On compact windows, chrome creates the
+icon/label/selection composition in the scaffold's bottom bar. On medium and
+expanded windows it authors a `navigation_rail` into the start-edge rail slot,
+which the Material renderer presents with NavigationRail/WideNavigationRail.
+The same items therefore persist across screens and adapt without a second
+destination list.
 
-**Standalone** — the app rejects the shell's chrome and reads as its
-own application.  Declared, not improvised: `jetpacs-defapp
-:chrome 'standalone` (S5) withdraws the core dock items and the
-global-actions injection for the app's surfaces; the app authors its
-chrome whole.  An orgzly-native or the orgseq line is the exemplar.
-The ratified injection rule S5 implements: a screen that authors ANY
-dock slot opts out of dock injection on EVERY slot — bar and rail
-alike (the current plist-member guard tests only the slot the dock
-chose, which leaks an injected rail over an authored bottom bar on
-medium and expanded windows; that is a defect against THIS sentence).
+`jetpacs-chrome-dock-function` is the raw-node override. Its node always stays
+in `bottom_bar` and outranks data items. Any screen-authored dock slot wins over
+host injection. A malformed dock costs only the dock.
 
-**What standalone does NOT reject.**  Rejection is presentation-only;
-the platform invariants are not optional at either pole:
+### Toolbar, FAB, and menu
 
-- the BACK contract — every pushed screen participates in the stack
-  and the system back gesture;
-- ERROR ISOLATION — a failing screen or seam builder costs its own
-  screen or section, never the surface;
-- the PUSH BUDGET and reconciliation discipline — standalone chrome
-  ships through the same node vocabulary, byte accounting, and
-  key-based reconciliation as everything else;
-- M-x PARITY — every affordance in standalone chrome still projects a
-  command reachable without it.
+A floating toolbar holds mode- or selection-contextual actions; a screen may
+instead author a bottom-docked action strip. It should not duplicate navigation
+or top-bar globals.
 
-**What neither pole can promise today** (Companion-tier, recorded so
-the poles are honest): one Android activity and task for every app;
-`theme.set` is session-global, so an app restyling itself restyles
-the shell (the Jetpacs ef-themes picker does this NOW — build-within
-behavior whether intended or not); one screen, last-push-wins; and
-per-app Android identity (launcher shortcuts, share intake) does not
-exist.  A standalone-feeling app still shares the one window.
+A FAB represents one primary creation action. The application default is
+resolved for the owner of each screen, so a guest cannot inherit its host's
+create action. A screen-authored FAB wins. Shell globals can be placed in the
+FAB slot by user policy; one item becomes one button and multiple items use the
+installed design-layer FAB menu or a safe fallback.
 
-## Fidelity gaps the lookup table exposes (future work, not renames)
+A menu is scoped to its anchor. In a top app bar it is the overflow menu; on a
+row or card it contains that item's actions. Destructive entries carry an
+explicit confirmation descriptor.
 
-- **NavigationBar is unwrapped**: today's navigation bar is authored
-  `button` nodes in the `bottom_bar` slot — the contract is honored but the
-  visuals are approximated.  Wrapping the real composable (a `nav_bar` wire
-  type or the lookup's suggestion of a smarter `bottom_bar` renderer) buys
-  the authentic icon-above-label items and indicator pill.  SPEC-governed
-  expansion: contract.json, constructor, renderer, NodeSupport, goldens.
-- **ListItem is unwrapped**: `jetpacs-chrome-row` is the manual
-  card/row/column composition of exactly that component.
-- **FloatingToolbar (material3 1.5+)**: the `floating_toolbar` slot
-  predates the real composable; adopting it when the dependency moves is
-  the same kind of upgrade.
+## Composition precedence
 
-## Rationale
+Chrome uses deterministic authored-wins rules:
 
-M3 names are what the platform documentation, the Compose API, and every
-Android reference use — a private synonym ("View switcher", "Action menu")
-taxes every future doc lookup.  The v1 rejections stand for the same
-reason: "Menu bar" collides with Emacs's menu bar, "Contextual Actions Bar"
-with Android's contextual action bar, "App Menu" with both.  What Jetpacs
-adds is not names but contracts — the placement rules and the M-x-parity
-discipline above — and those survive v2 untouched.
+1. A screen's explicit scaffold slot wins.
+2. An application-owner default FAB fills an empty FAB slot.
+3. Host drawer and dock fill eligible empty slots.
+4. Data-form shell globals supersede the legacy finished-node global seam so
+   placement can be re-authored.
+5. Globals configured for FAB fall back to the top app bar when the screen's
+   FAB is already occupied or the live profile cannot admit their FAB form.
+6. The optional downstream presentation wrapper is applied once to a bare
+   scaffold; an already presented screen keeps its own wrapper.
+
+Chrome and the shell descend only a fixed number of recognized single-child
+wrappers to reach a scaffold. Wrapper recognition is structural, keeping the
+foundation free of downstream extension names. Node IDs injected into multiple
+`multi_view` views are namespaced so document-wide uniqueness remains true.
+
+Every optional seam is failure-isolated: a signal or malformed node/data value
+removes that contribution, not the app surface.
+
+## Screen stacks and back
+
+Each surface has a bounded Elisp screen stack represented as one EBP
+`multi_view`; the default maximum is three rendered screens with the root
+pinned. A push or reset names `current_view`. Ordinary background refreshes omit
+it, so they cannot pull the user away from the visible view.
+
+`jetpacs-chrome-reset-screens` accepts optional `no-push` to truncate to the
+registered root without sending a frame. A destination handler can immediately
+push its peer screen, preserving root Back navigation while sending only the
+destination frame. The caller owns that follow-up presentation; the reset stays
+committed even if the subsequent screen push fails.
+
+The authored back arrow dispatches the exact `view.switch` builtin for the view
+below. When the Companion reports the switch, Elisp truncates its corresponding
+stack without registering a competing `view.switched` action. System back uses
+the same visible authored descriptor before falling through to Navigation 3;
+see [`NAV3-EBP-BOUNDARY.md`](NAV3-EBP-BOUNDARY.md).
+
+A failed pushed screen is replaced by an isolated error view when the profile
+allows it, and the previous stack remains recoverable. Budget charging, node
+identity, profile admission, and teardown are enforced for each composed view.
+
+## App integration poles
+
+`jetpacs-defapp` supports two explicit policies:
+
+- `build-within` is the default. The app contributes destinations, may choose
+  which core destinations remain in its primary dock, can relocate suppressed
+  core destinations into its drawer, inherits shell globals, and can push
+  owner-scoped guest screens.
+- `standalone` withdraws host dock/global presentation for the app's surfaces
+  and lets the app author its chrome. It still uses the same back contract,
+  profile/byte budgets, action routing, error isolation, and command parity.
+
+Both policies share one Android activity and EBP session. “Standalone” is a
+presentation policy, not a new process, task, identity, or trust domain.
+
+## Current source and tests
+
+- `../emacs/jetpacs-chrome.el` owns stacks and scaffold composition.
+- `../emacs/jetpacs-apps.el` owns app registration and build-within/standalone
+  policy.
+- `../emacs/jetpacs-widgets.el` owns the contract-backed constructors.
+- `../test/jetpacs-chrome-test.el` and `../test/jetpacs-apps-test.el` pin
+  precedence, adaptation, failure isolation, guest ownership, back, budgets,
+  teardown, and profile behavior.
+
+Future vocabulary growth starts at the EBP contract or the owning renderer
+manifest. A dated lookup table is not a source of truth.

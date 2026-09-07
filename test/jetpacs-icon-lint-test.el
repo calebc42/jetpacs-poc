@@ -7,7 +7,7 @@
 ;; the Emacs modules never fails anything: it silently ships
 ;; HelpOutline.  This lint closes that hole using the lookup table as
 ;; ground truth: every icon literal in Jetpacs' emacs/*.el and device/init.el
-;; must name something IconMap can resolve (Glasspane Material's generated
+;; must name something IconMap can resolve (Jetpacs Material's generated
 ;; M3-ICON-REFERENCE.org table, union the IconMap pre-seed cache).
 ;;
 ;; The companion pin guards the table itself: the IconMap pre-seed is
@@ -23,10 +23,6 @@
 (defconst jetpacs-icon-lint--root
   (expand-file-name ".." (file-name-directory
                           (or load-file-name buffer-file-name))))
-
-(defconst jetpacs-icon-lint--material3-root
-  (or (getenv "GLASSPANE_MATERIAL3_DIR")
-      (expand-file-name "../glasspane-material3" jetpacs-icon-lint--root)))
 
 (defun jetpacs-icon-lint--file (rel)
   (expand-file-name rel jetpacs-icon-lint--root))
@@ -47,8 +43,8 @@
   (let ((names (make-hash-table :test #'equal)))
     (with-temp-buffer
       (insert-file-contents
-       (expand-file-name "docs/lookup-tables/M3-ICON-REFERENCE.org"
-                         jetpacs-icon-lint--material3-root))
+       (expand-file-name "docs/material3/lookup-tables/M3-ICON-REFERENCE.org"
+                         jetpacs-icon-lint--root))
       (goto-char (point-min))
       (while (re-search-forward
               "^| \\([a-z_0-9]+\\) | ~Icons" nil t)
@@ -61,8 +57,8 @@
     (with-temp-buffer
       (insert-file-contents
        (expand-file-name
-        "renderer/material3/src/main/kotlin/com/calebc42/glasspane/material3/IconMap.kt"
-        jetpacs-icon-lint--material3-root))
+        "companion/renderer/material3/src/main/kotlin/com/calebc42/jetpacs/material3/IconMap.kt"
+        jetpacs-icon-lint--root))
       (goto-char (point-min))
       (while (re-search-forward "cache\\[\"\\([a-z_0-9]+\\)\"\\]" nil t)
         (push (match-string 1) names)))

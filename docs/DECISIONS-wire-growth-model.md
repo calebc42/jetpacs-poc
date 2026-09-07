@@ -1,110 +1,73 @@
-# The wire growth model: cosmetic × constraining, open × closed
+# Wire vocabulary growth model
 
-Status: design rationale, informative. Ratified as the working growth
-algorithm 2026-08-13 (Caleb, during the #169 ratification dialog).
-Slop-line text — facts and ideas may cross into the hand-written spec;
-sentences may not (the quarantine-the-quarry rule).
+Status: informative design decision. Normative behavior lives in the EBP spec
+and contract; this page explains how to choose a compatible growth mechanism.
 
-## The root question
+## Decision
 
-Every growing protocol must answer: what does a receiver do with
-vocabulary it does not understand? There are only two postures —
-IGNORE-unknowns (open: process what you recognize, drop the rest) and
-REJECT-unknowns (closed: refuse the whole construct) — and neither is
-universally correct. Which one is safe depends on the semantic role of
-the unknown member.
+Classify every new member or value on two axes:
 
-## The member taxonomy
+1. Is it cosmetic, so ignoring it changes presentation but not the authorized
+   behavior?
+2. Is it constraining, so ignoring it would remove a guard, narrow condition,
+   expiry, confirmation, predicate, or other limit?
 
-A COSMETIC member decorates the base behavior without changing what
-happens (`annotation`, an icon hint, candidate `kind`). Ignoring it
-costs polish; the same action occurs.
+Then inspect the host object's posture: open-with-degrade or closed-and-reject.
 
-A CONSTRAINING member narrows or guards the base behavior (`when:
-battery < 20%` on a notify; `confirm` on a delete; a `ttl_s` bound; a
-trigger predicate). Ignoring it makes the receiver do MORE than the
-sender authorized: "notify below 20%" becomes "notify always" (the
-when-strip hazard); "delete with confirmation" becomes "delete now" —
-which happened live on hardware (the JA-6 device gate: the Companion
-accepted `confirm` and never presented it; the first trash tap
-destroyed the file).
-
-## The failure asymmetry
-
-|  | Cosmetic member unknown | Constraining member unknown |
+| Host posture | Cosmetic addition | Constraining addition |
 |---|---|---|
-| Ignore-unknowns | fine (plainer UI) | OVER-ACCEPT: silent, invisible, harmful — the guard evaporates |
-| Reject-unknowns | OVER-REJECT: whole frame refused over a decoration | fine (loud `1201`, sender learns, nothing runs unguarded) |
+| Open value space with a specified harmless fallback | The receiver may degrade exactly as specified | Negotiate/withhold; never strip the constraint |
+| Closed object or value space | Withhold until advertised or update both endpoints in a protocol-major change | Reject or negotiate; never execute a less-constrained base behavior |
 
-Over-accept is the catastrophic direction because it is invisible.
-Over-reject is the annoying direction but loud and recoverable. This
-asymmetry is invariant 7 ("safe under partial understanding") made
-operational: a receiver that does not fully understand must end up
-doing LESS, never more. Rejecting does less. Stripping a guard does
-more.
+The safe asymmetry is deliberate. Rejecting an unsupported construct is loud
+and recoverable. Ignoring an unsupported constraint can silently authorize more
+than the sender requested.
 
-## The mechanism map
+## Examples
 
-Because a receiver cannot tell cosmetic from constraining by looking
-at an unknown member NAME, EBP's default posture for object SHAPE is
-closed — candidates, trigger params, and descriptors reject unknown
-members (§19.3, §21, §14.1), which also keeps the deliberately weak
-languages finite and auditable (invariant 6). Selected VALUE spaces
-stay open-with-degrade where the degrade is provably harmless: an
-unknown icon name renders a placeholder (§17.2), an unknown `features`
-entry is ignored (§22.4), an unknown snippet token stays literal
-(§17.7).
+- An unknown icon name may render the specified placeholder because the action
+  and accessible meaning remain bounded by the core contract.
+- A confirmation, `ttl_s`, offline policy, trigger predicate, or capability
+  condition cannot be dropped. Doing so would perform more work than authored.
+- A cosmetic member added to an otherwise closed object still needs
+  sender-withholding or a coordinated schema change: sending it early would make
+  an older receiver reject the whole object.
+- A design-system node belongs in a positively negotiated renderer extension
+  rather than in EBP merely because one receiver can draw it.
 
-§22.4's feature registry exists for the case neither default handles:
-vocabulary the sender MUST NOT emit until the receiver has advertised
-it. The receiver-side rule skip-don't-strip (if you cannot honor the
-guard, do not do the guarded thing) and the sender-side rule (do not
-send the guarded thing to a receiver that cannot honor it) are two
-halves of one law; the registry is the sender half's mechanism.
+## Growth procedure
 
-## The 2×2 and its precedents
+For each proposed wire addition:
 
-Member role × object posture:
+1. Name the observable behavior and whether the addition is cosmetic,
+   constraining, or load-bearing.
+2. Identify whether the containing schema/value space is open or closed.
+3. Choose an existing mechanism: specified degradation, feature/profile
+   negotiation, renderer-extension ownership, or a coordinated protocol change.
+4. Update normative prose first when semantics change.
+5. Update `contract.json`, generators, goldens, and every affected validator or
+   sender gate in the same change.
+6. Prove both admission and use. A validator accepting a member does not prove
+   that the renderer or dispatcher honors it.
+7. Test partial understanding in the safe direction: unsupported behavior must
+   do less or fail, never run after its guard has disappeared.
 
-1. **Cosmetic on an open value space** → degrade rules. Precedent:
-   #41 (pinned safe fallback), #145 (accessible-label derivation
-   floor), §17.2 icon placeholder.
-2. **Constraining anywhere** → §22.4 negotiation + sender-omit.
-   Precedent: the registry's founding rows; #88 (registry as the
-   designated home, appended never inserted).
-3. **Load-bearing growth of a closed object** → amendment updating
-   both ends together. Precedent: #168 (`confirm` object form), #135.
-   Honest caveat: this cell's precedents never actually negotiated —
-   they shipped both endpoints simultaneously, a luxury that ends when
-   second implementations exist (the publication goal).
-4. **Cosmetic member on a CLOSED object** → the closedness converts
-   "harmless to ignore" into "fatal to send", so a cosmetic member
-   needs the same sender-withholds machinery as a constraining one —
-   for the opposite reason (loud over-reject instead of silent
-   over-accept). First instance: #169 candidate `kind`, which widens
-   §22.4's lead sentence to name both genres.
+If none of the existing mechanisms can express the change, stop and treat that
+as an architecture decision rather than inventing a receiver-local exception.
 
-## The growth algorithm
+## Relationship to renderer profiles
 
-For any proposed wire vocabulary: classify the member (cosmetic /
-constraining), check the hosting object's posture (open / closed), and
-the 2×2 names the mechanism. If the answer requires a NEW mechanism,
-stop — that is the rewrite-criterion smell ("a load-bearing seam is
-wrong"), and so far every case has landed in an existing cell.
+Target profiles are positive claims about installed handlers. An extension node
+is emitted only when both its exact node type and owning extension are
+advertised. Canonical-node presentation overrides do not change this wire
+schema: they select an installed rendering of an already-admitted node.
 
-Corroboration from the ecosystem: LSP handles its own
-CompletionItemKind growth identically — closed base set (1–25 frozen),
-client advertisement (`valueSet`), and a graceful-degrade guarantee
-for values outside it (LSP 3.18, completion.md ClientCompletionItemOptionsKind)
-— independent convergence on cell-4 mechanics.
+See [`EBP3-RENDERER-MIGRATION.md`](EBP3-RENDERER-MIGRATION.md) for the current
+renderer boundary.
 
-## Enforcement duties that ride every cell
+## Verification
 
-- #127: a rail the validator does not walk is drift that survives —
-  every new member/value lands in contract.json AND validate.py in the
-  same change.
-- #150/#151: name the enforcing tool and its exact scope; state the
-  monotonic-resource posture.
-- The dispatch-audit lesson (6× recurred): "the validator accepts it"
-  never means "the chrome dispatches/draws it" — every new member's
-  implementation rung carries a does-the-chrome-USE-it device check.
+The owning EBP change runs `validate.py`, generator drift checks, named goldens,
+and affected Kotlin/Elisp conformance suites. A UI-affecting addition also needs
+the renderer/profile tests and device or screenshot evidence appropriate to its
+observable behavior.

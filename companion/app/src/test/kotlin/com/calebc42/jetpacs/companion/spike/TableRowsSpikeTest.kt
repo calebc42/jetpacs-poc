@@ -11,7 +11,7 @@
 // of it. Timings print with a SPIKE prefix; read them from the test XML.
 package com.calebc42.jetpacs.companion.spike
 
-import com.calebc42.glasspane.material3.NodeSupport
+import com.calebc42.jetpacs.material3.NodeSupport
 import com.calebc42.ebp.wire.CompanionConfig
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.EbpAuth

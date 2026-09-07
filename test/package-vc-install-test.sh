@@ -2,8 +2,11 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
-EBP_EL_ROOT="${EBP_EL_DIR:-$REPO_ROOT/../ebp-poc/ebp.el}"
-EBP_ORG_ROOT="${EBP_ORG_DIR:-$REPO_ROOT/../ebp-poc/ebp-org}"
+repositories_root=$("$REPO_ROOT/tools/repositories-root.sh")
+export JETPACS_REPOSITORIES_ROOT="$repositories_root"
+EBP_EL_ROOT="${EBP_EL_DIR:-$repositories_root/ebp.el}"
+EBP_ORG_ROOT="${EBP_ORG_DIR:-$repositories_root/ebp-org}"
+JETPACS_AUTHORING_ROOT="${JETPACS_AUTHORING_DIR:-$repositories_root/jetpacs-authoring}"
 TEST_ROOT="$(mktemp -d /tmp/jetpacs-package-test.XXXXXX)"
 CHECKOUT="$TEST_ROOT/checkout"
 EMACS_DIRECTORY="$TEST_ROOT/emacs.d"
@@ -14,6 +17,7 @@ mkdir -p "$CHECKOUT" "$EMACS_DIRECTORY/elpa" "$DEPENDENCIES"
 cp -R "$REPO_ROOT/.elpaignore" "$REPO_ROOT/emacs" "$REPO_ROOT/org" "$CHECKOUT/"
 cp "$EBP_EL_ROOT"/lisp/*.el "$DEPENDENCIES/"
 cp "$EBP_ORG_ROOT"/lisp/*.el "$DEPENDENCIES/"
+cp "$JETPACS_AUTHORING_ROOT"/lisp/*.el "$DEPENDENCIES/"
 # Model a clean source checkout even when the developer tree contains ignored
 # bytecode.  This only removes files from TEST_ROOT, which the test owns.
 find "$CHECKOUT" -type f -name '*.elc' -delete

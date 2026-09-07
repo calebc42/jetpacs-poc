@@ -22,8 +22,14 @@
   "Read the repository EBP contract as symbol-keyed alists and list arrays."
   (with-temp-buffer
     (insert-file-contents
-     (expand-file-name "../../ebp-poc/ebp/contract.json"
-                       jetpacs-vocabulary-authoring-test--dir))
+     (expand-file-name
+      "contract.json"
+      (or (getenv "EBP_SPEC_DIR")
+          (expand-file-name
+           "ebp"
+           (or (getenv "JETPACS_REPOSITORIES_ROOT")
+               (expand-file-name "../.."
+                                 jetpacs-vocabulary-authoring-test--dir))))))
     (json-parse-buffer :object-type 'alist :array-type 'list)))
 
 (defun jetpacs-vocabulary-authoring-test--string-alist (alist)

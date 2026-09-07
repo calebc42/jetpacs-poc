@@ -6,7 +6,7 @@ This is the deploy contract implemented by `tools/onboard-tablet.sh` and
 ## Invariants
 
 1. Vault and Unix `HOME` are independent selections.
-2. The Vault is `/sdcard`, Android Emacs's private home, or Termux's private
+2. The Vault is `/sdcard/Jetpacs`, Android Emacs's private home, or Termux's private
    home. It owns user content, not Jetpacs internals.
 3. Local Unix `HOME` is Android Emacs's private home or Termux's private home.
    `.emacs.d` is never on `/sdcard`.
@@ -45,13 +45,13 @@ Vault mode independently determines user-content paths:
 
 | `--vault` | `VAULT` |
 |---|---|
-| `shared` | `/sdcard` |
+| `shared` | `/sdcard/Jetpacs` |
 | `emacs` | the probed Android Emacs private home |
 | `termux` | `/data/data/com.termux/files/home` |
 
 The device-side installer keeps these dimensions separate and can migrate every
 local pairing. The Companion presents a narrower onboarding policy: Local
-Emacs offers `/sdcard` or Emacs home; Termux offers all three; Remote Emacs uses
+Emacs offers `/sdcard/Jetpacs` or Emacs home; Termux offers all three; Remote Emacs uses
 its remote home. `install.conf` records `home_mode`, `home`, `vault_mode`, and
 `vault` separately.
 
@@ -94,12 +94,12 @@ spelling.
 
 The Companion has no ambient access to either private home, so its generated
 handoff is temporarily staged under
-`/sdcard/Documents/jetpacs-installer/`. In Recommended, the Companion copies the
+`/sdcard/Documents/Jetpacs/init/`. In Recommended, the Companion copies the
 marked package entry and the user pastes it at the bottom of Android Emacs's
 `~/.emacs.d/init.el`. That entry invokes
 `device/install-recommended.el`, which refreshes only distribution-owned paths
 below Local Emacs's `.emacs.d/jetpacs`, preserves durable paths, records the
-`/sdcard` Vault, and removes the handoff. Advanced's displayed shell command
+`/sdcard/Jetpacs` Vault, and removes the handoff. Advanced's displayed shell command
 runs the lower-level installer and removes the same cache after a successful
 install.
 

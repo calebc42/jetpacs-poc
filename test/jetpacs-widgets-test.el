@@ -20,7 +20,7 @@
 (require 'cl-lib)
 (require 'jetpacs-widgets)
 (require 'jetpacs-widget-fixtures)
-(require 'glasspane-material3)
+(require 'jetpacs-material3)
 
 (defvar jetpacs-test--dir
   (file-name-directory (or load-file-name buffer-file-name))
@@ -28,17 +28,20 @@
 
 (defvar jetpacs-test--ebp-spec-dir
   (or (getenv "EBP_SPEC_DIR")
-      (expand-file-name "../../ebp-poc/ebp" jetpacs-test--dir))
+      (expand-file-name "ebp"
+                        (or (getenv "JETPACS_REPOSITORIES_ROOT")
+                            (expand-file-name "../.." jetpacs-test--dir))))
   "Canonical EBP specification checkout containing the golden corpora.")
 
-(defvar jetpacs-test--glasspane-material3-dir
-  (or (getenv "GLASSPANE_MATERIAL3_DIR")
-      (expand-file-name "../../glasspane-material3" jetpacs-test--dir))
-  "Canonical Glasspane Material 3 checkout.")
+(defvar jetpacs-test--jetpacs-material3-dir
+  (expand-file-name ".." jetpacs-test--dir)
+  "Jetpacs repository owning the Material 3 golden corpus.")
 
 (defvar jetpacs-test--ebp-spec-dir
   (or (getenv "EBP_SPEC_DIR")
-      (expand-file-name "../../ebp-poc/ebp" jetpacs-test--dir))
+      (expand-file-name "ebp"
+                        (or (getenv "JETPACS_REPOSITORIES_ROOT")
+                            (expand-file-name "../.." jetpacs-test--dir))))
   "Canonical EBP specification checkout.")
 
 (defun jetpacs-test--golden-map (name)
@@ -62,13 +65,13 @@
         (forward-line 1)))
     h))
 
-(defun jetpacs-test--glasspane-material3-goldens ()
-  "Return Glasspane's renderer-owned golden vectors by index."
+(defun jetpacs-test--jetpacs-material3-goldens ()
+  "Return Jetpacs Material's renderer-owned golden vectors by index."
   (let ((h (make-hash-table :test 'equal)))
     (with-temp-buffer
       (insert-file-contents
-       (expand-file-name "renderer-extensions/glasspane-material3.golden"
-                         jetpacs-test--glasspane-material3-dir))
+       (expand-file-name "renderer-extensions/jetpacs-material3.golden"
+                         jetpacs-test--jetpacs-material3-dir))
       (goto-char (point-min))
       (while (not (eobp))
         (unless (looking-at-p "^[[:space:]]*$")
@@ -482,9 +485,9 @@
       (chk "55" (jetpacs-slider "zoom" (jetpacs-action "zoom.set")
                                 :value 2 :values '(1 2 4))))))
 
-(ert-deftest jetpacs-widgets/glasspane-material3-golden ()
-  "Glasspane's assist-chip builder matches its renderer-owned witness."
-  (let ((goldens (jetpacs-test--glasspane-material3-goldens)))
+(ert-deftest jetpacs-widgets/jetpacs-material3-golden ()
+  "Jetpacs Material's assist-chip builder matches its renderer-owned witness."
+  (let ((goldens (jetpacs-test--jetpacs-material3-goldens)))
     (should
      (equal
       (jetpacs-node->canonical-json

@@ -1,0 +1,157 @@
+{
+  "format": 1,
+  "extension": "jetpacs.components",
+  "description": "Jetpacs' editor-native component design for Compose Foundation.",
+  "node_types": [
+    "jetpacs.action",
+    "jetpacs.choice",
+    "jetpacs.list_item",
+    "jetpacs.panel",
+    "jetpacs.scope",
+    "jetpacs.section_navigator",
+    "jetpacs.tabs"
+  ],
+  "targets": {
+    "app": [
+      "jetpacs.action",
+      "jetpacs.choice",
+      "jetpacs.list_item",
+      "jetpacs.panel",
+      "jetpacs.scope",
+      "jetpacs.section_navigator",
+      "jetpacs.tabs"
+    ],
+    "dialog": [],
+    "notification": []
+  },
+  "node_schema": {
+    "jetpacs.action": {
+      "required": [
+        "label",
+        "on_tap"
+      ],
+      "optional": [
+        "enabled"
+      ]
+    },
+    "jetpacs.choice": {
+      "required": [
+        "id",
+        "label",
+        "checked",
+        "on_change"
+      ],
+      "optional": [
+        "enabled"
+      ]
+    },
+    "jetpacs.list_item": {
+      "required": [
+        "title"
+      ],
+      "optional": [
+        "overline",
+        "subtitle",
+        "title_max_lines",
+        "subtitle_max_lines",
+        "leading",
+        "trailing",
+        "on_tap",
+        "on_long_tap",
+        "swipe_start",
+        "swipe_end",
+        "selected",
+        "enabled"
+      ]
+    },
+    "jetpacs.panel": {
+      "required": [
+        "label",
+        "children"
+      ],
+      "optional": []
+    },
+    "jetpacs.scope": {
+      "required": [
+        "children"
+      ],
+      "optional": []
+    },
+    "jetpacs.section_navigator": {
+      "required": [
+        "id",
+        "options",
+        "value",
+        "on_change"
+      ],
+      "optional": [
+        "enabled",
+        "pinned"
+      ]
+    },
+    "jetpacs.tabs": {
+      "required": [
+        "id",
+        "options",
+        "value",
+        "on_change"
+      ],
+      "optional": [
+        "enabled",
+        "scrollable",
+        "pinned",
+        "variant"
+      ]
+    }
+  },
+  "stateful_when_present": {
+    "jetpacs.choice": "checked"
+  },
+  "at_least_one_non_empty": {
+    "jetpacs.action": [
+      "label"
+    ],
+    "jetpacs.choice": [
+      "label"
+    ],
+    "jetpacs.panel": [
+      "label"
+    ]
+  },
+  "selection_options": {
+    "jetpacs.section_navigator": {
+      "options_member": "options",
+      "selection_member": "value",
+      "label_member": "label",
+      "value_member": "value",
+      "required_option_members": {
+        "level": "integer-1-6"
+      },
+      "optional_option_members": {}
+    },
+    "jetpacs.tabs": {
+      "options_member": "options",
+      "selection_member": "value",
+      "label_member": "label",
+      "value_member": "value"
+    }
+  },
+  "true_requires_parent": {
+    "jetpacs.section_navigator": {
+      "member": "pinned",
+      "parent_types": [
+        "lazy_column"
+      ]
+    },
+    "jetpacs.tabs": {
+      "member": "pinned",
+      "parent_types": [
+        "lazy_column"
+      ]
+    }
+  },
+  "lazy_column_sticky_members": {
+    "jetpacs.section_navigator": "pinned",
+    "jetpacs.tabs": "pinned"
+  }
+}

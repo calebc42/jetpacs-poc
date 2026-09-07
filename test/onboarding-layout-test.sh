@@ -2,7 +2,9 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
-EBP_EL_ROOT="${EBP_EL_DIR:-$REPO_ROOT/../ebp-poc/ebp.el}"
+repositories_root=$("$REPO_ROOT/tools/repositories-root.sh")
+export JETPACS_REPOSITORIES_ROOT="$repositories_root"
+EBP_EL_ROOT="${EBP_EL_DIR:-$repositories_root/ebp.el}"
 INSTALLER="$REPO_ROOT/tools/onboard-provision-remote.sh"
 TEST_ROOT="$(mktemp -d)"
 trap 'rm -rf "$TEST_ROOT"' EXIT

@@ -29,7 +29,23 @@
          :feature grove
          :app-id "grove"
          :register grove-register
-         :unregister grove-unregister)))
+         :unregister grove-unregister)
+        (:name "orgzly.el"
+         :label "Orgzly"
+         :icon "book"
+         :summary "Org notebooks, outlines, search, agenda and editing with Foundation styles"
+         :feature orgzly
+         :app-id "orgzly"
+         :register orgzly-register
+         :unregister orgzly-unregister)
+        (:name "harp.el"
+         :label "Harp"
+         :icon "favorite"
+         :summary "Org-backed health journals, metrics, documents and medication records"
+         :feature harp
+         :app-id "harp"
+         :register harp-register
+         :unregister harp-unregister)))
 
 (provide 'jetpacs-packaged-apps)
 ;;; jetpacs-packaged-apps.el ends here

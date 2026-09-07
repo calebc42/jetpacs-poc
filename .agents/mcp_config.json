@@ -1,0 +1,30 @@
+{
+  "mcpServers": {
+    "jetpacs-applets": {
+      "command": "emacs",
+      "args": [
+        "-Q",
+        "--batch",
+        "-l",
+        "/home/calebc42/workspace/jetpacs-poc/jetpacs-applet-mcp/jetpacs-applet-mcp.el"
+      ],
+      "env": {
+        "JETPACS_WORKSPACE": "/home/calebc42/workspace/jetpacs-poc",
+        "JETPACS_ORG_SOURCE": "/home/calebc42/workspace/emacs/emacs/lisp/org",
+        "JETPACS_REPOSITORIES_ROOT": "/home/calebc42/workspace"
+      }
+    },
+    "jetpacs-platform": {
+      "command": "/home/calebc42/workspace/jetpacs-poc/jetpacs-platform-tools/build/install/jetpacs-platform-tools/bin/jetpacs-platform-tools",
+      "args": [
+        "--root",
+        "/home/calebc42/workspace/jetpacs-poc",
+        "--org-source",
+        "/home/calebc42/workspace/emacs/emacs/lisp/org"
+      ],
+      "env": {
+        "JETPACS_REPOSITORIES_ROOT": "/home/calebc42/workspace"
+      }
+    }
+  }
+}

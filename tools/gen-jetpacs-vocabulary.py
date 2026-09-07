@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate emacs/jetpacs-vocabulary.el from ../ebp-poc/ebp/contract.json.
+"""Generate emacs/jetpacs-vocabulary.el from the external ebp/contract.json.
 
 The sibling of tools/gen-vocabulary.py, which does the same for the
 Companion's Vocabulary.kt.  Same W0 rule: wire vocabulary is generated from
@@ -18,12 +18,22 @@ Use ``--check`` in verification to fail without rewriting a stale projection.
 """
 import argparse
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-contract = json.loads(
-    (ROOT.parent / "ebp-poc" / "ebp" / "contract.json").read_text(encoding="utf-8")
+repositories_root = (
+    Path(os.environ["JETPACS_REPOSITORIES_ROOT"]).resolve()
+    if os.environ.get("JETPACS_REPOSITORIES_ROOT") else
+    next((parent for parent in (ROOT.parent, ROOT.parent.parent)
+          if (parent / "ebp" / "SPEC.md").is_file()), None)
 )
+spec_root = (Path(os.environ["EBP_SPEC_DIR"]).resolve()
+             if os.environ.get("EBP_SPEC_DIR") else
+             repositories_root / "ebp" if repositories_root else None)
+if spec_root is None:
+    raise SystemExit("Set EBP_SPEC_DIR or JETPACS_REPOSITORIES_ROOT to locate the EBP contract")
+contract = json.loads((spec_root / "contract.json").read_text(encoding="utf-8"))
 
 OUT = ROOT / "emacs" / "jetpacs-vocabulary.el"
 

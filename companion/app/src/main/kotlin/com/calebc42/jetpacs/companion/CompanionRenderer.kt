@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion
 
-import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
-import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_EXTENSION
-import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_NODE_SCHEMA
-import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_STATEFUL_WHEN_PRESENT
-import com.calebc42.glasspane.material3.NodeSupport
+import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
+import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_EXTENSION
+import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_NODE_SCHEMA
+import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_STATEFUL_WHEN_PRESENT
+import com.calebc42.jetpacs.material3.NodeSupport
 import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
 import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.ebp.wire.NodeVocabulary
@@ -54,7 +54,7 @@ internal val LocalCompanionRendererConfiguration =
     }
 
 /**
- * The renderer installation packaged by the Glasspane Companion application.
+ * The renderer installation packaged by the Jetpacs Companion application.
  *
  * EBP contributes neutral vocabulary, each design module contributes only its
  * generated downstream schema and implemented profile, and this composition
@@ -62,7 +62,7 @@ internal val LocalCompanionRendererConfiguration =
  */
 object CompanionRenderer {
     private val baseExtensionOwners = mapOf(
-        GLASSPANE_MATERIAL3_EXTENSION to GLASSPANE_MATERIAL3_NODE_SCHEMA.keys,
+        JETPACS_MATERIAL3_EXTENSION to JETPACS_MATERIAL3_NODE_SCHEMA.keys,
         JETPACS_COMPONENTS_EXTENSION to JETPACS_COMPONENTS_NODE_SCHEMA.keys,
     )
     private val allExtensionOwners = baseExtensionOwners +
@@ -123,12 +123,12 @@ object CompanionRenderer {
         // their conventional children. Ownership, typed semantics, profile
         // advertisement, and executable rendering are installed together.
         val vocabulary = EBP_NODE_VOCABULARY.copy(
-            schema = NODE_SCHEMA + GLASSPANE_MATERIAL3_NODE_SCHEMA +
+            schema = NODE_SCHEMA + JETPACS_MATERIAL3_NODE_SCHEMA +
                 JETPACS_COMPONENTS_NODE_SCHEMA + JETPACS_DESIGN_NODE_SCHEMA,
             statefulWhenPresent = EBP_NODE_VOCABULARY.statefulWhenPresent +
-                GLASSPANE_MATERIAL3_STATEFUL_WHEN_PRESENT +
+                JETPACS_MATERIAL3_STATEFUL_WHEN_PRESENT +
                 JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT,
-            atLeastOneNonEmpty = GLASSPANE_MATERIAL3_AT_LEAST_ONE_NON_EMPTY +
+            atLeastOneNonEmpty = JETPACS_MATERIAL3_AT_LEAST_ONE_NON_EMPTY +
                 JETPACS_COMPONENTS_AT_LEAST_ONE_NON_EMPTY,
             selectionOptions = JETPACS_COMPONENTS_SELECTION_OPTIONS,
             trueRequiresParent = JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT,

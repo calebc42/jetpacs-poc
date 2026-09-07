@@ -1,7 +1,7 @@
-# Navigation3 / EBP boundary
+# Navigation 3 and EBP boundary
 
-Jetpacs uses AndroidX Navigation3 for receiver-owned application destinations.
-It does not use Navigation3 to model the views inside an EBP multi-view
+Jetpacs uses AndroidX Navigation 3 for receiver-owned application destinations.
+It does not use Navigation 3 to model the views inside an EBP multi-view
 SurfaceSpec.
 
 ## State ownership
@@ -49,17 +49,16 @@ not-yet-loaded cache for removal. The catalog and a restored Surface route work
 while Emacs is offline; reconciliation then supplies a catalog root and removes
 genuinely stale keys.
 
-## SPEC amendment
+## EBP interaction
 
-Amendment #173 adds the missing cross-surface selection rule to EBP Sections
-13.4 and 14.2. Amendment #174 adds the optional `surface.open` builtin for an
-explicit user gesture that selects a present `app:*` surface. Surface update
-acceptance remains cache mutation only; `surface.open` is handled locally by
-the receiver and stores only the target surface ID in Nav3.
+The optional `surface.open` builtin represents an explicit user gesture that
+selects a present `app:*` surface. Surface update acceptance remains cache
+mutation only; the receiver handles `surface.open` locally and stores only the
+target surface ID in Navigation 3.
 
-Amendment #175 covers app launchers and app-owned rails, where the same tap
-must also dispatch `app.open` (or an app route verb) so Emacs retains semantic
-app/route state. A feature-gated remote `open_surface` adjunct asks the host to
-perform the same local selection before independently delivering the remote
-event. It does not turn a later `surface.update` into navigation, so background
-refreshes remain unable to seize the visible Nav3 destination.
+App launchers and app-owned rails can pair local selection with `app.open` or
+an app route verb so Emacs retains semantic app/route state. A feature-gated
+remote `open_surface` adjunct requests the same local selection before the
+remote event is independently delivered. Neither mechanism turns a later
+`surface.update` into navigation, so a background refresh cannot seize the
+visible receiver destination.

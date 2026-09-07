@@ -1,534 +1,216 @@
-# POC 3 target architecture
+# POC 3 architecture
 
-The canonical cross-platform implementation sequence is
-[`PLAN-poc3-rebuild.md`](PLAN-poc3-rebuild.md). The detailed Android store is
-specified by [`PLAN-room3-rebuild.md`](PLAN-room3-rebuild.md), and required
-platform primitives are pinned in
-[`PLATFORM-RENTAL-REGISTER.md`](PLATFORM-RENTAL-REGISTER.md). Together they
-supersede the original fork-forward cache adapter and the historical lock-hoist
-KMP runbook.
+Jetpacs is a spec-driven Android/Emacs system built on EBP 3. It combines an
+Emacs-owned application layer with an Android Companion that persists accepted
+presentation state, renders it natively, and durably returns typed events.
 
-As of 2026-08-31 the Android production composition is Room-only and has an
-Android 14/API 34 floor. `JetpacsApplication` owns one clean `jetpacs.db`, one
-Room durable store, one bounded command actor, and one bridge. A user-enabled
-`specialUse` FGS owns the listener on a best-effort basis; its notification is
-an enabled-policy indicator, never proof that the process or Emacs connection
-is alive. Legacy JSON/prototype databases are quarantined and never read or
-deleted.
+The normative cross-platform authority is
+[`../../ebp/SPEC.md`](../../ebp/SPEC.md). This document owns
+Jetpacs-specific dependency, persistence, rendering, navigation, and runtime
+boundaries. [`PLAN-poc3-rebuild.md`](PLAN-poc3-rebuild.md) records current
+status and completion gates; [`PLAN-room3-rebuild.md`](PLAN-room3-rebuild.md)
+details the implemented durable store.
 
-## Non-negotiable boundaries
+## System invariants
 
-EBP is Jetpacs-agnostic. Its Emacs implementation uses built-in Emacs
-facilities. In this tree, `:ebp-kmp` contains the storage-neutral KMP
-durable-store SPI, reducers, and rollback-capable memory reference
-implementation. `:wire` retains transport, framing, and protocol code and
-depends on `:ebp-kmp`. Neither module may depend on Jetpacs packages, Room,
-Navigation, Compose, Android, or Jetpacs cache policy.
+- EBP is implementation- and Jetpacs-neutral. It carries declarative data and
+  named semantic actions, never executable Elisp or another host language.
+- Emacs owns application state, application actions, and application policy.
+- The Companion owns native presentation, negotiated Android integration,
+  accepted presentation state, and its outgoing durable delivery records.
+- The receiver is a renderer, not a second application implementation. It does
+  not compile an app catalog or interpret app-specific action names in Kotlin.
+- Dependency direction is EBP → Jetpacs platform → applets. Foundation code
+  does not name a downstream applet.
+- Builders return the real plist/vector SurfaceSpec IR. There is no parallel
+  app, widget, tile, or automation UI AST.
+- Builders are deterministic readers of explicit state. Effects occur in
+  actions or background state producers.
+- An `accepted` event is a durability conclusion. Jetpacs commits its outbox
+  before sending; Emacs commits its independent receipt and recoverable work
+  before returning `accepted`.
+- Every emitted feature, node, builtin, identifier, aggregate, and byte count
+  stays inside the negotiated target profile and fixed limits.
 
-The same boundary governs the elisp tree, and there it is carried by the file
-and symbol prefix. The rule is ratified (bed8ef4, `refactor(complete):
-ebp-complete - the capf bridge is wire and Emacs only`):
+Room, Navigation 3, Compose, Material 3, Glance, and Android services are
+Jetpacs implementation choices. None becomes an EBP requirement.
 
-> `jetpacs-` names what cannot exist without Kotlin, Android, and Compose;
-> `ebp-` names what only ever touches the wire and Emacs.
+## Repository boundary
 
-The boundary test for a module is its contract, not its subject matter: a
-contract phrased in the node/surface vocabulary is Compose-shaped and takes
-`jetpacs-`; a contract phrased in wire methods and Emacs state takes `ebp-`.
-The prefix is an enforced claim rather than a label. An `ebp-` file must load
-alone in a bare `emacs -Q --batch` with only this tree on the load path, and
-its require closure must be vanilla Emacs plus other `ebp-` files — no Jetpacs
-feature, and nothing Jetpacs-flavored left behind: no function, variable, face,
-error condition, group documentation, or `:group 'jetpacs` parent link. The
-delineation guard in `test/run-tests.sh` proves exactly that, one process per
-file, over the `emacs/ebp*.el` glob rather than a hand-kept list, so a file
-making the claim is guarded the day it lands.
+The standalone repository is a workspace composition root. Protocol and
+renderer foundations, the Foundation design extensions, and applets have
+independent owners in neighboring repositories. Jetpacs owns its optional
+Material 3 implementation as an internal module. The complete graph and physical paths are
+in [`REPOSITORY-BOUNDARIES.md`](REPOSITORY-BOUNDARIES.md).
 
-Jetpacs is one implementation of EBP. The long-term product target is the
-Compose Catalog authored in Emacs/Elisp and transferred as EBP documents. The
-Android app is a dumb renderer: it selects a document from Jetpacs' durable Room
-implementation of accepted EBP state, renders it, and returns typed EBP
-actions. It must not compile a second Kotlin copy of the catalog.
+The Elisp naming rule mirrors that graph:
 
-Jetpacs is coupled to EBP semantics and, on Android, to ordinary Compose—not
-to Material. The eight-node EBP Core Node Set has a Foundation-only reference
-renderer. Design-system-specific semantics live in positively negotiated
-renderer extensions, so a different design system can implement the same core
-without importing Material or emulating Material-only controls.
+> `ebp-` names code that depends only on Emacs and EBP; `jetpacs-` names
+> product behavior that depends on the Jetpacs application boundary.
 
-The reference Companion composes two downstream design implementations:
-`:renderer:material3` for Glasspane and `:renderer:jetpacs` for Jetpacs'
-emerging component language. Glasspane and its Material 3 Catalog explicitly
-require `glasspane.material3`; the separate Jetpacs Components catalog requires
-`jetpacs.components`. Their schemas and golden witnesses live in
-`renderer-extensions/`, outside EBP. EBP 3 carries only positive target
-profiles; Jetpacs dual-gates each extension node on its advertised node name
-and the app's declared extension requirement. A receiver never implies support
-from a prefix, and an unavailable app remains outside its builders and gets an
-explanatory Apps screen. This keeps Jetpacs' Compose-shaped foundation reusable
-while letting Glasspane remain deliberately and faithfully Material 3.
+Canonical `ebp-` libraries now live in `../../../ebp.el` and
+`../../../ebp-org`. Jetpacs' aggregate test runner checks their isolated
+load closure and checks that Jetpacs foundation source does not acquire a
+downstream application dependency.
 
-`jetpacs.scope` is the app-only, invisible selection boundary for Jetpacs core
-presentation. Compose extension-node ownership remains singular; a separate
-composition-root registry may replace only types in the generated canonical
-EBP node schema, keyed by a positively admitted renderer-extension ID. It never
-admits a downstream extension-owned node, including `jetpacs.scope`, and each
-registered renderer may decline an individual canonical node before the
-dispatcher takes its normal fallback. Scoped selection never changes node
-validation or target profiles, and roots discard inherited scope. The current
-registrations replace canonical `text_input` and `editor` presentation inside
-app-authored `jetpacs.scope`, including an editor carrying the standard
-synchronized `document` member. When the experimental design runtime is
-installed, `jetpacs.design_scope` is a second selection boundary: its whole
-authored subtree renders under the `jetpacs.design` scope, which re-selects
-canonical `text` through the Foundation text override (typography from the
-profile's `text.<style>` slots, the enclosing styled or pressable face, then
-the node's own members), re-selects `icon`, `button`, `chip`, `divider`, and
-`section_header` through Foundation presentations that decline members they
-cannot honor, and re-selects the same Foundation `text_input` and `editor`
-presentation so a profile's field and editor slots take effect. Named glyphs
-are resolved through the `ComposeIconResolver` the composition root installs
-in `:renderer:compose`, so no design renderer depends on the Material icon
-artifact. A scope may re-declare the 13 neutral EBP roles for its subtree;
-the design renderer publishes the resolved `ComposeThemeRoles` through
-`:renderer:compose`, and Glasspane's scoped-child dispatch re-derives its
-Material scheme from them with the same derivation the pushed theme uses.
-Roles change colors only: polarity, density, layout direction, and syntax
-colors remain the receiver theme's.
+## Companion module graph
 
-Presenting a screen inside such a scope does not cost it host chrome. Chrome
-composes its drawer, adaptive dock, app FAB and shell globals into the
-scaffold a screen presents, descending a bounded number of single-child
-wrapper nodes, and the receiver's back reader descends the same way. The
-wrapper is recognized by shape, so the foundation still names no downstream
-extension. A
-malformed scope renders its children unscoped. Dialogs do not admit either
-app scope, and every canonical control outside them continues through
-Glasspane Material.
+`companion/settings.gradle.kts` currently composes 14 modules:
 
-The Material renderer's version is pinned by
-`companion/gradle/libs.versions.toml`'s `material3` entry. The catalog's
-`jetpacs-m3-material-version` constant restates that value so the device can
-identify the implementation it demonstrates; the catalog suite reads the
-version catalog and fails if those two values diverge.
+| Module | Responsibility and boundary |
+|---|---|
+| `:ebp-kmp` | Storage-neutral durable records, transaction SPI, reducers, and rollback-capable reference store; sourced from `ebp-kmp` |
+| `:wire` | Transport, framing, generated EBP vocabulary, validation, sessions, triggers, and protocol handling; sourced from `ebp-kmp` |
+| `:core:model` | Jetpacs read models and identifiers |
+| `:core:database` | Room 3 entities, DAOs, database builder, migrations, and exported schemas |
+| `:core:ebp-store` | Jetpacs' Room-backed implementation of the EBP durable-store SPI |
+| `:core:data` | Read-only Room projections for product UI consumers |
+| `:core:navigation` | Closed serializable Navigation 3 destination keys and policy |
+| `:core:testing` | Shared Jetpacs read-model fakes and fixtures |
+| `:renderer:model` | Toolkit-neutral contribution/profile registry, raw EBP readers, semantics, action/editor hosts, and editing models; sourced from `ebp-compose` |
+| `:renderer:compose` | Compose Foundation reference rendering and shared input/editor controllers; sourced from `ebp-compose`, with no Material dependency |
+| `:renderer:glance` | Restricted generic home-screen-widget renderer and profile |
+| `:renderer:jetpacs` | Foundation-only `jetpacs.components` and optional `jetpacs.design` implementations; sourced from the in-repository `jetpacs-components/` module |
+| `:renderer:material3` | Jetpacs Material 3 implementation and optional extension; owned locally in `companion/renderer/material3` |
+| `:app` | Android composition root, Room/Nav shell, transport, platform adapters, and exact installed renderer selection |
 
-Durable delivery crosses two independent failure domains. Jetpacs commits
-outgoing events to a Room 3 transactional outbox. Emacs commits received
-EventIds plus recoverable application work to its own `ebp-sqlite.el` inbox
-before returning `accepted`. The sender's Room database is never the receiver's
-acceptance evidence.
+The app may compose these modules; it does not transfer their authority. In
+particular, `:wire` cannot depend on Room, Android, Navigation, Compose, or a
+downstream renderer, and `:renderer:compose` cannot depend on Material.
 
-Room 3 and Navigation 3 are Jetpacs choices, not EBP requirements. The EBP spec
-must permit their use without naming or requiring them.
+## Runtime data flow
 
-Implementation and backend contracts prove the observable behavior first.
-After those gates are green, audit mismatches against the current EBP spec:
-change the implementation when it is out of spec, or expand the spec only when
-the missing requirement can be stated without a language, platform, database,
-UI toolkit, or product dependency.
+Accepted presentation follows one path:
 
-## Revived optional platform breadth
-
-The executed reuse and promotion ledger is
-[`REVIVAL-EXECUTION.md`](REVIVAL-EXECUTION.md). Historical POC source is valid
-implementation evidence; it is neither prohibited lineage nor protocol
-authority. The revived Android adapters therefore reuse prior platform
-mechanics behind current ownership seams instead of restoring an old message
-layer.
-
-`:wire` owns the closed Section 20 capability schemas, Section 21 trigger
-validation/runtime, shared state-predicate semantics, context-less action
-validation, and `offline.wake` grant enforcement. `:app` projects a fresh
-device report per connection and owns Android permissions, exact Intent and
-package allowlists, platform effects, OS observations, fixed tile services,
-shortcut trust boundaries, and encrypted storage. Elisp builders return the
-actual SurfaceSpec plist/vector IR and do not introduce a second tile or
-trigger model.
-
-Optional platform breadth never weakens the dumb-renderer boundary. An Android
-source produces typed state or occurrences; wire code decides whether a
-registration matches and whether an event is durably admitted; Emacs remains
-the owner of application actions and policy. In particular, this build does
-not advertise `offline.wake` until an exact inert OS-local wake target exists
-and can be rechecked immediately before every signal.
-
-## Module map
-
-| Module | Responsibility | May depend on |
-|---|---|---|
-| `:ebp-kmp` | Storage-neutral durable-store SPI, reducers, and rollback-capable memory reference implementation | Kotlin, serialization |
-| `:wire` | Transport, framing, EBP vocabulary, generic injected renderer-admission seam, and protocol handling/state | `:ebp-kmp`, Kotlin, serialization, coroutines, platform transport abstractions only |
-| `:core:model` | Jetpacs read models and identifiers | Kotlin |
-| `:core:database` | Complete Room 3 schema, DAOs, builders, migrations, and exported schemas | Room 3, SQLite |
-| `:core:ebp-store` | Jetpacs Room implementation of the storage-independent EBP transaction SPI | `:ebp-kmp`, `:core:database` |
-| `:core:data` | Read-only Room `Flow` projections for Jetpacs UI state | `:core:model`, `:core:database` |
-| `:core:navigation` | Serializable Nav 3 destination keys | Nav 3 |
-| `:core:testing` | Shared read-model fakes and backend contract fixtures | `:core:data`, `:core:model` |
-| `:renderer:model` | Toolkit-neutral renderer contribution/profile registry, shared raw-EBP JSON readers, semantic projection, action/editor hosts, and editing transport models | `:wire`, serialization, coroutines; no Compose or design-system dependency |
-| `:renderer:compose` | Foundation-only reference renderer, generic semantics mapping, and shared state-based text-input/editor controllers | `:renderer:model`, Compose Foundation/UI; no Material or Styles |
-| `:renderer:material3` | Glasspane Material 3 extension, rich app presentation, theme projection, custom Styles components, and visual/accessibility tests | `:renderer:compose`, Material 3, adaptive Compose, experimental Foundation Styles |
-| `:renderer:jetpacs` | Jetpacs-owned Foundation components, private theme tokens, Styles, generated `jetpacs.components` vocabulary, and visual/accessibility tests | `:renderer:compose`, Compose Foundation/UI, experimental Foundation Styles; no Material |
-| `:renderer:glance` (later) | Restricted widget renderer/profile | `:renderer:model`, Glance |
-| `:feature:pairing`, `:feature:surface`, `:feature:settings` | ViewModels, entry providers, and Jetpacs feature UI | Jetpacs `:core:*` modules |
-| `:app` | Single Android composition root, transport/platform adapters, shell/navigation, and exact composition of installed renderer implementations | `:wire`, `:renderer:material3`, `:renderer:jetpacs`, Jetpacs core/feature modules |
-
-The present split is intentional: `:wire` consumes `:ebp-kmp` for portable
-durability behavior, while `:core:ebp-store` supplies Jetpacs' Room-backed
-implementation. A future publication boundary should preserve these APIs and
-must not pull Jetpacs choices into EBP.
-
-## Room 3 durable-state contract
-
-Room is Jetpacs' sole durable implementation of information accepted from
-Emacs, not an authority beside Emacs and not a second projection beside POC 2
-files. Storage-independent acceptance rules remain `:ebp-kmp` reducer
-behavior; the Room adapter supplies their atomic persistence.
-
-Room also owns the Companion's durable outbound event queue. It does not own
-the Emacs-side EventId receipt/work commitment: that is an independent local
-SQLite inbox controlled by the receiving endpoint. Loss of Jetpacs or its
-session must not erase Emacs' accepted-event evidence.
-
-- Every durable record derived from Emacs is partitioned by pairing identity.
-- Room stores surfaces/tombstones/stale metadata/current views, input drafts,
-  queue counters/events/clock state, reminders/receipts, trigger
-  registrations/runtime, themes, idempotent platform effects, app bridge
-  policy, and revocation cleanup state.
-- Surface acceptance, draft reconciliation, queue dedupe/counter admission,
-  reminder receipt handling, trigger runtime plus event admission, and pairing
-  revocation use explicit Room transactions.
-- No result is reported as accepted and no platform effect runs before commit.
-- DAO `Flow` values feed read-only repositories and ViewModels; composables do
-  not query the protocol engine or write accepted state.
-- Whole-database delete-and-replace refreshes and live Room/file dual-write are
-  forbidden.
-- Section 19 editor sessions, deltas, sequence counters, caret positions, and
-  completion results are session-scoped and non-durable. They must not enter
-  Room or the offline action queue.
-
-POC 1 used Room for queued events and triggers only. POC 2 introduced richer
-file-backed queue, surface/tombstone/draft, reminder, and trigger state. POC 3
-ports that richer behavior into one normalized Room 3 store and fixes the
-pairing, stale-state, commit-reporting, and cross-store transaction gaps rather
-than returning to POC 1's smaller schema.
-
-## Navigation 3 contract
-
-Navigation keys are Jetpacs presentation state. They identify pairing,
-catalog/surface, and settings destinations; they do not become EBP methods or
-document fields. The initial keys are serializable so `rememberNavBackStack`
-can own saved navigation state when the current activity is migrated.
-
-The first app migration should follow the local `basicsaveable` recipe for one
-back stack. Multiple stacks and adaptive scene strategies are later additions,
-after the single-stack dumb renderer is correct.
-
-## Local reference review
-
-All references below are local checkouts; GitHub is not an authority for this
-work.
-
-| Local checkout/ref | Commit reviewed | Pattern adopted |
-|---|---|---|
-| Jetpacs `slop-fork/main` | `9241bdd7c3881fbbdce3e4d871208c793cd0d99c` | Current KMP-shaped `:wire`/app baseline and later rebase target |
-| EBP superproject gitlink | `4f8c7ba2bf5a38bcbe41246f1fc0b0c8f63e8776` | Current protocol, durability, and Section 19 authority |
-| `architecture-templates` `origin/multimodule` | `9babdc9ca9b9559194bef3238503656b9a1e163e` | Data/database/testing/navigation module boundaries |
-| `architecture-samples` TODO app | `ee66e1526b84c026615df032c705842b7d2a521f` | Repository as the data entry point, Room `Flow` as local source, screen state holders, shared fakes |
-| `nav3-recipes` | `6564c15b4d1e8be318bffdf980504757d2d70645` | Saveable back stack, serializable `NavKey`, later multiple-stack/scene patterns |
-| `kotlin-multiplatform-samples` Fruitties | `7844c73335eebc83f0162cfc4b22eb025a2f5458` | KMP Android library DSL, per-target KSP, generated Room constructor, bundled SQLite driver |
-| AndroidX | `d69c96e6bc402016899904d66646816a62ebff4d` | Room 3 packages/plugin, write transaction, builder, current local release `3.0.0-rc01` |
-| Emacs | `ba331c27f14adb429ef21fdf3d5c62febb7564d3` | Current built-in `track-changes.el`; Step 3 stays within the version 1.2 API shipped by Emacs 30.1 |
-
-The TODO app's full fake-network refresh is deliberately not adopted. EBP
-already supplies ordered, revisioned mutations, so deleting all local rows and
-repopulating them would waste bandwidth, erase revision floors, and weaken
-ordering guarantees. Its Hilt setup is also not copied into this first
-scaffold; the repository boundary permits adding the selected DI mechanism
-after the pending rebase without changing cache semantics.
-
-## Implementation sequence
-
-### Historical Step 1 — preparatory scaffold and device proof
-
-The original five-module scaffold, revision/tombstone prototype, rebase, former
-high API floor, Room KMP/device proof, CI gates, and toolchain verification are useful
-preparatory evidence. They are not the final persistence architecture.
-
-Run bundled-SQLite DAO and repository integration tests on the KMP JVM target.
-Do not treat Android host tests as device coverage: the Android variant of the
-bundled driver loads JNI from an Android package, and local Room 3 itself
-disables `testAndroidHostTest` for its multiplatform suite. Prove the Android
-boundary by compiling the Android KMP variants and assembling the app. The
-device follow-up reused the same `commonTest` suite on connected Android
-hardware and was verified on a Pixel Tablet running Android 17/API 37.
-
-### Step 2 — clean Room-integrated rebuild
-
-Recreate the Companion from the local architecture template, preserve POC 2
-behavior as backend contracts, add the generic suspending transaction SPI and
-serialized runtime actor, implement the complete normalized Room schema, and
-port one durable vertical slice at a time. The final data path is:
-
-```
-:wire transport / framing / protocol
-        -> :ebp-kmp reducer / transaction SPI
-        -> :core:ebp-store Room transaction
-        -> committed Room 3 state
-        -> read-only repository Flow
-        -> screen ViewModel StateFlow
-        -> registry-derived target profile
-        -> Compose Foundation core renderer
-        -> app-composed design renderers (`:renderer:material3` and
-           `:renderer:jetpacs` here)
+```text
+Emacs app state
+  -> deterministic SurfaceSpec builder
+  -> ebp.el session and EBP frame
+  -> :wire validation/session handling
+  -> :ebp-kmp reducer inside its transaction SPI
+  -> :core:ebp-store Room transaction
+  -> committed Room state
+  -> selected target profile and native renderer
 ```
 
-The former typed post-accept cache callback is not a persistence seam. A
-post-commit domain change may notify platform-effect adapters, but Room is
-already committed before it exists. Move destination ownership to a saveable
-Nav 3 back stack only after the Room store cutover. A catalog destination
-selects a cached EBP surface; it does not define the catalog.
+A durable action crosses two independent failure domains:
 
-The complete work packages, schema, transaction matrix, clean-cutover policy, and
-cutover gates live in `PLAN-room3-rebuild.md`.
+```text
+Android gesture
+  -> typed ActionDescriptor and state flush
+  -> bounded Companion actor
+  -> Room outbox commit
+  -> EBP delivery/replay
+  -> Emacs SQLite receipt + recoverable work commit
+  -> accepted response
+  -> Companion removes the resolved outbox record
+```
 
-### Receiver component styling and accessibility
+A socket write, Android platform call, or Compose callback never occurs inside
+a Room transaction. Platform work is represented durably where required and
+is reconciled after commit.
 
-The experimental Compose Styles API is confined to downstream design-renderer
-modules; it is neither a new EBP styling language nor a dependency of
-`:renderer:compose`. In `:renderer:material3`, `EbpTheme` resolves the system or
-authored EBP palette, derives private Material color roles from the 13 neutral
-wire roles, installs `MaterialTheme`, and projects the same colors and shapes
-through `ProvideJetpacsStyleTokens`. Only custom, receiver-owned components
-consume its `JetpacsComponentStyles`; Material components continue to use
-their supported parameters and Material tokens.
+## Durable state
 
-`:renderer:jetpacs` has an independent private theme derived from the same
-neutral EBP roles and never reads or provides `MaterialTheme`. Its public
-`JetpacsAction`, `JetpacsChoice`, `JetpacsPanel`, and state-based
-`JetpacsTextField` and `JetpacsEditor` composables accept
-`style: Style = Style`; Styles own visuals and ordinary modifiers own layout,
-input, enabled state, focus, and semantics. Action, Choice, and field styles may
-animate bounded interaction colors, while editor styles never animate caret,
-selection, or text-layout state. The Action and Choice each expose one full-row
-target, Panel labels are headings without merging their child tree, and each
-field or editor retains one editable interaction owner while labels, affixes,
-glyphs, and logical line numbers remain presentation-only.
+The production Companion opens one `jetpacs.db` Room database. The current
+schema is version 2 and is the only production store for accepted EBP state and
+the Companion outbox. Records derived from Emacs are partitioned by pairing.
+The database includes surfaces and drafts, queue state and issued event IDs,
+reminders and receipts, trigger registrations/runtime, themes, platform
+effects, widget bindings/tokens, pairing runtime, and crash-resumable
+revocation state.
 
-Its `jetpacs.scope` renderer emits canonical children directly through the
-shared dispatcher under the owning `jetpacs.components` scope. It creates no
-layout, semantics, state, or interaction owner. The composition root resolves
-canonical `text_input` to `JetpacsTextInputRenderer` and canonical local or
-synchronized `editor` to `JetpacsEditorRenderer` only in that subtree;
-Glasspane Material dispatch continues outside it.
+Legacy file stores and prototype databases are not imported, dual-written, or
+used as a fallback. Emacs remains the authored-state authority and can re-push
+desired state into a clean Companion store.
 
-The existing Material gallery components deliberately exercise separate
-contracts:
+Session-only editor state, dialog/pie-menu state, navigation stacks, focus,
+scroll positions, animations, and Emacs-side durable receipts do not enter
+Room. See [`PLAN-room3-rebuild.md`](PLAN-room3-rebuild.md) for the schema and
+transaction matrix.
 
-- `JetpacsCatalogAction` is one full-row button target used by the native app
-  catalog.
-- `JetpacsChoiceRow` is one full-row radio target; its Material `RadioButton`
-  glyph has no callback, so accessibility services never encounter duplicate
-  controls for one setting.
+## Renderer and profile ownership
 
-Text-editing behavior is not Material-owned. `:renderer:model` defines the
-toolkit-neutral action/state and synchronized-editor hosts and carries input
-display epochs, editor mirrors, completion offers, raw annotations, and exact
-Unicode-scalar/UTF-16 conversions. `:renderer:compose` owns the state-based
-`TextInputController` and `EditorController`; downstream renderers supply only
-their field decoration, palette, typography, annotations, completion popup,
-and toolbar presentation. Both Glasspane's Material field and Jetpacs'
-Foundation field consume the same `TextInputController` and toolkit-neutral
-presentation binding. The Jetpacs mapping adds only its compact work surface,
-private palette, code-native decoration glyphs, selection colors, and
-syntax-role palette. `JetpacsEditor` consumes the same shared
-`EditorController` through the shared presentation binding for both local and
-synchronized documents, adding a Foundation work surface, local syntax
-projection, shared-scroll logical line gutter, and toolbar presentation without
-importing Material. A synchronized binding exposes opening, ready, composing,
-awaiting-reconciliation, stale, offline-read-only, and closed phases. Only
-READY admits ordinary edits, saves, Enter, completion, or commands; an active
-composition may finish before a pending remote mirror is adopted atomically.
-Jetpacs presents the shared synchronized-editor tooling without adding another
-protocol or host. Completion is requested only for an opted-in READY editor;
-the bounded inline list preserves original wire indices through local
-narrowing, and candidate documentation is fetched lazily and remains tied to
-the visible offer epoch. Authoritative fontification uses the contract's fixed
-roles, exact-text diagnostics provide both decoration and error semantics, and
-eldoc appears only against the matching mirror sequence and text. A bounded
-single local edit may shift still-applicable fontification while the local
-syntax projection supplies the fallback. Toolbar commands capture the active
-selection at occurrence time and still pass through the shared host's READY
-and session gates. These additions are non-animated Jetpacs presentation;
-caret, selection, text layout, synchronization, and command policy remain in
-their existing owners.
+EBP 3 advertises positive profiles per surface target. Extension identifiers
+and namespaced node types are owned by downstream manifests; EBP transports
+them opaquely. Admission requires both the node type and its owning extension.
+The app derives welcome profiles from the same installed contributions used by
+Compose dispatch, preventing an advertised/implemented split.
 
-The application bridge projects authenticated wire state into that neutral
-lifecycle. Transport loss retains only the process-volatile displayed text and
-UTF-16 selection, makes it immediately read-only, and clears session-bound
-offers and annotations. A reconnect opens a fresh editor session from that
-display seed only when no explicit SYNCING surface snapshot replaced it. The
-wire engine remains the one scalar-offset, sequence, byte-limit, stale, and
-session-closure authority; neither renderer owns a second synchronization
-protocol.
+The normal app profile composes core Foundation rendering, Jetpacs Material
+3, and `jetpacs.components`. Dialogs receive core plus Material; notification,
+widget, and tile targets have their own narrower profiles. The optional
+`jetpacs.design` runtime is default-off, app-only, and installed atomically as
+typed schema, semantic validator, profile contribution, Compose extension,
+and canonical-node overrides.
 
-Action handoff and admission are distinct. A renderer synchronously learns
-whether the app host accepted an occurrence into the ordinary confirmation,
-capture, and dispatch path. Every handed-off occurrence then receives exactly
-one terminal callback on the Android main thread. Only a committed durable
-queue record or a live `accepted`/`duplicate` result is safe remote admission;
-receiver-local builtins complete under a separate local outcome, while local,
-queue, storage, transport, and peer refusals remain explicit failures. Normal
-`clear_on_submit` waits for safe admission and is guarded against a later edit.
-Passwords never enter accepted draft state, `state.changed`, saved Compose
-state, or logs; the owning occurrence captures the volatile value, and every
-terminal result or presentation disposal erases it. Remote editor mirror
-adoption bypasses the local change path and cannot echo a delta. Local editors
-publish drafts only when `publish_state` is authored and are bounded by
-`max_field_bytes`; synchronized documents use the independent
-`max_editor_bytes` limit. Both limits count JCS-encoded text at the controller
-boundary.
+`jetpacs.scope` selects the Jetpacs field/editor presentation without changing
+validation. When enabled, `jetpacs.design_scope` can style its subtree and
+reselect the canonical implementations of `text`, `card`, `icon`,
+`icon_button`, `badge`, `empty_state`, `button`, `chip`, `divider`,
+`section_header`, `menu`, `switch`, `collapsible`, `month_grid`, `dropdown`,
+`text_input`, and `editor`. An override may decline a node it cannot faithfully
+render, returning control to the normal dispatcher.
 
-Generic accessibility is not Material-owned. `:renderer:model` consumes the
-contract-generated §16.5.1 schema and node defaults, resolves accessible names
-in the order `semantics.name`, `content_description`, textual `label`, icon
-name, node type, then `node`, and derives roles and state only from existing
-Node members. `:renderer:compose` maps that projection through Compose
-Foundation. Both the Foundation renderer and Glasspane Material renderer use
-the same additive modifier; it never clears or merges children.
+Chrome and snackbar composition traverse only the bounded, recognized
+single-child presentation-wrapper shape to find a scaffold. Foundation code
+does not name the downstream wrapper. Dialogs do not inherit either Jetpacs
+scope. See [`EBP3-RENDERER-MIGRATION.md`](EBP3-RENDERER-MIGRATION.md).
 
-The projection is attached to the bounds that own the interaction. Inner
-glyphs remain decorative, a control retains one click target, section headers
-are headings, progress and collapsibles expose their derived state, and
-labeled swipe sides become custom accessibility actions. Authored custom
-actions call `RenderCtx.action`, so dialog rebinding, confirmation, durable
-admission, offline policy, capture fields, and result handling are identical
-to a visible action. Compose reports success after that ordinary-path handoff,
-not after a remote completion. Chrome places its existing screen title in
-`pane_title`; this changes announcements only and has no layout or styling
-effect.
+## Navigation and chrome
 
-Both design renderers' component galleries and their screenshot and
-device-semantics envelopes are recorded in
-[`companion/TESTING.md`](../companion/TESTING.md). Screenshot references are
-deterministic renderer fixtures; real-device tests remain required for focus,
-accessibility services, input, persistence, reconnect, and navigation.
+Navigation 3 owns receiver destinations such as setup, catalog, selected
+surface, and settings. Keys contain identifiers only. EBP owns a SurfaceSpec's
+multi-view state, revisions, and `view.switch`; no spec or Room entity is put
+in a Nav key. The precise back precedence and process-restoration rules live in
+[`NAV3-EBP-BOUNDARY.md`](NAV3-EBP-BOUNDARY.md).
 
-Before adapter work, run a local-source best-practices audit and make its
-findings an explicit gate:
+Elisp chrome represents each bounded per-surface screen stack as one EBP
+`multi_view`. It composes the host drawer, adaptive bottom bar/navigation rail,
+application FAB, and shell globals into each eligible scaffold while preserving
+authored-slot precedence and isolating a broken seam. The functional contract
+is [`CHROME-VOCABULARY.md`](CHROME-VOCABULARY.md).
 
-- Gradle wrapper, AGP, Kotlin, KSP, and Compose compiler compatibility,
-  including a verified distribution checksum for the selected wrapper.
-- Android 14/API 34 floor behavior plus current target-SDK behavior through
-  API 37: lifecycle, foreground services/background starts, exact-alarm
-  fallback, permissions, edge-to-edge, security, accessibility, and adaptive
-  layouts.
-- Current Android Jetpack guidance for repository/state-holder boundaries,
-  lifecycle-aware collection, testing, and dependency injection.
-- Compose Multiplatform source-set ownership, immutable/stable UI state,
-  saveable state, semantics, performance, and platform adapters.
-- Room 3 schema export and migrations, constructor/driver configuration,
-  transaction boundaries, coroutine contexts, DAO Flow behavior, and tests.
-- Nav 3 saveable back stacks, entry decorators, modular entry providers,
-  predictive back, deep links, scenes, and adaptive layouts.
-- Emacs 30+ built-ins, especially `jsonrpc.el` and `track-changes.el`, with
-  ERT coverage on the minimum supported 30.1 release and current Emacs.
-- EBP conformance against local EBP `slop-fork/main`, keeping both
-  `:ebp-kmp` and `ebp.el` independent of Jetpacs.
+## Text editing
 
-Treat every compiler deprecation warning as an audit input. The first green
-Android build already identifies inherited renderer/wire cleanup candidates:
-AutoMirrored icons, positional `rememberSaveable`, dynamic swipe anchors,
-primary/secondary tab rows, and Kotlin 2.4 exhaustiveness.
+The generic Section 19 synchronization engine lives in the `ebp.el` repository
+and uses Emacs 30.1's public `track-changes.el` API. Jetpacs owns buffer
+selection, reader/editor presentation, toolbar policy, and product UX adapters.
+Compose's shared state-based controllers translate actual IME, paste, and
+accessibility edits into bounded scalar-index splices; they do not diff whole
+strings after every edit.
 
-### Step 2.5 — harden the workspace before the synchronization engine
+Editor sessions, shadows, sequence numbers, carets, completion results,
+diagnostics, and fontification are session state. They are intentionally absent
+from Room and the offline action queue. Full text is reserved for open and
+explicit resynchronization; incremental traffic uses ordered edits.
 
-Pause feature work after the Room cutover and renderer connection. Refine the
-evidence-backed hardening backlog before changing `ebp-sync.el` or its
-`track-changes.el` engine:
+## Optional Android platform breadth
 
-- Inventory Kotlin and Elisp code smells, duplicated behavior, oversized
-  files, leaky boundaries, and missing characterization tests. Classify each
-  extraction as Jetpacs app code, reusable `:ebp-kmp`, upstreamable `ebp.el`,
-  or workspace-only tooling; do not move product policy into EBP.
-- Inventory existing utilities, reference material, generators, and lookup
-  assets, especially `docs/lookup-tables`, vocabulary generators, goldens,
-  validation scripts, and device helpers. Prefer extending one authoritative
-  utility over introducing parallel helpers or hand-maintained tables.
-- Diff the rebased m3-fidelity implementation and its tests against the DSL
-  core. Identify missing or inconsistent primitives for structure, modifiers,
-  state, actions, theming, adaptive behavior, accessibility, and expressive
-  components; distinguish EBP vocabulary gaps from renderer-only defects.
-- Build a POC 1 versus POC 2 regression and pattern matrix covering behavior,
-  performance, persistence, synchronization, tests, and developer workflows.
-  Mark each item restore, improve, replace with a built-in, or intentionally
-  retire, including the former `jetpacs-sync.el` behavior now planned as
-  generic `ebp-sync.el`.
-- Propose developer-experience tools where they remove repeated reasoning:
-  one-command local gates, schema/vocabulary drift checks, lookup-table
-  generation, golden refresh/verification, module-boundary lint, device
-  selection, fixture builders, and concise machine-readable audit reports.
+`:wire` owns the closed capability schemas, trigger validation/runtime, state
+predicates, context-less action validation, and `offline.wake` grant checks.
+`:app` owns current Android permission checks, exact Intent/package allowlists,
+OS observation, platform effects, shortcut ingress, fixed tile services, and
+encrypted storage. Android sources produce typed state or occurrences; they do
+not decide application policy.
 
-Land only low-risk cleanup needed to make Step 3 legible. Larger abstractions
-require at least two demonstrated consumers or a measured duplication/problem,
-plus characterization coverage that proves behavior before and after the move.
+The current capability, trigger, state, and tile map is in
+[`REVIVAL-EXECUTION.md`](REVIVAL-EXECUTION.md). Android trust transitions are
+summarized in [`SECURITY.md`](SECURITY.md). Generic home-screen widgets are a
+separate target described by [`GLANCE-WIDGETS.md`](GLANCE-WIDGETS.md).
 
-### Step 3 — restore synchronization as generic `ebp-sync.el`
+## Verification ownership
 
-Port the behavior of POC 1's `emacs/jetpacs-sync.el`, but name the upstreamable
-module `ebp-sync.el` and keep every symbol and dependency Jetpacs-agnostic.
-Require built-in `jsonrpc.el` through the EBP transport and built-in
-`track-changes.el`; do not hand-roll either subsystem.
+Use the narrowest owning test first:
 
-For each authorized synchronized buffer:
+- validate EBP in `../../../ebp` before relying on protocol behavior;
+- run the owning EBP Kotlin/Elisp or renderer-extension suite for an upstream
+  change;
+- run `test/run-tests.sh` for Jetpacs Elisp and cross-repository integration;
+- use [`../companion/TESTING.md`](../companion/TESTING.md) for Room, wire,
+  renderer, screenshot, lint, assembly, and device commands; and
+- use real-device evidence whenever behavior crosses Android lifecycle,
+  platform permission, native presentation, process death, or input boundaries.
 
-1. Keep a buffer-local tracker ID, EBP session, sequence, and exact shadow.
-   Register with `track-changes-register` using the default deferred signal,
-   not `:immediate`, so JSON encoding and transport never run inside low-level
-   change hooks.
-2. Use a signal accepting an optional disjoint-distance argument. Register with
-   `:disjoint t` and, on that special callback, call
-   `track-changes-fetch` before returning. The fetch callback may copy and
-   enqueue data but must not modify the buffer, block, encode JSON, or perform
-   I/O. This prevents two far-apart edits from being widened into one large
-   replacement solely for bookkeeping.
-3. For the normal deferred callback, call `track-changes-fetch`. Its
-   `(beg end before)` tuple already coalesces a command's nearby low-level
-   mutations. Build one queued `edit.apply` splice from zero-based scalar
-   `start = beg - 1`, `del = scalar_length(before)`, and the current
-   `buffer-substring-no-properties` for `beg..end`. Advance a session only
-   after the Companion accepts that exact next sequence.
-4. Serialize queued applies: only one operation may contend for `seq + 1`.
-   A short bounded queue preserves Section 19 ordering while command-level
-   coalescing reduces frames and `:disjoint t` avoids oversized unrelated
-   regions.
-5. Treat `before == 'error`, `track-changes-inconsistent-state-p`, a shadow
-   mismatch, or a typed stale result as a resynchronization boundary. Never
-   guess a splice or send a blind whole-document replacement.
-6. When applying a remote `edit.delta`, use one atomic buffer change while
-   honoring write protection. Immediately consume that known self-change with
-   public `track-changes-fetch` and an ignore callback so it is not echoed
-   back; then update the session shadow and sequence.
-7. Validate that the entire document and splice strings are losslessly
-   representable as Unicode scalar values before exposing synchronization.
-   Emacs positions can be used directly only after that eligibility check.
-8. Call `track-changes-unregister` on close, document change, identity change,
-   mode disable, and buffer death. Transport loss closes the EBP session even
-   if the Emacs buffer survives.
-
-This transfers incremental text only after edits, combines noisy low-level
-changes at command granularity, and preserves small independent splices. Full
-text remains limited to `edit.open` and explicit `edit.resync` recovery.
-
-### Step 4 — feature modules and Compose Catalog parity
-
-Introduce feature modules only as screens become real: pairing, surface,
-settings, and an isolated renderer test app. Use ViewModels that combine
-repository `Flow` values into immutable `StateFlow` UI state, following the
-local TODO sample. Recreate each Compose Catalog example in Elisp/EBP and test
-the dumb renderer against it before adding another example.
-
-Glance remains a later Jetpacs renderer profile. It consumes the same cached
-Room state through the renderer-model seam, stores widget-instance configuration
-separately, and routes actions through the Room outbox. It is advertised only
-after its restricted handler registry passes device tests. Quick Settings stays
-a separate `TileService` projection.
+Compilation alone is not evidence for persistence, reconnect, offline replay,
+native rendering, accessibility, or gesture behavior.

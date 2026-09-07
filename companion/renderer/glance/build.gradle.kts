@@ -29,5 +29,5 @@ dependencies {
 }
 
 tasks.withType<Test>().configureEach {
-    systemProperty("ebp.dir", rootProject.file("../../ebp-poc/ebp").absolutePath)
+    systemProperty("ebp.dir", (gradle.extra["jetpacs.repositoriesRoot"] as File).resolve("ebp").absolutePath)
 }

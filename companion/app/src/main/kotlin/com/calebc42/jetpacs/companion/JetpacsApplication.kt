@@ -93,7 +93,7 @@ class JetpacsApplication : Application() {
         // An eighth of the app heap is a conservative retention budget — the
         // Semaphore(3) already bounds concurrent decodes on top of it.
         val am = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
-        com.calebc42.glasspane.material3.ImageCache.configure(
+        com.calebc42.jetpacs.material3.ImageCache.configure(
             am.memoryClass.toLong() * 1024 * 1024 / 8)
         container = JetpacsProcessContainer.create(this)
         // The best-effort FGS owns listener lifetime. This process root constructs the

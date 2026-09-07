@@ -32,15 +32,15 @@
 (ert-deftest jetpacs-apps-renderer-requirements-validate-and-gate-open ()
   "Apps declare extensions eagerly and refuse an unsupported live renderer."
   (jetpacs-apps-test--env
-    (dolist (bad '(glasspane.material3
+    (dolist (bad '(jetpacs.material3
                    ("material3")
-                   ("glasspane.material3" "glasspane.material3")))
+                   ("jetpacs.material3" "jetpacs.material3")))
       (should-error
        (jetpacs-defapp "bad" :surfaces '("bad.main")
                        :requires-extensions bad)))
     (jetpacs-defapp "catalog" :label "Components"
                     :surfaces '("catalog.main")
-                    :requires-extensions '("glasspane.material3"))
+                    :requires-extensions '("jetpacs.material3"))
     (let ((client (ebp-client-create
                    :receipt-file (make-temp-file "jetpacs-apps-receipts"))))
       (setf (ebp-client-state client) 'ready
@@ -54,18 +54,26 @@
                        'accepted))
         (should-not jetpacs-apps--current)
         (should (equal jetpacs-apps--unavailable
-                       '("catalog" . ("glasspane.material3"))))
+                       '("catalog" . ("jetpacs.material3"))))
         (should (equal pushed '("jetpacs.app-store")))
         (let ((json (jetpacs-node->canonical-json
                      (jetpacs-apps-unavailable-view))))
           (should (string-search
                    "Components cannot run on this renderer" json))
           (should (string-search
-                   "Missing renderer extension: glasspane.material3" json)))
+                   "Missing renderer extension: jetpacs.material3" json)))
+        ;; A matching node under the retired identity is not the new capability.
         (setf (ebp-client-profiles client)
               '(:app (:node_types ["text" "material3.assist_chip"]
                       :builtins [] :features []
                       :extensions ["glasspane.material3"])))
+        (should-not (jetpacs-apps-available-p "catalog"))
+        (should (equal (jetpacs-apps-missing-extensions "catalog")
+                       '("jetpacs.material3")))
+        (setf (ebp-client-profiles client)
+              '(:app (:node_types ["text" "material3.assist_chip"]
+                      :builtins [] :features []
+                      :extensions ["jetpacs.material3"])))
         (should (jetpacs-apps-available-p "catalog"))
         (should-not (jetpacs-apps-missing-extensions "catalog"))))))
 

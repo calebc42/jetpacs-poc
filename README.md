@@ -2,7 +2,7 @@
 
 POC 3 rebuilds the conformant rewrite around explicit repository and KMP
 boundaries, a Room 3 outbox/cache owned by Jetpacs, an independent SQLite
-inbox owned by `ebp.el`, and Navigation 3. The `../ebp-poc/ebp-kmp` repository
+inbox owned by `ebp.el`, and Navigation 3. The `../ebp-kmp` repository
 contains the storage-neutral KMP durable-store SPI, reducers, memory reference
 implementation, transport, framing, and protocol code. Jetpacs consumes those
 modules through workspace project directories; Jetpacs-specific policy lives
@@ -13,19 +13,20 @@ outside them. The complete ownership graph is in
 `docs/PLATFORM-RENTAL-REGISTER.md` for the detailed boundaries and local-source
 implementation references.
 
-The Android UI boundary is split deliberately. `../ebp-poc/ebp-compose` provides
+The Android UI boundary is split deliberately. `../ebp-compose` provides
 `:renderer:model` and `:renderer:compose`, implementing EBP's core nodes with
-Compose Foundation and no Material dependency. Sibling
-`glasspane-material3` owns the optional Material implementation, while sibling
-`jetpacs-components` owns the Material-free Jetpacs component language. This
-Companion is the composition root for both. Glasspane
-apps declare `glasspane.material3`, the separate Jetpacs Components catalog
-declares `jetpacs.components`, and EBP 3 advertises each opaque extension
-identifier independently from its namespaced node types.
+Compose Foundation and no Material dependency. Jetpacs owns the optional
+[Material 3 library](docs/material3/README.md) in `companion/renderer/material3`
+and `emacs/apps/jetpacs-material3`, while the `jetpacs-components/` module owns the
+Foundation-based component and style language. Tier 1 apps, including Glasspane
+and the Material catalog, explicitly declare `jetpacs.material3` when needed.
+The Companion currently bundles Material; a build without Material is a separate
+change. EBP advertises opaque extension identifiers independently from their
+namespaced node types.
 
 EBP 3.1's optional `semantics` envelope follows the same boundary. Its schema,
 accessible-name order, node roles/state defaults, and eight-action limit are
-generated from `../ebp-poc/ebp/contract.json`; `:renderer:model` projects them without a
+generated from `../ebp/contract.json`; `:renderer:model` projects them without a
 UI toolkit and `:renderer:compose` owns the single Compose Foundation mapping.
 The Material renderer consumes that mapping and owns no duplicate generic
 accessibility contract. Jetpacs authors the envelope with
@@ -46,7 +47,7 @@ The tags below are immutable historical snapshots, not code-use boundaries.
 Code from every lineage may be copied, cherry-picked, merged, ported, or
 adapted. Its lineage does not establish correctness: every reused part must be
 built and verified against the current normative
-`../ebp-poc/ebp/SPEC.md`. When desired protocol behavior is not defined there,
+`../ebp/SPEC.md`. When desired protocol behavior is not defined there,
 expand the normative rules and align the contract projection, goldens, and
 affected conformance tests before treating the implementation as compliant.
 
@@ -71,23 +72,32 @@ affected conformance tests before treating the implementation as compliant.
    its projection and conformance witnesses, and then conform the
    implementation.
 2. **Conformance before features.** A rung lands only with its `ebp`
-   fixtures green: the wire Goldens (`../ebp-poc/ebp/goldens/wire/` incl. the §9.3
+   fixtures green: the wire Goldens (`../ebp/goldens/wire/` incl. the §9.3
    known-answer vector), the frame/widget/hypertext corpora, and the §24.6
    adversarial vectors that apply to the rung.
 3. **Reuse by fitness, not lineage.** Any earlier implementation is eligible
    for reuse. Prefer adapting code that already fits the current specification
    and architecture; treat historical divergence maps and port manifests as
    audit guidance, never as reuse allowlists or prohibitions.
-4. **The POC contract is authored in `../ebp-poc/ebp/`.** This repo generates its wire
-   vocabulary from `../ebp-poc/ebp/contract.json` and byte-compares its projection
+4. **The POC contract is authored in `../ebp/`.** This repo generates its wire
+   vocabulary from `../ebp/contract.json` and byte-compares its projection
    back (the poc-v1 drift machinery pattern is kept).
 
 ## Layout
 
+This checkout lives at `~/workspace/jetpacs-poc/`. EBP, Glasspane, Grove Native, and the independent
+Jetpacs authoring library are sibling repositories in `~/workspace/`.
+`jetpacs-components/`, `jetpacs-automations/`, `jetpacs-platform-tools/`,
+`jetpacs-applet-mcp/`, and `jetpacs-component-catalog/` are included here.
+Automations, Catalog and Design Lab remain optional applets;
+Foundation remains independent of the optional Material 3 components.
+Set `JETPACS_REPOSITORIES_ROOT` when dependencies live in another collection.
+See [the local migration record](docs/LOCAL-REPOSITORY-LAYOUT.md).
+
 | Path | What |
 |---|---|
-| `../ebp-poc/` | Independent EBP POC specification and implementation repositories consumed by Jetpacs |
-| `emacs/` | Jetpacs product surfaces, app host, Org presentation adapters, and device integration; EBP libraries come from `../ebp-poc/ebp.el` and `../ebp-poc/ebp-org` |
+| `../ebp*` | Independent EBP specification and implementation repositories consumed by Jetpacs |
+| `emacs/` | Jetpacs product surfaces, app host, Org presentation adapters, and device integration; EBP libraries come from `../ebp.el` and `../ebp-org` |
 | `companion/` | Jetpacs Room/Nav/core modules and Android composition root; upstream protocol/renderers are mapped in `settings.gradle.kts` |
 | `emacs/apps/packaged-apps/` | Distribution manifest selecting optional downstream applets without owning them |
 | `test/` | Jetpacs and cross-repository integration suites |
@@ -142,3 +152,34 @@ Context-dependent, function-backed, composite, and scope-overriding commands
 are omitted because a generic flat applet view cannot faithfully or safely
 represent them. Final rows are rechecked against the canonical local agenda
 scope; custom keys, match expressions, settings, and paths remain in Emacs.
+
+### Shared Org drawer presentation
+
+Org skins can render a parsed table with `jetpacs-org-render-table`. It reuses
+the stock cell reader and alignment rules, spends the shared table/span/byte
+budgets, and returns nil when native rendering is unavailable. Its optional
+`hide-format-rows` argument hides cookie-only rows without changing the source
+or the stock renderer's default presentation.
+`jetpacs-org-render-image` similarly exposes standalone images and captions,
+reusing the stock HTTPS/local/attachment resolver and shared byte budget.
+`jetpacs-org-render-source-block` projects prepared Emacs face properties into
+monospace spans and exposes the existing Babel Play action. It respects shared
+span/byte budgets and binds the action to the source modification tick.
+Babel execution saves its results synchronously before returning acceptance.
+
+Org skins can use `jetpacs-org-render-heading-drawers` and
+`jetpacs-org-render-drawer-controls` to share the standard Properties/Logbook
+toggles. Drawer records contain source ranges and current overlay visibility;
+controls expose their starts to `jetpacs.org.toggle-drawer` and appear tonal
+when shown. The handler revalidates the live range before changing visibility.
+Skins can opt into mutually exclusive drawers with the optional `exclusive`
+argument to the controls builder and use `jetpacs-org-render-exclusive-drawers`
+for matching content visibility. This pure projection initially selects the first
+visible drawer. An exclusive tap switches or closes the selection using native
+overlays, affecting only exposed sibling drawers in that heading.
+A custom body renderer must omit records marked `:hidden`; toggling never
+edits the underlying Org text.
+
+Orgzly Native is restored as the sibling `../orgzly-native/` repository. Its
+current Foundation applet is bundled as an optional, inactive app alongside
+Glasspane and Grove; see [its setup and coverage](../orgzly-native/README.md).

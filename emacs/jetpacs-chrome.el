@@ -1275,16 +1275,20 @@ calls this).  At the root: idempotent no-op returning nil."
       (puthash surface (cdr stack) jetpacs-chrome--stacks)
       (jetpacs-chrome--push-quietly surface (caar (cdr stack))))))
 
-(defun jetpacs-chrome-reset-screens (surface-or-owner)
-  "Truncate SURFACE's stack to its root and navigate there.
+(defun jetpacs-chrome-reset-screens (surface-or-owner &optional no-push)
+  "Truncate SURFACE-OR-OWNER's stack to its root and navigate there.
 Keeps the root cons, so the registered builder survives; the push
-doubles as a hub refresh."
+doubles as a hub refresh.  With NO-PUSH, only truncate the stack; the
+caller must arrange presentation, for example by immediately pushing a
+peer screen.  This avoids presenting the root during a destination switch.
+The truncation remains committed if that subsequent push fails."
   (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
          (stack (gethash surface jetpacs-chrome--stacks)))
     (when stack
       (let ((root (last stack)))
         (puthash surface root jetpacs-chrome--stacks)
-        (jetpacs-chrome--push-quietly surface (caar root))))))
+        (unless no-push
+          (jetpacs-chrome--push-quietly surface (caar root)))))))
 
 (defun jetpacs-chrome-stack (surface-or-owner)
   "SURFACE's screen ids, top first, or nil (read-only)."

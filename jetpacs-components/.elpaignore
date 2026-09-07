@@ -1,0 +1,10 @@
+AGENTS.md
+gradle
+gradlew
+gradlew.bat
+renderer
+renderer-extensions
+test
+tools
+*.gradle.kts
+gradle.properties

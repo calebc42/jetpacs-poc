@@ -167,16 +167,16 @@ With one authorized device connected:
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsSemanticsTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.glasspane.material3.ui.JetpacsComponentsSemanticsTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.ui.JetpacsComponentsSemanticsTest
 
 ./gradlew :renderer:compose:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EbpSemanticsTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.glasspane.material3.ScopedCoreOverrideDispatchTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.ScopedCoreOverrideDispatchTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
-  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.glasspane.material3.LazyColumnPinnedTest
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.LazyColumnPinnedTest
 ```
 
 The shared editing class enters normalized text through a real
@@ -330,3 +330,33 @@ Install mode builds `:app:assembleDebug`, reinstalls it with app data
 preserved, provisions the selected Emacs home, and prints the installed package
 version and managed-tree audit. Pass the current serial from `adb devices -l`;
 wireless ADB ports do not remain stable across reconnects.
+
+## Restored Orgzly Foundation applet
+
+`OrgzlyPresentedScreenTest` consumes screen JSON exported by the sibling
+`orgzly-native/test/verify-applet.sh` from the actual applet builders. It checks
+light/dark rendering, independent note/fold action targets, and that edited
+field publication uses an ID captured by Save. It installs the production
+icon resolver and Foundation overrides in the test host. Run it with:
+
+```sh
+./gradlew :app:connectedDebugAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.companion.OrgzlyPresentedScreenTest
+```
+
+The four checks passed on the Pixel Tablet / Android 17 on 2026-09-05.
+Filesystem mutation and stale-reference behavior are tested separately by the
+applet's ERT suite; this fixture does not claim a live Emacs session.
+
+## Harp synthetic renderer flow
+
+`HarpPresentedScreenTest` loads actual Elisp-generated JSON fixtures from
+`app/src/androidTest/assets/harp` through the Companion renderer installation.
+It checks opaque profile selection, captured editor fields, light/dark charts,
+and exact dose-action arguments. It uses an inert recording host and synthetic
+records; it does not connect to a live Emacs vault or prove transport replay.
+
+From `jetpacs-poc/`, regenerate fixtures with
+`../harp-native/test/verify-applet.sh`, then copy the five corresponding `screens/*.json`
+files into the test assets. Run the instrumentation class on a device after
+`:app:assembleDebug :app:assembleDebugAndroidTest`.

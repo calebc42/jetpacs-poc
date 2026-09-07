@@ -7,7 +7,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 
-(defvar jetpacs-bootstrap-vault-directory "/sdcard"
+(defvar jetpacs-bootstrap-vault-directory "/sdcard/Jetpacs"
   "Vault used by the Recommended local bootstrap.")
 
 (let* ((bootstrap-file (or load-file-name buffer-file-name))
@@ -36,7 +36,7 @@
     (unless (file-exists-p (expand-file-name relative payload))
       (error "The prepared Jetpacs files are incomplete: missing %s" relative)))
   (unless (file-directory-p vault)
-    (error "Jetpacs cannot use the /sdcard Vault until shared storage is available"))
+    (error "Jetpacs cannot use the Vault until shared storage is available"))
 
   (cl-labels
       ((replace-tree

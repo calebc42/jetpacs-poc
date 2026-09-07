@@ -1,0 +1,286 @@
+{
+  "format": 2,
+  "extension": "jetpacs.design",
+  "description": "Jetpacs' bounded Elisp-authored Foundation design runtime.",
+  "node_types": [
+    "jetpacs.design_scope",
+    "jetpacs.styled",
+    "jetpacs.pressable"
+  ],
+  "targets": {
+    "app": [
+      "jetpacs.design_scope",
+      "jetpacs.styled",
+      "jetpacs.pressable"
+    ],
+    "dialog": [],
+    "notification": []
+  },
+  "definitions": {
+    "identifier": {
+      "type": "string",
+      "min_length": 1,
+      "max_length": 128
+    },
+    "design-value": {
+      "type": "object",
+      "required": {
+        "kind": {
+          "type": "enum",
+          "values": [
+            "boolean",
+            "color",
+            "dimension",
+            "font-family",
+            "font-weight",
+            "number",
+            "theme-role",
+            "text-align",
+            "token"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 256
+        }
+      },
+      "optional": {}
+    },
+    "property-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "design-value"},
+      "min_entries": 0,
+      "max_entries": 64
+    },
+    "state-rule": {
+      "type": "object",
+      "required": {
+        "state": {
+          "type": "enum",
+          "values": [
+            "disabled",
+            "selected",
+            "toggled",
+            "hovered",
+            "focused",
+            "pressed"
+          ]
+        },
+        "properties": {"type": "ref", "ref": "property-map"}
+      },
+      "optional": {
+        "motion": {"type": "ref", "ref": "identifier"}
+      }
+    },
+    "style": {
+      "type": "object",
+      "required": {
+        "properties": {"type": "ref", "ref": "property-map"},
+        "rules": {
+          "type": "array",
+          "items": {"type": "ref", "ref": "state-rule"},
+          "min_items": 0,
+          "max_items": 16
+        }
+      },
+      "optional": {
+        "motion": {"type": "ref", "ref": "identifier"}
+      }
+    },
+    "motion": {
+      "type": "object",
+      "required": {
+        "duration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "easing": {
+          "type": "enum",
+          "values": ["linear", "ease-in", "ease-out", "ease-in-out", "spring"]
+        }
+      },
+      "optional": {}
+    },
+    "token-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "design-value"},
+      "min_entries": 0,
+      "max_entries": 256
+    },
+    "style-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "style"},
+      "min_entries": 0,
+      "max_entries": 256
+    },
+    "motion-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "motion"},
+      "min_entries": 0,
+      "max_entries": 64
+    },
+    "style-references": {
+      "type": "array",
+      "items": {"type": "ref", "ref": "identifier"},
+      "min_items": 1,
+      "max_items": 16
+    },
+    "component-style-slot": {
+      "type": "enum",
+      "values": [
+        "text.body",
+        "text.title",
+        "text.headline",
+        "text.caption",
+        "text.label",
+        "text.mono",
+        "card.filled",
+        "card.elevated",
+        "card.outlined",
+        "list-item.container",
+        "list-item.overline",
+        "list-item.title",
+        "list-item.subtitle",
+        "swipe.cell",
+        "swipe.label",
+        "icon-button.container",
+        "badge.container",
+        "badge.label",
+        "empty-state.container",
+        "empty-state.title",
+        "empty-state.caption",
+        "button.filled",
+        "button.tonal",
+        "button.elevated",
+        "button.outlined",
+        "button.text",
+        "button.label",
+        "chip.container",
+        "chip.label",
+        "divider.line",
+        "section-header.container",
+        "section-header.title",
+        "menu.trigger",
+        "menu.container",
+        "menu.item",
+        "menu.item-label",
+        "menu.item-supporting",
+        "menu.group-label",
+        "switch.track",
+        "switch.thumb",
+        "switch.label",
+        "collapsible.header",
+        "collapsible.chevron",
+        "collapsible.body",
+        "month-grid.container",
+        "month-grid.header",
+        "month-grid.nav",
+        "month-grid.weekday",
+        "month-grid.day",
+        "month-grid.today",
+        "month-grid.range",
+        "month-grid.mark",
+        "action.container",
+        "action.label",
+        "choice.container",
+        "choice.indicator",
+        "choice.label",
+        "panel.container",
+        "panel.label",
+        "tabs.container",
+        "tabs.item",
+        "tabs.indicator",
+        "tabs.label",
+        "section-navigator.container",
+        "section-navigator.option",
+        "section-navigator.label",
+        "section-navigator.button",
+        "section-navigator.selector",
+        "section-navigator.popup",
+        "section-navigator.popup-item",
+        "text-field.outlined",
+        "text-field.filled",
+        "text-field.text",
+        "text-field.label",
+        "text-field.placeholder",
+        "text-field.supporting",
+        "text-field.affix",
+        "dropdown.field",
+        "dropdown.text",
+        "dropdown.label",
+        "dropdown.popup",
+        "dropdown.item",
+        "editor.surface",
+        "editor.chromeless",
+        "editor.text",
+        "editor.gutter",
+        "editor.toolbar",
+        "editor.toolbar-item",
+        "editor.sync-status",
+        "editor.completion-list",
+        "editor.completion-item",
+        "editor.candidate-document",
+        "editor.tooling-status",
+        "chrome.tab-label",
+        "chrome.tab-indicator",
+        "chrome.rail-label",
+        "chrome.rail-indicator",
+        "chrome.drawer",
+        "chrome.snackbar"
+      ]
+    },
+    "component-style-binding": {
+      "type": "object",
+      "required": {
+        "slot": {"type": "ref", "ref": "component-style-slot"},
+        "styles": {"type": "ref", "ref": "style-references"}
+      },
+      "optional": {}
+    },
+    "component-style-bindings": {
+      "type": "array",
+      "items": {"type": "ref", "ref": "component-style-binding"},
+      "min_items": 0,
+      "max_items": 99
+    },
+    "theme-role-map": {
+      "type": "identifier-map",
+      "values": {"type": "ref", "ref": "design-value"},
+      "min_entries": 0,
+      "max_entries": 13
+    }
+  },
+  "node_schema": {
+    "jetpacs.design_scope": {
+      "required": {
+        "tokens": {"type": "ref", "ref": "token-map"},
+        "styles": {"type": "ref", "ref": "style-map"},
+        "children": {"type": "node-array", "min_items": 0, "max_items": 10000}
+      },
+      "optional": {
+        "motions": {"type": "ref", "ref": "motion-map"},
+        "component_styles": {"type": "ref", "ref": "component-style-bindings"},
+        "theme_roles": {"type": "ref", "ref": "theme-role-map"}
+      }
+    },
+    "jetpacs.styled": {
+      "required": {
+        "styles": {"type": "ref", "ref": "style-references"},
+        "children": {"type": "node-array", "min_items": 0, "max_items": 10000}
+      },
+      "optional": {}
+    },
+    "jetpacs.pressable": {
+      "required": {
+        "styles": {"type": "ref", "ref": "style-references"},
+        "on_tap": {"type": "action"},
+        "children": {"type": "node-array", "min_items": 1, "max_items": 16}
+      },
+      "optional": {
+        "enabled": {"type": "boolean"},
+        "selected": {"type": "boolean"},
+        "toggled": {"type": "boolean"}
+      }
+    }
+  },
+  "stateful_when_present": {},
+  "at_least_one_non_empty": {}
+}

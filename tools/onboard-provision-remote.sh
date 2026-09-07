@@ -25,7 +25,7 @@ PAYLOAD_DIR="${4:-}"
 
 TERMUX_HOME="${JETPACS_TERMUX_HOME:-$HOME}"
 TERMUX_BIN="${JETPACS_TERMUX_BIN:-/data/data/com.termux/files/usr/bin}"
-SHARED_VAULT="${JETPACS_SHARED_VAULT:-/sdcard}"
+SHARED_VAULT="${JETPACS_SHARED_VAULT:-/sdcard/Jetpacs}"
 
 HOME_BEGIN=';;; >>> Jetpacs managed: Android Emacs HOME >>>'
 HOME_END=';;; <<< Jetpacs managed: Android Emacs HOME <<<'
@@ -40,7 +40,7 @@ usage() {
 usage: install-jetpacs.sh ACTION VAULT-MODE EMACS-HOME [PAYLOAD]
 
   ACTION       install | audit | remove | reset-home
-  VAULT-MODE   shared (/sdcard) | emacs | termux
+  VAULT-MODE   shared (/sdcard/Jetpacs) | emacs | termux
   EMACS-HOME   emacs (Local Emacs) | termux (Termux-shared)
   PAYLOAD      setup-kit payload directory; required for install
 
@@ -550,8 +550,9 @@ install_payload() {
   validate_existing_block "$EMACS_USER_INIT" "$INIT_BEGIN" "$INIT_END"
   validate_existing_block "$BOOTSTRAP_EARLY_INIT" "$HOME_BEGIN" "$HOME_END"
 
+  mkdir -p "$VAULT" 2>/dev/null || true
   if [ ! -w "$VAULT" ]; then
-    die "Vault $VAULT is not writable from Termux. For /sdcard, run \
+    die "Vault $VAULT is not writable from Termux. For shared storage, run \
 'termux-setup-storage', approve the Files permission, then retry."
   fi
   if [ -f "$JETPACS_ROOT/install.conf" ]; then

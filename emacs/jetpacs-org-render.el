@@ -235,13 +235,14 @@ node minimal."
         (setq interesting t)))
     (and interesting (append aligns nil))))
 
-(defun jetpacs-org-render--table-node (el)
+(defun jetpacs-org-render--table-node (el &optional hide-format-rows)
   "A (NODE . CELL-COUNT) for org table element EL, or nil for table.el.
 Rows come from `org-table-to-lisp'; hlines become rules, rows above the
 first hline render as the header group (org's own header convention)
 with bold cells.  The #+TBLFM line sits outside :contents-end and stays
 Tier-0 text.  Inline emphasis inside cells is a documented degrade —
-element granularity has no table-cell objects."
+element granularity has no table-cell objects.  HIDE-FORMAT-ROWS omits
+rows consisting only of width/alignment cookies and empty cells."
   (when (eq (org-element-property :type el) 'org)
     (let* ((lisp (org-table-to-lisp
                   (buffer-substring-no-properties
@@ -252,6 +253,21 @@ element granularity has no table-cell objects."
            (aligns (and lisp (jetpacs-org-render--table-aligns lisp)))
            (seen-hline nil)
            (cells 0))
+      (when hide-format-rows
+        ;; Match Org's export convention for cookie-only rows (ox.el,
+        ;; `org-export-table-row-is-special-p'); all-empty rows remain data.
+        ;; Compute alignment above before hiding its source instructions.
+        (setq lisp
+              (seq-remove
+               (lambda (row)
+                 (and (listp row)
+                      (seq-some (lambda (cell) (not (string-empty-p cell))) row)
+                      (seq-every-p
+                       (lambda (cell)
+                         (or (string-empty-p cell)
+                             (string-match-p "\\`<[lrc]?\\([0-9]+\\)?>\\'" cell)))
+                       row)))
+               lisp)))
       (when lisp
         (cons
          (jetpacs-table
@@ -274,6 +290,23 @@ element granularity has no table-cell objects."
            lisp)
           :aligns aligns)
          cells)))))
+
+(defun jetpacs-org-render-table (element &optional hide-format-rows)
+  "Render Org table ELEMENT from the current buffer, or return nil.
+Reuse Org's cell reader, header groups, rules, and column alignment.
+HIDE-FORMAT-ROWS omits cookie-only rows after deriving their alignment.
+Return nil for unsupported tables/profiles or exhausted shared render
+budgets, leaving the caller free to retain the original source text.
+Successful rendering spends table cells, spans and bytes through the same
+document-wide budget as the stock Org renderer.  No Org text is modified."
+  (when (and (eq (org-element-type element) 'table)
+             (jetpacs-node-advertised-p "table"))
+    (when-let* ((result (jetpacs-org-render--table-node element hide-format-rows))
+                (node (car result)))
+      (when (and (or (not (plist-get node :aligns))
+                     (jetpacs-node-member-advertised-p "table" "aligns"))
+                 (jetpacs-org-render--emit-native-p (list node) (cdr result)))
+        node))))
 
 ;;;; Native upgrades: images
 
@@ -347,6 +380,27 @@ link still tappable through `emacs.buffer.act'."
                               (file-name-nondirectory path)))))))))
 
 ;;;; The upgrade pass
+
+(defun jetpacs-org-render-image (element)
+  "Render standalone image paragraph ELEMENT with its caption, or nil.
+Reuse the stock image resolver: HTTPS is fetched by the Companion, while
+local and attachment images pass the root allowlist and bounded byte reader.
+Return nil for unsupported source/profile or exhausted shared render bytes.
+The caller may replace ELEMENT's affiliated keywords and image line with
+the returned native node.  No image is fetched over the network in Emacs,
+and the Org source is not modified."
+  (when (eq (org-element-type element) 'paragraph)
+    (when-let* ((image (jetpacs-org-render--image-node element)))
+      (let* ((caption (jetpacs-org-render--element-caption element))
+             (node (if caption
+                       (jetpacs-column
+                        (jetpacs-with-semantics image :name caption)
+                        (jetpacs-text (jetpacs-scalar-text caption)
+                                      :style "caption" :color "on_surface_variant")
+                        :spacing 4)
+                     image)))
+        (when (jetpacs-org-render--emit-native-p (list node) 0)
+          node)))))
 
 (defun jetpacs-org-render--visual-end (el)
   "EL's end position excluding trailing blank lines.
@@ -923,6 +977,134 @@ tag-alignment whitespace become one space."
             (jetpacs-with-attrs row :scroll_here scroll-here)
           row)))))
 
+(defun jetpacs-org-render-source-block (element)
+  "Render source block ELEMENT with existing Emacs faces and a Play control.
+Read prepared fontification only; never run a language mode or Babel while
+building.  Code text ignores source-buffer folding and display substitutions.
+Return nil when the complete block cannot fit the shared spans/bytes budget.
+The run action uses the source buffer, block position and modification tick."
+  (when (and (eq (org-element-type element) 'src-block)
+             (jetpacs-node-advertised-p "rich_text"))
+    (let* ((name (buffer-name))
+           (pos (org-element-property :post-affiliated element))
+           (tick (buffer-chars-modified-tick))
+           (language (or (org-element-property :language element) "Source"))
+           (label (org-element-property :name element))
+           (options (string-trim
+                     (concat (org-element-property :switches element) " "
+                             (org-element-property :parameters element))))
+           (beg (save-excursion (goto-char pos) (line-beginning-position 2)))
+           (end (save-excursion
+                  (goto-char (org-element-property :end element))
+                  (skip-chars-backward " \t\n") (line-beginning-position)))
+           (code (buffer-substring beg end))
+           (run (when (jetpacs-node-advertised-p "icon_button")
+                  (jetpacs-icon-button
+                   "play_arrow"
+                   (jetpacs-action "jetpacs.org.execute-src-block"
+                                   :args (list :buffer name :pos pos :tick tick))
+                   :content-description "Execute source block")))
+           spans)
+      (with-temp-buffer
+        ;; Copy only face properties.  Source folds, pretty-symbol display
+        ;; and text keymaps must not hide code or create accidental actions.
+        (let ((cursor 0))
+          (while (< cursor (length code))
+            (let ((next (next-property-change cursor code (length code))))
+              (insert (propertize (substring-no-properties code cursor next)
+                                  'face (or (get-text-property cursor 'face code)
+                                            (get-text-property cursor 'font-lock-face code))))
+              (setq cursor next))))
+        (let ((jetpacs-buffer-monospace t)
+              (jetpacs-buffer-emit-colors t)
+              (jetpacs-buffer-span-action-function nil))
+          (goto-char (point-min))
+          (while (< (point) (point-max))
+            (setq spans (nconc spans (jetpacs-buffer-line-spans
+                                     (point) (line-end-position) name)
+                               (list (jetpacs-span "\n" :mono t))))
+            (forward-line))))
+      (let* ((header (jetpacs-row
+                      (jetpacs-with-attrs
+                       (jetpacs-text (if label (format "%s · %s" language label) language)
+                                     :style "label" :color "on_surface_variant") :weight 1)
+                      run :align "center" :spacing 8))
+             (node (jetpacs-column
+                    header
+                    (unless (string-empty-p options)
+                      (jetpacs-text options :style "caption" :color "outline"))
+                    (jetpacs-rich-text (vconcat spans) :style "mono")
+                    :spacing 6))
+             (left (car-safe jetpacs-buffer-budget)))
+        (when (and (or (null left) (<= (length spans) left))
+                   (jetpacs-org-render--emit-native-p (list node) 0))
+          (when left (setcar jetpacs-buffer-budget (- left (length spans))))
+          (when run (jetpacs-buffer-expose name pos "jetpacs.org.execute-src-block"))
+          node)))))
+
+(defun jetpacs-org-render-heading-drawers (pos &optional buffer)
+  "Return Properties and Logbook drawer records for the heading at POS.
+Read BUFFER, defaulting to the current buffer, without changing its point.
+Each record carries :name, :begin, :end and :hidden.  Ranges stop at the
+closing drawer line; visibility follows Jetpacs's existing drawer overlays.
+Org's parser distinguishes actual drawers from examples inside source blocks."
+  (with-current-buffer (or buffer (current-buffer))
+    (save-excursion
+      (goto-char pos)
+      (org-back-to-heading t)
+      (let ((limit (save-excursion (outline-next-heading) (point)))
+            (case-fold-search t)
+            drawers)
+        (while (re-search-forward "^[ \t]*:\\(PROPERTIES\\|LOGBOOK\\):[ \t]*$" limit t)
+          (let* ((name (upcase (match-string-no-properties 1)))
+                 (start (line-beginning-position))
+                 (element (org-element-at-point start)))
+            (when (memq (org-element-type element) '(property-drawer drawer))
+              (let ((end (save-excursion
+                           (goto-char (min limit (org-element-property :end element)))
+                           (skip-chars-backward " \t\r\n" start)
+                           (point))))
+                (push (list :name name :begin start :end end
+                            :hidden (cl-some
+                                     (lambda (overlay)
+                                       (overlay-get overlay 'jetpacs-drawer))
+                                     (overlays-at start)))
+                      drawers)))))
+        (nreverse drawers)))))
+
+(defun jetpacs-org-render-exclusive-drawers (drawers)
+  "Return copies of DRAWERS with at most the first visible drawer shown.
+This is a pure projection of native overlay state, including the initial
+case where several drawers are visible.  Use it with exclusive controls."
+  (let (shown)
+    (mapcar (lambda (drawer)
+              (let ((visible (and (not shown) (not (plist-get drawer :hidden)))))
+                (when visible (setq shown t))
+                (plist-put (copy-sequence drawer) :hidden (not visible))))
+            drawers)))
+
+(defun jetpacs-org-render-drawer-controls (drawers buffer-name &optional exclusive)
+  "Build tonal visibility controls for DRAWERS in BUFFER-NAME.
+DRAWERS come from `jetpacs-org-render-heading-drawers'.  Expose each exact
+start to the existing drawer action; tonal means the drawer is shown.
+EXCLUSIVE makes exposed siblings in this heading mutually exclusive, using
+`jetpacs-org-render-exclusive-drawers' for the same initial selection."
+  (mapcar
+   (lambda (drawer)
+     (let* ((pos (plist-get drawer :begin))
+            (properties (equal (plist-get drawer :name) "PROPERTIES")))
+       (jetpacs-buffer-expose buffer-name pos "jetpacs.org.toggle-drawer")
+       (jetpacs-icon-button
+        (if properties "tune" "history")
+        (jetpacs-action "jetpacs.org.toggle-drawer"
+                        :args (append (list :buffer buffer-name :pos pos
+                                            :end (plist-get drawer :end))
+                                      (when exclusive (list :exclusive t))))
+        :variant (unless (plist-get drawer :hidden) "tonal")
+        :color (and exclusive (not (plist-get drawer :hidden)) "primary")
+        :content-description (if properties "Toggle properties" "Toggle logbook"))))
+   (if exclusive (jetpacs-org-render-exclusive-drawers drawers) drawers)))
+
 (defun jetpacs-org-render--heading-controls (node bol _eol buffer-name)
   "Give the Org heading line NODE at BOL its mobile controls.
 The readable headline folds on tap; special inline actions such as links
@@ -973,51 +1155,12 @@ caret is removed because the headline itself is now the affordance."
             (push copy spans))))
       (plist-put headline :spans (vconcat (nreverse spans)))
       (when scroll-here (cl-remf headline :scroll_here))
-      (let* ((drawers (with-current-buffer (get-buffer buffer-name)
-                                        (save-excursion
-                                          (goto-char bol)
-                                          (let ((limit (save-excursion (outline-next-heading) (point)))
-                                                props logbook)
-                                            (while (re-search-forward "^[ \t]*:\\(PROPERTIES\\|LOGBOOK\\):[ \t]*$" limit t)
-                                              (let* ((name (match-string 1))
-                                                     (start (line-beginning-position))
-                                                     (end (save-excursion
-                                                            (if (re-search-forward "^[ \t]*:END:[ \t]*$" limit t)
-                                                                (line-end-position)
-                                                              start))))
-                                                (if (equal name "PROPERTIES")
-                                                    (setq props (cons start end))
-                                                  (setq logbook (cons start end)))))
-                                            (list props logbook)))))
+      (let* ((drawers (jetpacs-org-render-heading-drawers bol buffer-name))
              (row-children
-              (delq nil
-                    (list
-                     (jetpacs-with-attrs headline :weight 1)
-                     (when (car drawers)
-                       (let* ((pos (car (car drawers)))
-                              (end (cdr (car drawers)))
-                              (hidden (cl-some (lambda (o) (overlay-get o 'jetpacs-drawer))
-                                               (with-current-buffer (get-buffer buffer-name)
-                                                 (overlays-at pos)))))
-                         (jetpacs-icon-button
-                          "tune"
-                          (jetpacs-action "jetpacs.org.toggle-drawer"
-                                          :args (list :buffer buffer-name :pos pos :end end))
-                          :variant (if hidden nil "tonal")
-                          :content-description "Toggle properties")))
-                     (when (cadr drawers)
-                       (let* ((pos (car (cadr drawers)))
-                              (end (cdr (cadr drawers)))
-                              (hidden (cl-some (lambda (o) (overlay-get o 'jetpacs-drawer))
-                                               (with-current-buffer (get-buffer buffer-name)
-                                                 (overlays-at pos)))))
-                         (jetpacs-icon-button
-                          "history"
-                          (jetpacs-action "jetpacs.org.toggle-drawer"
-                                          :args (list :buffer buffer-name :pos pos :end end))
-                          :variant (if hidden nil "tonal")
-                          :content-description "Toggle logbook")))
-                     (jetpacs-org-dialogs--heading-menu (get-buffer buffer-name) bol))))
+              (append
+               (list (jetpacs-with-attrs headline :weight 1))
+               (jetpacs-org-render-drawer-controls drawers buffer-name)
+               (list (jetpacs-org-dialogs--heading-menu (get-buffer buffer-name) bol))))
              (row (apply #'jetpacs-row (append row-children (list :align "center" :fill t))))
              (narrow (jetpacs-action "jetpacs.org.narrow"
                                      :args (list :buffer buffer-name :pos bol)))
@@ -1188,8 +1331,24 @@ to the pure Tier-0 render."
       (jetpacs-buffer-defer-refresh (plist-get params :surface))
       'accepted))))
 
+(defun jetpacs-org-render--set-drawer-hidden (drawer hidden)
+  "Set native overlay visibility for DRAWER to HIDDEN in the current buffer."
+  (let* ((pos (plist-get drawer :begin))
+         (overlays (cl-remove-if-not
+                    (lambda (overlay) (overlay-get overlay 'jetpacs-drawer))
+                    (overlays-at pos))))
+    (if hidden
+        (unless overlays
+          (let ((overlay (make-overlay pos (plist-get drawer :end))))
+            (overlay-put overlay 'jetpacs-drawer t)
+            (overlay-put overlay 'invisible t)))
+      (mapc #'delete-overlay overlays))))
+
 (defun jetpacs-org-render--toggle-drawer (args params)
-  "Toggle the visibility of a drawer entirely from the rendered output."
+  "Toggle the exposed drawer in ARGS and refresh PARAMS' surface.
+Revalidate its exact live extent before changing presentation overlays.
+With :exclusive, only exposed sibling drawers participate: opening one hides
+the others, and closing the projected active drawer hides the entire group."
   (let* ((name (plist-get args :buffer))
          (pos (plist-get args :pos))
          (end (plist-get args :end))
@@ -1199,40 +1358,66 @@ to the pure Tier-0 render."
      ((jetpacs-event-stale-p params) 'stale)
      ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.toggle-drawer"))
       'rejected)
+     ((not (with-current-buffer buf
+             (and (<= (point-min) pos end (point-max))
+                  (cl-some (lambda (drawer)
+                             (and (= pos (plist-get drawer :begin))
+                                  (= end (plist-get drawer :end))))
+                           (jetpacs-org-render-heading-drawers pos)))))
+      'stale)
      (t
       (with-current-buffer buf
-        (let ((ovs (cl-remove-if-not (lambda (o) (overlay-get o 'jetpacs-drawer))
-                                     (overlays-at pos))))
-          (if ovs
-              (mapc #'delete-overlay ovs)
-            (let ((ov (make-overlay pos end)))
-              (overlay-put ov 'jetpacs-drawer t)
-              (overlay-put ov 'invisible t)))))
+        (let* ((drawers (cl-remove-if-not
+                         (lambda (drawer)
+                           (jetpacs-buffer-exposed-p
+                            name (plist-get drawer :begin) "jetpacs.org.toggle-drawer"))
+                         (jetpacs-org-render-heading-drawers pos)))
+               (exclusive (eq (plist-get args :exclusive) t))
+               (visible (if exclusive
+                            (jetpacs-org-render-exclusive-drawers drawers)
+                          drawers))
+               (target (cl-find pos visible
+                                :key (lambda (drawer) (plist-get drawer :begin))))
+               (opening (plist-get target :hidden)))
+          (dolist (drawer drawers)
+            (when (or exclusive (= pos (plist-get drawer :begin)))
+              (jetpacs-org-render--set-drawer-hidden
+               drawer (not (and opening (= pos (plist-get drawer :begin)))))))))
       (jetpacs-buffer-defer-refresh (plist-get params :surface))
       'accepted))))
 
 
 (defun jetpacs-org-render--execute-src-block (args params)
-  "Execute the source block at POS."
+  "Execute the exposed source block in ARGS from event PARAMS.
+When ARGS supplies a tick, reject edits since render.  Save results before
+acceptance; only the view refresh is deferred."
   (let* ((name (plist-get args :buffer))
          (pos (plist-get args :pos))
+         (tick (plist-get args :tick))
          (buf (and (stringp name) (get-buffer name))))
     (cond
-     ((not (and buf (integerp pos))) 'rejected)
+     ((not (and buf (integerp pos) (or (null tick) (integerp tick)))) 'rejected)
      ((jetpacs-event-stale-p params) 'stale)
      ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.execute-src-block"))
       'rejected)
      (t
       (with-current-buffer buf
         (org-with-wide-buffer
-         (goto-char pos)
-         (if (not (org-in-src-block-p))
+         (if (or (not (<= (point-min) pos (point-max)))
+                 (and tick (/= tick (buffer-chars-modified-tick)))
+                 (not (verify-visited-file-modtime buf))
+                 (not (save-excursion (goto-char pos) (org-in-src-block-p))))
              'stale
            (condition-case err
                (let ((org-confirm-babel-evaluate nil))
-                 (org-babel-execute-src-block)
+                 (save-excursion
+                   (goto-char pos)
+                   (org-babel-execute-src-block))
                  (ebp-org-cache-invalidate)
-                 (when buffer-file-name (ebp-org-defer-save))
+                 (when buffer-file-name
+                   ;; Load at action time to avoid the reader/editor cycle.
+                   (require 'jetpacs-editor-org)
+                   (jetpacs-editor-org-save-policy buf))
                  (jetpacs-buffer-defer-refresh (plist-get params :surface))
                  (jetpacs-shell-notify "Executed block" (plist-get params :surface))
                  'accepted)
@@ -1323,9 +1508,11 @@ to the pure Tier-0 render."
 (jetpacs-defaction "jetpacs.org.checkbox" #'jetpacs-org-render--checkbox)
 (jetpacs-defaction "jetpacs.org.widen" #'jetpacs-org-render--widen)
 (jetpacs-defaction "jetpacs.org.narrow" #'jetpacs-org-render--narrow)
-(jetpacs-defaction "jetpacs.org.toggle-drawer" #'jetpacs-org-render--toggle-drawer)
+(jetpacs-defaction "jetpacs.org.toggle-drawer" #'jetpacs-org-render--toggle-drawer
+                   :doc "Show or hide an exposed Org Properties or Logbook drawer")
 (jetpacs-defaction "jetpacs.org.encrypt" #'jetpacs-org-render--encrypt)
-(jetpacs-defaction "jetpacs.org.execute-src-block" #'jetpacs-org-render--execute-src-block)
+(jetpacs-defaction "jetpacs.org.execute-src-block" #'jetpacs-org-render--execute-src-block
+  :doc "Execute an exposed Org Babel source block and save its results before acceptance.")
 (jetpacs-defaction "jetpacs.org.follow" #'jetpacs-org-render--follow)
 (jetpacs-defaction "jetpacs.org.footnote-return"
                    #'jetpacs-org-render--footnote-return)

@@ -4,23 +4,26 @@ set -e
 cd "$(dirname "$0")/.."
 
 jetpacs_root=$(pwd)
-EBP_SPEC_DIR=${EBP_SPEC_DIR:-"$jetpacs_root/../ebp-poc/ebp"}
-EBP_EL_DIR=${EBP_EL_DIR:-"$jetpacs_root/../ebp-poc/ebp.el"}
-EBP_ORG_DIR=${EBP_ORG_DIR:-"$jetpacs_root/../ebp-poc/ebp-org"}
-EBP_KMP_DIR=${EBP_KMP_DIR:-"$jetpacs_root/../ebp-poc/ebp-kmp"}
-EBP_COMPOSE_DIR=${EBP_COMPOSE_DIR:-"$jetpacs_root/../ebp-poc/ebp-compose"}
-GLASSPANE_MATERIAL3_DIR=${GLASSPANE_MATERIAL3_DIR:-"$jetpacs_root/../glasspane-material3"}
-JETPACS_COMPONENTS_DIR=${JETPACS_COMPONENTS_DIR:-"$jetpacs_root/../jetpacs-components"}
-JETPACS_AUTHORING_DIR=${JETPACS_AUTHORING_DIR:-"$jetpacs_root/../jetpacs-authoring"}
-JETPACS_AUTOMATIONS_DIR=${JETPACS_AUTOMATIONS_DIR:-"$jetpacs_root/../jetpacs-automations"}
-JETPACS_COMPONENT_CATALOG_DIR=${JETPACS_COMPONENT_CATALOG_DIR:-"$jetpacs_root/../jetpacs-component-catalog"}
-GLASSPANE_DIR=${GLASSPANE_DIR:-"$jetpacs_root/../glasspane"}
-GROVE_DIR=${GROVE_DIR:-"$jetpacs_root/../../../grove"}
+repositories_root=$(tools/repositories-root.sh)
+export JETPACS_REPOSITORIES_ROOT="$repositories_root"
+EBP_SPEC_DIR=${EBP_SPEC_DIR:-"$repositories_root/ebp"}
+EBP_EL_DIR=${EBP_EL_DIR:-"$repositories_root/ebp.el"}
+EBP_ORG_DIR=${EBP_ORG_DIR:-"$repositories_root/ebp-org"}
+EBP_KMP_DIR=${EBP_KMP_DIR:-"$repositories_root/ebp-kmp"}
+EBP_COMPOSE_DIR=${EBP_COMPOSE_DIR:-"$repositories_root/ebp-compose"}
+JETPACS_COMPONENTS_DIR=${JETPACS_COMPONENTS_DIR:-"$jetpacs_root/jetpacs-components"}
+JETPACS_AUTHORING_DIR=${JETPACS_AUTHORING_DIR:-"$repositories_root/jetpacs-authoring"}
+JETPACS_AUTOMATIONS_DIR=${JETPACS_AUTOMATIONS_DIR:-"$jetpacs_root/jetpacs-automations"}
+JETPACS_COMPONENT_CATALOG_DIR=${JETPACS_COMPONENT_CATALOG_DIR:-"$jetpacs_root/jetpacs-component-catalog"}
+GLASSPANE_DIR=${GLASSPANE_DIR:-"$repositories_root/glasspane"}
+GROVE_DIR=${GROVE_DIR:-"$repositories_root/grove-native"}
 export EBP_SPEC_DIR EBP_EL_DIR EBP_ORG_DIR EBP_KMP_DIR EBP_COMPOSE_DIR
-export GLASSPANE_MATERIAL3_DIR JETPACS_COMPONENTS_DIR JETPACS_AUTHORING_DIR
+export JETPACS_COMPONENTS_DIR JETPACS_AUTHORING_DIR
 export JETPACS_AUTOMATIONS_DIR JETPACS_COMPONENT_CATALOG_DIR
 export GLASSPANE_DIR
-export GROVE_DIR
+ORGZLY_DIR=${ORGZLY_DIR:-"$repositories_root/orgzly-native"}
+HARP_DIR=${HARP_DIR:-"$repositories_root/harp-native"}
+export GROVE_DIR ORGZLY_DIR HARP_DIR
 
 for dependency in \
   "$EBP_SPEC_DIR/contract.json" \
@@ -47,9 +50,8 @@ emacs() {
     -L "$EBP_EL_DIR/lisp" \
     -L "$EBP_ORG_DIR/lisp" \
     -L "$JETPACS_AUTHORING_DIR/lisp" \
-    -L "$GLASSPANE_MATERIAL3_DIR/lisp/glasspane-material3" \
-    -L "$GLASSPANE_MATERIAL3_DIR/lisp/m3-catalog" \
-    -L "$GLASSPANE_MATERIAL3_DIR/lisp" \
+    -L "$jetpacs_root/emacs/apps/jetpacs-material3" \
+    -L "$jetpacs_root/emacs/apps/m3-catalog" \
     -L "$JETPACS_COMPONENTS_DIR/lisp/jetpacs-components" \
     -L "$JETPACS_AUTOMATIONS_DIR/lisp" \
     -L "$JETPACS_COMPONENT_CATALOG_DIR/lisp" \
@@ -62,14 +64,17 @@ emacs() {
 EBP_SPEC_DIR="$EBP_SPEC_DIR" "$EBP_EL_DIR/test/run-tests.sh"
 EBP_EL_DIR="$EBP_EL_DIR" "$EBP_ORG_DIR/test/run-tests.sh"
 "$JETPACS_AUTHORING_DIR/test/run-tests.sh"
-"$GLASSPANE_MATERIAL3_DIR/test/run-tests.sh"
+"$jetpacs_root/test/material3/run-tests.sh"
 "$JETPACS_COMPONENTS_DIR/test/run-tests.sh"
 "$JETPACS_AUTOMATIONS_DIR/test/run-tests.sh"
 "$JETPACS_COMPONENT_CATALOG_DIR/test/run-tests.sh"
 JETPACS_ROOT="$jetpacs_root" \
 EBP_EL_ROOT="$EBP_EL_DIR" \
 EBP_ORG_ROOT="$EBP_ORG_DIR" \
+JETPACS_COMPONENTS_ROOT="$JETPACS_COMPONENTS_DIR" \
   "$GROVE_DIR/test-elisp/run-tests.sh"
+JETPACS_ROOT="$jetpacs_root" "$ORGZLY_DIR/test/run-tests.sh"
+JETPACS_ROOT="$jetpacs_root" "$HARP_DIR/test/run-tests.sh"
 
 python3 "$EBP_KMP_DIR/tools/gen-vocabulary.py" \
   --spec-dir "$EBP_SPEC_DIR" \
@@ -381,7 +386,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
 # GR-6b save-policy seam: encryption-abort rollback, optional Vulpea,
 # whole-cache coherence, EBP seam ownership, the additive downstream editor
 # adapter, and SRS durability inside the engine form.
-emacs -Q --batch -L emacs -L ../glasspane \
+emacs -Q --batch -L emacs -L "$GLASSPANE_DIR" \
   -l test/jetpacs-editor-org-test.el \
   -f ert-run-tests-batch-and-exit
 
@@ -397,7 +402,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-clock-test.el \
 
 # GR-3 reminder-owner cutover: canonical agenda extraction, horizon/id/dedupe,
 # confirmed-set suppression, and the three-pipeline hook singleton.
-emacs -Q --batch -L emacs -L ../glasspane \
+emacs -Q --batch -L emacs -L "$GLASSPANE_DIR" \
   -l test/jetpacs-org-reminders-test.el \
   -f ert-run-tests-batch-and-exit
 
@@ -464,7 +469,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-phase-a-test.el \
 emacs -Q --batch -L emacs -l "$JETPACS_AUTHORING_DIR/test/jetpacs-elisp-source-test.el" \
   -f ert-run-tests-batch-and-exit
 
-# Glasspane Material 3 Catalog exit gate: the upstream
+# Jetpacs Material 3 Catalog exit gate: the upstream
 # inventory — 41 components, 279 examples, upstream order — plus a build
 # of EVERY screen it can show, each checked for the §16.2 profile, §16.1
 # id uniqueness, and canonical serialization.  Nothing else in the tree
@@ -473,7 +478,7 @@ emacs -Q --batch -L emacs -l "$JETPACS_AUTHORING_DIR/test/jetpacs-elisp-source-t
 # `jetpacs-m3-material-version', so the two move unanimously or go red.
 emacs -Q --batch -L emacs \
   --eval '(setq load-prefer-newer t)' \
-  -l "$GLASSPANE_MATERIAL3_DIR/test/jetpacs-m3-catalog-test.el" \
+  -l "$jetpacs_root/test/material3/jetpacs-m3-catalog-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # Jetpacs' Foundation-only design extension and its separate catalog: the
@@ -506,7 +511,7 @@ emacs -Q --batch -L emacs -l test/jetpacs-repl-test.el \
 # whose print step is a rendering — the placement pin (a duplicate
 # :sheet fails silently) and the override blast radius.
 emacs -Q --batch -L emacs \
-  -l "$GLASSPANE_MATERIAL3_DIR/test/jetpacs-m3-repl-test.el" \
+  -l "$jetpacs_root/test/material3/jetpacs-m3-repl-test.el" \
   -f ert-run-tests-batch-and-exit
 
 # Glasspane is now a separately owned downstream applet at ../glasspane.
@@ -516,7 +521,7 @@ emacs -Q --batch -L emacs \
 
 # Icon lint: SPEC 17.1's placeholder degrade means a misspelled icon
 # never fails at runtime — this is the only gate that catches a typo.
-# Ground truth is Glasspane Material's generated M3-ICON-REFERENCE.org
+# Ground truth is Jetpacs Material's generated M3-ICON-REFERENCE.org
 # (regenerate in that repository after a dependency bump).
 emacs -Q --batch -l test/jetpacs-icon-lint-test.el \
   -f ert-run-tests-batch-and-exit

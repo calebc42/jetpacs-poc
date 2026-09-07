@@ -9,7 +9,7 @@ import org.junit.Test
 class OnboardingTest {
     @Test
     fun vaultChoicesResolveIndependently() {
-        assertEquals("/sdcard", selectedVault(JetpacsVaultChoice.SDCARD))
+        assertEquals("/sdcard/Jetpacs", selectedVault(JetpacsVaultChoice.SDCARD))
         assertEquals(
             "/data/data/org.gnu.emacs/files",
             selectedVault(JetpacsVaultChoice.EMACS),
@@ -47,8 +47,8 @@ class OnboardingTest {
         assertTrue(default.startsWith("termux-setup-storage\n"))
         assertTrue(default.contains("install shared emacs"))
         assertTrue(crossProduct.contains("install emacs termux"))
-        assertTrue(default.endsWith("&& rm -rf ~/storage/shared/Documents/jetpacs-installer"))
-        assertTrue(crossProduct.endsWith("&& rm -rf ~/storage/shared/Documents/jetpacs-installer"))
+        assertTrue(default.endsWith("&& rm -rf ~/storage/shared/Documents/Jetpacs/init"))
+        assertTrue(crossProduct.endsWith("&& rm -rf ~/storage/shared/Documents/Jetpacs/init"))
         assertNull(
             termuxInstallCommand(
                 JetpacsVaultChoice.TERMUX,

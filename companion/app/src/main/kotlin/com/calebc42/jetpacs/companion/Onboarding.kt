@@ -56,7 +56,7 @@ private const val ONBOARDING_PREFS = "jetpacs-onboarding"
 private const val ONBOARDING_VERSION = "version"
 private const val CURRENT_ONBOARDING_VERSION = 8
 private const val ASSET_ROOT = "jetpacs-onboarding"
-private const val KIT_DIRECTORY = "jetpacs-installer"
+private const val KIT_DIRECTORY = "Jetpacs/init"
 private const val KIT_PATH = "/sdcard/Documents/$KIT_DIRECTORY"
 
 /** The user-requested manual early-init snippet, copied byte-for-byte. */
@@ -73,7 +73,7 @@ internal const val INIT_SEAM_SNIPPET =
 
 internal const val RECOMMENDED_INIT_SNIPPET =
     ";;; >>> Jetpacs managed: composition root >>>\n" +
-        "(load \"/sdcard/Documents/jetpacs-installer/install-recommended.el\" t t t)\n" +
+        "(load \"/sdcard/Documents/Jetpacs/init/install-recommended.el\" t t t)\n" +
         "(add-to-list 'load-path (expand-file-name \"jetpacs/emacs\" user-emacs-directory))\n" +
         "(require 'jetpacs)\n" +
         ";;; <<< Jetpacs managed: composition root <<<"
@@ -124,7 +124,7 @@ private enum class OnboardingStep {
 }
 
 internal fun selectedVault(choice: JetpacsVaultChoice): String = when (choice) {
-    JetpacsVaultChoice.SDCARD -> "/sdcard"
+    JetpacsVaultChoice.SDCARD -> "/sdcard/Jetpacs"
     JetpacsVaultChoice.EMACS -> "/data/data/org.gnu.emacs/files"
     JetpacsVaultChoice.TERMUX -> "/data/data/com.termux/files/home"
     JetpacsVaultChoice.REMOTE -> "~/"
@@ -447,7 +447,7 @@ private fun ChooseSetupPathStep(
         title = "Recommended",
         badge = "Local Org Mode",
         subtitle = "Use Local Emacs's private HOME for .emacs.d/jetpacs and " +
-            "/sdcard as the Vault. Org files survive uninstalling Emacs, but " +
+            "/sdcard/Jetpacs as the Vault. Org files survive uninstalling Emacs, but " +
             "apps with “All files” access can read them.",
         onClick = { onChoice(JetpacsSetupPath.RECOMMENDED) },
     )
@@ -520,7 +520,7 @@ private fun ChooseAdvancedVaultStep(
     Text(
         when (homeChoice) {
             JetpacsEmacsHomeChoice.LOCAL ->
-                "Local Emacs can use /sdcard or its own private home. Termux home " +
+                "Local Emacs can use /sdcard/Jetpacs or its own private home. Termux home " +
                     "is intentionally not offered for this host."
             JetpacsEmacsHomeChoice.TERMUX_SHARED ->
                 "Termux can use shared storage, Local Emacs storage, or its own home."
@@ -534,10 +534,10 @@ private fun ChooseAdvancedVaultStep(
     if (JetpacsVaultChoice.SDCARD in allowed) {
         ChoiceCard(
             selected = vaultChoice == JetpacsVaultChoice.SDCARD,
-            title = "/sdcard",
+            title = "/sdcard/Jetpacs",
             badge = "Persistent",
-            subtitle = "User content survives uninstalling Emacs or Termux, but " +
-                "apps with Android “All files” access can read it.",
+            subtitle = "User content lives under /sdcard/Jetpacs and survives uninstalling " +
+                "Emacs or Termux, but apps with Android “All files” access can read it.",
             onClick = { onChoice(JetpacsVaultChoice.SDCARD) },
         )
     }
@@ -675,7 +675,7 @@ private fun RecommendedInstallStep(onNext: () -> Unit) {
         CodeBlock(RECOMMENDED_INIT_SNIPPET, "Jetpacs init.el package entry")
         Text(
             "On Emacs's next full restart, this creates ~/.emacs.d/jetpacs, " +
-                "creates /sdcard/org, removes the temporary handoff files, and " +
+                "creates /sdcard/Jetpacs/org, removes the temporary handoff files, and " +
                 "loads Jetpacs.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(bottom = 16.dp),
@@ -854,7 +854,7 @@ private fun InstallStep(
     )
     CodeBlock(TERMUX_PATH_SNIPPET, "Termux PATH for early-init.el")
     Text(
-        "Approve Termux's Files prompt. If you chose /sdcard, also grant Android " +
+        "Approve Termux's Files prompt. If you chose /sdcard/Jetpacs, also grant Android " +
             "Emacs “All files” access. The installer preserves existing init files, " +
             "adds marked blocks, and creates a one-time recovery copy.",
         style = MaterialTheme.typography.bodySmall,
@@ -879,13 +879,13 @@ private fun FinishStep(
                 "both apps: open the Companion first, followed by Android Emacs. " +
                 "The package entry installs and loads Jetpacs from the private " +
                 "configuration directory while keeping your user content in the " +
-                "/sdcard Vault.",
+                "/sdcard/Jetpacs Vault.",
             modifier = Modifier.padding(top = 8.dp),
         )
         CodeBlock(
             "Emacs init:\n~/.emacs.d/init.el\n\n" +
                 "Jetpacs files:\n~/.emacs.d/jetpacs/\n\n" +
-                "Vault:\n/sdcard\nOrg files:\n/sdcard/org/",
+                "Vault:\n/sdcard/Jetpacs\nOrg files:\n/sdcard/Jetpacs/org/",
             "Jetpacs recommended paths",
         )
         Text(

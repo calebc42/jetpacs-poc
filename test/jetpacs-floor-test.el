@@ -14,7 +14,7 @@
 (require 'ert)
 (require 'ebp)
 (require 'jetpacs-widgets)
-(require 'glasspane-material3)
+(require 'jetpacs-material3)
 (require 'jetpacs-async)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-shell)
@@ -425,7 +425,7 @@ reference defconst passes the same spec, proving it cannot witness."
         (client :profiles
                 '(:app (:node_types ["text" "material3.assist_chip"]
                         :builtins [] :features []
-                        :extensions ["glasspane.material3"])))
+                        :extensions ["jetpacs.material3"])))
       (let (sent)
         (jetpacs-floor-test--recording-push sent
           (should (= (jetpacs-shell-push "app:demo" :spec node) 42))

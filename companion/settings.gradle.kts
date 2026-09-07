@@ -31,16 +31,26 @@ include(":renderer:glance")
 include(":renderer:jetpacs")
 include(":renderer:material3")
 
+// External checkouts live under one explicitly configured collection. Only
+// the named modules below enter the build; the parent directory is not a module.
+val repositoriesRoot = providers.environmentVariable("JETPACS_REPOSITORIES_ROOT")
+    .orNull?.let(::file)
+    ?: listOf(file("../.."), file("../../..")).firstOrNull {
+        it.resolve("ebp/SPEC.md").isFile
+    }
+    ?: error("Set JETPACS_REPOSITORIES_ROOT to the directory containing the EBP checkouts")
+gradle.extra["jetpacs.repositoriesRoot"] = repositoriesRoot.canonicalFile
+
 // This POC is a workspace composition root.  The stable project paths keep
-// existing type-safe accessors intact while source authority lives in the
-// neighboring repositories named here.
-project(":ebp-kmp").projectDir = file("../../ebp-poc/ebp-kmp/ebp-kmp")
-project(":wire").projectDir = file("../../ebp-poc/ebp-kmp/wire")
-project(":renderer").projectDir = file("../../ebp-poc/ebp-compose/renderer")
-project(":renderer:model").projectDir = file("../../ebp-poc/ebp-compose/renderer/model")
-project(":renderer:compose").projectDir = file("../../ebp-poc/ebp-compose/renderer/compose")
+// existing type-safe accessors intact while source authority lives in local
+// modules or the neighboring repositories named here.
+project(":ebp-kmp").projectDir = repositoriesRoot.resolve("ebp-kmp/ebp-kmp")
+project(":wire").projectDir = repositoriesRoot.resolve("ebp-kmp/wire")
+project(":renderer").projectDir = repositoriesRoot.resolve("ebp-compose/renderer")
+project(":renderer:model").projectDir = repositoriesRoot.resolve("ebp-compose/renderer/model")
+project(":renderer:compose").projectDir = repositoriesRoot.resolve("ebp-compose/renderer/compose")
 project(":renderer:glance").projectDir = file("renderer/glance")
 project(":renderer:jetpacs").projectDir =
-    file("../../jetpacs-components/renderer/jetpacs")
+    file("../jetpacs-components/renderer/jetpacs")
 project(":renderer:material3").projectDir =
-    file("../../glasspane-material3/renderer/material3")
+    file("renderer/material3")

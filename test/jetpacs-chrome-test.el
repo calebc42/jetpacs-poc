@@ -13,7 +13,7 @@
 (require 'cl-lib)
 (require 'ebp)
 (require 'jetpacs-widgets)
-(require 'glasspane-material3)
+(require 'jetpacs-material3)
 (require 'jetpacs-async)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-shell)
@@ -170,6 +170,32 @@
       (jetpacs-chrome-push-screen "filesapp" "b" (lambda (_b) (jetpacs-text "b")))
       (jetpacs-chrome-reset-screens "filesapp")
       (should (equal (jetpacs-chrome-stack "filesapp") '("hub"))))))
+
+(ert-deftest jetpacs-chrome-reset-without-push-keeps-root-for-peer ()
+  "Replacing a destination keeps the root without sending a root frame."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--recording recs
+      (jetpacs-chrome-test--define "filesapp" "hub")
+      (jetpacs-chrome-push-screen
+       "filesapp" "old" (lambda (_back) (jetpacs-text "old")))
+      (let ((root (car (last (gethash "app:filesapp"
+                                    jetpacs-chrome--stacks)))))
+        (setq recs nil)
+        (jetpacs-chrome-reset-screens "filesapp" t)
+        (should-not recs)
+        (should (equal (jetpacs-chrome-stack "filesapp") '("hub")))
+        (should (eq root (car (gethash "app:filesapp"
+                                     jetpacs-chrome--stacks))))
+        (jetpacs-chrome-push-screen
+         "filesapp" "peer"
+         (lambda (back)
+           (should (equal (plist-get back :view) "hub"))
+           (jetpacs-chrome-screen "Peer" (jetpacs-text "peer") :back back)))
+        (should (= (length recs) 1))
+        (pcase-let ((`(,_surface ,spec ,keys) (car recs)))
+          (should (equal (plist-get keys :current-view) "peer"))
+          (should-not (gethash "old" (plist-get spec :views))))
+        (should (equal (jetpacs-chrome-stack "filesapp") '("peer" "hub")))))))
 
 (ert-deftest jetpacs-chrome-duplicate-id-truncates-and-replaces ()
   (jetpacs-chrome-test--with (jetpacs-chrome-test--client)

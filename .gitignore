@@ -57,3 +57,7 @@ Thumbs.db
 # to bootstrap key auth into the tablet's Termux sshd. Machine-local,
 # never committed.
 /tools/onboard-scratch/
+
+# Local workspace tooling state and migration residue.
+/.claude/
+/.codex/

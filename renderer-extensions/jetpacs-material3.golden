@@ -1,0 +1,6 @@
+00 {"icon":"info","label":"Help","on_tap":{"action":"demo.tap"},"t":"material3.assist_chip"}
+01 {"checked":false,"icon":"edit","id":"doc_split","label":"My Button","on_change":{"action":"doc.expand"},"on_tap":{"action":"doc.edit"},"t":"material3.split_button","trailing_description":"Toggle Button"}
+02 {"items":[{"label":"Edit","on_tap":{"action":"doc.edit"}}],"label":"My Button","on_tap":{"action":"doc.edit"},"on_trailing_tap":{"action":"doc.more"},"size":"large","t":"material3.split_button","trailing_label":"More","variant":"outlined"}
+03 {"items":[{"icon":"attachment","label":"Attach","on_tap":{"action":"mail.attach"}},{"enabled":false,"icon":"event","label":"Calendar","on_tap":{"action":"mail.calendar"}}],"overflow_icon":"more_vert","t":"material3.app_bar_row"}
+04 {"items":[{"icon":"edit","label":"Edit","on_tap":{"action":"doc.edit"}}],"t":"material3.app_bar_column"}
+05 {"items":[{"icon":"reply","label":"Reply","on_tap":{"action":"mail.reply"}},{"icon":"archive","label":"Archive","on_tap":{"action":"mail.archive"}}],"t":"material3.fab_menu"}

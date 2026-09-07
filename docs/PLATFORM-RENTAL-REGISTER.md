@@ -1,6 +1,8 @@
-# POC 3 platform-rental register
+# Platform-rental register
 
-Status: mandatory implementation gate, 2026-08-03.
+Status: mandatory implementation gate. This is a current ownership register,
+not a dated dependency-version ledger; exact versions live in their owning
+version catalogs.
 
 This register records the platform/library primitive that owns each common
 subsystem. Before adding a helper, adapter, macro, or compatibility layer,
@@ -42,7 +44,7 @@ version adapter and a 30.1 test.
 | Durable Jetpacs application state | Room 3 KMP | One pairing-partitioned Room store; explicit transactions, schema export, migrations, reopen/device/fault tests. UI never writes protocol state. |
 | Outgoing durable delivery | Room 3 transactional outbox | Stable EventId, sequence, payload, expiry/dedupe/capacity/runtime updates commit before first send. Delete only after a permanent peer disposition. |
 | Secrets | Android Keystore-backed credential adapter | Tokens and reusable encryption keys do not enter Room or logs. Use separate aliases for authentication and sensitive queued payloads. |
-| Preferences | DataStore for future settings; schema-v1 `app_runtime` for the bridge switch | User/product preferences are not pairing-authored protocol state. The current user-enabled bridge policy is a device-local singleton, never pairing data. |
+| Preferences | DataStore when a general settings store is needed; current Room `app_runtime` for the bridge switch | User/product preferences are not pairing-authored protocol state. The current user-enabled bridge policy is a device-local singleton, never pairing data. |
 | Long-lived runtime ownership | Android service plus structured coroutines | `Application` is composition root only. Reader, bounded actor, writer, and reconciliation scopes have explicit owners and cancellation. Android 14/API 34 is the floor; the user-enabled `specialUse` FGS remains best effort and its notification is not liveness evidence. |
 | Serialized mutation ordering | `Channel<Command>` coroutine actor | Do not port POC 2 synchronized monitors/executors or invent `WireLock`. No transaction or actor command waits for socket/platform work. |
 | Deferrable retryable work | WorkManager | Use for reconciliation/cleanup/update work, not the live socket or exact-time alarms. |
@@ -52,7 +54,7 @@ version adapter and a 30.1 test.
 | Text editing | state-based Compose text fields, `InputTransformation`, `TextFieldBuffer.changes` | Convert real IME/paste/accessibility transactions to EBP splices. Do not diff whole old/new strings after every edit. |
 | Permission results | Activity Result APIs | Do not hand-roll request-code or callback ownership. |
 | Images/network/cache | Coil 3 with a secured Ktor/OkHttp fetch path | Preserve EBP DNS/SSRF/redirect/size/format constraints in a custom fetcher/interceptor. Do not maintain a raw HTTP/TLS/chunk/LRU stack. |
-| App widgets | Glance, later renderer profile | Read Room projections, update explicitly, keep widget-instance config separate, route actions through the Room outbox. Advertise only implemented widget handlers. |
+| App widgets | Glance with the implemented widget renderer profile | Read accepted Room projections, update explicitly, keep host-instance binding separate, and route actions through the Room outbox. Advertise only implemented widget handlers. |
 | Quick Settings | `TileService` | Separate renderer/projection; do not force it through Glance. |
 | Accessibility/adaptive UI | Compose semantics and current adaptive components | Treat semantics, large screens, keyboard, contrast, and font scaling as renderer conformance gates. |
 
@@ -67,7 +69,7 @@ references. Online examples are not substituted for a newer local checkout.
 | Structured concurrency | kotlinx.coroutines | Runtime receives a caller-owned scope; no `GlobalScope`, unmanaged `Job`, raw executor ownership, or blocking DAO adapter. |
 | Data interchange | kotlinx.serialization plus EBP validation | Generate typed contract vocabulary/method/limit projections into `commonMain`. Raw open content remains validated EBP data, not platform objects. |
 | Contract drift | `ebp/contract.json`, goldens, one generator pipeline | Generated Kotlin and Elisp are byte/diff checked. Do not maintain parallel lookup tables by hand. |
-| Storage semantics | domain transaction SPI plus reference memory backend | `kotlin-ebp` owns reducers/invariants; Room owns persistence mechanics. No DAO/entity types in the SPI. |
+| Storage semantics | domain transaction SPI plus reference memory backend | `ebp-kmp` owns reducers/invariants; Room owns persistence mechanics. No DAO/entity types in the SPI. |
 | Renderer capabilities | installed renderer registries | Derive per-target profiles from actual handlers. Compose, notification, and Glance profiles remain distinct. |
 | Common-code purity | a real non-JVM compile target and import lint | A directory named `commonMain` is not proof. JVM file stores/crypto/time/DNS remain adapters. |
 
@@ -98,7 +100,7 @@ For every new subsystem or dependency:
 3. State the missing behavior that requires an adapter.
 4. Keep the adapter narrower than the platform subsystem.
 5. Add conformance, restart, failure, and boundary tests proportional to risk.
-6. Record whether the code belongs to EBP, reusable `kotlin-ebp`, Jetpacs,
+6. Record whether the code belongs to EBP, reusable `ebp-kmp`, Jetpacs,
    renderer infrastructure, or workspace-only tooling.
 7. Re-run the whole-rebuild trigger test: source of truth, transaction owner,
    lifecycle owner, public seam, failure domain, renderer model, or KMP module.

@@ -35,7 +35,7 @@ Android Emacs **All files** access so it can use the Vault.
 
 The Recommended screen has one **Prepare files and copy setup** button. Pressing
 it saves the APK's bundled payload temporarily under
-`/sdcard/Documents/jetpacs-installer/` and copies Jetpacs's exact marked package
+`/sdcard/Documents/Jetpacs/init/` and copies Jetpacs's exact marked package
 entry. The screen then tells the user to:
 
 1. open `~/.emacs.d/init.el` in Android Emacs, creating it if necessary;
@@ -122,11 +122,11 @@ safely edit another app's private Emacs configuration:
 
 ```text
 Companion bundled handoff
-  -> Companion stages /sdcard/Documents/jetpacs-installer
+  -> Companion stages /sdcard/Documents/Jetpacs/init
   -> Companion copies the marked Jetpacs package entry
   -> user pastes it at the bottom of ~/.emacs.d/init.el and saves
   -> marked Jetpacs package entry
-  -> consumes /sdcard/Documents/jetpacs-installer once, when present
+  -> consumes /sdcard/Documents/Jetpacs/init once, when present
   -> creates or repairs ~/.emacs.d/jetpacs
   -> removes the temporary handoff
   -> adds bundled package code to load-path

@@ -57,9 +57,6 @@ abstract class StageOnboardingAssets : DefaultTask() {
     abstract val ebpOrgDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
-    abstract val glasspaneMaterial3Dir: org.gradle.api.file.DirectoryProperty
-
-    @get:org.gradle.api.tasks.InputDirectory
     abstract val jetpacsComponentsDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
@@ -76,6 +73,12 @@ abstract class StageOnboardingAssets : DefaultTask() {
 
     @get:org.gradle.api.tasks.InputDirectory
     abstract val groveDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val orgzlyDir: org.gradle.api.file.DirectoryProperty
+
+    @get:InputDirectory
+    abstract val harpDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
     abstract val orgDir: org.gradle.api.file.DirectoryProperty
@@ -149,16 +152,6 @@ abstract class StageOnboardingAssets : DefaultTask() {
         copyElispSources(ebpElDir.get().asFile, File(payload, "emacs"))
         copyElispSources(ebpOrgDir.get().asFile, File(payload, "emacs"))
         val apps = File(payload, "emacs/apps")
-        val material = glasspaneMaterial3Dir.get().asFile
-        copyElispSources(
-            File(material, "glasspane-material3"),
-            File(apps, "glasspane-material3"),
-        )
-        copyElispSources(File(material, "m3-catalog"), File(apps, "m3-catalog"))
-        File(material, "jetpacs-m3-catalog.el").copyTo(
-            File(apps, "m3-catalog/jetpacs-m3-catalog.el"),
-            overwrite = true,
-        )
         copyElispSources(
             jetpacsComponentsDir.get().asFile,
             File(apps, "jetpacs-components"),
@@ -177,6 +170,8 @@ abstract class StageOnboardingAssets : DefaultTask() {
         )
         copyElispSources(glasspaneDir.get().asFile, File(apps, "glasspane"))
         copyElispSources(groveDir.get().asFile, File(apps, "grove"))
+        copyElispSources(orgzlyDir.get().asFile, File(apps, "orgzly"))
+        copyElispSources(harpDir.get().asFile, File(apps, "harp"))
         copyDistribution(orgDir.get().asFile, File(payload, "org"))
         copyDistribution(examplesDir.get().asFile, File(payload, "examples/python"))
         initFile.get().asFile.copyTo(File(payload, "init.el"), overwrite = true)
@@ -195,22 +190,24 @@ abstract class StageOnboardingAssets : DefaultTask() {
 androidComponents {
     onVariants { variant ->
         val repo = rootProject.layout.projectDirectory.dir("..")
+        val repositoriesRoot = gradle.extra["jetpacs.repositoriesRoot"] as File
         val stage = tasks.register(
             "stage${variant.name.replaceFirstChar(Char::uppercase)}OnboardingAssets",
             StageOnboardingAssets::class,
         ) {
             emacsDir.set(repo.dir("emacs"))
-            ebpElDir.set(repo.dir("../ebp-poc/ebp.el/lisp"))
-            ebpOrgDir.set(repo.dir("../ebp-poc/ebp-org/lisp"))
-            glasspaneMaterial3Dir.set(repo.dir("../glasspane-material3/lisp"))
+            ebpElDir.set(repositoriesRoot.resolve("ebp.el/lisp"))
+            ebpOrgDir.set(repositoriesRoot.resolve("ebp-org/lisp"))
             jetpacsComponentsDir.set(
-                repo.dir("../jetpacs-components/lisp/jetpacs-components"),
+                rootProject.file("../jetpacs-components/lisp/jetpacs-components"),
             )
-            jetpacsAuthoringDir.set(repo.dir("../jetpacs-authoring/lisp"))
-            jetpacsAutomationsDir.set(repo.dir("../jetpacs-automations/lisp"))
-            jetpacsComponentCatalogDir.set(repo.dir("../jetpacs-component-catalog/lisp"))
-            glasspaneDir.set(repo.dir("../glasspane"))
-            groveDir.set(repo.dir("../../../grove/elisp"))
+            jetpacsAuthoringDir.set(repositoriesRoot.resolve("jetpacs-authoring/lisp"))
+            jetpacsAutomationsDir.set(rootProject.file("../jetpacs-automations/lisp"))
+            jetpacsComponentCatalogDir.set(rootProject.file("../jetpacs-component-catalog/lisp"))
+            glasspaneDir.set(repositoriesRoot.resolve("glasspane"))
+            groveDir.set(repositoriesRoot.resolve("grove-native/elisp"))
+            orgzlyDir.set(repositoriesRoot.resolve("orgzly-native/emacs/apps/orgzly"))
+            harpDir.set(repositoriesRoot.resolve("harp-native/emacs/apps/harp"))
             orgDir.set(repo.dir("org"))
             examplesDir.set(repo.dir("device/py"))
             initFile.set(repo.file("device/init.el"))

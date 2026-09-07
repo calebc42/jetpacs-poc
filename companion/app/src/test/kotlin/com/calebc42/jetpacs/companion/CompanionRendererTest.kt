@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion
 
-import com.calebc42.glasspane.material3.GLASSPANE_MATERIAL3_EXTENSION
+import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
@@ -29,11 +29,11 @@ class CompanionRendererTest {
                 .mapTo(mutableSetOf()) { (it as JsonPrimitive).content }
 
         assertEquals(
-            setOf(GLASSPANE_MATERIAL3_EXTENSION, JETPACS_COMPONENTS_EXTENSION),
+            setOf(JETPACS_MATERIAL3_EXTENSION, JETPACS_COMPONENTS_EXTENSION),
             extensions("app"),
         )
         assertFalse(JETPACS_DESIGN_EXTENSION in extensions("app"))
-        assertEquals(setOf(GLASSPANE_MATERIAL3_EXTENSION), extensions("dialog"))
+        assertEquals(setOf(JETPACS_MATERIAL3_EXTENSION), extensions("dialog"))
         assertFalse(JETPACS_COMPONENTS_EXTENSION in extensions("notification"))
         assertFalse(JETPACS_DESIGN_EXTENSION in extensions("notification"))
     }
@@ -123,11 +123,11 @@ class CompanionRendererTest {
         )
         assertEquals(owned, CompanionRenderer.composeConfiguration.extensions.nodeTypes)
         assertEquals(
-            setOf(GLASSPANE_MATERIAL3_EXTENSION, JETPACS_COMPONENTS_EXTENSION),
+            setOf(JETPACS_MATERIAL3_EXTENSION, JETPACS_COMPONENTS_EXTENSION),
             CompanionRenderer.composeConfiguration.appExtensions,
         )
         assertEquals(
-            setOf(GLASSPANE_MATERIAL3_EXTENSION),
+            setOf(JETPACS_MATERIAL3_EXTENSION),
             CompanionRenderer.composeConfiguration.dialogExtensions,
         )
         assertEquals(
@@ -147,7 +147,7 @@ class CompanionRendererTest {
         )
         assertEquals(
             setOf(
-                "text", "card", "icon", "icon_button", "badge", "empty_state",
+                "text", "rich_text", "chart", "card", "icon", "icon_button", "badge", "empty_state",
                 "button", "chip", "divider", "section_header", "menu", "switch", "collapsible", "month_grid",
                 "dropdown", "text_input", "editor",
             ),
