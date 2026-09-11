@@ -143,7 +143,7 @@ fi
 # keeping the source name-free also prevents documentary assumptions from
 # turning into the next reverse edge.  App code, integration tests, and plans
 # are outside this deliberately narrow boundary.
-if rg -n -i 'glasspane' emacs/*.el; then
+if grep -n -i 'glasspane' emacs/*.el; then
   echo "layering guard: foundation Elisp must not know Glasspane" >&2
   exit 1
 fi

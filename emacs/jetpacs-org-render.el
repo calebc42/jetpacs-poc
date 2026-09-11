@@ -1624,6 +1624,7 @@ from their own state on the deferred re-push."
 (defvar jetpacs-files-editor-fab-function)
 (declare-function jetpacs-org-toolbar "jetpacs-org-toolbar")
 (declare-function jetpacs-reader-active-p "jetpacs-reader" (path))
+(declare-function jetpacs-editor-org-save-policy "jetpacs-editor-org" (&optional buffer))
 
 (with-eval-after-load 'jetpacs-files
   (when jetpacs-org-render-install-legacy-files-seams
