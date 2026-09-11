@@ -907,7 +907,7 @@ repush; the confirmed floor never rises.  Drives ebp's REAL held branch
               client (jetpacs-floor-test--event eid :action "demo.later"))
              :type 'jsonrpc-error)
             ;; No receipt: not accepted, so the same id runs AGAIN.
-            (should-not (gethash eid (ebp-client-receipts client)))
+            (should-not (ebp-client-event-known-p client eid))
             (should-error
              (ebp-client--handle-event-action
               client (jetpacs-floor-test--event eid :action "demo.later"))

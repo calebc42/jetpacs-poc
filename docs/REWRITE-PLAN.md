@@ -43,6 +43,11 @@ The canonical endpoint and reusable Org engine now live in
 surface, renderer, reader/editor, files, app-host, and device integrations in
 `emacs/jetpacs-*.el`.
 
+SPEC 14.4 durable EventId receipts now live in `ebp-sqlite.el`'s versioned,
+pairing-partitioned schema behind the `ebp-store.el` contract — `ebp.el` keeps
+only the dispatch ordering — and a legacy flat `receipts.sqlite` migrates in
+place, atomically, on the first client that opens it.
+
 ## Reuse and lineage
 
 The immutable `poc/v1`, `poc/v2`, and `poc/v3-pre-split` tags are reusable

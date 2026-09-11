@@ -122,7 +122,9 @@
            (plan (jetpacs-automation-compile recipe profile))
            (pairing (make-string 32 ?a))
            (event (make-string 32 ?b))
-           (client (ebp-client-create :pairing-id pairing)))
+           (client (ebp-client-create
+                    :pairing-id pairing
+                    :receipt-file (make-temp-file "jetpacs-automation-receipts"))))
       (jetpacs-automation--ensure-storage)
       (jetpacs-automation--archive-plan plan)
       (let ((jetpacs--client client))
@@ -150,7 +152,9 @@
                            :caps nil :trigger-caps nil)))
            (pairing (make-string 32 ?c))
            (event (make-string 32 ?d))
-           (client (ebp-client-create :pairing-id pairing))
+           (client (ebp-client-create
+                    :pairing-id pairing
+                    :receipt-file (make-temp-file "jetpacs-automation-receipts")))
            messages)
       (jetpacs-automation--ensure-storage)
       (jetpacs-automation--archive-plan plan)
