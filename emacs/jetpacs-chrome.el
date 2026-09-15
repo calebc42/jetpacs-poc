@@ -172,8 +172,11 @@ three to five sibling places, never document actions."
                      (when back
                        (list (jetpacs-icon-button "arrow_back" back
                                                   :content-description "Back")))
+                     ;; One line, always: the M3 title slot renders this
+                     ;; whole row, so a crowded action set would otherwise
+                     ;; wrap the title under the icons.
                      (list (jetpacs-with-attrs
-                            (jetpacs-text title :style "title")
+                            (jetpacs-text title :style "title" :max-lines 1)
                             :weight 1))
                      actions
                      (list :align "center" :spacing 4)))
