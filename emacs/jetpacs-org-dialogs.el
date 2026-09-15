@@ -22,8 +22,10 @@
 ;; filter), Set TODO/Priority as native chained dialogs (`org-priority'
 ;; and org's fast tag selection read chars with NO prompt argument, so
 ;; the bridge advice never engages and a device tap would hang a
-;; desktop-less Emacs — verified against emacs-30.1 org.el), tags as a
-;; plain text field (the Orgro two-tier model), Refile as the ONE
+;; desktop-less Emacs — verified against emacs-30.1 org.el), tags as
+;; one chip list per buffer tag group (`ebp-org-tag-groups-at') over a
+;; plain text field (the Orgro two-tier model).  Saving reports any
+;; invalid tags omitted from the result.  Refile is the ONE
 ;; bridged command (`org-refile' funnels through `completing-read').
 ;; Archive is not a submit value at all: a remote descriptor carrying
 ;; the ref as an opaque per-owner TOKEN (D-4) plus SPEC 14.1 `:confirm'
@@ -471,43 +473,127 @@ bridge advice never sees (emacs-30.1 org.el:11172)."
 (defconst jetpacs-org-dialogs--tag-re "\\`[[:alnum:]_@#%]+\\'"
   "Org's own tag charset; anything else corrupts the :tag: string.")
 
+(defconst jetpacs-org-dialogs--tag-list-prefix "org-tags-group-"
+  "Id prefix of the captured chip list for one tag group, index-suffixed.")
+
+(defconst jetpacs-org-dialogs--tag-fixed-fields '("org-tags-loose" "org-tags")
+  "Captured ids the tag picker always carries: loose chips, then free text.")
+
+(defun jetpacs-org-dialogs--field-strings (value)
+  "The string members of captured VALUE, a vector, a list or nil.
+Always a fresh list, so callers may splice it."
+  (cl-remove-if-not #'stringp
+                    (cond ((vectorp value) (append value nil))
+                          ((proper-list-p value) (copy-sequence value)))))
+
+(defun jetpacs-org-dialogs--tag-picker (membership)
+  "Picker nodes and captured ids for MEMBERSHIP, or for a bare picker.
+MEMBERSHIP is an `ebp-org-tag-groups-at' plist, or nil when the heading
+could not be read.  Return (:nodes NODES :fields IDS): inherited tags as
+a read-only caption, one multi-select chip list per buffer tag group
+seeded with the heading's local members, an add-enabled list for the
+loose vocabulary, and the colon-separated text field for anything else.
+Exclusive groups stay multi-select: `org-set-tags' accepts any set and
+an inherited member beside a different local one is ordinary, so the
+label only advertises the convention."
+  (let* ((inherited (plist-get membership :inherited))
+         (local (plist-get membership :local))
+         (groups (cl-remove-if-not (lambda (group) (plist-get group :tags))
+                                   (plist-get membership :groups)))
+         (grouped (apply #'append
+                         (mapcar (lambda (group) (plist-get group :tags))
+                                 groups)))
+         (loose-local (cl-remove-if (lambda (tag) (member tag grouped)) local))
+         (loose-options (cl-remove-if
+                         (lambda (tag) (member tag grouped))
+                         (cl-remove-duplicates
+                          (append loose-local
+                                  (jetpacs-org-settings-tag-options))
+                          :test #'equal :from-end t)))
+         (option (lambda (tag) (jetpacs-enum-option tag tag)))
+         ids nodes)
+    (when inherited
+      (push (jetpacs-text (concat "Inherited: " (string-join inherited " "))
+                          :style "caption")
+            nodes))
+    (cl-loop for group in groups
+             for index from 0
+             do (let ((id (format "%s%d" jetpacs-org-dialogs--tag-list-prefix
+                                  index)))
+                  (push id ids)
+                  (push (jetpacs-text
+                         (concat (or (plist-get group :name) "Choose one")
+                                 (and (plist-get group :exclusive) " (one of)"))
+                         :style "label")
+                        nodes)
+                  (push (jetpacs-enum-list
+                         id (mapcar option (plist-get group :tags))
+                         :value (plist-get group :local) :multi-select t)
+                        nodes)))
+    (when loose-options
+      (push (jetpacs-text "Other tags" :style "label") nodes)
+      (push (jetpacs-enum-list "org-tags-loose" (mapcar option loose-options)
+                               :value loose-local :multi-select t
+                               :allow-add t)
+            nodes))
+    (push (jetpacs-text-input "org-tags" :value ""
+                              :label "More, colon-separated: :work:next:"
+                              :single-line t)
+          nodes)
+    (list :nodes (nreverse nodes)
+          :fields (append (nreverse ids)
+                          jetpacs-org-dialogs--tag-fixed-fields))))
+
 (defun jetpacs-org-dialogs--show-tags (ref buf params)
-  "Offer REF's tags as one editable text field (the Orgro two-tier
-model: a structured gesture for the common case, plain text for the
-rest — and org's fast tag selection cannot bridge)."
+  "Offer REF's tags as grouped chips plus one free text field.
+The buffer's tag groups each get a chip list seeded with the heading's
+local members, the loose vocabulary an add-enabled list, and anything
+else the colon-separated field (the Orgro two-tier model: a structured
+gesture for the common case, plain text for the rest).  Save unions
+every field into the heading's local tags; inherited tags are shown but
+never written.  A partial save reports how many invalid tags were skipped.
+BUF keys the dialog id and PARAMS name the surface to refresh."
   (when-let* ((client (jetpacs-client)))
-    (let* ((seed (condition-case nil
-                     (let ((m (ebp-org-resolve-ref ref)))
-                       (unwind-protect
-                           (with-current-buffer (marker-buffer m)
-                             (org-with-wide-buffer
-                              (goto-char m)
-                              (let ((tags (org-get-tags nil t)))
-                                (if tags
-                                    (concat ":" (string-join tags ":") ":")
-                                  ""))))
-                         (set-marker m nil)))
-                   (error ""))))
+    (let* ((membership
+            (condition-case nil
+                (let ((m (ebp-org-resolve-ref ref)))
+                  (unwind-protect
+                      (with-current-buffer (marker-buffer m)
+                        (org-with-wide-buffer
+                         (ebp-org-tag-groups-at (marker-position m))))
+                    (set-marker m nil)))
+              (error nil)))
+           (picker (jetpacs-org-dialogs--tag-picker membership))
+           (fields (plist-get picker :fields)))
       (ebp-client-dialog-show
        client
        (jetpacs-org-dialogs--id "tags" buf 0)
-       (jetpacs-column
-        (jetpacs-text "Tags" :style "title")
-        (jetpacs-text-input "org-tags" :value seed
-                            :label "Colon-separated: :work:next:"
-                            :single-line t)
-        (jetpacs-button "Save"
-                        (jetpacs-dialog-submit
-                         :value "save" :capture-fields '("org-tags"))
-                        :variant "text")
-        (jetpacs-button "Cancel" (jetpacs-dialog-dismiss)))
+       (apply #'jetpacs-column
+              (jetpacs-text "Tags" :style "title")
+              (append
+               (plist-get picker :nodes)
+               (list (jetpacs-button "Save"
+                                     (jetpacs-dialog-submit
+                                      :value "save" :capture-fields fields)
+                                     :variant "text")
+                     (jetpacs-button "Cancel" (jetpacs-dialog-dismiss)))))
        :callback
        (lambda (status result _error)
          (when (and (equal status "submitted")
                     (equal (plist-get result :value) "save"))
-           (let* ((raw (or (plist-get (plist-get result :fields) :org-tags)
-                           ""))
-                  (tags (and (stringp raw) (split-string raw ":" t "[ \t]+")))
+           (let* ((captured (plist-get result :fields))
+                  (get (lambda (id)
+                         (plist-get captured (intern (concat ":" id)))))
+                  (picked (apply #'append
+                                 (mapcar (lambda (id)
+                                           (jetpacs-org-dialogs--field-strings
+                                            (funcall get id)))
+                                         (butlast fields))))
+                  (raw (or (funcall get "org-tags") ""))
+                  (typed (and (stringp raw)
+                              (split-string raw ":" t "[ \t]+")))
+                  (tags (cl-remove-duplicates (append picked typed)
+                                              :test #'equal :from-end t))
                   (good (seq-filter
                          (lambda (tag)
                            (string-match-p jetpacs-org-dialogs--tag-re tag))
@@ -517,7 +603,13 @@ rest — and org's fast tag selection cannot bridge)."
                      (jetpacs-org-dialogs--notify "No valid tags in that"
                                                   params)
                    (ebp-org-with-mutation ref 'org
-                     (org-set-tags good)))
+                     (org-set-tags good))
+                   (let ((skipped (- (length tags) (length good))))
+                     (when (> skipped 0)
+                       (jetpacs-org-dialogs--notify
+                        (format "Saved tags; skipped %d invalid tag%s."
+                                skipped (if (= skipped 1) "" "s"))
+                        params))))
                (error (message "jetpacs-org-dialogs: tags failed: %s"
                                (jetpacs-error-label err))
                       (jetpacs-org-dialogs--notify "That did not work"
@@ -626,11 +718,8 @@ rest — and org's fast tag selection cannot bridge)."
                  (condition-case err
                      (let* ((fget (lambda (k) (let ((v (plist-get fields k)))
                                                 (and (stringp v) v))))
-                            (tags-val (plist-get fields :file-prop-tags))
-                            (tags (cl-remove-if-not
-                                   #'stringp
-                                   (cond ((vectorp tags-val) (append tags-val nil))
-                                         ((proper-list-p tags-val) tags-val))))
+                            (tags (jetpacs-org-dialogs--field-strings
+                                   (plist-get fields :file-prop-tags)))
                             (join-states
                              (lambda (s)
                                (when (stringp s)

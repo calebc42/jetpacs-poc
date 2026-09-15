@@ -387,6 +387,144 @@ Clear clears."
              (goto-char (point-min))
              (should-not (search-forward "[#" nil t)))))))))
 
+(defconst jetpacs-org-dialogs-test--tag-group-fixture
+  (concat "#+TAGS: { state : hot cold } [ proj : alpha beta ]\n"
+          "#+FILETAGS: :alpha:\n"
+          "* Parent :hot:\n"
+          "** Child :beta:extra:\n")
+  "An exclusive group, a plain group, a file tag, and an inherited member.")
+
+(defun jetpacs-org-dialogs-test--tags-dialog (buf headline)
+  "Show the tags dialog for HEADLINE in BUF; return (REF . CHILDREN)."
+  (let ((ref (jetpacs-org-dialogs-test--ref buf headline)))
+    (jetpacs-org-dialogs--show-tags ref buf jetpacs-org-dialogs-test--params)
+    (cons ref (append (plist-get (plist-get (jetpacs-org-dialogs-test--last)
+                                            :spec)
+                                 :children)
+                      nil))))
+
+(defun jetpacs-org-dialogs-test--child-by-id (children id)
+  "The node in CHILDREN whose :id is ID."
+  (seq-find (lambda (c) (equal (plist-get c :id) id)) children))
+
+(defun jetpacs-org-dialogs-test--local-tags (buf headline)
+  "HEADLINE's local tags in BUF, sorted."
+  (with-current-buffer buf
+    (org-with-wide-buffer
+     (goto-char (point-min))
+     (search-forward headline)
+     (sort (copy-sequence (org-get-tags nil t)) #'string<))))
+
+(ert-deftest jetpacs-org-dialogs-tags-picker-seeds-group-lists ()
+  "One chip list per buffer group, seeded with the heading's local
+members; inherited tags read-only; the spec passes the dialog profile."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        jetpacs-org-dialogs-test--tag-group-fixture
+      (let* ((buf (jetpacs-org-dialogs-test--buffer f))
+             (children (cdr (jetpacs-org-dialogs-test--tags-dialog buf "Child")))
+             (state (jetpacs-org-dialogs-test--child-by-id
+                     children "org-tags-group-0"))
+             (proj (jetpacs-org-dialogs-test--child-by-id
+                    children "org-tags-group-1"))
+             (loose (jetpacs-org-dialogs-test--child-by-id
+                     children "org-tags-loose"))
+             (texts (mapcar (lambda (c) (plist-get c :text))
+                            (seq-filter (lambda (c) (equal (plist-get c :t) "text"))
+                                        children))))
+        (should (jetpacs-check-profile
+                 (plist-get (jetpacs-org-dialogs-test--last) :spec) 'dialog))
+        (should (equal (mapcar (lambda (o) (plist-get o :value))
+                               (append (plist-get state :options) nil))
+                       '("hot" "cold")))
+        (should-not (append (plist-get state :value) nil))
+        (should (equal (append (plist-get proj :value) nil) '("beta")))
+        (should (equal (append (plist-get loose :value) nil) '("extra")))
+        (should (eq (plist-get loose :allow_add) t))
+        (should (seq-find (lambda (text) (string-search "(one of)" text)) texts))
+        (let ((inherited (seq-find (lambda (text) (string-prefix-p "Inherited" text))
+                                   texts)))
+          (should inherited)
+          (should (string-search "alpha" inherited))
+          (should (string-search "hot" inherited)))))))
+
+(ert-deftest jetpacs-org-dialogs-tags-picker-save-unions-fields ()
+  "Save unions every chip list with the text field; junk is filtered and
+the parent's own tags are untouched."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        jetpacs-org-dialogs-test--tag-group-fixture
+      (let ((buf (jetpacs-org-dialogs-test--buffer f)))
+        (jetpacs-org-dialogs-test--tags-dialog buf "Child")
+        (jetpacs-org-dialogs-test--submit
+         (jetpacs-org-dialogs-test--last) "save"
+         '(:org-tags-group-0 ["cold"] :org-tags-group-1 ["beta"]
+           :org-tags-loose ["extra"] :org-tags ":next:bad tag:"))
+        (should (equal (jetpacs-org-dialogs-test--local-tags buf "* Child")
+                       '("beta" "cold" "extra" "next")))
+        (should (equal (jetpacs-org-dialogs-test--local-tags buf "* Parent")
+                       '("hot")))))))
+
+(ert-deftest jetpacs-org-dialogs-tags-picker-empty-save-clears ()
+  "An all-empty save clears the local tags; all-junk notifies and writes
+nothing."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        jetpacs-org-dialogs-test--tag-group-fixture
+      (let ((buf (jetpacs-org-dialogs-test--buffer f))
+            (notified nil))
+        (cl-letf (((symbol-function 'jetpacs-shell-notify)
+                   (lambda (text &rest _) (push text notified))))
+          (jetpacs-org-dialogs-test--tags-dialog buf "Child")
+          (jetpacs-org-dialogs-test--submit
+           (jetpacs-org-dialogs-test--last) "save"
+           '(:org-tags-group-0 [] :org-tags-group-1 [] :org-tags-loose []
+             :org-tags ""))
+          (should-not (jetpacs-org-dialogs-test--local-tags buf "* Child"))
+          (should-not notified)
+          (jetpacs-org-dialogs-test--tags-dialog buf "Child")
+          (jetpacs-org-dialogs-test--submit
+           (jetpacs-org-dialogs-test--last) "save" '(:org-tags "bad tag"))
+          (should-not (jetpacs-org-dialogs-test--local-tags buf "* Child"))
+          (should (member "No valid tags in that" notified)))))))
+
+(ert-deftest jetpacs-org-dialogs-tags-picker-reports-partial-save ()
+  "A partial save reports skipped tags; valid-only saves stay quiet."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        jetpacs-org-dialogs-test--tag-group-fixture
+      (let ((buf (jetpacs-org-dialogs-test--buffer f)) notified)
+        (cl-letf (((symbol-function 'jetpacs-shell-notify)
+                   (lambda (text &rest _) (push text notified))))
+          (dolist (case '((":next:bad tag:"
+                           "Saved tags; skipped 1 invalid tag.")
+                          (":next:bad tag:bad!tag:"
+                           "Saved tags; skipped 2 invalid tags.")
+                          (":next:" nil)))
+            (setq notified nil)
+            (jetpacs-org-dialogs-test--tags-dialog buf "Child")
+            (jetpacs-org-dialogs-test--submit
+             (jetpacs-org-dialogs-test--last) "save"
+             (list :org-tags-group-1 ["beta"] :org-tags (car case)))
+            (should (equal (jetpacs-org-dialogs-test--local-tags buf "* Child")
+                           '("beta" "next")))
+            (should (equal notified (and (cadr case) (list (cadr case)))))))))))
+
+(ert-deftest jetpacs-org-dialogs-tags-picker-degrades-without-groups ()
+  "A buffer with no tag groups still gets the loose list and text field."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        jetpacs-org-dialogs-test--sheet-fixture
+      (let* ((buf (jetpacs-org-dialogs-test--buffer f))
+             (children (cdr (jetpacs-org-dialogs-test--tags-dialog
+                             buf "Parent"))))
+        (should-not (seq-find (lambda (c)
+                                (string-prefix-p "org-tags-group-"
+                                                 (or (plist-get c :id) "")))
+                              children))
+        (should (jetpacs-org-dialogs-test--child-by-id children "org-tags-loose"))
+        (should (jetpacs-org-dialogs-test--child-by-id children "org-tags"))))))
+
 (ert-deftest jetpacs-org-dialogs-tags-write-through-charset-filter ()
   "The captured field writes org-charset tags; junk is filtered."
   (jetpacs-org-dialogs-test--with-env
@@ -396,14 +534,24 @@ Clear clears."
              (ref (jetpacs-org-dialogs-test--ref buf "Parent")))
         (jetpacs-org-dialogs--show-tags
          ref buf jetpacs-org-dialogs-test--params)
-        (let ((shown (jetpacs-org-dialogs-test--last)))
-          ;; The seed carries the current tags.
+        (let* ((shown (jetpacs-org-dialogs-test--last))
+               (children (append (plist-get (plist-get shown :spec)
+                                            :children)
+                                 nil)))
+          ;; The loose chip list carries the current local tag; the
+          ;; text field starts empty so an unchecked chip cannot survive.
+          (should (seq-find (lambda (c)
+                              (and (equal (plist-get c :t) "enum_list")
+                                   (equal (plist-get c :id) "org-tags-loose")
+                                   (member "old" (append (plist-get c :value)
+                                                         nil))))
+                            children))
           (should (seq-find (lambda (c)
                               (and (equal (plist-get c :t) "text_input")
-                                   (equal (plist-get c :value) ":old:")))
-                            (append (plist-get (plist-get shown :spec)
-                                               :children)
-                                    nil)))
+                                   (equal (plist-get c :id) "org-tags")
+                                   (equal (plist-get c :value) "")))
+                            children))
+          ;; No list field re-submits "old", so the union drops it.
           (jetpacs-org-dialogs-test--submit
            shown "save" '(:org-tags ":work:bad tag:next:"))
           (with-current-buffer buf
