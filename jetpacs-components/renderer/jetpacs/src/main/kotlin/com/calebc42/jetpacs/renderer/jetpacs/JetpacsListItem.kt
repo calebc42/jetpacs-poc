@@ -30,11 +30,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
 import com.calebc42.ebp.renderer.compose.RevealSwipeDirection
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.doubleOrNull
 
 /**
  * Jetpacs' list row.
@@ -183,15 +181,23 @@ internal fun RenderListItem(
     context: ComposeExtensionRenderContext,
     modifier: Modifier,
 ) {
-    val enabled = node.boolean("enabled", true)
-    val selected = if ("selected" in node) node.boolean("selected", false) else null
-    val onTap = node["on_tap"] as? JsonObject
-    val onLongTap = node["on_long_tap"] as? JsonObject
-    val title = node.text("title")
-    val overline = node.text("overline")
-    val subtitle = node.text("subtitle")
-    val swipeStart = node["swipe_start"] as? JsonObject
-    val swipeEnd = node["swipe_end"] as? JsonObject
+    val p = NodeProperties(node, JetpacsListItemMembers)
+    val enabled = p.getOr(JetpacsListItemMembers.Enabled, true)
+    // `selected`, the texts beside the title, the line limits and `leading`
+    // are untyped on the format-1 manifest; they are read strictly from the
+    // raw element until the manifest moves to format 2.
+    val selected = if (p.has(JetpacsListItemMembers.Selected)) {
+        p.untypedBoolean(JetpacsListItemMembers.Selected) ?: false
+    } else {
+        null
+    }
+    val onTap = p[JetpacsListItemMembers.OnTap]
+    val onLongTap = p[JetpacsListItemMembers.OnLongTap]
+    val title = p.getOr(JetpacsListItemMembers.Title, "")
+    val overline = p.untypedText(JetpacsListItemMembers.Overline).orEmpty()
+    val subtitle = p.untypedText(JetpacsListItemMembers.Subtitle).orEmpty()
+    val swipeStart = p[JetpacsListItemMembers.SwipeStart]
+    val swipeEnd = p[JetpacsListItemMembers.SwipeEnd]
     val swipeActions = remember(swipeStart, swipeEnd) {
         listOfNotNull(
             jetpacsSwipeSide(swipeStart)?.let { RevealSwipeDirection.Start to it },
@@ -227,12 +233,13 @@ internal fun RenderListItem(
             },
             overline = overline,
             subtitle = subtitle,
-            titleMaxLines = node.positiveInt("title_max_lines") ?: Int.MAX_VALUE,
-            subtitleMaxLines = node.positiveInt("subtitle_max_lines") ?: Int.MAX_VALUE,
-            leading = (node["leading"] as? JsonObject)?.let { leading ->
+            titleMaxLines = p.untypedPositiveInt(JetpacsListItemMembers.TitleMaxLines) ?: Int.MAX_VALUE,
+            subtitleMaxLines = p.untypedPositiveInt(JetpacsListItemMembers.SubtitleMaxLines)
+                ?: Int.MAX_VALUE,
+            leading = (p.raw(JetpacsListItemMembers.Leading) as? JsonObject)?.let { leading ->
                 { context.renderChild(leading, 0) }
             },
-            trailing = (node["trailing"] as? JsonObject)?.let { trailing ->
+            trailing = p[JetpacsListItemMembers.Trailing]?.let { trailing ->
                 // Index 1: the leading slot owns 0, so both keep a distinct
                 // identity path under the row.
                 { context.renderChild(trailing, 1) }
@@ -247,13 +254,3 @@ internal fun RenderListItem(
         )
     }
 }
-
-private fun JsonObject.text(name: String): String =
-    (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content.orEmpty()
-
-private fun JsonObject.boolean(name: String, default: Boolean): Boolean =
-    (this[name] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull ?: default
-
-private fun JsonObject.positiveInt(name: String): Int? =
-    (this[name] as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
-        ?.toInt()?.takeIf { it > 0 }

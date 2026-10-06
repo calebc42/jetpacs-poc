@@ -21,13 +21,15 @@ import androidx.compose.ui.semantics.toggleableState
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.Color
+import com.calebc42.ebp.renderer.compose.ComposeComponentRegistry
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.ebp.renderer.compose.ComposeThemeRoles
 import com.calebc42.ebp.renderer.compose.LocalComposeChromeStyles
 import com.calebc42.ebp.renderer.compose.LocalComposeThemeRoles
 import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
+import com.calebc42.ebp.renderer.compose.RenderChildrenFallback
 import com.calebc42.ebp.renderer.model.RendererContribution
-import kotlinx.serialization.json.JsonArray
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 
@@ -76,11 +78,24 @@ internal fun designComponentNonTextStyle(
     }
 }
 
-/** Foundation implementation of the bounded `jetpacs.design` extension. */
+/**
+ * Foundation implementation of the bounded `jetpacs.design` extension.
+ *
+ * Dispatch is [registry]: one component per manifest node type, reading its
+ * children through the member set generated from
+ * `renderer-extensions/jetpacs-design.json`. The scope and style programs
+ * themselves are compiled from the node by [DesignModel], exactly as
+ * admission compiles them.
+ */
 object JetpacsDesignRenderer : ComposeNodeExtension {
     override val id: String = "jetpacs.design.compose"
     override val extensionId: String = JETPACS_DESIGN_EXTENSION
     override val nodeTypes: Set<String> = JETPACS_DESIGN_NODE_SCHEMA.keys
+
+    /** One component per owned node type; `JetpacsComponentRegistriesTest` pins it to the manifest. */
+    val registry: ComposeComponentRegistry<ComposeExtensionRenderContext> = ComposeComponentRegistry(
+        listOf(JetpacsDesignScopeComponent, JetpacsStyledComponent, JetpacsPressableComponent),
+    )
 
     @Composable
     override fun render(
@@ -88,26 +103,39 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
-        when ((node["t"] as? JsonPrimitive)?.content) {
-            "jetpacs.design_scope" -> RenderScope(node, context, modifier)
-            "jetpacs.styled" -> RenderStyled(node, context, modifier)
-            "jetpacs.pressable" -> RenderPressable(node, context, modifier)
-            else -> FallbackChildren(node, context, modifier)
+        val type = (node["t"] as? JsonPrimitive)?.content
+        val component = type?.let(registry::componentFor)
+        if (component != null) {
+            component.render(node, context, modifier)
+        } else {
+            // Advertised but unowned: the SPEC §16.2 degradation.
+            RenderChildrenFallback(node, context, modifier)
         }
     }
+}
 
+/**
+ * `jetpacs.design_scope`: compiles the scope against the enclosing one and
+ * provides it -- with any re-declared theme roles and the chrome they imply --
+ * to the scoped subtree. A scope that does not compile renders its children
+ * unscoped.
+ */
+internal object JetpacsDesignScopeComponent :
+    JetpacsComponent("jetpacs.design_scope", JetpacsDesignScopeMembers) {
     @Composable
-    private fun RenderScope(
+    override fun render(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
+        val children = NodeProperties(node, JetpacsDesignScopeMembers)[JetpacsDesignScopeMembers.Children]
+            .orEmpty()
         val parent = LocalDesignScope.current
         val scope = remember(node, parent, context.path) {
             modelOrNull { DesignModel.compileScope(node, parent, context.path) }
         }
         if (scope == null) {
-            FallbackChildren(node, context, modifier)
+            RenderDesignChildren(children, context, modifier)
             return
         }
         val ambient = LocalJetpacsTheme.current
@@ -131,7 +159,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
                 LocalDesignScope provides scope,
                 LocalComposeChromeStyles provides chrome,
             ) {
-                RenderChildren(node, context, modifier, scoped = true)
+                RenderDesignChildren(children, context, modifier, scoped = true)
             }
         } else {
             CompositionLocalProvider(
@@ -140,17 +168,21 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
                 LocalComposeThemeRoles provides scopedTheme.roles.toComposeThemeRoles(),
                 LocalComposeChromeStyles provides chrome,
             ) {
-                RenderChildren(node, context, modifier, scoped = true)
+                RenderDesignChildren(children, context, modifier, scoped = true)
             }
         }
     }
+}
 
+/** `jetpacs.styled`: a style program applied to its children through the nearest scope. */
+internal object JetpacsStyledComponent : JetpacsComponent("jetpacs.styled", JetpacsStyledMembers) {
     @Composable
-    private fun RenderStyled(
+    override fun render(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
+        val children = NodeProperties(node, JetpacsStyledMembers)[JetpacsStyledMembers.Children].orEmpty()
         val scope = LocalDesignScope.current
         val computed = remember(node, scope, context.path) {
             modelOrNull {
@@ -163,7 +195,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
             }
         }
         if (computed == null) {
-            FallbackChildren(node, context, modifier)
+            RenderDesignChildren(children, context, modifier)
             return
         }
         val style = remember(computed.layers) { computed.toFoundationStyle() }
@@ -172,16 +204,23 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
         val childStyle = Modifier.styleable(styleState, style)
         val textContext = remember(computed) { DesignTextContext(computed, null) }
         CompositionLocalProvider(LocalDesignTextContext provides textContext) {
-            RenderChildren(node, context, modifier, childStyle, scoped = true)
+            RenderDesignChildren(children, context, modifier, childStyle, scoped = true)
         }
     }
+}
 
+/**
+ * `jetpacs.pressable`: an interactive face whose style follows its live
+ * state. What a press means is Emacs' decision, carried by `on_tap`.
+ */
+internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable", JetpacsPressableMembers) {
     @Composable
-    private fun RenderPressable(
+    override fun render(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
+        val p = NodeProperties(node, JetpacsPressableMembers)
         val scope = LocalDesignScope.current
         val computed = remember(node, scope, context.path) {
             modelOrNull {
@@ -193,15 +232,16 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
             }
         }
         if (computed == null) {
-            FallbackChildren(node, context, modifier)
+            RenderDesignChildren(p[JetpacsPressableMembers.Children].orEmpty(), context, modifier)
             return
         }
 
-        val enabled = node.boolean("enabled", true)
-        val selected = node.boolean("selected", false)
-        val toggled = node.boolean("toggled", false)
-        val hasSelected = "selected" in node
-        val hasToggled = "toggled" in node
+        val enabled = p.getOr(JetpacsPressableMembers.Enabled, true)
+        val selected = p.getOr(JetpacsPressableMembers.Selected, false)
+        val toggled = p.getOr(JetpacsPressableMembers.Toggled, false)
+        val hasSelected = p.has(JetpacsPressableMembers.Selected)
+        val hasToggled = p.has(JetpacsPressableMembers.Toggled)
+        val onTap = p[JetpacsPressableMembers.OnTap]
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource) {
             it.isEnabled = enabled
@@ -220,7 +260,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
                     enabled = enabled,
                     role = Role.Button,
                 ) {
-                    context.action(node["on_tap"] as? JsonObject)
+                    context.action(onTap)
                 }
                 .semantics(mergeDescendants = true) {
                     if (hasSelected) this.selected = selected
@@ -237,50 +277,38 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
             val textContext = remember(computed, styleState) {
                 DesignTextContext(computed, styleState)
             }
-            val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
+            val children = p[JetpacsPressableMembers.Children].orEmpty()
             CompositionLocalProvider(LocalDesignTextContext provides textContext) {
                 children.forEachIndexed { index, child ->
-                    (child as? JsonObject)?.let { context.renderScopedChild(it, index) }
+                    context.renderScopedChild(child, index)
                 }
             }
         }
     }
+}
 
-    @Composable
-    private fun FallbackChildren(
-        node: JsonObject,
-        context: ComposeExtensionRenderContext,
-        modifier: Modifier,
-    ) {
-        RenderChildren(node, context, modifier)
-    }
-
-    /**
-     * Render authored children. A compiled scope renders them [scoped], so the
-     * canonical `text`, `text_input`, and `editor` overrides registered under
-     * `jetpacs.design` select Foundation presentation for the whole subtree;
-     * the malformed-configuration fallback renders unscoped so nothing
-     * authored against a broken scope gains styling or interaction.
-     */
-    @Composable
-    private fun RenderChildren(
-        node: JsonObject,
-        context: ComposeExtensionRenderContext,
-        outerModifier: Modifier,
-        childModifier: Modifier = Modifier,
-        scoped: Boolean = false,
-    ) {
-        val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
-        children.forEachIndexed { index, child ->
-            (child as? JsonObject)?.let {
-                val childModifierAt =
-                    if (index == 0) outerModifier.then(childModifier) else childModifier
-                if (scoped) {
-                    context.renderScopedChild(it, index, childModifierAt)
-                } else {
-                    context.renderChild(it, index, childModifierAt)
-                }
-            }
+/**
+ * Render a design node's authored [children]. A compiled scope renders them
+ * [scoped], so the canonical `text`, `text_input`, and `editor` overrides
+ * registered under `jetpacs.design` select Foundation presentation for the
+ * whole subtree; the malformed-configuration fallback renders unscoped so
+ * nothing authored against a broken scope gains styling or interaction.
+ */
+@Composable
+internal fun RenderDesignChildren(
+    children: List<JsonObject>,
+    context: ComposeExtensionRenderContext,
+    outerModifier: Modifier,
+    childModifier: Modifier = Modifier,
+    scoped: Boolean = false,
+) {
+    children.forEachIndexed { index, child ->
+        val childModifierAt =
+            if (index == 0) outerModifier.then(childModifier) else childModifier
+        if (scoped) {
+            context.renderScopedChild(child, index, childModifierAt)
+        } else {
+            context.renderChild(child, index, childModifierAt)
         }
     }
 }
@@ -331,8 +359,3 @@ private inline fun <T> modelOrNull(block: () -> T): T? = try {
     null
 }
 
-private fun JsonObject.boolean(name: String, default: Boolean): Boolean {
-    val primitive = this[name] as? JsonPrimitive ?: return default
-    if (primitive.isString) return default
-    return primitive.content.toBooleanStrictOrNull() ?: default
-}

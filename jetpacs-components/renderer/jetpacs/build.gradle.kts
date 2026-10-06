@@ -14,6 +14,7 @@ android {
     buildFeatures { compose = true }
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
     testOptions {
+        unitTests.isIncludeAndroidResources = true
         screenshotTests { imageDifferenceThreshold = 0.001f }
     }
     compileOptions {
@@ -38,6 +39,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
 
     testImplementation(libs.junit)
+    testImplementation(projects.renderer.composeTesting)
+    testImplementation(libs.robolectric)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.activity.compose)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)

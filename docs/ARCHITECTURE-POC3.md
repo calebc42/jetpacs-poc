@@ -150,6 +150,10 @@ the owning extension renderer, a design-scoped canonical override that
 applies, then the canonical Material component from `MaterialComponents`, and
 finally the SPEC §16.2 children fallback. `NodeSupportPinTest` pins the
 registry's node types to the advertised app profile.
+The `jetpacs.components` and `jetpacs.design` extension renderers are
+registries of the same shape (`JetpacsComponentsRenderer.registry`,
+`JetpacsDesignRenderer.registry`), pinned to their manifests by
+`JetpacsComponentRegistriesTest`.
 
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,

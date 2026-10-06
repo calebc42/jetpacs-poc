@@ -7,12 +7,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import com.calebc42.ebp.renderer.compose.ComposeComponentRegistry
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.compose.ComposeNodeComponent
 import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
 import com.calebc42.ebp.renderer.model.RendererContribution
-import kotlinx.serialization.json.JsonArray
+import com.calebc42.ebp.renderer.model.vocabulary.NodeMember
+import com.calebc42.ebp.renderer.model.vocabulary.NodeMemberSet
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 
 /** App-surface contribution implemented by [JetpacsComponentsRenderer]. */
 val JetpacsComponentsContribution = RendererContribution(
@@ -21,11 +26,47 @@ val JetpacsComponentsContribution = RendererContribution(
     extensions = setOf(JETPACS_COMPONENTS_EXTENSION),
 )
 
-/** Compose Foundation implementation of the `jetpacs.components` extension. */
+/** A Jetpacs extension node component: one node type presented in the extension context. */
+internal typealias JetpacsNodeComponent = ComposeNodeComponent<ComposeExtensionRenderContext>
+
+/**
+ * Base of every Jetpacs extension component. The node type and the generated
+ * member set it reads through are fixed per object, so a registry's
+ * `members.nodeType == nodeType` invariant holds by construction.
+ */
+internal abstract class JetpacsComponent(
+    final override val nodeType: String,
+    final override val members: NodeMemberSet,
+) : JetpacsNodeComponent
+
+/**
+ * Compose Foundation implementation of the `jetpacs.components` extension.
+ *
+ * Dispatch is [registry]: one component per manifest node type, each reading
+ * its node through the member set generated from
+ * `renderer-extensions/jetpacs-components.json`. That manifest is format 1,
+ * which types a member by its core-contract name, so the members the core
+ * contract cannot name (`value`, `selected`, `pinned`, the list item's
+ * `overline`, `subtitle`, line limits and `leading`) are untyped and are read
+ * strictly from the raw element through the helpers at the end of this file.
+ */
 object JetpacsComponentsRenderer : ComposeNodeExtension {
     override val id: String = "jetpacs.components.compose"
     override val extensionId: String = JETPACS_COMPONENTS_EXTENSION
     override val nodeTypes: Set<String> = JETPACS_COMPONENTS_NODE_SCHEMA.keys
+
+    /** One component per owned node type; `JetpacsComponentRegistriesTest` pins it to the manifest. */
+    val registry: ComposeComponentRegistry<ComposeExtensionRenderContext> = ComposeComponentRegistry(
+        listOf(
+            JetpacsActionComponent,
+            JetpacsChoiceComponent,
+            JetpacsPanelComponent,
+            JetpacsListItemComponent,
+            JetpacsSectionNavigatorComponent,
+            JetpacsTabsComponent,
+            JetpacsScopeComponent,
+        ),
+    )
 
     @Composable
     override fun render(
@@ -33,59 +74,42 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
-        when ((node["t"] as JsonPrimitive).content) {
-            "jetpacs.action" -> JetpacsAction(
-                label = (node["label"] as JsonPrimitive).content,
-                enabled = node.boolean("enabled", true),
-                onClick = { context.action(node["on_tap"] as? JsonObject) },
-                modifier = modifier,
-            )
-            "jetpacs.choice" -> RenderChoice(node, context, modifier)
-            "jetpacs.panel" -> JetpacsPanel(
-                label = (node["label"] as JsonPrimitive).content,
-                modifier = modifier,
-            ) {
-                val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
-                children.forEachIndexed { index, element ->
-                    (element as? JsonObject)?.let {
-                        context.renderChild(it, index)
-                    }
-                }
-            }
-            "jetpacs.list_item" -> RenderListItem(node, context, modifier)
-            "jetpacs.section_navigator" -> RenderSectionNavigator(node, context, modifier)
-            "jetpacs.tabs" -> RenderTabs(node, context, modifier)
-            "jetpacs.scope" -> {
-                // An invisible selection boundary: no layout, modifier,
-                // semantics, state, or interaction owner is introduced.
-                // Inside an active design scope the boundary is redundant --
-                // the design scope selects the Foundation field and editor
-                // this scope exists for, and every other override besides --
-                // so the children keep the enclosing scope rather than
-                // narrowing to this one and losing those.
-                val designActive = LocalDesignScope.current != null
-                val children = node["children"] as? JsonArray ?: JsonArray(emptyList())
-                children.forEachIndexed { index, element ->
-                    (element as? JsonObject)?.let {
-                        if (designActive) {
-                            context.renderChild(it, index)
-                        } else {
-                            context.renderScopedChild(it, index)
-                        }
-                    }
-                }
-            }
-            else -> error("${node["t"]} is not owned by $id")
-        }
+        val type = (node["t"] as? JsonPrimitive)?.content
+        val component = type?.let(registry::componentFor)
+            ?: error("${node["t"]} is not owned by $id")
+        component.render(node, context, modifier)
     }
+}
 
+/** `jetpacs.action`: the Foundation action face, dispatching `on_tap`. */
+internal object JetpacsActionComponent : JetpacsComponent("jetpacs.action", JetpacsActionMembers) {
     @Composable
-    private fun RenderChoice(
+    override fun render(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
-        val id = (node["id"] as JsonPrimitive).content
+        val p = NodeProperties(node, JetpacsActionMembers)
+        val onTap = p[JetpacsActionMembers.OnTap]
+        JetpacsAction(
+            label = p.getOr(JetpacsActionMembers.Label, ""),
+            enabled = p.getOr(JetpacsActionMembers.Enabled, true),
+            onClick = { context.action(onTap) },
+            modifier = modifier,
+        )
+    }
+}
+
+/** `jetpacs.choice`: a stateful toggle that publishes its value before `on_change`. */
+internal object JetpacsChoiceComponent : JetpacsComponent("jetpacs.choice", JetpacsChoiceMembers) {
+    @Composable
+    override fun render(
+        node: JsonObject,
+        context: ComposeExtensionRenderContext,
+        modifier: Modifier,
+    ) {
+        val p = NodeProperties(node, JetpacsChoiceMembers)
+        val id = p[JetpacsChoiceMembers.Id] ?: return
         val epoch = context.epochOf(id)
         var checked by rememberSaveable(
             context.surface,
@@ -94,82 +118,70 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
         ) {
             mutableStateOf(
                 (context.storeValue(id) as? JsonPrimitive)?.strictBooleanOrNull()
-                    ?: node.boolean("checked", false),
+                    ?: p.getOr(JetpacsChoiceMembers.Checked, false),
             )
         }
+        val onChange = p[JetpacsChoiceMembers.OnChange]
         JetpacsChoice(
-            label = (node["label"] as JsonPrimitive).content,
+            label = p.getOr(JetpacsChoiceMembers.Label, ""),
             checked = checked,
-            enabled = node.boolean("enabled", true),
+            enabled = p.getOr(JetpacsChoiceMembers.Enabled, true),
             onCheckedChange = { next ->
                 checked = next
                 val value = JsonPrimitive(next)
                 context.state(id, value)
-                context.action(node["on_change"] as? JsonObject, value)
+                context.action(onChange, value)
             },
             modifier = modifier,
         )
     }
+}
 
+/** `jetpacs.panel`: a labelled panel around its children. */
+internal object JetpacsPanelComponent : JetpacsComponent("jetpacs.panel", JetpacsPanelMembers) {
     @Composable
-    private fun RenderTabs(
+    override fun render(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
-        val options = (node["options"] as? JsonArray)
-            ?.mapNotNull { element ->
-                val option = element as? JsonObject ?: return@mapNotNull null
-                val label = (option["label"] as? JsonPrimitive)
-                    ?.takeIf { it.isString }
-                    ?.content
-                    ?: return@mapNotNull null
-                val value = (option["value"] as? JsonPrimitive)
-                    ?.takeIf { it.isString }
-                    ?.content
-                    ?: return@mapNotNull null
-                JetpacsTabOption(label, value)
+        val p = NodeProperties(node, JetpacsPanelMembers)
+        JetpacsPanel(
+            label = p.getOr(JetpacsPanelMembers.Label, ""),
+            modifier = modifier,
+        ) {
+            p[JetpacsPanelMembers.Children].orEmpty().forEachIndexed { index, child ->
+                context.renderChild(child, index)
             }
-            .orEmpty()
-        val value = (node["value"] as? JsonPrimitive)
-            ?.takeIf { it.isString }
-            ?.content
-            .orEmpty()
-        val scrollable = node.boolean("scrollable", false)
-        val variant = (node["variant"] as? JsonPrimitive)
-            ?.takeIf { it.isString }
-            ?.content
-
-        JetpacsTabs(
-            options = options,
-            value = value,
-            enabled = node.boolean("enabled", true),
-            scrollable = scrollable,
-            variant = resolveJetpacsTabVariant(variant, scrollable),
-            onValueChange = { next ->
-                context.action(node["on_change"] as? JsonObject, JsonPrimitive(next))
-            },
-            modifier = modifier,
-        )
+        }
     }
+}
 
+/** `jetpacs.list_item`: the row primitive; its reading lives with the row in JetpacsListItem.kt. */
+internal object JetpacsListItemComponent : JetpacsComponent("jetpacs.list_item", JetpacsListItemMembers) {
     @Composable
-    private fun RenderSectionNavigator(
+    override fun render(
+        node: JsonObject,
+        context: ComposeExtensionRenderContext,
+        modifier: Modifier,
+    ) = RenderListItem(node, context, modifier)
+}
+
+/** `jetpacs.section_navigator`: a controlled outline selector; the selection is Emacs' decision. */
+internal object JetpacsSectionNavigatorComponent :
+    JetpacsComponent("jetpacs.section_navigator", JetpacsSectionNavigatorMembers) {
+    @Composable
+    override fun render(
         node: JsonObject,
         context: ComposeExtensionRenderContext,
         modifier: Modifier,
     ) {
-        val options = (node["options"] as? JsonArray)
+        val p = NodeProperties(node, JetpacsSectionNavigatorMembers)
+        val options = p[JetpacsSectionNavigatorMembers.Options]
             ?.mapNotNull { element ->
                 val option = element as? JsonObject ?: return@mapNotNull null
-                val label = (option["label"] as? JsonPrimitive)
-                    ?.takeIf { it.isString }
-                    ?.content
-                    ?: return@mapNotNull null
-                val value = (option["value"] as? JsonPrimitive)
-                    ?.takeIf { it.isString }
-                    ?.content
-                    ?: return@mapNotNull null
+                val label = option.optionText("label") ?: return@mapNotNull null
+                val value = option.optionText("value") ?: return@mapNotNull null
                 val level = (option["level"] as? JsonPrimitive)
                     ?.takeIf { !it.isString }
                     ?.content
@@ -179,25 +191,100 @@ object JetpacsComponentsRenderer : ComposeNodeExtension {
                 JetpacsSectionOption(label, value, level)
             }
             .orEmpty()
-        val value = (node["value"] as? JsonPrimitive)
-            ?.takeIf { it.isString }
-            ?.content
-            .orEmpty()
+        val onChange = p[JetpacsSectionNavigatorMembers.OnChange]
 
         JetpacsSectionNavigator(
             options = options,
-            value = value,
-            enabled = node.boolean("enabled", true),
+            value = p.untypedText(JetpacsSectionNavigatorMembers.Value).orEmpty(),
+            enabled = p.getOr(JetpacsSectionNavigatorMembers.Enabled, true),
             onValueChange = { next ->
-                context.action(node["on_change"] as? JsonObject, JsonPrimitive(next))
+                context.action(onChange, JsonPrimitive(next))
             },
             modifier = modifier,
         )
     }
 }
 
+/** `jetpacs.tabs`: a controlled tab strip; `variant` resolves against `scrollable`. */
+internal object JetpacsTabsComponent : JetpacsComponent("jetpacs.tabs", JetpacsTabsMembers) {
+    @Composable
+    override fun render(
+        node: JsonObject,
+        context: ComposeExtensionRenderContext,
+        modifier: Modifier,
+    ) {
+        val p = NodeProperties(node, JetpacsTabsMembers)
+        val options = p[JetpacsTabsMembers.Options]
+            ?.mapNotNull { element ->
+                val option = element as? JsonObject ?: return@mapNotNull null
+                val label = option.optionText("label") ?: return@mapNotNull null
+                val value = option.optionText("value") ?: return@mapNotNull null
+                JetpacsTabOption(label, value)
+            }
+            .orEmpty()
+        val scrollable = p.getOr(JetpacsTabsMembers.Scrollable, false)
+        val onChange = p[JetpacsTabsMembers.OnChange]
+
+        JetpacsTabs(
+            options = options,
+            value = p.untypedText(JetpacsTabsMembers.Value).orEmpty(),
+            enabled = p.getOr(JetpacsTabsMembers.Enabled, true),
+            scrollable = scrollable,
+            variant = resolveJetpacsTabVariant(p[JetpacsTabsMembers.Variant], scrollable),
+            onValueChange = { next ->
+                context.action(onChange, JsonPrimitive(next))
+            },
+            modifier = modifier,
+        )
+    }
+}
+
+/**
+ * `jetpacs.scope`: an invisible selection boundary. No layout, modifier,
+ * semantics, state, or interaction owner is introduced. Inside an active
+ * design scope the boundary is redundant -- the design scope selects the
+ * Foundation field and editor this scope exists for, and every other
+ * override besides -- so the children keep the enclosing scope rather than
+ * narrowing to this one and losing those.
+ */
+internal object JetpacsScopeComponent : JetpacsComponent("jetpacs.scope", JetpacsScopeMembers) {
+    @Composable
+    override fun render(
+        node: JsonObject,
+        context: ComposeExtensionRenderContext,
+        modifier: Modifier,
+    ) {
+        val designActive = LocalDesignScope.current != null
+        val children = NodeProperties(node, JetpacsScopeMembers)[JetpacsScopeMembers.Children]
+        children.orEmpty().forEachIndexed { index, child ->
+            if (designActive) {
+                context.renderChild(child, index)
+            } else {
+                context.renderScopedChild(child, index)
+            }
+        }
+    }
+}
+
+/**
+ * A text member the format-1 manifest leaves untyped, read as strictly as a
+ * typed string member is: a string primitive, or nothing.
+ */
+internal fun NodeProperties.untypedText(member: NodeMember<*>): String? =
+    (raw(member) as? JsonPrimitive)?.takeIf { it.isString }?.content
+
+/** An untyped flag, read strictly: a boolean literal, or nothing (SPEC §17.1). */
+internal fun NodeProperties.untypedBoolean(member: NodeMember<*>): Boolean? =
+    (raw(member) as? JsonPrimitive)?.strictBooleanOrNull()
+
+/** An untyped line limit, read strictly: a positive number literal, or nothing. */
+internal fun NodeProperties.untypedPositiveInt(member: NodeMember<*>): Int? =
+    (raw(member) as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
+        ?.toInt()?.takeIf { it > 0 }
+
 private fun JsonPrimitive.strictBooleanOrNull(): Boolean? =
     takeIf { !isString }?.content?.toBooleanStrictOrNull()
 
-private fun JsonObject.boolean(name: String, default: Boolean): Boolean =
-    (get(name) as? JsonPrimitive)?.strictBooleanOrNull() ?: default
+/** One option's string member: a string primitive, or nothing. */
+private fun JsonObject.optionText(name: String): String? =
+    (this[name] as? JsonPrimitive)?.takeIf { it.isString }?.content

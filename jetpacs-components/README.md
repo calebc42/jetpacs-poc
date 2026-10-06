@@ -5,6 +5,21 @@ unchanged format-1 `jetpacs.components` manifest and the experimental,
 format-2 `jetpacs.design` manifest, their generated Kotlin and Elisp
 projections, the Compose renderers, and the public Elisp builders.
 
+Both manifests also project typed member sets for the renderer
+(`JetpacsComponentsMembers.kt` and `JetpacsDesignMembers.kt`, each with an
+enum twin) through the same generator; `tools/check-projections.sh` checks
+them together with the vocabularies. Each renderer dispatches through a
+`ComposeComponentRegistry` of one component per node type
+(`JetpacsComponentsRenderer.registry`, `JetpacsDesignRenderer.registry`), and
+each component reads its node through its generated member set. A format-1
+manifest types a member by its core-contract name, so the ten
+`jetpacs.components` members the core contract cannot name (`value`,
+`selected`, `pinned`, and the list item's `overline`, `subtitle`, line limits
+and `leading`) stay untyped until the manifest moves to format 2; the
+renderer reads those strictly from the raw element. The golden corpus replays
+through the registry headless under Robolectric
+(`JetpacsComponentsGoldenReplayTest`).
+
 `jetpacs.design` is a bounded language of tokens, styles, state rules, and
 motions. Its pure Kotlin compiler is shared by admission and rendering; no
 AndroidX `Style` or executable Elisp crosses either public boundary. Loading
@@ -61,6 +76,7 @@ part of the EBP protocol specification.
 
 ```sh
 test/run-tests.sh
+tools/check-projections.sh
 ./gradlew :renderer:jetpacs:testDebugUnitTest --console=plain
 ```
 

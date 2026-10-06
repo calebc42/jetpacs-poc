@@ -8,3 +8,7 @@ byte-for-byte reproducible through `tools/check-projections.sh`.
 - Keep Jetpacs application policy out of reusable renderer primitives.
 - Add focused Kotlin and Elisp coverage for every new component contract.
 - Never hand-edit a generated vocabulary without changing its manifest.
+- The `*Members.kt` and `*Enums.kt` files beside the vocabularies are
+  generated from the same manifests by the commands in
+  `tools/check-projections.sh`; a renderer component reads its node through
+  them, never through ad hoc map reads.
