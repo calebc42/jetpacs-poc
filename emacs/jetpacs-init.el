@@ -460,7 +460,7 @@ the hub forward without creating a competing client."
    :wants '("theme" "presentation.toast" "presentation.snackbar"
             "surfaces.dialog" "surfaces.notification" "surfaces.widget"
             "reminders.owner" "reminders.actions" "offline.wake" "editor.sync"
-            "triggers" "capabilities")
+            "triggers" "capabilities" "data.model")
    :receipt-file (expand-file-name "receipts.sqlite"
                                    jetpacs-var-directory)
    :ready-function #'jetpacs-ready-landing))
