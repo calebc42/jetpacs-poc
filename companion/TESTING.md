@@ -236,7 +236,12 @@ header.
 On 2026-10-06 every class above, plus `ChromeStylesSeamTest` and the app's
 `PresentedScreenInstrumentedTest`, `HarpPresentedScreenTest` and
 `OrgzlyPresentedScreenTest`, passed on a Galaxy S21 Ultra (Android 15) over
-wireless ADB. Two checks needed phone-aware assertions: fixed tab widths agree
+wireless ADB. `SurfaceDataPatchRetentionInstrumentedTest` (EBP §13.8: a
+`surface.data` re-materialization keeps a lazy column's scroll position and
+shows the bound value, through the Companion's real installation) passed there
+the same day, run with `am instrument` against the deployed debug Companion
+rather than through `connectedDebugAndroidTest`, which would have uninstalled
+it afterwards. Two checks needed phone-aware assertions: fixed tab widths agree
 only to within one pixel when the row width is not a multiple of the tab
 count, and the Harp save flow dismisses the soft keyboard before clicking
 Save, because the keyboard window otherwise swallows the click. Note that
