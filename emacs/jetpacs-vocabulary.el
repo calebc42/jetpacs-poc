@@ -412,6 +412,7 @@
     ("dropdown.value" . "option-value")
     ("segmented_button.value" . "option-value-or-array")
     ("scaffold.floating_toolbar_fab" . "node")
+    ("date_stamp.month" . "string")
     ("pad" . "pad-object")
     ("min_width" . "number")
     ("max_width" . "number")
@@ -426,7 +427,7 @@
   "Contract-projected wire field names and their declared value types.")
 
 (defconst jetpacs-action-hook-keys
-  '("on_tap" "on_change" "on_submit" "on_save" "on_enter" "on_pick" "on_reorder" "on_refresh" "on_sheet_change" "on_expand_change" "on_long_tap" "on_add_row" "on_add_col" "on_day_tap" "on_month_change" "on_point_tap" "on_trigger" "header_action")
+  '("on_tap" "on_change" "on_submit" "on_save" "on_enter" "on_pick" "on_reorder" "on_refresh" "on_sheet_change" "on_expand_change" "on_long_tap" "on_add_row" "on_add_col" "on_day_tap" "on_month_change" "on_point_tap" "on_trigger" "on_search" "on_action" "header_action")
   "Contract-projected Node members which accept an ActionDescriptor.")
 
 (defconst jetpacs-action-descriptor-fields
