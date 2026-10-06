@@ -17,4 +17,6 @@ python3 "$generator" \
   --kotlin-output "$owner_root/companion/renderer/material3/src/main/kotlin/com/calebc42/jetpacs/material3/JetpacsMaterial3Vocabulary.kt" \
   --kotlin-package com.calebc42.jetpacs.material3 \
   --elisp-output "$owner_root/emacs/apps/jetpacs-material3/jetpacs-material3-vocabulary.el" \
+  --members-output "$owner_root/companion/renderer/material3/src/main/kotlin/com/calebc42/jetpacs/material3/JetpacsMaterial3Members.kt" \
+  --enums-output "$owner_root/companion/renderer/material3/src/main/kotlin/com/calebc42/jetpacs/material3/JetpacsMaterial3Enums.kt" \
   --check

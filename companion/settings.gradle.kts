@@ -30,6 +30,7 @@ include(":renderer:compose")
 include(":renderer:glance")
 include(":renderer:jetpacs")
 include(":renderer:material3")
+include(":renderer:compose-testing")
 
 // External checkouts live under one explicitly configured collection. Only
 // the named modules below enter the build; the parent directory is not a module.
@@ -49,6 +50,8 @@ project(":wire").projectDir = repositoriesRoot.resolve("ebp-kmp/wire")
 project(":renderer").projectDir = repositoriesRoot.resolve("ebp-compose/renderer")
 project(":renderer:model").projectDir = repositoriesRoot.resolve("ebp-compose/renderer/model")
 project(":renderer:compose").projectDir = repositoriesRoot.resolve("ebp-compose/renderer/compose")
+project(":renderer:compose-testing").projectDir =
+    repositoriesRoot.resolve("ebp-compose/renderer/compose-testing")
 project(":renderer:glance").projectDir = file("renderer/glance")
 project(":renderer:jetpacs").projectDir =
     file("../jetpacs-components/renderer/jetpacs")
