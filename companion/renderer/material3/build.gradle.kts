@@ -15,6 +15,9 @@ android {
     experimentalProperties["android.experimental.enableScreenshotTest"] = true
     testOptions {
         screenshotTests { imageDifferenceThreshold = 0.001f }
+        // Robolectric: the JVM golden replay and component tests compose the
+        // real Material renderer without a device (companion/TESTING.md).
+        unitTests.isIncludeAndroidResources = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -58,6 +61,10 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.compose.ui.test.manifest)
+    testImplementation(libs.robolectric)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.espresso.core)
@@ -66,4 +73,10 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     screenshotTestImplementation(libs.screenshot.validation.api)
     screenshotTestImplementation(libs.androidx.compose.ui.tooling)
+}
+
+tasks.withType<Test>().configureEach {
+    // The golden corpus (`goldens/widgets.golden`) is read from the sibling
+    // `ebp` checkout, exactly as `:renderer:glance` and `:wire` do.
+    systemProperty("ebp.dir", (gradle.extra["jetpacs.repositoriesRoot"] as File).resolve("ebp").absolutePath)
 }
