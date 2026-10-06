@@ -154,6 +154,10 @@ The `jetpacs.components` and `jetpacs.design` extension renderers are
 registries of the same shape (`JetpacsComponentsRenderer.registry`,
 `JetpacsDesignRenderer.registry`), pinned to their manifests by
 `JetpacsComponentRegistriesTest`.
+The Glance widget translation is a registry of the same shape over
+`:renderer:model`'s toolkit-neutral `NodeComponentRegistry` (`GlanceComponents`);
+its contribution advertises exactly the registry's node types, so the
+advertised and the implemented widget profile cannot split.
 
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,

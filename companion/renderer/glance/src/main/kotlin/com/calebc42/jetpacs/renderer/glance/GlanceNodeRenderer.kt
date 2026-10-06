@@ -35,11 +35,28 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider
+import com.calebc42.ebp.renderer.model.NodeComponentRegistry
 import com.calebc42.ebp.renderer.model.RendererContribution
 import com.calebc42.ebp.renderer.model.RendererMemberSupport
 import com.calebc42.ebp.renderer.model.RendererProfile
 import com.calebc42.ebp.renderer.model.RendererRegistry
 import com.calebc42.ebp.renderer.model.RendererTargetLimits
+import com.calebc42.ebp.renderer.model.vocabulary.NodeMemberSet
+import com.calebc42.ebp.renderer.model.vocabulary.generated.BadgeMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.BoxMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ButtonMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.CardMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ColumnMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.DividerMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.EmptyStateMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.IconButtonMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.IconMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.LazyColumnMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.RowMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.SectionHeaderMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.SpacerMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.SurfaceMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.TextMembers
 import com.calebc42.ebp.wire.MAX_WIDGET_LAZY_ITEMS
 import com.calebc42.ebp.wire.MAX_WIDGET_NODE_DEPTH
 import com.calebc42.ebp.wire.MAX_WIDGET_NODES
@@ -54,28 +71,41 @@ fun interface GlanceActionResolver {
     fun resolve(path: String, descriptor: JsonObject): Action?
 }
 
-private val WidgetNodes = setOf(
-    "text",
-    "icon",
-    "row",
-    "column",
-    "box",
-    "surface",
-    "lazy_column",
-    "spacer",
-    "divider",
-    "card",
-    "button",
-    "icon_button",
-    "badge",
-    "section_header",
-    "empty_state",
+/** A widget component bound to the generated member set of the contract node it presents. */
+internal abstract class GlanceComponent(
+    final override val nodeType: String,
+    final override val members: NodeMemberSet,
+) : GlanceNodeComponent
+
+/**
+ * Every widget node type the Glance translation presents, keyed by type.
+ * [GlanceRendererContribution] advertises exactly these, so the advertised
+ * and the implemented widget profile cannot split.
+ */
+val GlanceComponents: NodeComponentRegistry<GlanceNodeComponent> = NodeComponentRegistry(
+    listOf(
+        GlanceTextComponent,
+        GlanceIconComponent,
+        GlanceRowComponent,
+        GlanceColumnComponent,
+        GlanceBoxComponent,
+        GlanceSurfaceComponent,
+        GlanceLazyColumnComponent,
+        GlanceSpacerComponent,
+        GlanceDividerComponent,
+        GlanceCardComponent,
+        GlanceButtonComponent,
+        GlanceIconButtonComponent,
+        GlanceBadgeComponent,
+        GlanceSectionHeaderComponent,
+        GlanceEmptyStateComponent,
+    ),
 )
 
 /** The exact EBP surface implemented by the Glance translation below. */
 val GlanceRendererContribution = RendererContribution(
     id = "glance.widget",
-    nodeTypes = WidgetNodes,
+    nodeTypes = GlanceComponents.nodeTypes,
     builtins = setOf("surface.open"),
     memberSupport = RendererMemberSupport(
         universal = setOf("key", "id", "semantics"),
@@ -161,108 +191,172 @@ fun RenderGlanceWidget(
             }
         }
         Spacer(GlanceModifier.height(8.dp))
-        RenderGlanceNode(body, actions, "body", GlanceModifier.fillMaxSize())
+        RenderGlanceNode(body, GlanceRenderContext(actions, "body"), GlanceModifier.fillMaxSize())
     }
 }
 
+/** Present one admitted widget [node] at [path] for [actions]; an unowned type presents nothing. */
 @Composable
 fun RenderGlanceNode(
     node: JsonObject,
     actions: GlanceActionResolver,
     path: String,
     modifier: GlanceModifier = GlanceModifier,
+) = RenderGlanceNode(node, GlanceRenderContext(actions, path), modifier)
+
+/** Present one admitted widget [node] in [context] through [GlanceComponents]. */
+@Composable
+fun RenderGlanceNode(
+    node: JsonObject,
+    context: GlanceRenderContext,
+    modifier: GlanceModifier = GlanceModifier,
 ) {
-    val m = modifier.withSemantics(node)
-    when (node.string("t")) {
-        "text" -> Text(
-            text = node.string("text"),
-            modifier = m,
-            style = textStyle(node),
-            maxLines = node.integer("max_lines") ?: Int.MAX_VALUE,
-        )
-        "icon" -> RenderIcon(
-            name = node.string("name"),
-            contentDescription = node.string("content_description").ifBlank {
-                node.semanticDescription()
-            },
-            color = node.string("color"),
-            size = node.number("size").takeIf { it > 0f } ?: 24f,
-            modifier = m,
-        )
-        "row" -> Row(
-            modifier = if (node.boolean("fill")) m.fillMaxWidth() else m,
-            verticalAlignment = verticalAlignment(node.string("align")),
-        ) {
-            RenderHorizontalChildren(node.children(), actions, path, node.number("spacing"))
+    GlanceComponents.componentFor(node.string("t"))
+        ?.render(node, context, modifier.withSemantics(node))
+}
+
+internal object GlanceTextComponent : GlanceComponent("text", TextMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Text(
+        text = node.string("text"),
+        modifier = modifier,
+        style = textStyle(node),
+        maxLines = node.integer("max_lines") ?: Int.MAX_VALUE,
+    )
+}
+
+internal object GlanceIconComponent : GlanceComponent("icon", IconMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = RenderIcon(
+        name = node.string("name"),
+        contentDescription = node.string("content_description").ifBlank {
+            node.semanticDescription()
+        },
+        color = node.string("color"),
+        size = node.number("size").takeIf { it > 0f } ?: 24f,
+        modifier = modifier,
+    )
+}
+
+internal object GlanceRowComponent : GlanceComponent("row", RowMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Row(
+        modifier = if (node.boolean("fill")) modifier.fillMaxWidth() else modifier,
+        verticalAlignment = verticalAlignment(node.string("align")),
+    ) {
+        RenderHorizontalChildren(node.children(), context, node.number("spacing"))
+    }
+}
+
+internal object GlanceColumnComponent : GlanceComponent("column", ColumnMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Column(
+        modifier = if (node.boolean("fill")) modifier.fillMaxWidth() else modifier,
+        horizontalAlignment = horizontalAlignment(node.string("align")),
+    ) {
+        RenderVerticalChildren(node.children(), context, node.number("spacing"))
+    }
+}
+
+internal object GlanceBoxComponent : GlanceComponent("box", BoxMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Box(
+        modifier = modifier.withAction(node, "on_tap", context),
+        contentAlignment = boxAlignment(node.string("alignment")),
+    ) {
+        node.children().forEachIndexed { index, child ->
+            RenderGlanceNode(child, context.child(index))
         }
-        "column" -> Column(
-            modifier = if (node.boolean("fill")) m.fillMaxWidth() else m,
-            horizontalAlignment = horizontalAlignment(node.string("align")),
-        ) {
-            RenderVerticalChildren(node.children(), actions, path, node.number("spacing"))
-        }
-        "box" -> Box(
-            modifier = m.withAction(node, "on_tap", path, actions),
-            contentAlignment = boxAlignment(node.string("alignment")),
-        ) {
-            node.children().forEachIndexed { index, child ->
-                RenderGlanceNode(child, actions, "$path/$index")
-            }
-        }
-        "surface" -> Column(
-            m.background(color(node.string("color"), GlanceTheme.colors.surface)),
-        ) {
-            RenderVerticalChildren(node.children(), actions, path, 0f)
-        }
-        "lazy_column" -> LazyColumn(
-            modifier = m.padding(node.number("content_padding").dp),
-        ) {
-            val spacing = node.number("spacing")
-            node.children().forEachIndexed { index, child ->
-                item {
-                    Column {
-                        RenderGlanceNode(child, actions, "$path/$index")
-                        if (spacing > 0f && index != node.children().lastIndex) {
-                            Spacer(GlanceModifier.height(spacing.dp))
-                        }
+    }
+}
+
+internal object GlanceSurfaceComponent : GlanceComponent("surface", SurfaceMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Column(
+        modifier.background(color(node.string("color"), GlanceTheme.colors.surface)),
+    ) {
+        RenderVerticalChildren(node.children(), context, 0f)
+    }
+}
+
+internal object GlanceLazyColumnComponent : GlanceComponent("lazy_column", LazyColumnMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = LazyColumn(
+        modifier = modifier.padding(node.number("content_padding").dp),
+    ) {
+        val spacing = node.number("spacing")
+        val children = node.children()
+        children.forEachIndexed { index, child ->
+            item {
+                Column {
+                    RenderGlanceNode(child, context.child(index))
+                    if (spacing > 0f && index != children.lastIndex) {
+                        Spacer(GlanceModifier.height(spacing.dp))
                     }
                 }
             }
         }
-        "spacer" -> Spacer(m.size(8.dp))
-        "divider" -> Spacer(
-            m.fillMaxWidth()
-                .height((node.number("thickness").takeIf { it > 0f } ?: 1f).dp)
-                .background(color(node.string("color"), GlanceTheme.colors.outline)),
+    }
+}
+
+internal object GlanceSpacerComponent : GlanceComponent("spacer", SpacerMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) =
+        Spacer(modifier.size(8.dp))
+}
+
+internal object GlanceDividerComponent : GlanceComponent("divider", DividerMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Spacer(
+        modifier.fillMaxWidth()
+            .height((node.number("thickness").takeIf { it > 0f } ?: 1f).dp)
+            .background(color(node.string("color"), GlanceTheme.colors.outline)),
+    )
+}
+
+internal object GlanceCardComponent : GlanceComponent("card", CardMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Column(
+        modifier.fillMaxWidth()
+            .background(GlanceTheme.colors.surfaceVariant)
+            .cornerRadius(16.dp)
+            .withAction(node, "on_tap", context)
+            .padding(12.dp),
+    ) {
+        RenderVerticalChildren(node.children(), context, 0f)
+    }
+}
+
+internal object GlanceButtonComponent : GlanceComponent("button", ButtonMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) =
+        RenderButton(node, context, modifier)
+}
+
+internal object GlanceIconButtonComponent : GlanceComponent("icon_button", IconButtonMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) {
+        val clickable = context.resolve(node["on_tap"] as? JsonObject)
+        RenderIcon(
+            name = node.string("icon"),
+            contentDescription = node.string("content_description").ifBlank {
+                node.semanticDescription()
+            },
+            color = node.string("color"),
+            size = node.number("size").takeIf { it > 0f } ?: 40f,
+            modifier = if (node.boolean("enabled", true) && clickable != null) {
+                modifier.clickable(clickable)
+            } else {
+                modifier
+            },
         )
-        "card" -> Column(
-            m.fillMaxWidth()
-                .background(GlanceTheme.colors.surfaceVariant)
-                .cornerRadius(16.dp)
-                .withAction(node, "on_tap", path, actions)
-                .padding(12.dp),
-        ) {
-            RenderVerticalChildren(node.children(), actions, path, 0f)
-        }
-        "button" -> RenderButton(node, actions, path, m)
-        "icon_button" -> {
-            val action = node["on_tap"] as? JsonObject
-            val clickable = action?.let { actions.resolve(path, it) }
-            RenderIcon(
-                name = node.string("icon"),
-                contentDescription = node.string("content_description").ifBlank {
-                    node.semanticDescription()
-                },
-                color = node.string("color"),
-                size = node.number("size").takeIf { it > 0f } ?: 40f,
-                modifier = if (node.boolean("enabled", true) && clickable != null) {
-                    m.clickable(clickable)
-                } else {
-                    m
-                },
-            )
-        }
-        "badge" -> Row(m, verticalAlignment = Alignment.Vertical.CenterVertically) {
+    }
+}
+
+internal object GlanceBadgeComponent : GlanceComponent("badge", BadgeMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) =
+        Row(modifier, verticalAlignment = Alignment.Vertical.CenterVertically) {
             node.string("icon").takeIf(String::isNotBlank)?.let { icon ->
                 RenderIcon(icon, null, node.string("color"), 16f)
                 Spacer(GlanceModifier.width(4.dp))
@@ -277,39 +371,46 @@ fun RenderGlanceNode(
                 maxLines = 1,
             )
             node.children().forEachIndexed { index, child ->
-                RenderGlanceNode(child, actions, "$path/$index")
+                RenderGlanceNode(child, context.child(index))
             }
         }
-        "section_header" -> Row(
-            m.fillMaxWidth(),
-            verticalAlignment = Alignment.Vertical.CenterVertically,
-        ) {
-            Text(
-                node.string("title"),
-                modifier = GlanceModifier.defaultWeight(),
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurface,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                ),
-                maxLines = 1,
-            )
-            (node["trailing"] as? JsonObject)?.let {
-                RenderGlanceNode(it, actions, "$path/trailing")
-            }
+}
+
+internal object GlanceSectionHeaderComponent : GlanceComponent("section_header", SectionHeaderMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) = Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Vertical.CenterVertically,
+    ) {
+        Text(
+            node.string("title"),
+            modifier = GlanceModifier.defaultWeight(),
+            style = TextStyle(
+                color = GlanceTheme.colors.onSurface,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+            ),
+            maxLines = 1,
+        )
+        (node["trailing"] as? JsonObject)?.let {
+            RenderGlanceNode(it, context.child("trailing"))
         }
-        "empty_state" -> RenderEmptyState(node, actions, path, m)
     }
+}
+
+internal object GlanceEmptyStateComponent : GlanceComponent("empty_state", EmptyStateMembers) {
+    @Composable
+    override fun render(node: JsonObject, context: GlanceRenderContext, modifier: GlanceModifier) =
+        RenderEmptyState(node, context, modifier)
 }
 
 @Composable
 private fun RenderButton(
     node: JsonObject,
-    actions: GlanceActionResolver,
-    path: String,
+    context: GlanceRenderContext,
     modifier: GlanceModifier,
 ) {
-    val action = (node["on_tap"] as? JsonObject)?.let { actions.resolve(path, it) }
+    val action = context.resolve(node["on_tap"] as? JsonObject)
     if (action == null) {
         Text(node.string("label"), modifier = modifier, style = textStyle(node), maxLines = 1)
     } else {
@@ -327,8 +428,7 @@ private fun RenderButton(
 @Composable
 private fun RenderEmptyState(
     node: JsonObject,
-    actions: GlanceActionResolver,
-    path: String,
+    context: GlanceRenderContext,
     modifier: GlanceModifier,
 ) {
     Column(
@@ -346,8 +446,7 @@ private fun RenderEmptyState(
             Text(it, style = TextStyle(fontSize = 12.sp), maxLines = 3)
         }
         val label = node.string("action_label")
-        val descriptor = node["on_tap"] as? JsonObject
-        val action = descriptor?.let { actions.resolve(path, it) }
+        val action = context.resolve(node["on_tap"] as? JsonObject)
         if (label.isNotBlank() && action != null) {
             Spacer(GlanceModifier.height(8.dp))
             Button(label, action)
@@ -376,48 +475,44 @@ private fun RenderIcon(
 @Composable
 private fun androidx.glance.layout.RowScope.RenderHorizontalChildren(
     children: List<JsonObject>,
-    actions: GlanceActionResolver,
-    path: String,
+    context: GlanceRenderContext,
     spacing: Float,
 ) {
     val head = children.take(9)
     head.forEachIndexed { index, child ->
-        RenderGlanceNode(child, actions, "$path/$index")
+        RenderGlanceNode(child, context.child(index))
         if (spacing > 0f && (index != head.lastIndex || children.size > 9)) {
             Spacer(GlanceModifier.width(spacing.dp))
         }
     }
     if (children.size > 9) {
-        Row { RenderHorizontalChildren(children.drop(9), actions, "$path/9+", spacing) }
+        Row { RenderHorizontalChildren(children.drop(9), context.child("9+"), spacing) }
     }
 }
 
 @Composable
 private fun androidx.glance.layout.ColumnScope.RenderVerticalChildren(
     children: List<JsonObject>,
-    actions: GlanceActionResolver,
-    path: String,
+    context: GlanceRenderContext,
     spacing: Float,
 ) {
     val head = children.take(9)
     head.forEachIndexed { index, child ->
-        RenderGlanceNode(child, actions, "$path/$index")
+        RenderGlanceNode(child, context.child(index))
         if (spacing > 0f && (index != head.lastIndex || children.size > 9)) {
             Spacer(GlanceModifier.height(spacing.dp))
         }
     }
     if (children.size > 9) {
-        Column { RenderVerticalChildren(children.drop(9), actions, "$path/9+", spacing) }
+        Column { RenderVerticalChildren(children.drop(9), context.child("9+"), spacing) }
     }
 }
 
 private fun GlanceModifier.withAction(
     node: JsonObject,
     member: String,
-    path: String,
-    actions: GlanceActionResolver,
-): GlanceModifier = (node[member] as? JsonObject)
-    ?.let { actions.resolve(path, it) }
+    context: GlanceRenderContext,
+): GlanceModifier = context.resolve(node[member] as? JsonObject)
     ?.let(::clickable)
     ?: this
 
