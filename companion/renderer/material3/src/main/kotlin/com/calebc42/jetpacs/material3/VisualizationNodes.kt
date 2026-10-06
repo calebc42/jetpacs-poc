@@ -7,6 +7,10 @@
 // presentation identity. Unknown canvas ops are skipped, never fatal.
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.BooleanOrAuto
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
+import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
+import com.calebc42.ebp.renderer.model.vocabulary.generated.*
 import com.calebc42.ebp.renderer.model.*
 
 import android.graphics.Paint
@@ -78,13 +82,14 @@ private class ChartSeriesData(val points: List<JsonObject>, val ys: DoubleArray,
 
 @Composable
 internal fun RenderChart(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val kind = node.stringOr("kind", "line")
-    val seriesArr = node.arrOrNull("series") ?: JsonArray(emptyList())
-    val onPointTap = node.objOrNull("on_point_tap")
+    val p = NodeProperties(node, ChartMembers)
+    val kind = (p[ChartMembers.Kind]?.wire ?: "line")
+    val seriesArr = p[ChartMembers.Series] ?: JsonArray(emptyList())
+    val onPointTap = p[ChartMembers.OnPointTap]
     // C6: `height` is FIELD_TYPES "number" and the validator gates it as
     // positive-finite only, so 12.5 is legal traffic; dimInt truncates it the
     // way org.json's optInt did instead of defaulting the chart to 160dp.
-    val heightDp = node.dimInt("height", 160).coerceAtLeast(0)
+    val heightDp = (p[ChartMembers.Height]?.toInt() ?: 160).coerceAtLeast(0)
     val scheme = MaterialTheme.colorScheme
 
     val series = ArrayList<ChartSeriesData>()
@@ -109,14 +114,11 @@ internal fun RenderChart(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             ?: CHART_PALETTE[s % CHART_PALETTE.size]
         series.add(ChartSeriesData(pts, ys, color))
     }
-    node.arrOrNull("y_range")?.let {
-        // C6: the length guard is now load-bearing — org.json's indexed
-        // optDouble(i, default) folded a short array into the default, kotlinx's
-        // [i] throws, so the bound stays and each read keeps its own fallback.
-        if (it.size == 2) {
-            yMin = it.getOrNull(0)?.numOrNull() ?: yMin
-            yMax = it.getOrNull(1)?.numOrNull() ?: yMax
-        }
+    // A two-number array: the typed read is null unless exactly two finite
+    // numbers are authored, which keeps the old length guard load-bearing.
+    p[ChartMembers.YRange]?.let { (lo, hi) ->
+        yMin = lo
+        yMax = hi
     }
     // SPEC 17.5: bars/areas read against a zero baseline — but an explicit
     // y_range is authoritative, so only default the baseline when none was given.
@@ -155,7 +157,7 @@ internal fun RenderChart(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             }
         }
     }
-    val desc = node.stringOr("summary").ifEmpty { "$kind chart" }
+    val desc = p[ChartMembers.Summary].orEmpty().ifEmpty { "$kind chart" }
     Canvas(modifier = mod.semantics { contentDescription = desc }) {
         val w = size.width
         val h = size.height
@@ -205,11 +207,12 @@ internal fun RenderChart(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 
 @Composable
 internal fun RenderCanvas(node: JsonObject, m: Modifier) {
+    val p = NodeProperties(node, CanvasMembers)
     // C6: canvas width/height are validated positive-finite (not integral), so
     // they read through dimInt — truncating, exactly as optInt did.
-    val wDp = node.dimInt("width", 100).coerceAtLeast(0)
-    val hDp = node.dimInt("height", 100).coerceAtLeast(0)
-    val ops = node.arrOrNull("ops") ?: JsonArray(emptyList())
+    val wDp = (p[CanvasMembers.Width]?.toInt() ?: 100).coerceAtLeast(0)
+    val hDp = (p[CanvasMembers.Height]?.toInt() ?: 100).coerceAtLeast(0)
+    val ops = p[CanvasMembers.Ops] ?: JsonArray(emptyList())
     val scheme = MaterialTheme.colorScheme
     val fallback = scheme.onSurface
     // Resolve each op colour up front — the DrawScope below is not composable.
@@ -330,25 +333,26 @@ private val MonthGridPresentationSaver =
 
 @Composable
 internal fun RenderMonthGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val specMonth = node.stringOr("month").takeIf { it.matches(Regex("""\d{4}-\d{2}""")) }
+    val p = NodeProperties(node, MonthGridMembers)
+    val specMonth = p[MonthGridMembers.Month].orEmpty().takeIf { it.matches(Regex("""\d{4}-\d{2}""")) }
         ?: return
-    val marks = node.objOrNull("marks")
-    val dayStyles = node.objOrNull("day_styles")
-    val selected = node.stringOr("selected")
-    val minMonth = node.stringOr("min_month").ifEmpty { null }
-    val maxMonth = node.stringOr("max_month").ifEmpty { null }
+    val marks = p[MonthGridMembers.Marks]
+    val dayStyles = p[MonthGridMembers.DayStyles]
+    val selected = p[MonthGridMembers.Selected].orEmpty()
+    val minMonth = p[MonthGridMembers.MinMonth].orEmpty().ifEmpty { null }
+    val maxMonth = p[MonthGridMembers.MaxMonth].orEmpty().ifEmpty { null }
     // §17.5 day-level bounds: out-of-range and listed weekdays render
     // disabled and never dispatch; min_month/max_month keep gating only
     // the month arrows, as before. The range pair shades the inclusive
     // span; ISO dates compare as strings.
-    val minDate = node.stringOr("min_date").ifEmpty { null }
-    val maxDate = node.stringOr("max_date").ifEmpty { null }
-    val disabledWeekdays = node.arrOrNull("disabled_weekdays")
+    val minDate = p[MonthGridMembers.MinDate].orEmpty().ifEmpty { null }
+    val maxDate = p[MonthGridMembers.MaxDate].orEmpty().ifEmpty { null }
+    val disabledWeekdays = p[MonthGridMembers.DisabledWeekdays]
         ?.mapNotNull { it.numOrNull()?.toInt() } ?: emptyList()
-    val rangeStart = node.stringOr("range_start").ifEmpty { null }
-    val rangeEnd = node.stringOr("range_end").ifEmpty { null }
-    val onDayTap = node.objOrNull("on_day_tap")
-    val onMonthChange = node.objOrNull("on_month_change")
+    val rangeStart = p[MonthGridMembers.RangeStart].orEmpty().ifEmpty { null }
+    val rangeEnd = p[MonthGridMembers.RangeEnd].orEmpty().ifEmpty { null }
+    val onDayTap = p[MonthGridMembers.OnDayTap]
+    val onMonthChange = p[MonthGridMembers.OnMonthChange]
 
     // §16.1: the shown month keys on the presentation identity, re-seeded from
     // the spec when the authored month changes; mark-only re-pushes keep it.
