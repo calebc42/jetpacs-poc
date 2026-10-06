@@ -176,7 +176,11 @@ values, so a handler patches when the tree's shape is unchanged and
 refreshes when it is not. Grove's planning canvas is the pilot: 24
 bindings, an 835-byte document, and a picker tap costs one 965-byte
 `surface.data` frame where it re-sent the 5.2 KB screen with the rest of
-the stack.
+the stack. Measured end to end on a Galaxy S21 Ultra served by a desktop
+Emacs over an adb port forward: a quick-pick tap sends one 866-byte
+`surface.data` frame where the same stack's snapshot is 18.9 KB, and the
+scrolled list keeps its position to the pixel across the patch, a direct
+patch and a full re-push alike.
 
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,
