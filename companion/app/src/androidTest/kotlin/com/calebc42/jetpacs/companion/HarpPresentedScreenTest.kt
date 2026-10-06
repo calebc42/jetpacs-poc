@@ -29,6 +29,7 @@ import androidx.compose.ui.test.performScrollTo
 import kotlinx.serialization.json.JsonArray
 import org.junit.Assert.assertTrue
 import androidx.compose.ui.unit.dp
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.calebc42.jetpacs.material3.RenderNode
@@ -82,7 +83,13 @@ class HarpPresentedScreenTest {
         present("entry-form-light")
         compose.onNodeWithText("Synthetic journal #sample(3).").performScrollTo()
             .assert(hasSetTextAction()).performTextReplacement("Changed on tablet #sample(4)")
+        // On a phone the soft keyboard rises over the lower half of the form
+        // once a field has focus; a click that lands on the keyboard window
+        // never reaches Save, so dismiss it before scrolling there.
+        Espresso.closeSoftKeyboard()
+        compose.waitForIdle()
         compose.onNodeWithText("Save").performScrollTo().performClick()
+        compose.waitForIdle()
         val save = host.dispatched.single().request.descriptor
         assertEquals("harp.save", save["action"]?.jsonPrimitive?.content)
         val fields = (save["capture_fields"] as JsonArray).map { it.jsonPrimitive.content }

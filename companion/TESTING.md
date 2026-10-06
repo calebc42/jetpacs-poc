@@ -226,6 +226,19 @@ members, keyed pixel retention while a live snapshot inserts earlier content
 and enables pinning, and command-scroll placement below the active sticky
 header.
 
+On 2026-10-06 every class above, plus `ChromeStylesSeamTest` and the app's
+`PresentedScreenInstrumentedTest`, `HarpPresentedScreenTest` and
+`OrgzlyPresentedScreenTest`, passed on a Galaxy S21 Ultra (Android 15) over
+wireless ADB. Two checks needed phone-aware assertions: fixed tab widths agree
+only to within one pixel when the row width is not a multiple of the tab
+count, and the Harp save flow dismisses the soft keyboard before clicking
+Save, because the keyboard window otherwise swallows the click. Note that
+`connectedDebugAndroidTest` installs the debug-signed Companion and uninstalls
+it afterwards: a Companion already on the device under another signing key
+was gone, with its data, after the first run failed with
+`INSTALL_FAILED_UPDATE_INCOMPATIBLE`, so redeploy through
+`tools/onboard-tablet.sh` once the connected runs are over.
+
 These tests do not replace manual TalkBack/Switch Access checks on the target
 tablet. Verify pane announcements, heading navigation, collection position,
 expanded state, and the existing labeled swipe actions; execute one custom
