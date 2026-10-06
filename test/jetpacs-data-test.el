@@ -80,6 +80,73 @@
                  '(:color "/c")))
   (should-error (jetpacs-with-attrs (jetpacs-text "x") :bind '(:color "c"))))
 
+(ert-deftest jetpacs-data-test-dated-members-bind ()
+  "Dates, times, months and the month grid's object members bind; a rule
+between two members holds only between two literals (SPEC 13.8.3)."
+  (let ((node (jetpacs-month-grid
+               (jetpacs-ref "/p/month")
+               :marks (jetpacs-ref "/p/marks")
+               :day-styles (jetpacs-ref "/p/day_styles")
+               :selected (jetpacs-ref "/p/selected")
+               :range-start (jetpacs-ref "/p/range_start")
+               :range-end (jetpacs-ref "/p/range_end")
+               :min-date "2026-01-01" :max-date (jetpacs-ref "/p/max"))))
+    (should (equal (sort (copy-sequence (plist-get node :bind)) #'string<)
+                   (sort (list :month "/p/month" :marks "/p/marks"
+                               :day_styles "/p/day_styles" :selected "/p/selected"
+                               :range_start "/p/range_start" :range_end "/p/range_end"
+                               :max_date "/p/max")
+                         #'string<)))
+    (should (equal (plist-get node :min_date) "2026-01-01"))
+    ;; The document decides between a selection and a range; the
+    ;; materialized tree is what the literal constructor would build.
+    (let* ((marks (jetpacs-month-marks '(("2026-09-04" . (:dots 2)))))
+           (styles (jetpacs-month-day-styles
+                    (list (cons "2026-09-08"
+                                (jetpacs-month-day-style "error" "on_error")))))
+           (ranged (jetpacs-data-materialize
+                    node (list :p (list :month "2026-09" :marks marks
+                                        :day_styles styles
+                                        :range_start "2026-09-04"
+                                        :range_end "2026-09-08"))
+                    :strip t))
+           (picked (jetpacs-data-materialize
+                    node (list :p (list :month "2026-09" :selected "2026-09-04"))
+                    :strip t)))
+      (should (equal (jetpacs-node->canonical-json ranged)
+                     (jetpacs-node->canonical-json
+                      (jetpacs-month-grid
+                       "2026-09" :marks '(("2026-09-04" . (:dots 2)))
+                       :day-styles (list (cons "2026-09-08"
+                                               (jetpacs-month-day-style
+                                                "error" "on_error")))
+                       :range-start "2026-09-04" :range-end "2026-09-08"
+                       :min-date "2026-01-01"))))
+      (should (equal (plist-get picked :selected) "2026-09-04"))
+      (should-not (plist-member picked :range_start))
+      ;; A resolved value of the wrong shape is refused where it was bound.
+      (should-error (jetpacs-data-materialize
+                     node (list :p (list :month "2026-09" :marks [1])))
+                    :type 'jetpacs-data-error)))
+  ;; Two literals still answer for each other.
+  (should-error (jetpacs-month-grid "2026-09" :selected "2026-09-01"
+                                    :range-start "2026-09-02"
+                                    :range-end "2026-09-03"))
+  (should-error (jetpacs-month-grid (jetpacs-ref "/m") :range-start "2026-09-04"
+                                    :range-end "2026-09-02"))
+  (should (jetpacs-month-grid "2026-09" :selected (jetpacs-ref "/s")
+                              :range-start (jetpacs-ref "/a")
+                              :range-end (jetpacs-ref "/b")))
+  (let ((date (jetpacs-date-button (jetpacs-ref "/d/label")
+                                   (jetpacs-action "x.pick")
+                                   :value (jetpacs-ref "/d/value")))
+        (time (jetpacs-time-button "Add time" (jetpacs-action "x.pick")
+                                   :value (jetpacs-ref "/t/value"))))
+    (should (equal (plist-get date :bind) '(:label "/d/label" :value "/d/value")))
+    (should (equal (plist-get time :bind) '(:value "/t/value")))
+    (should-error (jetpacs-time-button "x" (jetpacs-action "x.pick")
+                                       :value "25:00"))))
+
 (ert-deftest jetpacs-data-test-ops-and-document-checks ()
   "DataOps are built checked; the document is bounded (SPEC 13.8.1, 13.8.4)."
   (should (equal (jetpacs-data-set "/a/b" 1) '(:op "set" :path "/a/b" :value 1)))

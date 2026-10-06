@@ -48,15 +48,32 @@ window-class changes, or refresh, so hidden effects become duplicate work and
 ordering bugs.
 
 A surface may also carry a **data document** (EBP §13.8, `data.model`): a
-`:data-builder` registered beside the screen builder is the same kind of
-pure reader and returns a plist document. A member built from a
+`:data-builder` registered beside the screen builder (on
+`jetpacs-shell-define-root`, or on `jetpacs-chrome-define-root` for a chrome
+app, where one document spans the whole stack) is the same kind of pure
+reader and returns a plist document. A member built from a
 `(jetpacs-ref "/pointer")` is bound to that document instead of being
 authored, and a handler that changed only values calls
-`jetpacs-shell-data-patch` with `jetpacs-data-set`/`jetpacs-data-remove`
-ops instead of re-pushing the screen. On a Companion that did not grant
-`data.model` the shell resolves the bindings itself before pushing, so the
-same builders serve either Companion; identity (`id`, `key`), `children`,
-and every action stay authored.
+`jetpacs-app-defer-patch` (the D2 twin of `jetpacs-app-defer-refresh`,
+over `jetpacs-shell-data-patch`) with `jetpacs-data-set`/`jetpacs-data-remove`
+ops instead of re-pushing the screen; the Companion re-materializes the
+tree it holds and keeps its scroll position and drafts. On a Companion that
+did not grant `data.model` the shell resolves the bindings itself before
+pushing, so the same builders serve either Companion; identity (`id`,
+`key`), `children`, and every action — including its `args` — stay
+authored.
+
+The rule for choosing between a patch and a refresh: bindings change
+values, never the shape of the tree. If a state change adds, removes, or
+re-shapes a node (a card that appears once two dates exist), the handler
+refreshes; if it changes only bound values, it patches. Make the shape a
+function of the state (`grove-document--planning-shape` in Grove is the
+model), compute it before and after the handler's change, and patch when
+it is unchanged. A value an action must carry at tap time (a suggested
+date) belongs to the handler, which reads the state then, not to the
+button's `args`, which cannot be bound. Grove's planning screen is the
+reference pilot: a picker tap sends one `surface.data` frame of under a
+kilobyte instead of the whole app stack.
 
 Use `jetpacs-chrome-screen` for an ordinary app screen, then compose typed
 builders such as `jetpacs-column`, `jetpacs-text`, `jetpacs-button`, and

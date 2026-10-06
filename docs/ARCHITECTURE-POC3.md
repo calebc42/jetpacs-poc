@@ -168,7 +168,15 @@ before validation, so the renderers, widgets, tiles and the input store see
 an ordinary document and need no knowledge of pointers. Emacs alone writes
 the document; a Companion-local write-back for bound inputs is a deferred
 exploration. `emacs/jetpacs-data.el` is the Elisp reference materializer,
-replayed against `ebp/goldens/data.golden` like the engine's.
+replayed against `ebp/goldens/data.golden` like the engine's. On the app
+side `jetpacs-chrome-define-root` takes the `:data-builder` (one document
+per surface, across the stack) and `jetpacs-app-defer-patch` is the
+handler's D2 patch seam beside `jetpacs-app-defer-refresh`; bindings move
+values, so a handler patches when the tree's shape is unchanged and
+refreshes when it is not. Grove's planning canvas is the pilot: 24
+bindings, an 835-byte document, and a picker tap costs one 965-byte
+`surface.data` frame where it re-sent the 5.2 KB screen with the rest of
+the stack.
 
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,

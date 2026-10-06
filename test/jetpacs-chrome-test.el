@@ -19,6 +19,7 @@
 (require 'jetpacs-shell)
 (require 'jetpacs-buffer)
 (require 'jetpacs-chrome)
+(require 'jetpacs-data)
 (require 'jetpacs-components)
 
 (defconst jetpacs-chrome-test--types
@@ -118,6 +119,42 @@
      (lambda (back)
        (should-not back)
        (jetpacs-chrome-screen "Hub" (jetpacs-text "h"))))))
+
+(ert-deftest jetpacs-chrome-root-data-builder-rides-every-push ()
+  "A root's :data-builder is the surface's (SPEC 13.8): with `data.model'
+granted the stack's bindings travel beside its document; without the
+grant the shell resolves them here and the same screens go out literal."
+  (dolist (granted '(t nil))
+    (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+      (when granted
+        (setf (ebp-client-granted client) ["data.model"]))
+      (jetpacs-chrome-test--recording recs
+        (with-jetpacs-owner "filesapp"
+          (jetpacs-chrome-define-root
+           "filesapp" "hub"
+           (lambda (_back)
+             (jetpacs-chrome-screen "Hub" (jetpacs-text (jetpacs-ref "/hub/title"))))
+           :data-builder (lambda ()
+                           '(:hub (:title "Resolved")
+                             :detail (:title "Detail resolved")))))
+        (jetpacs-chrome-push-screen
+         "filesapp" "detail"
+         (lambda (back)
+           (jetpacs-chrome-screen "Detail" (jetpacs-text (jetpacs-ref "/detail/title"))
+                                  :back back)))
+        (pcase-let* ((`(,_surface ,spec ,keys) (car recs))
+                     (json (jetpacs-node->canonical-json spec)))
+          (if granted
+              (progn
+                (should (equal (plist-get keys :data)
+                               '(:hub (:title "Resolved")
+                                 :detail (:title "Detail resolved"))))
+                (should (string-search "\"bind\":{\"text\":\"/hub/title\"}" json))
+                (should-not (string-search "Resolved" json)))
+            (should-not (plist-get keys :data))
+            (should-not (string-search "\"bind\"" json))
+            (should (string-search "\"text\":\"Resolved\"" json))
+            (should (string-search "\"text\":\"Detail resolved\"" json))))))))
 
 (ert-deftest jetpacs-chrome-stack-push-drives-builder ()
   (jetpacs-chrome-test--with (jetpacs-chrome-test--client)

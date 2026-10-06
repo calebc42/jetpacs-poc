@@ -72,7 +72,14 @@ Run the JVM persistence and production compilation gates with:
 ```
 
 The Room suite includes reopen, revocation, reminder/effect, and fault-injected
-queue-plus-trigger rollback coverage. Production source must contain no
+queue-plus-trigger rollback coverage, and the surface record's authored tree
+and data document round trip (`RoomEbpDurableStoreTest`). The engine half of
+the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
+(every `ebp/goldens/data.golden` vector through the materializer),
+`DataModelContractTest`, `SurfaceStoreDataTest` and `SurfaceDataEngineTest`
+(`surface.data` patches, floors, draft acknowledgement, the `data.model`
+gate). The Elisp side of the amendment is gated by
+`test/jetpacs-data-test.el`, which replays the same corpus. Production source must contain no
 `FileQueueStore`, `FileSurfaceBacking`, `FileReminderBacking`, or
 `FileTriggerBacking` caller.
 

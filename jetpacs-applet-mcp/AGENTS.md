@@ -267,7 +267,8 @@ directly to trusted execution:
    metadata plus `:args` when it accepts named arguments.
 6. Keep direct prompts and blocking work out of action dispatch. Continue
    interaction with `jetpacs-flow-continue`; defer ordinary presentation with
-   `jetpacs-app-defer-refresh`.
+   `jetpacs-app-defer-refresh`, or with `jetpacs-app-defer-patch` when the
+   change touched only values bound to the surface data document.
 7. Run `jetpacs_inspect_applet`, require every literal emitted action to have a
    provider, review every dynamic site, capture the canonical manifest/digest,
    and run `jetpacs_validate_applet` until it passes or every warning is

@@ -1032,17 +1032,28 @@ automatically performs an ordinary full rebuild instead."
       #'jetpacs-chrome-defer-current-view-refresh)
 
 (cl-defun jetpacs-chrome-define-root (surface-or-owner id builder
-                                                       &key required)
+                                                       &key required
+                                                       data-builder)
   "Define SURFACE's chrome root screen; re-evaluation RESETS the stack.
 Call under `with-jetpacs-owner' — the shell records the owner and
-re-binds it around every build.  Returns the surface id."
+re-binds it around every build.  Returns the surface id.
+
+DATA-BUILDER, when given, builds the surface data document (SPEC 13.8,
+`jetpacs-shell-define-root'): a nullary deterministic reader of the
+same state the stack's screens read, whose document every push carries
+and a `jetpacs-ref' in any screen resolves against.  One surface holds
+one document across the whole stack, so an app with several bound
+screens composes it under one key per screen, and a handler that
+changed only bound values patches it (`jetpacs-app-defer-patch')
+instead of rebuilding the stack."
   (let ((surface (jetpacs-shell--resolve-surface surface-or-owner)))
     (jetpacs-check-identifier id "screen id")
     (remhash surface jetpacs-chrome--view-cache)
     (puthash surface (list (cons id builder)) jetpacs-chrome--stacks)
     (jetpacs-shell-define-root surface
                                (lambda () (jetpacs-chrome--build surface))
-                               :required required)
+                               :required required
+                               :data-builder data-builder)
     (jetpacs-chrome--claim-drill-host surface)
     surface))
 

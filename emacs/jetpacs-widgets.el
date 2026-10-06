@@ -533,8 +533,10 @@ Numbers compare by numeric value (so 1, 1.0, and 1e0 are equal and -0 equals
 0); strings, booleans, and null compare by `equal'."
   (if (and (numberp a) (numberp b)) (= a b) (equal a b)))
 
-(defun jetpacs--check-date (value)
-  "Signal unless VALUE is a §17.4 date `YYYY-MM-DD' with in-range fields."
+(cl-defun jetpacs--check-date (value)
+  "Signal unless VALUE is a §17.4 date `YYYY-MM-DD' with in-range fields.
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (when (jetpacs-ref-p value) (cl-return-from jetpacs--check-date value))
   (unless (and (stringp value)
                (string-match "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\'" value))
     (error "jetpacs: date value must be YYYY-MM-DD (SPEC 17.4), got %S" value))
@@ -544,8 +546,10 @@ Numbers compare by numeric value (so 1, 1.0, and 1e0 are equal and -0 equals
     (unless (<= 1 dy 31) (error "jetpacs: date day must be 01-31, got %S" value)))
   value)
 
-(defun jetpacs--check-time (value)
-  "Signal unless VALUE is a §17.4 time `HH:MM' with in-range fields."
+(cl-defun jetpacs--check-time (value)
+  "Signal unless VALUE is a §17.4 time `HH:MM' with in-range fields.
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (when (jetpacs-ref-p value) (cl-return-from jetpacs--check-time value))
   (unless (and (stringp value)
                (string-match "\\`\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\)\\'" value))
     (error "jetpacs: time value must be HH:MM (SPEC 17.4), got %S" value))
@@ -2775,7 +2779,8 @@ list could not."
   (when mode (setq mode (jetpacs-check-enum mode '("calendar" "input") ":mode")))
   (when min-date (jetpacs--check-date min-date))
   (when max-date (jetpacs--check-date max-date))
-  (when (and min-date max-date (string> min-date max-date))
+  (when (and (jetpacs--literal min-date) (jetpacs--literal max-date)
+             (string> min-date max-date))
     (error "jetpacs-date-button: :min-date must not follow :max-date (SPEC 17.4)"))
   (when disabled-weekdays
     (unless (and (listp disabled-weekdays)
@@ -3133,8 +3138,10 @@ WIDTH and HEIGHT MUST be positive; OPS is a list of canvas ops
   (jetpacs-make-node "canvas" :width width :height height :ops (vconcat ops)
                  :children (and children (vconcat children))))
 
-(defun jetpacs--check-year-month (value what)
-  "Signal unless VALUE is a §17.5 `YYYY-MM' string with month 01-12."
+(cl-defun jetpacs--check-year-month (value what)
+  "Signal unless VALUE is a §17.5 `YYYY-MM' string with month 01-12.
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (when (jetpacs-ref-p value) (cl-return-from jetpacs--check-year-month value))
   (unless (and (stringp value)
                (string-match "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)\\'" value))
     (error "jetpacs: %s must be YYYY-MM (SPEC 17.5), got %S" what value))
@@ -3216,6 +3223,21 @@ DOTS is an integer 0..3; COLOR a §16.6 color."
   (jetpacs--check-color foreground)
   (jetpacs-make-node nil :background background :foreground foreground))
 
+(defun jetpacs-month-marks (marks)
+  "The month_grid `marks' object MARKS describes, for a surface data document.
+MARKS is the alist `jetpacs-month-grid' takes for :marks — (YYYY-MM-DD
+. mark) cells from `jetpacs-month-mark' — validated here exactly as the
+constructor validates it, so a bound :marks (SPEC 13.8.3) resolves to
+what the literal would have been.  Nil for no marks, which leaves the
+optional member absent."
+  (and marks (jetpacs--marks->map marks)))
+
+(defun jetpacs-month-day-styles (styles)
+  "The month_grid `day_styles' object STYLES describes, for a data document.
+STYLES is the alist `jetpacs-month-grid' takes for :day-styles, cells
+from `jetpacs-month-day-style'.  Nil for no styles."
+  (and styles (jetpacs--day-styles->map styles)))
+
 (cl-defun jetpacs-month-grid (month &key marks day-styles selected min-month max-month
                                     min-date max-date disabled-weekdays
                                     range-start range-end
@@ -3233,16 +3255,24 @@ dispatches ON-DAY-TAP, while the month bounds keep gating only the
 arrows.  RANGE-START/RANGE-END shade the inclusive span with rounded
 end caps — both-or-neither, start not after end, mutually exclusive
 with SELECTED; ON-DAY-TAP still dispatches each tapped day, so Emacs
-builds the range and re-pushes."
+builds the range and re-pushes.
+
+MONTH, SELECTED, the range, the bounds, MARKS and DAY-STYLES may each be
+a `jetpacs-ref' (SPEC 13.8.3): the member is then resolved from the
+surface data document, where `jetpacs-month-marks' and
+`jetpacs-month-day-styles' build the objects, and a cross-member rule
+that needs the value is the Companion's to apply at materialization."
   (jetpacs--check-year-month month ":month")
   (when selected (jetpacs--check-date selected))
   (when min-month (jetpacs--check-year-month min-month ":min_month"))
   (when max-month (jetpacs--check-year-month max-month ":max_month"))
-  (when (and min-month max-month (string> min-month max-month))
+  (when (and (jetpacs--literal min-month) (jetpacs--literal max-month)
+             (string> min-month max-month))
     (error "jetpacs-month-grid: :min-month must not follow :max-month (SPEC 17.5)"))
   (when min-date (jetpacs--check-date min-date))
   (when max-date (jetpacs--check-date max-date))
-  (when (and min-date max-date (string> min-date max-date))
+  (when (and (jetpacs--literal min-date) (jetpacs--literal max-date)
+             (string> min-date max-date))
     (error "jetpacs-month-grid: :min-date must not follow :max-date (SPEC 17.5)"))
   (when disabled-weekdays
     (unless (and (listp disabled-weekdays)
@@ -3255,19 +3285,24 @@ builds the range and re-pushes."
   (when (or range-start range-end)
     (unless (and range-start range-end)
       (error "jetpacs-month-grid: :range-start and :range-end come together (SPEC 17.5)"))
-    (when selected
+    ;; Bound, the document decides which of :selected and the range
+    ;; materializes (SPEC 13.8.3); the exclusion holds between literals.
+    (when (and selected (jetpacs--literal selected)
+               (jetpacs--literal range-start) (jetpacs--literal range-end))
       (error "jetpacs-month-grid: a range is mutually exclusive with :selected (SPEC 17.5)"))
     (jetpacs--check-date range-start)
     (jetpacs--check-date range-end)
-    (when (string> range-start range-end)
+    (when (and (jetpacs--literal range-start) (jetpacs--literal range-end)
+               (string> range-start range-end))
       (error "jetpacs-month-grid: :range-start must not follow :range-end (SPEC 17.5)")))
   (when on-day-tap (jetpacs-check-descriptor on-day-tap ":on-day-tap"))
   (when on-month-change (jetpacs-check-descriptor on-month-change ":on-month-change"))
   (jetpacs-make-node "month_grid"
                  :month month
-                 :marks (and marks (jetpacs--marks->map marks))
-                 :day_styles (and day-styles
-                                  (jetpacs--day-styles->map day-styles))
+                 :marks (if (jetpacs-ref-p marks) marks
+                          (jetpacs-month-marks marks))
+                 :day_styles (if (jetpacs-ref-p day-styles) day-styles
+                               (jetpacs-month-day-styles day-styles))
                  :selected selected :min_month min-month :max_month max-month
                  :min_date min-date :max_date max-date
                  :disabled_weekdays disabled-weekdays

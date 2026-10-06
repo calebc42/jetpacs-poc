@@ -90,6 +90,28 @@ it must not escape a timer and rewrite an already-returned status."
      (lambda ()
        (ignore-errors (jetpacs-shell-push surface))))))
 
+(defun jetpacs-app-defer-patch (ops &optional params)
+  "Defer a `surface.data' patch of OPS to PARAMS' or the flow's app surface.
+OPS is a list from `jetpacs-data-set' and `jetpacs-data-remove' (SPEC
+13.8.4); the surface resolves exactly as `jetpacs-app-defer-refresh'
+resolves it.  A handler whose change is confined to values its builders
+bound to the surface data document (`jetpacs-ref') calls this instead
+of a refresh: the Companion re-materializes the tree it already holds,
+no screen is rebuilt or resent, and the retained presentation — scroll
+position, drafts — is untouched.  A change that alters the SHAPE of the
+tree still needs `jetpacs-app-defer-refresh'; the handler knows which.
+
+Without the `data.model' grant, or when the Companion refuses the
+patch, `jetpacs-shell-data-patch' re-pushes the surface whole from the
+same builders, so a handler needs no second path.  Deferred outside the
+dispatch extent (D2) and isolated exactly as a refresh is: a refused
+patch is presentation failure after the handler's effect."
+  (let ((surface (or (plist-get params :surface)
+                     (jetpacs-flow-surface))))
+    (jetpacs-flow-continue
+     (lambda ()
+       (ignore-errors (jetpacs-shell-data-patch surface ops))))))
+
 ;;;; Registry
 
 (defun jetpacs-apps--check-destination-list (dests)

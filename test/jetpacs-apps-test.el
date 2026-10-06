@@ -7,6 +7,7 @@
 ;; isolation, and app.open dispatch.
 
 (require 'ert)
+(require 'jetpacs-data)
 (require 'jetpacs-apps)
 
 (defvar jetpacs-apps-test--core
@@ -121,6 +122,39 @@ already returned."
                 ((symbol-function 'jetpacs-shell-push)
                  (lambda (&rest _) (error "render refused"))))
         (jetpacs-app-defer-refresh)
+        (should-not (condition-case nil
+                        (progn (funcall (pop continuations)) nil)
+                      (error t)))))))
+
+(ert-deftest jetpacs-apps-defer-patch-is-d2-and-surface-scoped ()
+  "The deferred data patch resolves its surface as the refresh does and
+hands the ops to the shell outside the dispatch extent; a refused patch
+is isolated the same way."
+  (let ((ops (list (jetpacs-data-set "/planning/month" "2026-10")))
+        continuations patched)
+    (cl-letf (((symbol-function 'jetpacs-flow-surface)
+               (lambda () "app:flow-owner"))
+              ((symbol-function 'jetpacs-flow-continue)
+               (lambda (fn) (push fn continuations)))
+              ((symbol-function 'jetpacs-shell-data-patch)
+               (cl-function
+                (lambda (surface ops &key callback)
+                  (ignore callback)
+                  (push (cons surface ops) patched)))))
+      (jetpacs-app-defer-patch ops)
+      (jetpacs-app-defer-patch ops '(:surface "app:explicit"))
+      (should-not patched)
+      (funcall (pop continuations))
+      (funcall (pop continuations))
+      (should (equal patched (list (cons "app:flow-owner" ops)
+                                   (cons "app:explicit" ops)))))
+    (let ((continuations nil))
+      (cl-letf (((symbol-function 'jetpacs-flow-surface) #'ignore)
+                ((symbol-function 'jetpacs-flow-continue)
+                 (lambda (fn) (push fn continuations)))
+                ((symbol-function 'jetpacs-shell-data-patch)
+                 (lambda (&rest _) (error "patch refused"))))
+        (jetpacs-app-defer-patch ops)
         (should-not (condition-case nil
                         (progn (funcall (pop continuations)) nil)
                       (error t)))))))
