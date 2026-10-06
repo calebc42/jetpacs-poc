@@ -47,6 +47,17 @@ surface. Jetpacs can call a builder during reconnect, capability changes,
 window-class changes, or refresh, so hidden effects become duplicate work and
 ordering bugs.
 
+A surface may also carry a **data document** (EBP §13.8, `data.model`): a
+`:data-builder` registered beside the screen builder is the same kind of
+pure reader and returns a plist document. A member built from a
+`(jetpacs-ref "/pointer")` is bound to that document instead of being
+authored, and a handler that changed only values calls
+`jetpacs-shell-data-patch` with `jetpacs-data-set`/`jetpacs-data-remove`
+ops instead of re-pushing the screen. On a Companion that did not grant
+`data.model` the shell resolves the bindings itself before pushing, so the
+same builders serve either Companion; identity (`id`, `key`), `children`,
+and every action stay authored.
+
 Use `jetpacs-chrome-screen` for an ordinary app screen, then compose typed
 builders such as `jetpacs-column`, `jetpacs-text`, `jetpacs-button`, and
 `jetpacs-lazy-column`. Query `jetpacs_describe_node` before using an unfamiliar

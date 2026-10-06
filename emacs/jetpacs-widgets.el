@@ -139,14 +139,65 @@ does so only when it is a local draft with `publish_state'.")
   (rx bos (any "A-Za-z0-9") (** 0 127 (any "A-Za-z0-9" "._:/-")) eos)
   "A SPEC §4.4 identifier: 1-128 ASCII, begins letter/digit, [A-Za-z0-9._:/-].")
 
+;;;; Data-document references (SPEC 13.8)
+
+(cl-defstruct (jetpacs-ref (:constructor jetpacs-ref (pointer))
+                           (:copier nil))
+  "A reference to a value in the surface data document (SPEC 13.8.3).
+Pass one where a constructor takes a member value: `jetpacs-make-node'
+hoists it into the node's `:bind' member and the Companion resolves it
+against the document at materialization.  POINTER is an absolute RFC
+6901 JSON Pointer string such as \"/planning/scheduled\".  A ref is
+accepted by every constructor check that only types its member; a
+constructor that derives further members from a value treats it as
+absent there and leaves the check to the Companion."
+  (pointer nil :read-only t))
+
+(define-error 'jetpacs-data-error
+              "jetpacs: the surface data document rejected this binding")
+
+(defun jetpacs--literal (v)
+  "V when it is an authored literal, nil when it is a `jetpacs-ref'."
+  (and (not (jetpacs-ref-p v)) v))
+
+(defun jetpacs-pointer-tokens (pointer what)
+  "The reference tokens of POINTER, an absolute RFC 6901 pointer (SPEC 13.8.2).
+Signals `jetpacs-data-error' with (WHAT REASON) on a non-string, a
+relative pointer, a bad `~' escape, or one over `jetpacs-max-pointer-bytes'
+or `jetpacs-max-pointer-segments'.  The empty pointer names the whole
+document and has no tokens."
+  (unless (stringp pointer)
+    (signal 'jetpacs-data-error (list what "pointer must be a string")))
+  (when (> (string-bytes pointer) jetpacs-max-pointer-bytes)
+    (signal 'jetpacs-data-error
+            (list what "pointer exceeds max_pointer_bytes")))
+  (cond
+   ((string-empty-p pointer) nil)
+   ((not (string-prefix-p "/" pointer))
+    (signal 'jetpacs-data-error
+            (list what "pointer must be absolute (SPEC 13.8.2)")))
+   (t
+    (let ((tokens (split-string (substring pointer 1) "/")))
+      (when (> (length tokens) jetpacs-max-pointer-segments)
+        (signal 'jetpacs-data-error
+                (list what "pointer exceeds max_pointer_segments")))
+      (mapcar (lambda (token)
+                (when (string-match-p "~\\([^01]\\|\\'\\)" token)
+                  (signal 'jetpacs-data-error
+                          (list what "invalid ~ escape in pointer")))
+                (replace-regexp-in-string
+                 "~0" "~" (replace-regexp-in-string "~1" "/" token t t) t t))
+              tokens)))))
+
 (defun jetpacs-identifier-p (s)
   "Non-nil when S is a valid SPEC §4.4 identifier."
   (and (stringp s) (string-match-p jetpacs--identifier-re s)))
 
 (defun jetpacs-check-identifier (s what)
   "Signal an error unless S is a §4.4 identifier; WHAT names the field.
-Returns S."
-  (unless (jetpacs-identifier-p s)
+Returns S.  A `jetpacs-ref' passes: the Companion types the resolved
+value at materialization (SPEC 13.8.3)."
+  (unless (or (jetpacs-ref-p s) (jetpacs-identifier-p s))
     (error "jetpacs: %s %S is not a valid identifier (SPEC 4.4)" what s))
   s)
 
@@ -181,8 +232,9 @@ the coming files editor ids / witheditor state ids / hosts buffers."
     (format "%s-%s-%s" prefix stem hash)))
 
 (defun jetpacs-require-string (s what)
-  "Signal an error unless S is a string; WHAT names the field.  Returns S."
-  (unless (stringp s)
+  "Signal an error unless S is a string; WHAT names the field.  Returns S.
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (unless (or (stringp s) (jetpacs-ref-p s))
     (error "jetpacs: %s must be a string, got %S" what s))
   s)
 
@@ -192,10 +244,12 @@ the coming files editor ids / witheditor state ids / hosts buffers."
        (or (integerp v)
            (and (= v v) (< (abs v) 1.0e+INF)))))
 
-(defun jetpacs--check-number (v what min max &optional positive)
+(cl-defun jetpacs--check-number (v what min max &optional positive)
   "Signal an error unless V is a finite number within bounds; return V.
 WHAT names the field.  MIN/MAX (nil = unbounded) are inclusive.  POSITIVE
-non-nil additionally requires V > 0 (SPEC §16.5)."
+non-nil additionally requires V > 0 (SPEC §16.5).
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (when (jetpacs-ref-p v) (cl-return-from jetpacs--check-number v))
   (unless (jetpacs--finite-number-p v)
     (error "jetpacs: %s must be a finite number (SPEC 4.2), got %S" what v))
   (when (and positive (<= v 0))
@@ -207,8 +261,9 @@ non-nil additionally requires V > 0 (SPEC §16.5)."
   v)
 
 (defun jetpacs-check-bool (v what)
-  "Signal an error unless V is `t' or `:json-false'; WHAT names the field."
-  (unless (memq v '(t :json-false))
+  "Signal an error unless V is `t' or `:json-false'; WHAT names the field.
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (unless (or (memq v '(t :json-false)) (jetpacs-ref-p v))
     (error "jetpacs: %s must be t or :json-false, got %S" what v))
   v)
 
@@ -219,10 +274,12 @@ non-nil additionally requires V > 0 (SPEC §16.5)."
       eos)
   "A §16.6 hex color: #rgb, #rgba, #rrggbb, or #rrggbbaa (case-insensitive).")
 
-(defun jetpacs--check-color (v)
+(cl-defun jetpacs--check-color (v)
   "Signal an error unless V is a §16.6 Color on the wire; return V.
 Accepts a hex form or any §4.4 identifier (a theme role -- KNOWN or
-unknown, since an unknown role is legal and the Companion falls back)."
+unknown, since an unknown role is legal and the Companion falls back).
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (when (jetpacs-ref-p v) (cl-return-from jetpacs--check-color v))
   (unless (and (stringp v)
                (or (string-match-p jetpacs--hex-color-re v)
                    (jetpacs-identifier-p v)))
@@ -269,7 +326,23 @@ Runs VAL-FN on each (KEY VALUE); WHAT names the field."
      (unless (member v '("start" "center" "end" "stretch"))
        (error "jetpacs: :align_self must be start/center/end/stretch (SPEC 16.5), got %S" v)))
     (:semantics (jetpacs--check-semantics-object v))
+    (:bind (jetpacs--check-bind-plist v))
     (_ nil)))
+
+(defun jetpacs--check-bind-plist (v)
+  "Signal unless V is a Bind object: a plist of member keyword to pointer."
+  (unless (and (consp v) (keywordp (car v)))
+    (error "jetpacs: :bind must be a plist of member to pointer (SPEC 13.8.3), got %S" v))
+  (let ((p v))
+    (while p
+      (let ((k (pop p)) (pointer (pop p)))
+        (unless (keywordp k)
+          (error "jetpacs: :bind member %S must be a keyword" k))
+        (condition-case err
+            (jetpacs-pointer-tokens pointer (jetpacs--wire-name k))
+          (jetpacs-data-error
+           (error "jetpacs: :bind %s: %s" (nth 1 err) (nth 2 err)))))))
+  v)
 
 (defun jetpacs--check-capture-fields (fields)
   "Signal an error unless FIELDS is a list of DISTINCT §4.4 identifiers (§14.1).
@@ -429,19 +502,23 @@ the wire; use `:json-false' directly for a member that MUST emit false."
 
 (defun jetpacs-check-enum (v allowed what)
   "Signal unless V (symbol or string) names a member of ALLOWED; WHAT names
-the field.  Returns the normalized string form."
-  (let ((s (format "%s" v)))
-    (unless (member s allowed)
-      (error "jetpacs: %s must be one of %S, got %S" what allowed v))
-    s))
+the field.  Returns the normalized string form, or V itself when it is a
+`jetpacs-ref' (the resolved value is typed at materialization)."
+  (if (jetpacs-ref-p v) v
+    (let ((s (format "%s" v)))
+      (unless (member s allowed)
+        (error "jetpacs: %s must be one of %S, got %S" what allowed v))
+      s)))
 
 (defconst jetpacs--max-safe-integer 9007199254740991
   "The §4.2 EBP integer ceiling (2^53 - 1); integers must lie in ±this.")
 
-(defun jetpacs-check-integer (v what min max)
+(cl-defun jetpacs-check-integer (v what min max)
   "Signal unless V is an integer within inclusive [MIN,MAX] (nil = unbounded);
 WHAT names the field.  The §4.2 ceiling (`jetpacs--max-safe-integer') is
-always enforced regardless of MAX.  Returns V."
+always enforced regardless of MAX.  Returns V.  A `jetpacs-ref' passes:
+the resolved value is typed at materialization."
+  (when (jetpacs-ref-p v) (cl-return-from jetpacs-check-integer v))
   (unless (integerp v)
     (error "jetpacs: %s must be an integer (SPEC 4.2), got %S" what v))
   (unless (<= (- jetpacs--max-safe-integer) v jetpacs--max-safe-integer)
@@ -478,9 +555,11 @@ Numbers compare by numeric value (so 1, 1.0, and 1e0 are equal and -0 equals
     (unless (<= 0 mm 59) (error "jetpacs: time minute must be 00-59, got %S" value)))
   value)
 
-(defun jetpacs--check-font-weight (v)
+(cl-defun jetpacs--check-font-weight (v)
   "Signal unless V is a §17.1 font weight: the string \"normal\" or \"bold\",
-or an integer multiple of 100 from 100 through 900."
+or an integer multiple of 100 from 100 through 900.
+A `jetpacs-ref' passes: the resolved value is typed at materialization."
+  (when (jetpacs-ref-p v) (cl-return-from jetpacs--check-font-weight v))
   (unless (or (member v '("normal" "bold"))
               (and (integerp v) (<= 100 v 900) (zerop (mod v 100))))
     (error "jetpacs: font_weight must be \"normal\"/\"bold\" or an integer multiple of 100 in 100..900, got %S" v))
@@ -512,12 +591,30 @@ Pairs whose VALUE is nil are omitted, so optional members read as plain
 keyword arguments at the call site.  Emit JSON false as the value
 `:json-false' (it survives the nil-drop); leave an absent member out.
 TYPE nil builds a bare plist with no `:t' discriminator, used by
-sub-specs (action descriptors, spans, table cells) that carry no type."
-  (let (body)
+sub-specs (action descriptors, spans, table cells) that carry no type.
+
+A `jetpacs-ref' VALUE is hoisted into the node's `:bind' member (SPEC
+13.8.3) — the member itself stays absent and the Companion resolves it
+from the surface data document — after checking that the member may be
+bound and that the pointer is well formed.  Only a typed node may bind."
+  (let (body binds)
     (while kvs
       (let ((k (pop kvs)) (v (pop kvs)))
-        (when v (push k body) (push v body))))
+        (cond
+         ((null v))
+         ((jetpacs-ref-p v)
+          (unless type
+            (error "jetpacs: %S binds a member of a sub-spec; only a node may bind (SPEC 13.8.3)" k))
+          (let ((name (jetpacs--wire-name k)))
+            (when-let* ((reason (jetpacs-unbindable-reason type name)))
+              (error "jetpacs: %s" reason))
+            (jetpacs-pointer-tokens (jetpacs-ref-pointer v) name)
+            (push k binds)
+            (push (jetpacs-ref-pointer v) binds)))
+         (t (push k body) (push v body)))))
     (setq body (nreverse body))
+    (when binds
+      (setq body (append body (list :bind (nreverse binds)))))
     (if type (cons :t (cons type body)) body)))
 
 (defun jetpacs-node-p (x)
@@ -628,6 +725,46 @@ both and lossless (no contract member name contains a hyphen)."
 (defconst jetpacs--universal-wire-names
   (mapcar #'jetpacs--wire-name jetpacs-universal-attributes)
   "`jetpacs-universal-attributes' as contract member names.")
+
+(defun jetpacs-member-tag (type name)
+  "The §17.1 field type of member NAME on node TYPE, or nil when untyped.
+The amendment #192 order: the `node.member' field type, a node-scoped or
+bare enum domain, the bare field type, the `on_' rule, the `children'
+rule.  An unknown TYPE types only the universal attributes."
+  (let ((row (and type (jetpacs-node-schema-row type)))
+        (scoped (and type (concat type "." name))))
+    (if (null row)
+        (and (member name jetpacs--universal-wire-names)
+             (cdr (assoc name jetpacs-field-types)))
+      (or (cdr (assoc scoped jetpacs-field-types))
+          (and (or (assoc scoped jetpacs-contract-enums)
+                   (assoc name jetpacs-contract-enums))
+               "enum")
+          (let ((bare (cdr (assoc name jetpacs-field-types))))
+            (and bare (not (equal bare "varies-per-node")) bare))
+          (and (string-prefix-p "on_" name) "action-descriptor")
+          (and (equal name "children") "node-array")))))
+
+(defun jetpacs-unbindable-reason (type name)
+  "Why member NAME of node TYPE may not be bound (SPEC 13.8.3), or nil.
+Identity, dispatch, and every member whose type may carry a Node or an
+ActionDescriptor stay authored; the lists come from the contract's
+`data_model_schema' through `jetpacs-data-contract'."
+  (let ((row (and type (jetpacs-node-schema-row type))))
+    (cond
+     ((member name (plist-get jetpacs-data-contract :unbindable_members))
+      (format "%s MUST NOT be bound (SPEC 13.8.3)" name))
+     ((string-prefix-p "on_" name)
+      (format "%s is an ActionDescriptor and MUST NOT be bound" name))
+     ((and row
+           (not (member name (append (nth 1 row) (nth 2 row))))
+           (not (member name jetpacs--universal-wire-names)))
+      (format "%s is not a member of %s" name type))
+     ((member (jetpacs-member-tag type name)
+              (plist-get jetpacs-data-contract :unbindable_tags))
+      (format "%s (%s) MUST NOT be bound (SPEC 13.8.3)"
+              name (jetpacs-member-tag type name)))
+     (t nil))))
 
 (defun jetpacs--check-options (type opts)
   "Signal unless every option keyword in OPTS is a member of node TYPE.
@@ -2423,13 +2560,13 @@ ON-SUBMIT descriptor."
   (when leading-icon (jetpacs-check-identifier leading-icon ":leading_icon"))
   (when trailing-icon (jetpacs-check-identifier trailing-icon ":trailing_icon"))
   (when max-length (jetpacs-check-integer max-length ":max_length" 1 nil))
-  (when (and max-length (> (length (or value "")) max-length))
+  (when (and max-length (> (length (or (jetpacs--literal value) "")) max-length))
     (error "jetpacs-text-input: :value exceeds :max-length (SPEC 17.4)"))
   (when selection
     (unless (and (listp selection) (= 2 (length selection)))
       (error "jetpacs-text-input: :selection must be (START END) (SPEC 17.4)"))
     (let ((start (nth 0 selection)) (end (nth 1 selection))
-          (len (length (or value ""))))
+          (len (length (or (jetpacs--literal value) ""))))
       (jetpacs-check-integer start ":selection start" 0 nil)
       (jetpacs-check-integer end ":selection end" 0 nil)
       (unless (<= start end len)
@@ -2460,17 +2597,17 @@ ON-SUBMIT descriptor."
                  member)))))
   (when filter
     (setq filter (jetpacs-check-enum filter jetpacs--text-input-filters ":filter"))
-    (unless (jetpacs--text-input-filter-matches-p (or value "") filter)
+    (unless (jetpacs--text-input-filter-matches-p (or (jetpacs--literal value) "") filter)
       (error "jetpacs-text-input: :value violates :filter (SPEC 17.4)")))
   (when (eq single-line t)
     (when (and min-lines (/= min-lines 1))
       (error "jetpacs-text-input: single_line requires :min-lines 1 (SPEC 17.4)"))
     (when (and max-lines (/= max-lines 1))
       (error "jetpacs-text-input: single_line requires :max-lines 1 (SPEC 17.4)"))
-    (when (and value (string-search "\n" value))
+    (when (and (jetpacs--literal value) (string-search "\n" value))
       (error "jetpacs-text-input: single_line prohibits U+000A in :value (SPEC 17.4)")))
   (when (eq password t)
-    (when (and value (not (string-empty-p value)))
+    (when (and (jetpacs--literal value) (not (string-empty-p value)))
       (error "jetpacs-text-input: password :value must be absent or empty (SPEC 17.4)"))
     (when on-change
       (error "jetpacs-text-input: password :on-change must be absent (SPEC 17.4)"))
@@ -3567,11 +3704,12 @@ worked on device while this constant disagreed.")
     "empty_state")
   "The reference companion's conservative Glance `widget' node types (15).")
 
-(defconst jetpacs--opaque-members '(:args :meta :value)
+(defconst jetpacs--opaque-members '(:args :meta :value :bind)
   "Members carrying opaque JSON data, whose object keys are application data
 and NOT node-type discriminators: §14.1 action `args', §17.5 chart-point
-`meta', and a `dialog.submit' `value'.  These never contain nodes, so the
-node-type scan does not descend into them.")
+`meta', a `dialog.submit' `value', and a §13.8.3 `bind' map of member names
+to pointers.  These never contain nodes, so the node-type scan does not
+descend into them.")
 
 (defun jetpacs--check-semantics-document (tree)
   "Validate authored Semantics throughout TREE and return TREE.

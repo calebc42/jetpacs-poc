@@ -36,7 +36,9 @@ the same canonical EBP bytes. Relevant inputs include:
 - loaded source and registrations;
 - Emacs application state and any Org buffers/files read by the builder;
 - current surface, navigation, and reconciled device state;
-- the negotiated target profile, capabilities, limits, and window class; and
+- the negotiated target profile, capabilities, limits, and window class;
+- the surface data document a `:data-builder` returns (EBP §13.8), which the
+  tree's `jetpacs-ref` bindings resolve against; and
 - any locale, theme, or user option the builder deliberately observes.
 
 Time, randomness, network responses, file writes, prompts, process launches,

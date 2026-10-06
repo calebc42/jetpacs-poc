@@ -32,6 +32,7 @@
 (require 'seq)
 (require 'ebp)
 (require 'jetpacs-widgets)
+(require 'jetpacs-data)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-async)
 
@@ -248,20 +249,24 @@ registry replay; explicit pushes retain Gate 3's loud sender failure."
 ;;;; Root registry
 
 (cl-defun jetpacs-shell-define-root (surface builder &key required
-                                             stale-after-s stale-builder)
+                                             stale-after-s stale-builder
+                                             data-builder)
   "Register BUILDER (nullary -> root Node or SurfaceSpec) for SURFACE.
 SURFACE takes the `jetpacs-shell--resolve-surface' forms (a bare owner
 names `app:<owner>').  REQUIRED roots are re-pushed on reconnect before
 `queue.replay' (SPEC 10.3 step 3) when their target capability was granted.
-Replaces an existing entry; schedules a debounced repush on a live session.
-Returns SURFACE."
+DATA-BUILDER, when given, is a nullary builder of the surface data
+document (SPEC 13.8) — a deterministic reader of the same explicit state
+as BUILDER — that every push carries beside the tree, and that a
+`jetpacs-ref' in the tree resolves against.  Replaces an existing entry;
+schedules a debounced repush on a live session.  Returns SURFACE."
   (let ((surface (jetpacs-shell--resolve-surface surface)))
     (jetpacs--claim "surface" surface)
     (remhash surface jetpacs-shell--tombstoned)
     (setf (alist-get surface jetpacs-shell--roots nil nil #'equal)
           (list :builder builder :owner jetpacs-current-owner
                 :required required :stale-after-s stale-after-s
-                :stale-builder stale-builder))
+                :stale-builder stale-builder :data-builder data-builder))
     (jetpacs-shell--schedule-repush surface)
     surface))
 
@@ -1119,7 +1124,7 @@ spans) add no depth."
           :max_chart_points chart-points :max_canvas_ops canvas-ops)))
 
 (defun jetpacs-shell--gate-size
-    (client spec stale-spec &optional spec-analysis stale-analysis)
+    (client spec stale-spec &optional spec-analysis stale-analysis data)
   "GATE 5: SPEC 4.5 SIZE — the sender MUST respect the reported limits.
 `max_frame_bytes', the four aggregate counts, and the fixed 20-level
 `max_node_depth'.  Nothing else in the sender measured any of these: the
@@ -1159,10 +1164,79 @@ it a `1400 frame-too-large' and a CLOSED connection."
       ;; tighter than arbitrary Lisp, but Jetpacs owes the peer the named
       ;; SPEC max_node_depth diagnosis for an over-deep node document.
       (when-let* ((frame (plist-get limits :max_frame_bytes)))
-        (let ((bytes (jetpacs-node-wire-bytes s)))
+        (let ((bytes (+ (jetpacs-node-wire-bytes s)
+                        ;; SPEC 13.8.1: the document rides the same frame.
+                        (if (and data (eq s spec)) (jetpacs-node-wire-bytes data) 0))))
           (when (> bytes (- frame jetpacs-shell--frame-headroom))
             (error "jetpacs: spec is %d octets, over max_frame_bytes %d (SPEC 4.5)"
-                   bytes frame)))))))
+                   bytes frame)))))
+    (when data
+      (condition-case err
+          (jetpacs-data-check-document data)
+        (jetpacs-data-error
+         (error "jetpacs: data document %s (SPEC 13.8.1)" (nth 2 err)))))))
+
+(defun jetpacs-shell--build-data (surface entry)
+  "Call SURFACE's :data-builder from ENTRY under its owner; nil without one.
+A crash signals like a stale builder's: the push is refused, loudly."
+  (when-let* ((fn (plist-get entry :data-builder)))
+    (let ((jetpacs-current-owner
+           (or (plist-get entry :owner)
+               (and (not jetpacs--in-action-handler) jetpacs-current-owner))))
+      (handler-bind ((error (lambda (e)
+                              (jetpacs-shell--note-builder-error
+                               (list :surface surface :phase 'data) e))))
+        (funcall fn)))))
+
+(defun jetpacs-shell--prepare-data (spec data granted)
+  "Return (SPEC . DATA) as the wire carries them (SPEC 13.8, 12 rule 3).
+With GRANTED non-nil the bindings travel and DATA rides the snapshot;
+they are checked here so a refused push never reaches the wire.  Without
+the grant the bindings are resolved against DATA and stripped, and no
+document is sent — the same builders serve a Companion either way."
+  (condition-case err
+      (cond
+       (granted
+        (jetpacs-data-check-bindings spec)
+        (when data (jetpacs-data-check-document data))
+        (cons spec data))
+       ((or data (jetpacs-data-bound-p spec))
+        (cons (jetpacs-data-materialize spec data :strip t) nil))
+       (t (cons spec nil)))
+    (jetpacs-data-error
+     (error "jetpacs: %s: %s (SPEC 13.8)" (nth 1 err) (nth 2 err)))))
+
+(cl-defun jetpacs-shell-data-patch (surface-or-owner ops &key callback)
+  "Patch SURFACE-OR-OWNER's data document with OPS (SPEC 13.8.4).
+OPS is a list from `jetpacs-data-set' and `jetpacs-data-remove'.  With
+`data.model' granted on a live session the patch goes out as
+`surface.data' at the next revision and the Companion re-materializes
+the tree it holds; without the grant, or when the Companion refuses the
+patch, the surface is re-pushed whole from its builders, which read the
+same Emacs state the handler just changed.  CALLBACK receives (STATUS
+ERROR) for a patch.  Returns the claimed revision, or nil when a push
+stood in."
+  (let ((surface (jetpacs-shell--resolve-surface surface-or-owner))
+        (client (jetpacs-client)))
+    (dolist (op ops) (jetpacs-data-check-op op))
+    (if (and client (jetpacs-connected-p)
+             (jetpacs-granted-p "data.model" client))
+        (let ((revision nil))
+          (setq revision
+                (ebp-client-surface-data
+                 client surface ops
+                 :callback
+                 (lambda (status error)
+                   (jetpacs-shell--confirm-applied surface revision status error)
+                   (when (and error (not (jetpacs-refused-p error)))
+                     ;; The Companion holds no document this patch fits (a
+                     ;; tombstone, a tree that moved on): the complete
+                     ;; snapshot, authored from the same state, heals it.
+                     (jetpacs-shell-push surface))
+                   (when callback (funcall callback status error)))))
+          revision)
+      (jetpacs-shell-push surface)
+      nil)))
 
 (defun jetpacs-shell--gate-ids
     (spec stale-spec &optional spec-analysis stale-analysis)
@@ -1271,7 +1345,7 @@ ERROR, not STATUS — a {} result leaves both nil."
 
 (cl-defun jetpacs-shell-push (&optional surface-or-owner
                               &key spec current-view stale-after-s
-                              stale-spec reset-input-ids callback)
+                              stale-spec reset-input-ids data callback)
   "Push SURFACE-OR-OWNER's snapshot; returns the claimed revision or nil.
 Zero-arg re-renders the current owner's surface (decision D1), else
 `jetpacs-shell-surface-id' — the meaning `jetpacs-async--flush-push'
@@ -1282,10 +1356,14 @@ surface id (with a colon) or a bare owner (`app:<owner>').
 through `jetpacs-claimed-node-id' when a document build may have
 suffixed it, or the reset names a ghost and the push 1201s.
 
-:SPEC overrides the registered builder for one push.  The four runtime
-gates run in order (see the Commentary); a gate failure signals — the
-SPEC 16.2/10.2 sender MUSTs are loud, never sanitized.  On any failure
-a queued `jetpacs-shell-notify' snackbar is requeued for the next push."
+:SPEC overrides the registered builder for one push, :DATA the
+registered data builder (SPEC 13.8).  With `data.model' granted the
+document rides the snapshot and the tree's bindings travel; without it
+they are resolved here against the document and stripped, so the same
+builders serve either Companion.  The four runtime gates run in order
+(see the Commentary); a gate failure signals — the SPEC 16.2/10.2 sender
+MUSTs are loud, never sanitized.  On any failure a queued
+`jetpacs-shell-notify' snackbar is requeued for the next push."
   (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
          (entry (alist-get surface jetpacs-shell--roots nil nil #'equal)))
     (jetpacs-shell--drop-pending surface)
@@ -1343,7 +1421,9 @@ a queued `jetpacs-shell-notify' snackbar is requeued for the next push."
                                          (list :surface surface) e))))
                             (funcall fn)))))
                    (stale-after-s (or stale-after-s
-                                      (plist-get entry :stale-after-s))))
+                                      (plist-get entry :stale-after-s)))
+                   (data (or data (jetpacs-shell--build-data surface entry)))
+                   (data-granted (jetpacs-granted-p "data.model" client)))
               ;; The gates, in check order — ALL of them under the
               ;; recorder seam, GATE 2 included; the signal continues to
               ;; the caller unchanged (the sender MUSTs stay loud).
@@ -1351,6 +1431,15 @@ a queued `jetpacs-shell-notify' snackbar is requeued for the next push."
                                       (jetpacs-shell--note-builder-error
                                        (list :surface surface :phase 'gate)
                                        e))))
+                ;; SPEC 13.8: a stale snapshot never carries a binding —
+                ;; its bindings are resolved here whatever the grant —
+                ;; and the live snapshot carries its bindings and document
+                ;; only to a Companion that granted `data.model'.
+                (when stale-spec
+                  (setq stale-spec (jetpacs-data-materialize stale-spec data :strip t)))
+                (pcase-let ((`(,resolved . ,document)
+                             (jetpacs-shell--prepare-data spec data data-granted)))
+                  (setq spec resolved data document))
                 ;; GATE 2 first half: stale_spec discipline (SPEC 13.5).
                 (when stale-spec
                   (unless (eq (not (plist-member spec :views))
@@ -1391,7 +1480,7 @@ spec (SPEC 13.4)" current-view)))
                   (jetpacs-shell--gate-capability client surface)
                   (jetpacs-shell--gate-amendments client spec spec-analysis)
                   (jetpacs-shell--gate-size
-                   client spec stale-spec spec-analysis stale-analysis)
+                   client spec stale-spec spec-analysis stale-analysis data)
                   (jetpacs-shell--gate-ids
                    spec stale-spec spec-analysis stale-analysis)
                   (when stale-spec
@@ -1423,6 +1512,7 @@ spec (SPEC 13.4)" current-view)))
                      :stale-spec stale-spec
                      :current-view current-view
                      :reset-input-ids reset-input-ids
+                     :data data
                      :callback
                      (lambda (status error)
                        (jetpacs-shell--confirm-applied

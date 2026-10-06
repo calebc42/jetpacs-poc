@@ -218,6 +218,26 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
 (defconst jetpacs-max-swipe-actions-per-side
   {contract["limits"]["fixed"]["max_swipe_actions_per_side"]})
 
+;; SPEC 4.5 / 13.8 (amendment #194): the surface data document.
+(defconst jetpacs-max-data-bytes
+  {contract["limits"]["fixed"]["max_data_bytes"]})
+(defconst jetpacs-max-data-depth
+  {contract["limits"]["fixed"]["max_data_depth"]})
+(defconst jetpacs-max-pointer-bytes
+  {contract["limits"]["fixed"]["max_pointer_bytes"]})
+(defconst jetpacs-max-pointer-segments
+  {contract["limits"]["fixed"]["max_pointer_segments"]})
+(defconst jetpacs-max-bindings-per-snapshot
+  {contract["limits"]["fixed"]["max_bindings_per_snapshot"]})
+(defconst jetpacs-max-data-ops
+  {contract["limits"]["fixed"]["max_data_ops"]})
+
+(defconst jetpacs-data-contract
+  '{el_plist(contract["data_model_schema"])}
+  "Contract-projected SPEC 13.8 data-document rules: the gating
+capability, the pointer and DataOp shapes, and the members and field
+types a `bind' may never name.")
+
 (defconst jetpacs-accessible-name-precedence
   '({el_strings(semantics["accessible_name_precedence"])})
   "Accessible-name sources in normative first-present order.")

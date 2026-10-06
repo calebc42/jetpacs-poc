@@ -159,6 +159,17 @@ The Glance widget translation is a registry of the same shape over
 its contribution advertises exactly the registry's node types, so the
 advertised and the implemented widget profile cannot split.
 
+A surface may carry a data document beside its tree (EBP §13.8, amendment
+#194, capability `data.model`). Emacs authors the document (`:data-builder`
+on `jetpacs-shell-define-root`), binds node members to pointers into it
+(`jetpacs-ref`), and patches it with `surface.data` through
+`jetpacs-shell-data-patch`; the Companion engine materializes the bindings
+before validation, so the renderers, widgets, tiles and the input store see
+an ordinary document and need no knowledge of pointers. Emacs alone writes
+the document; a Companion-local write-back for bound inputs is a deferred
+exploration. `emacs/jetpacs-data.el` is the Elisp reference materializer,
+replayed against `ebp/goldens/data.golden` like the engine's.
+
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,
 widget, and tile targets have their own narrower profiles. The optional

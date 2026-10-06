@@ -33,7 +33,7 @@
   "The SPEC version this vocabulary was generated from.")
 
 (defconst jetpacs-universal-attributes
-  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner :border :alpha :clip :align_self :semantics)
+  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner :border :alpha :clip :align_self :semantics :bind)
   "Contract-projected universal member keywords accepted on every Node.")
 
 (defconst jetpacs-semantics-schema
@@ -93,6 +93,26 @@
   716800)
 (defconst jetpacs-max-swipe-actions-per-side
   4)
+
+;; SPEC 4.5 / 13.8 (amendment #194): the surface data document.
+(defconst jetpacs-max-data-bytes
+  1048576)
+(defconst jetpacs-max-data-depth
+  32)
+(defconst jetpacs-max-pointer-bytes
+  512)
+(defconst jetpacs-max-pointer-segments
+  32)
+(defconst jetpacs-max-bindings-per-snapshot
+  10000)
+(defconst jetpacs-max-data-ops
+  1000)
+
+(defconst jetpacs-data-contract
+  '(:capability "data.model" :pointer (:rfc 6901 :absolute_only t :max_bytes_limit "max_pointer_bytes" :max_segments_limit "max_pointer_segments") :ops (:set (:required ("op" "path" "value") :optional ()) :remove (:required ("op" "path") :optional ()) :max_ops_limit "max_data_ops") :unbindable_members ("t" "id" "key" "children" "bind" "template" "args" "meta" "semantics" "variants" "swipe_start" "swipe_end") :unbindable_tags ("action-descriptor" "node" "node-array" "variant-array" "swipe-object" "semantics-object" "menu-item-array" "menu-group-array" "tab-item-array" "rail-item-array" "button-group-item-array" "label-on-tap-object" "toolbar-id-or-item-array" "canvas-op-array" "table-row-array" "rich-span-array"))
+  "Contract-projected SPEC 13.8 data-document rules: the gating
+capability, the pointer and DataOp shapes, and the members and field
+types a `bind' may never name.")
 
 (defconst jetpacs-accessible-name-precedence
   '("semantics.name" "content_description" "label" "icon" "t" "node")
@@ -208,6 +228,7 @@
     ("id" . "identifier")
     ("key" . "identifier")
     ("semantics" . "semantics-object")
+    ("bind" . "bind-object")
     ("document" . "identifier")
     ("keyboard" . "enum")
     ("children" . "node-array")
