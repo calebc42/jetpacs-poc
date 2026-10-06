@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// GENERATED from renderer-extensions/jetpacs-components.json (format 1) by
+// GENERATED from renderer-extensions/jetpacs-components.json (format 2) by
 // tools/gen-renderer-extension-vocabulary.py. DO NOT EDIT: JetpacsComponentsVocabularyTest pins this projection.
 package com.calebc42.jetpacs.renderer.jetpacs
 

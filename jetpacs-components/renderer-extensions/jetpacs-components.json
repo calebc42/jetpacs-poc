@@ -1,5 +1,5 @@
 {
-  "format": 1,
+  "format": 2,
   "extension": "jetpacs.components",
   "description": "Jetpacs' editor-native component design for Compose Foundation.",
   "node_types": [
@@ -24,84 +24,257 @@
     "dialog": [],
     "notification": []
   },
+  "definitions": {
+    "identifier": {
+      "type": "string",
+      "min_length": 1,
+      "max_length": 128
+    },
+    "text": {
+      "type": "string",
+      "min_length": 0,
+      "max_length": 4096
+    },
+    "option-value": {
+      "type": "string",
+      "min_length": 1,
+      "max_length": 4096
+    },
+    "line-limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 10000
+    },
+    "children": {
+      "type": "node-array",
+      "min_items": 0,
+      "max_items": 10000
+    },
+    "tab-option": {
+      "type": "object",
+      "required": {
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "value": {
+          "type": "ref",
+          "ref": "option-value"
+        }
+      },
+      "optional": {}
+    },
+    "section-option": {
+      "type": "object",
+      "required": {
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "value": {
+          "type": "ref",
+          "ref": "option-value"
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 6
+        }
+      },
+      "optional": {}
+    },
+    "tab-options": {
+      "type": "array",
+      "items": {
+        "type": "ref",
+        "ref": "tab-option"
+      },
+      "min_items": 1,
+      "max_items": 10000
+    },
+    "section-options": {
+      "type": "array",
+      "items": {
+        "type": "ref",
+        "ref": "section-option"
+      },
+      "min_items": 1,
+      "max_items": 10000
+    }
+  },
   "node_schema": {
     "jetpacs.action": {
-      "required": [
-        "label",
-        "on_tap"
-      ],
-      "optional": [
-        "enabled"
-      ]
+      "required": {
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "on_tap": {
+          "type": "action"
+        }
+      },
+      "optional": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     },
     "jetpacs.choice": {
-      "required": [
-        "id",
-        "label",
-        "checked",
-        "on_change"
-      ],
-      "optional": [
-        "enabled"
-      ]
+      "required": {
+        "id": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "checked": {
+          "type": "boolean"
+        },
+        "on_change": {
+          "type": "action"
+        }
+      },
+      "optional": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     },
     "jetpacs.list_item": {
-      "required": [
-        "title"
-      ],
-      "optional": [
-        "overline",
-        "subtitle",
-        "title_max_lines",
-        "subtitle_max_lines",
-        "leading",
-        "trailing",
-        "on_tap",
-        "on_long_tap",
-        "swipe_start",
-        "swipe_end",
-        "selected",
-        "enabled"
-      ]
+      "required": {
+        "title": {
+          "type": "ref",
+          "ref": "text"
+        }
+      },
+      "optional": {
+        "overline": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "subtitle": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "title_max_lines": {
+          "type": "ref",
+          "ref": "line-limit"
+        },
+        "subtitle_max_lines": {
+          "type": "ref",
+          "ref": "line-limit"
+        },
+        "leading": {
+          "type": "node"
+        },
+        "trailing": {
+          "type": "node"
+        },
+        "on_tap": {
+          "type": "action"
+        },
+        "on_long_tap": {
+          "type": "action"
+        },
+        "swipe_start": {
+          "type": "swipe-side"
+        },
+        "swipe_end": {
+          "type": "swipe-side"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
     },
     "jetpacs.panel": {
-      "required": [
-        "label",
-        "children"
-      ],
-      "optional": []
+      "required": {
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "children": {
+          "type": "ref",
+          "ref": "children"
+        }
+      },
+      "optional": {}
     },
     "jetpacs.scope": {
-      "required": [
-        "children"
-      ],
-      "optional": []
+      "required": {
+        "children": {
+          "type": "ref",
+          "ref": "children"
+        }
+      },
+      "optional": {}
     },
     "jetpacs.section_navigator": {
-      "required": [
-        "id",
-        "options",
-        "value",
-        "on_change"
-      ],
-      "optional": [
-        "enabled",
-        "pinned"
-      ]
+      "required": {
+        "id": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "options": {
+          "type": "ref",
+          "ref": "section-options"
+        },
+        "value": {
+          "type": "ref",
+          "ref": "option-value"
+        },
+        "on_change": {
+          "type": "action"
+        }
+      },
+      "optional": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "pinned": {
+          "type": "boolean"
+        }
+      }
     },
     "jetpacs.tabs": {
-      "required": [
-        "id",
-        "options",
-        "value",
-        "on_change"
-      ],
-      "optional": [
-        "enabled",
-        "scrollable",
-        "pinned",
-        "variant"
-      ]
+      "required": {
+        "id": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "options": {
+          "type": "ref",
+          "ref": "tab-options"
+        },
+        "value": {
+          "type": "ref",
+          "ref": "option-value"
+        },
+        "on_change": {
+          "type": "action"
+        }
+      },
+      "optional": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "scrollable": {
+          "type": "boolean"
+        },
+        "pinned": {
+          "type": "boolean"
+        },
+        "variant": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 64
+        }
+      }
     }
   },
   "stateful_when_present": {

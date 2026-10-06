@@ -12,12 +12,10 @@ import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.ebp.renderer.compose.ComposeNodeComponent
 import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
 import com.calebc42.ebp.renderer.model.RendererContribution
-import com.calebc42.ebp.renderer.model.vocabulary.NodeMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeMemberSet
 import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.doubleOrNull
 
 /** App-surface contribution implemented by [JetpacsComponentsRenderer]. */
 val JetpacsComponentsContribution = RendererContribution(
@@ -43,12 +41,9 @@ internal abstract class JetpacsComponent(
  * Compose Foundation implementation of the `jetpacs.components` extension.
  *
  * Dispatch is [registry]: one component per manifest node type, each reading
- * its node through the member set generated from
- * `renderer-extensions/jetpacs-components.json`. That manifest is format 1,
- * which types a member by its core-contract name, so the members the core
- * contract cannot name (`value`, `selected`, `pinned`, the list item's
- * `overline`, `subtitle`, line limits and `leading`) are untyped and are read
- * strictly from the raw element through the helpers at the end of this file.
+ * its node through the member set generated from the format-2
+ * `renderer-extensions/jetpacs-components.json`, which types every member
+ * and whose typed schema admission applies before any node reaches here.
  */
 object JetpacsComponentsRenderer : ComposeNodeExtension {
     override val id: String = "jetpacs.components.compose"
@@ -195,7 +190,7 @@ internal object JetpacsSectionNavigatorComponent :
 
         JetpacsSectionNavigator(
             options = options,
-            value = p.untypedText(JetpacsSectionNavigatorMembers.Value).orEmpty(),
+            value = p.getOr(JetpacsSectionNavigatorMembers.Value, ""),
             enabled = p.getOr(JetpacsSectionNavigatorMembers.Enabled, true),
             onValueChange = { next ->
                 context.action(onChange, JsonPrimitive(next))
@@ -227,9 +222,11 @@ internal object JetpacsTabsComponent : JetpacsComponent("jetpacs.tabs", JetpacsT
 
         JetpacsTabs(
             options = options,
-            value = p.untypedText(JetpacsTabsMembers.Value).orEmpty(),
+            value = p.getOr(JetpacsTabsMembers.Value, ""),
             enabled = p.getOr(JetpacsTabsMembers.Enabled, true),
             scrollable = scrollable,
+            // Variant names are forward-compatible renderer policy, so the
+            // wire admits any bounded string and unknown names fall back here.
             variant = resolveJetpacsTabVariant(p[JetpacsTabsMembers.Variant], scrollable),
             onValueChange = { next ->
                 context.action(onChange, JsonPrimitive(next))
@@ -265,22 +262,6 @@ internal object JetpacsScopeComponent : JetpacsComponent("jetpacs.scope", Jetpac
         }
     }
 }
-
-/**
- * A text member the format-1 manifest leaves untyped, read as strictly as a
- * typed string member is: a string primitive, or nothing.
- */
-internal fun NodeProperties.untypedText(member: NodeMember<*>): String? =
-    (raw(member) as? JsonPrimitive)?.takeIf { it.isString }?.content
-
-/** An untyped flag, read strictly: a boolean literal, or nothing (SPEC §17.1). */
-internal fun NodeProperties.untypedBoolean(member: NodeMember<*>): Boolean? =
-    (raw(member) as? JsonPrimitive)?.strictBooleanOrNull()
-
-/** An untyped line limit, read strictly: a positive number literal, or nothing. */
-internal fun NodeProperties.untypedPositiveInt(member: NodeMember<*>): Int? =
-    (raw(member) as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
-        ?.toInt()?.takeIf { it > 0 }
 
 private fun JsonPrimitive.strictBooleanOrNull(): Boolean? =
     takeIf { !isString }?.content?.toBooleanStrictOrNull()

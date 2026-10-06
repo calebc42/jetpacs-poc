@@ -2,6 +2,7 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import com.calebc42.ebp.wire.CORE_NODE_SET
+import com.calebc42.ebp.wire.ContentInvalid
 import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
 import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.ebp.wire.SpecValidator
@@ -39,6 +40,7 @@ class JetpacsComponentsVocabularyTest {
         extensions = mapOf(
             JETPACS_COMPONENTS_EXTENSION to JETPACS_COMPONENTS_NODE_SCHEMA.keys,
         ),
+        extensionSchemas = JETPACS_COMPONENTS_TYPED_NODE_SCHEMA,
     )
     private val advertised = CORE_NODE_SET + setOf("lazy_column") +
         JETPACS_COMPONENTS_NODE_SCHEMA.keys
@@ -48,10 +50,12 @@ class JetpacsComponentsVocabularyTest {
         val manifest = Json.parseToJsonElement(
             repositoryFile("renderer-extensions/jetpacs-components.json").readText(),
         ).jsonObject
+        assertEquals(2, manifest.getValue("format").jsonPrimitive.content.toInt())
         assertEquals(
             manifest.getValue("extension").jsonPrimitive.content,
             JETPACS_COMPONENTS_EXTENSION,
         )
+        assertEquals(JETPACS_COMPONENTS_NODE_SCHEMA.keys, JETPACS_COMPONENTS_TYPED_NODE_SCHEMA.keys)
         assertEquals(
             manifest.getValue("node_types").jsonArray.map { it.jsonPrimitive.content },
             JETPACS_COMPONENTS_NODE_SCHEMA.keys.toList(),
@@ -85,6 +89,28 @@ class JetpacsComponentsVocabularyTest {
                     nodeVocabulary = vocabulary,
                 )
             }
+    }
+
+    @Test
+    fun typedAdmissionRejectsValuesOutsideTheManifest() {
+        val rejected = listOf(
+            """{"t":"jetpacs.choice","id":"","label":"Pick","checked":false,"on_change":{"action":"x.change"}}""" to "spec.id",
+            """{"t":"jetpacs.list_item","title":"Row","title_max_lines":0}""" to "spec.title_max_lines",
+            """{"t":"jetpacs.list_item","title":"Row","selected":"true"}""" to "spec.selected",
+            """{"t":"jetpacs.list_item","title":"Row","leading":{"text":"no discriminator"}}""" to "spec.leading",
+            """{"t":"jetpacs.list_item","title":"Row","swipe_end":{"actions":[]}}""" to "spec.swipe_end.actions",
+            """{"t":"jetpacs.section_navigator","id":"outline","options":[{"label":"Intro","value":"intro","level":7}],"value":"intro","on_change":{"action":"x.change"}}""" to "spec.options[0].level",
+        )
+        for ((json, path) in rejected) {
+            val invalid = assertThrows(ContentInvalid::class.java) {
+                SpecValidator.validateSurfaceSpec(
+                    Json.parseToJsonElement(json) as JsonObject,
+                    advertisedTypes = advertised,
+                    nodeVocabulary = vocabulary,
+                )
+            }
+            assertEquals(json, path, invalid.path)
+        }
     }
 
     @Test

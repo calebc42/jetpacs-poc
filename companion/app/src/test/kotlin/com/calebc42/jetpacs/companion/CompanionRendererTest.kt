@@ -6,6 +6,7 @@ import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_EXTENSION
@@ -45,9 +46,12 @@ class CompanionRendererTest {
 
         assertTrue(disabled.nodeVocabulary.schema.keys.containsAll(JETPACS_DESIGN_NODE_SCHEMA.keys))
         assertFalse(JETPACS_DESIGN_EXTENSION in disabled.nodeVocabulary.extensions)
-        // The Material typed schema is always installed; the design one only
-        // when the runtime is enabled.
-        assertEquals(JETPACS_MATERIAL3_TYPED_NODE_SCHEMA, disabled.nodeVocabulary.extensionSchemas)
+        // The Material and components typed schemas are always installed; the
+        // design one only when the runtime is enabled.
+        assertEquals(
+            JETPACS_MATERIAL3_TYPED_NODE_SCHEMA + JETPACS_COMPONENTS_TYPED_NODE_SCHEMA,
+            disabled.nodeVocabulary.extensionSchemas,
+        )
         assertTrue(disabled.nodeVocabulary.extensionSemanticValidators.isEmpty())
         assertFalse(
             disabled.composeConfiguration.extensions.nodeTypes
@@ -75,7 +79,8 @@ class CompanionRendererTest {
             enabled.nodeVocabulary.extensions.getValue(JETPACS_DESIGN_EXTENSION),
         )
         assertEquals(
-            JETPACS_MATERIAL3_TYPED_NODE_SCHEMA + JETPACS_DESIGN_TYPED_NODE_SCHEMA,
+            JETPACS_MATERIAL3_TYPED_NODE_SCHEMA + JETPACS_COMPONENTS_TYPED_NODE_SCHEMA +
+                JETPACS_DESIGN_TYPED_NODE_SCHEMA,
             enabled.nodeVocabulary.extensionSchemas,
         )
         assertEquals(

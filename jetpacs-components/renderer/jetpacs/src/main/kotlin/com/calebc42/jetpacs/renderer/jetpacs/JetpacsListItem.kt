@@ -183,19 +183,13 @@ internal fun RenderListItem(
 ) {
     val p = NodeProperties(node, JetpacsListItemMembers)
     val enabled = p.getOr(JetpacsListItemMembers.Enabled, true)
-    // `selected`, the texts beside the title, the line limits and `leading`
-    // are untyped on the format-1 manifest; they are read strictly from the
-    // raw element until the manifest moves to format 2.
-    val selected = if (p.has(JetpacsListItemMembers.Selected)) {
-        p.untypedBoolean(JetpacsListItemMembers.Selected) ?: false
-    } else {
-        null
-    }
+    // Absent means "not a selectable row"; the semantics say nothing then.
+    val selected = p[JetpacsListItemMembers.Selected]
     val onTap = p[JetpacsListItemMembers.OnTap]
     val onLongTap = p[JetpacsListItemMembers.OnLongTap]
     val title = p.getOr(JetpacsListItemMembers.Title, "")
-    val overline = p.untypedText(JetpacsListItemMembers.Overline).orEmpty()
-    val subtitle = p.untypedText(JetpacsListItemMembers.Subtitle).orEmpty()
+    val overline = p.getOr(JetpacsListItemMembers.Overline, "")
+    val subtitle = p.getOr(JetpacsListItemMembers.Subtitle, "")
     val swipeStart = p[JetpacsListItemMembers.SwipeStart]
     val swipeEnd = p[JetpacsListItemMembers.SwipeEnd]
     val swipeActions = remember(swipeStart, swipeEnd) {
@@ -233,10 +227,9 @@ internal fun RenderListItem(
             },
             overline = overline,
             subtitle = subtitle,
-            titleMaxLines = p.untypedPositiveInt(JetpacsListItemMembers.TitleMaxLines) ?: Int.MAX_VALUE,
-            subtitleMaxLines = p.untypedPositiveInt(JetpacsListItemMembers.SubtitleMaxLines)
-                ?: Int.MAX_VALUE,
-            leading = (p.raw(JetpacsListItemMembers.Leading) as? JsonObject)?.let { leading ->
+            titleMaxLines = p[JetpacsListItemMembers.TitleMaxLines] ?: Int.MAX_VALUE,
+            subtitleMaxLines = p[JetpacsListItemMembers.SubtitleMaxLines] ?: Int.MAX_VALUE,
+            leading = p[JetpacsListItemMembers.Leading]?.let { leading ->
                 { context.renderChild(leading, 0) }
             },
             trailing = p[JetpacsListItemMembers.Trailing]?.let { trailing ->

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // GENERATED from renderer-extensions/jetpacs-components.json (format
-// 1) by tools/gen-renderer-extension-vocabulary.py.
+// 2) by tools/gen-renderer-extension-vocabulary.py.
 // DO NOT EDIT: JetpacsComponentsVocabularyTest pins this projection.
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import com.calebc42.ebp.wire.NodeRow
+import com.calebc42.ebp.wire.ExtensionNodeSchema
+import com.calebc42.ebp.wire.ExtensionValueSchema
 import com.calebc42.ebp.wire.SelectionOptionsRule
 import com.calebc42.ebp.wire.TrueRequiresParentRule
 
@@ -50,3 +52,15 @@ val JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS: Map<String, String> = mapOf(
     "jetpacs.section_navigator" to "pinned",
     "jetpacs.tabs" to "pinned",
 )
+
+val JETPACS_COMPONENTS_TYPED_NODE_SCHEMA: Map<String, ExtensionNodeSchema> = mapOf(
+    "jetpacs.action" to ExtensionNodeSchema(mapOf("label" to ExtensionValueSchema.StringValue(0, 4096), "on_tap" to ExtensionValueSchema.ActionDescriptorValue), mapOf("enabled" to ExtensionValueSchema.BooleanValue)),
+    "jetpacs.choice" to ExtensionNodeSchema(mapOf("checked" to ExtensionValueSchema.BooleanValue, "id" to ExtensionValueSchema.StringValue(1, 128), "label" to ExtensionValueSchema.StringValue(0, 4096), "on_change" to ExtensionValueSchema.ActionDescriptorValue), mapOf("enabled" to ExtensionValueSchema.BooleanValue)),
+    "jetpacs.list_item" to ExtensionNodeSchema(mapOf("title" to ExtensionValueSchema.StringValue(0, 4096)), mapOf("enabled" to ExtensionValueSchema.BooleanValue, "leading" to ExtensionValueSchema.NodeValue, "on_long_tap" to ExtensionValueSchema.ActionDescriptorValue, "on_tap" to ExtensionValueSchema.ActionDescriptorValue, "overline" to ExtensionValueSchema.StringValue(0, 4096), "selected" to ExtensionValueSchema.BooleanValue, "subtitle" to ExtensionValueSchema.StringValue(0, 4096), "subtitle_max_lines" to ExtensionValueSchema.IntegerValue(1L, 10000L), "swipe_end" to ExtensionValueSchema.SwipeSideValue, "swipe_start" to ExtensionValueSchema.SwipeSideValue, "title_max_lines" to ExtensionValueSchema.IntegerValue(1L, 10000L), "trailing" to ExtensionValueSchema.NodeValue)),
+    "jetpacs.panel" to ExtensionNodeSchema(mapOf("children" to ExtensionValueSchema.NodeArrayValue(0, 10000), "label" to ExtensionValueSchema.StringValue(0, 4096)), mapOf()),
+    "jetpacs.scope" to ExtensionNodeSchema(mapOf("children" to ExtensionValueSchema.NodeArrayValue(0, 10000)), mapOf()),
+    "jetpacs.section_navigator" to ExtensionNodeSchema(mapOf("id" to ExtensionValueSchema.StringValue(1, 128), "on_change" to ExtensionValueSchema.ActionDescriptorValue, "options" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.ObjectValue(mapOf("label" to ExtensionValueSchema.StringValue(0, 4096), "level" to ExtensionValueSchema.IntegerValue(1L, 6L), "value" to ExtensionValueSchema.StringValue(1, 4096)), mapOf()), 1, 10000), "value" to ExtensionValueSchema.StringValue(1, 4096)), mapOf("enabled" to ExtensionValueSchema.BooleanValue, "pinned" to ExtensionValueSchema.BooleanValue)),
+    "jetpacs.tabs" to ExtensionNodeSchema(mapOf("id" to ExtensionValueSchema.StringValue(1, 128), "on_change" to ExtensionValueSchema.ActionDescriptorValue, "options" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.ObjectValue(mapOf("label" to ExtensionValueSchema.StringValue(0, 4096), "value" to ExtensionValueSchema.StringValue(1, 4096)), mapOf()), 1, 10000), "value" to ExtensionValueSchema.StringValue(1, 4096)), mapOf("enabled" to ExtensionValueSchema.BooleanValue, "pinned" to ExtensionValueSchema.BooleanValue, "scrollable" to ExtensionValueSchema.BooleanValue, "variant" to ExtensionValueSchema.StringValue(1, 64))),
+)
+
+const val JETPACS_COMPONENTS_SCHEMA_SHA256 = "efc0fd59a656b4f10279ac752a07edaef4de9549986e100d20f74706602d85d0"

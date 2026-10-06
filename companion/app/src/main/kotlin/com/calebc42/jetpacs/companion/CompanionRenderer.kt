@@ -18,6 +18,7 @@ import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_AT_LEAST_ONE_NON
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
@@ -134,7 +135,8 @@ object CompanionRenderer {
             selectionOptions = JETPACS_COMPONENTS_SELECTION_OPTIONS,
             trueRequiresParent = JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT,
             extensions = extensionOwners,
-            extensionSchemas = JETPACS_MATERIAL3_TYPED_NODE_SCHEMA + if (designRuntimeEnabled) {
+            extensionSchemas = JETPACS_MATERIAL3_TYPED_NODE_SCHEMA +
+                JETPACS_COMPONENTS_TYPED_NODE_SCHEMA + if (designRuntimeEnabled) {
                 JETPACS_DESIGN_TYPED_NODE_SCHEMA
             } else {
                 emptyMap()
