@@ -14,6 +14,7 @@ package com.calebc42.jetpacs.material3
 
 import com.calebc42.ebp.renderer.model.*
 import com.calebc42.ebp.renderer.model.vocabulary.BooleanMember
+import com.calebc42.ebp.renderer.model.vocabulary.NodeArrayMember
 import com.calebc42.ebp.renderer.model.vocabulary.generated.UniversalMembers
 
 import androidx.compose.foundation.background
@@ -275,6 +276,13 @@ internal fun identityPath(parentPath: String, node: JsonObject?, i: Int): String
         else -> "$parentPath/${typedIdentitySegment("i", i.toString(), type)}"
     }
 }
+
+/**
+ * The structural `children` of a node of any type: SPEC §17.1 types the member
+ * once for every node, and the §16.2 degradation and chrome discovery walk it
+ * without knowing the node's type, so no member set owns this descriptor.
+ */
+internal val AnyNodeChildren = NodeArrayMember("children", required = false)
 
 // ---------------------------------------------------- the §16.5 modifier
 

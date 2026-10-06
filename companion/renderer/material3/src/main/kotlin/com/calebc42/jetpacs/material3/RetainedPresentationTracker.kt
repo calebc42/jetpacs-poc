@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.generated.UniversalMembers
 import com.calebc42.ebp.renderer.model.*
 
 import kotlinx.serialization.json.JsonArray
@@ -36,8 +37,8 @@ internal fun retainedSaveableLifecyclePaths(
     val paths = LinkedHashMap<String, String>()
 
     fun nestedPath(parentPath: String, node: JsonObject, position: String): String {
-        val key = node.stringOrNull("key").orEmpty()
-        val id = node.stringOrNull("id").orEmpty()
+        val key = UniversalMembers.Key.read(node).orEmpty()
+        val id = UniversalMembers.Id.read(node).orEmpty()
         val type = node.stringOrNull("t").orEmpty()
         val segment = when {
             key.isNotEmpty() -> typedIdentitySegment("k", key, type)

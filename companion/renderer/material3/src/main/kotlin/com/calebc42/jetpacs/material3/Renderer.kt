@@ -9,7 +9,6 @@
 package com.calebc42.jetpacs.material3
 
 import com.calebc42.ebp.renderer.model.vocabulary.BooleanOrAuto
-import com.calebc42.ebp.renderer.model.vocabulary.NodeArrayMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
 import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
 import com.calebc42.ebp.renderer.model.vocabulary.generated.*
@@ -601,7 +600,7 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
         ctx.configuration.appNodeTypes
     }
     if (type !in advertised) {
-        FallbackChildren.read(node)?.let { kids ->
+        AnyNodeChildren.read(node)?.let { kids ->
             Column(modifier) { RenderChildren(kids, ctx) }
         }
         return
@@ -647,17 +646,11 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
     }
     // SPEC 16.2: unknown types render children as a neutral vertical
     // sequence, or nothing.
-    FallbackChildren.read(node)?.let { children ->
+    AnyNodeChildren.read(node)?.let { children ->
         Column(modifier = m) { RenderColumnChildren(children, ctx) }
     }
 }
 
-/**
- * SPEC §16.2's structural rule: a node of a type this target does not present
- * degrades to its `children`. No member set owns an unknown type, so the
- * descriptor stands alone.
- */
-private val FallbackChildren = NodeArrayMember("children", required = false)
 
 /**
  * Restart/skipping boundary for one visible lazy item. [LazyRenderItem] is an

@@ -15,8 +15,9 @@ import org.junit.Test
  */
 class MaterialTypedReadsTest {
     private val converted = listOf(
-        "Attributes.kt", "ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt",
-        "MaterialComponents.kt", "Renderer.kt", "VisualizationNodes.kt",
+        "Attributes.kt", "ChromeBack.kt", "ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt",
+        "MaterialComponents.kt", "Renderer.kt", "RetainedPresentationTracker.kt",
+        "VisualizationNodes.kt",
     )
     private val remaining = emptyList<String>()
     private val rawRead = Regex(
@@ -54,7 +55,8 @@ class MaterialTypedReadsTest {
     fun everyRendererFileIsEitherConvertedOrListedAsRemaining() {
         val renderers = sourceDirectory().listFiles()!!
             .filter { it.extension == "kt" && it.readText().contains("@Composable\ninternal fun Render") ||
-                it.name == "Attributes.kt" || it.name == "Renderer.kt" || it.name == "MaterialComponents.kt" }
+                it.name in setOf("Attributes.kt", "Renderer.kt", "MaterialComponents.kt",
+                    "ChromeBack.kt", "RetainedPresentationTracker.kt") }
             .map { it.name }
             .toSortedSet()
         assertEquals(renderers, (converted + remaining).toSortedSet())

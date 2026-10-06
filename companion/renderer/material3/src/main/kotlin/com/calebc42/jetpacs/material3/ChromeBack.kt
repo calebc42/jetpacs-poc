@@ -7,6 +7,8 @@
 // returns. Pure: no Compose, no bridge, no Android.
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.generated.IconButtonMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ScaffoldMembers
 import com.calebc42.ebp.renderer.model.*
 
 import kotlinx.serialization.json.JsonObject
@@ -36,14 +38,14 @@ import kotlinx.serialization.json.JsonObject
  */
 fun chromeBackDescriptor(view: JsonObject): JsonObject? {
     val scaffold = presentedScaffold(view) ?: return null
-    val topBar = scaffold.objOrNull("top_bar") ?: return null
+    val topBar = ScaffoldMembers.TopBar.read(scaffold) ?: return null
     val leading = leadingNode(topBar) ?: return null
     if (leading.stringOr("t") != "icon_button") return null
-    if (leading.stringOr("icon") != "arrow_back") return null
+    if (IconButtonMembers.Icon.read(leading) != "arrow_back") return null
     // A spec-disabled arrow is untappable on screen; the gesture must not
     // out-tap the button it mirrors.
-    if (!leading.boolOr("enabled", true)) return null
-    val onTap = leading.objOrNull("on_tap") ?: return null
+    if (IconButtonMembers.Enabled.read(leading) == false) return null
+    val onTap = IconButtonMembers.OnTap.read(leading) ?: return null
     if (onTap.stringOr("builtin") != "view.switch") return null
     if (onTap.stringOr("view").isEmpty()) return null
     return onTap
@@ -68,9 +70,9 @@ private fun presentedScaffold(view: JsonObject): JsonObject? {
     while (true) {
         if (node.stringOr("t") == "scaffold") return node
         if (depth++ >= PRESENTATION_WRAPPER_DEPTH) return null
-        val children = node.arrOrNull("children") ?: return null
+        val children = AnyNodeChildren.read(node) ?: return null
         if (children.size != 1) return null
-        node = children[0] as? JsonObject ?: return null
+        node = children[0]
     }
 }
 
@@ -95,7 +97,7 @@ private fun leadingNode(topBar: JsonObject): JsonObject? {
     var depth = 0
     while (node.stringOr("t") in BAR_CONTAINERS) {
         if (depth++ == MAX_BAR_NESTING) return null
-        node = node.arrOrNull("children")?.firstOrNull() as? JsonObject ?: return null
+        node = AnyNodeChildren.read(node)?.firstOrNull() ?: return null
     }
     return node
 }
