@@ -701,6 +701,15 @@ fun RenderChildren(children: JsonArray?, ctx: RenderCtx) {
     }
 }
 
+/** The typed-member form: a `NodeArrayMember` read, already filtered to objects. */
+@Composable
+fun RenderChildren(children: List<JsonObject>?, ctx: RenderCtx) {
+    if (children == null) return
+    for (i in children.indices) {
+        RenderNode(children[i], ctx.child(children[i], i))
+    }
+}
+
 // SPEC 16.5: `weight` distributes remaining main-axis space — it needs the
 // Row/Column scope, so the container cases route through these. `align_self`
 // (start|center|end|stretch, SPEC 16.5) overrides the parent's CROSS-axis

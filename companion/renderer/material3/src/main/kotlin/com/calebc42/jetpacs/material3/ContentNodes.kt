@@ -8,6 +8,23 @@
 package com.calebc42.jetpacs.material3
 
 import com.calebc42.ebp.renderer.model.*
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
+import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
+import com.calebc42.ebp.renderer.model.vocabulary.generated.BadgeMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.DateStampMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.EmptyStateMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.IconMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ImageContentScale
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ImageMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ProgressMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.ProgressVariant
+import com.calebc42.ebp.renderer.model.vocabulary.generated.RichTextMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.SectionHeaderMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.TextMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.TooltipMembers
+import com.calebc42.ebp.renderer.model.vocabulary.generated.TooltipPosition
+import com.calebc42.ebp.renderer.model.vocabulary.generated.UniversalMembers
+import kotlin.math.floor
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -94,8 +111,9 @@ val LocalMaterialImageSource =
 
 @Composable
 internal fun RenderImage(node: JsonObject, m: Modifier) {
-    val url = node.stringOr("url")
-    val desc = node.stringOr("content_description").takeIf { it.isNotEmpty() }
+    val p = NodeProperties(node, ImageMembers)
+    val url = p.getOr(ImageMembers.Url, "")
+    val desc = p[ImageMembers.ContentDescription]?.takeIf { it.isNotEmpty() }
     val limits = ImageLoader.DEFAULT_LIMITS
     val source = LocalMaterialImageSource.current
     // LD-11: through the cache, so scrolling a lazy_column back to a seen
@@ -103,22 +121,25 @@ internal fun RenderImage(node: JsonObject, m: Modifier) {
     val bitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, url) {
         value = source(url, limits)
     }
-    val scale = when (node.stringOr("content_scale")) {
-        "crop" -> androidx.compose.ui.layout.ContentScale.Crop
-        "fill" -> androidx.compose.ui.layout.ContentScale.FillBounds
-        else -> androidx.compose.ui.layout.ContentScale.Fit
+    val scale = when (p[ImageMembers.ContentScale]) {
+        ImageContentScale.Crop -> androidx.compose.ui.layout.ContentScale.Crop
+        ImageContentScale.Fill -> androidx.compose.ui.layout.ContentScale.FillBounds
+        else -> androidx.compose.ui.layout.ContentScale.Fit     // §12 rule 6 fallback
     }
     val sizeMod = m.then(
         when {
             // C6: width/height are UNIVERSAL_NODE_ATTRIBUTES typed "number" and
             // validated finite-only, so `"width": 120.5` is legal traffic that
-            // org.json's optInt truncated — [dimInt] truncates the same way and
-            // folds a non-numeric member into 0 as the no-default optInt did.
-            "width" in node && "height" in node ->
-                Modifier.size(node.dimInt("width", 0).dp, node.dimInt("height", 0).dp)
-            "aspect_ratio" in node ->
+            // org.json's optInt truncated — the typed read truncates the same
+            // way and folds an absent member into 0 as the no-default optInt did.
+            p.has(UniversalMembers.Width) && p.has(UniversalMembers.Height) ->
+                Modifier.size(
+                    (p[UniversalMembers.Width]?.toInt() ?: 0).dp,
+                    (p[UniversalMembers.Height]?.toInt() ?: 0).dp,
+                )
+            p.has(UniversalMembers.AspectRatio) ->
                 Modifier.fillMaxWidth().then(
-                    Modifier.aspectRatio(node.doubleOr("aspect_ratio", 1.0).toFloat()))
+                    Modifier.aspectRatio(p.getOr(UniversalMembers.AspectRatio, 1.0).toFloat()))
             else -> Modifier
         })
     val bmp = bitmap
@@ -176,19 +197,33 @@ internal fun fontWeightOf(value: JsonElement?): FontWeight? {
     }
 }
 
+/** The typed-member form of [fontWeightOf]: the same number-then-name rule. */
+internal fun fontWeightOf(value: StringOrNumber?): FontWeight? = when (value) {
+    is StringOrNumber.Numeric -> value.value.toInt().takeIf { it in 1..1000 }?.let { FontWeight(it) }
+    is StringOrNumber.Text -> when (value.value) {
+        "bold" -> FontWeight.Bold
+        "medium" -> FontWeight.Medium
+        "normal" -> FontWeight.Normal
+        "light" -> FontWeight.Light
+        else -> null
+    }
+    null -> null
+}
+
 /** The full §17.2 text node (style/font_weight/color/selectable/max_lines). */
 @Composable
 internal fun RenderText(node: JsonObject, m: Modifier) {
-    val style = textStyleForName(node.stringOr("style"))
+    val p = NodeProperties(node, TextMembers)
+    val style = textStyleForName(p[TextMembers.Style]?.wire.orEmpty())
     // C6: max_lines is validated integral BY VALUE upstream (validatePositiveInt
     // floors an asDoubleOrNull), so `"max_lines": 3.0` is accepted traffic and
-    // must not silently fall back to the default here.
-    val maxLines = node.intByValue("max_lines", Int.MAX_VALUE)
-        .takeIf { it > 0 } ?: Int.MAX_VALUE
-    val raw = node.stringOr("text")
+    // must not silently fall back to the default here; a value past the
+    // platform Int saturates.
+    val maxLines = TextMembers.MaxLines.readClamped(node) ?: Int.MAX_VALUE
+    val raw = p.getOr(TextMembers.Text, "")
     // SPEC 18.4: a `syntax` language fontifies the text with the active (pushed
     // or fallback) token palette; absent, it renders plain.
-    val language = node.stringOr("syntax")
+    val language = p[TextMembers.Syntax].orEmpty()
     val syntaxColors = LocalSyntaxColors.current
     val text: AnnotatedString = remember(raw, language, syntaxColors) {
         if (language.isEmpty()) AnnotatedString(raw)
@@ -201,15 +236,15 @@ internal fun RenderText(node: JsonObject, m: Modifier) {
         Text(
             text = text,
             style = style,
-            fontWeight = fontWeightOf(node["font_weight"]),
-            color = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
+            fontWeight = fontWeightOf(p[TextMembers.FontWeight]),
+            color = resolveColor(p[TextMembers.Color]?.takeIf { it.isNotEmpty() })
                 ?: Color.Unspecified,
             maxLines = maxLines,
             modifier = m)
     }
     // `selectable` enables long-press selection/copy; plain labels stay
     // non-selectable so taps on surrounding cards aren't intercepted.
-    if (node.boolOr("selectable")) SelectionContainer { content() } else content()
+    if (p.getOr(TextMembers.Selectable, false)) SelectionContainer { content() } else content()
 }
 
 /**
@@ -258,9 +293,10 @@ internal fun buildSpanString(
 
 @Composable
 internal fun RenderRichText(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val style = textStyleForName(node.stringOr("style"))
+    val p = NodeProperties(node, RichTextMembers)
+    val style = textStyleForName(p[RichTextMembers.Style]?.wire.orEmpty())
     val scheme = MaterialTheme.colorScheme
-    val spans = node.arrOrNull("spans")
+    val spans = p[RichTextMembers.Spans]
     // Span construction allocates AnnotatedString, styles and link ranges.
     // Reuse it while the immutable wire value/theme is unchanged; links still
     // dispatch through the newest renderer context after recomposition.
@@ -278,20 +314,26 @@ internal fun RenderRichText(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 /** §17.2 icon: name/size/color/badge/content_description. */
 @Composable
 internal fun RenderIcon(node: JsonObject, m: Modifier) {
-    val tint = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
+    val p = NodeProperties(node, IconMembers)
+    val tint = resolveColor(p[IconMembers.Color]?.takeIf { it.isNotEmpty() })
         ?: LocalContentColor.current
-    val size = node.doubleOr("size", 0.0)
+    val size = p[IconMembers.Size]
     val icon: @Composable () -> Unit = {
         Icon(
-            IconMap.get(node.stringOr("name")),
-            contentDescription = node.stringOr("content_description")
-                .takeIf { it.isNotEmpty() },
+            IconMap.get(p.getOr(IconMembers.Name, "")),
+            contentDescription = p[IconMembers.ContentDescription]?.takeIf { it.isNotEmpty() },
             tint = tint,
             modifier = m.then(
-                safeDp(size)?.takeIf { it > 0f }?.let { Modifier.size(it.dp) }
-                    ?: Modifier))
+                size?.takeIf { it > 0f }?.let { Modifier.size(it.dp) } ?: Modifier))
     }
-    val badge = node.stringOr("badge")
+    // `badge` is string-or-number; an integral number is shown as its integer.
+    val badge = when (val authored = p[IconMembers.Badge]) {
+        is StringOrNumber.Text -> authored.value
+        is StringOrNumber.Numeric ->
+            if (authored.value == floor(authored.value)) authored.value.toLong().toString()
+            else authored.value.toString()
+        null -> ""
+    }
     if (badge.isNotEmpty())
         BadgedBox(badge = { Badge { Text(badge) } }) { icon() }
     else icon()
@@ -302,10 +344,11 @@ internal fun RenderIcon(node: JsonObject, m: Modifier) {
  * accessible text even if visually capped. */
 @Composable
 internal fun RenderBadge(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val label = node.stringOr("label")
-    val color = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
+    val p = NodeProperties(node, BadgeMembers)
+    val label = p.getOr(BadgeMembers.Label, "")
+    val color = resolveColor(p[BadgeMembers.Color]?.takeIf { it.isNotEmpty() })
         ?: MaterialTheme.colorScheme.onSurfaceVariant
-    val children = node.arrOrNull("children")
+    val children = p[BadgeMembers.Children]
     if (children != null) {
         BadgedBox(
             modifier = m,
@@ -315,7 +358,7 @@ internal fun RenderBadge(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             }) { RenderChildren(children, ctx) }
         return
     }
-    val iconName = node.stringOr("icon")
+    val iconName = p[BadgeMembers.Icon].orEmpty()
     Surface(
         modifier = m,
         shape = RoundedCornerShape(percent = 50),
@@ -337,39 +380,41 @@ internal fun RenderBadge(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 
 @Composable
 internal fun RenderSectionHeader(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, SectionHeaderMembers)
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = m
             .fillMaxWidth()
             .padding(top = 8.dp, bottom = 2.dp)) {
         Text(
-            text = node.stringOr("title"),
+            text = p.getOr(SectionHeaderMembers.Title, ""),
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f))
-        node.objOrNull("trailing")?.let { RenderNode(it, ctx.child(it, 0)) }
+        p[SectionHeaderMembers.Trailing]?.let { RenderNode(it, ctx.child(it, 0)) }
     }
 }
 
 @Composable
 internal fun RenderEmptyState(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val actionJson = node.objOrNull("on_tap")
-    val actionLabel = node.stringOr("action_label")
+    val p = NodeProperties(node, EmptyStateMembers)
+    val actionJson = p[EmptyStateMembers.OnTap]
+    val actionLabel = p[EmptyStateMembers.ActionLabel].orEmpty()
     Column(
         modifier = m.fillMaxWidth().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Icon(
-            IconMap.get(node.stringOr("icon", "inbox")),
+            IconMap.get(p.getOr(EmptyStateMembers.Icon, "inbox")),
             contentDescription = null,
             modifier = Modifier.size(48.dp),
             tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
-        node.stringOr("title").takeIf { it.isNotEmpty() }?.let {
+        p[EmptyStateMembers.Title]?.takeIf { it.isNotEmpty() }?.let {
             Text(it, style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center)
         }
-        node.stringOr("caption").takeIf { it.isNotEmpty() }?.let {
+        p[EmptyStateMembers.Caption]?.takeIf { it.isNotEmpty() }?.let {
             Text(it, style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center)
@@ -387,22 +432,22 @@ internal fun RenderEmptyState(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderProgress(node: JsonObject, m: Modifier) {
-    val v = if ("value" in node)
-        node.doubleOr("value", 0.0).toFloat().coerceIn(0f, 1f) else null
-    when (node.stringOr("variant")) {
-        "linear" ->
+    val p = NodeProperties(node, ProgressMembers)
+    val v = p[ProgressMembers.Value]?.toFloat()?.coerceIn(0f, 1f)
+    when (p[ProgressMembers.Variant]) {
+        ProgressVariant.Linear ->
             if (v != null) LinearProgressIndicator(progress = { v }, modifier = m)
             else LinearProgressIndicator(modifier = m)
-        "linear_wavy" ->
+        ProgressVariant.LinearWavy ->
             if (v != null) LinearWavyProgressIndicator(progress = { v }, modifier = m)
             else LinearWavyProgressIndicator(modifier = m)
-        "circular_wavy" ->
+        ProgressVariant.CircularWavy ->
             if (v != null) CircularWavyProgressIndicator(progress = { v }, modifier = m)
             else CircularWavyProgressIndicator(modifier = m)
-        "loading" ->
+        ProgressVariant.Loading ->
             if (v != null) LoadingIndicator(progress = { v }, modifier = m)
             else LoadingIndicator(modifier = m)
-        "contained_loading" ->
+        ProgressVariant.ContainedLoading ->
             if (v != null) ContainedLoadingIndicator(progress = { v }, modifier = m)
             else ContainedLoadingIndicator(modifier = m)
         else ->
@@ -434,11 +479,12 @@ internal fun RenderDateStamp(node: JsonObject, m: Modifier) {
     // non-negative-integer / integer-1-12) all check integrality BY VALUE, so
     // `"day": 5.0` is accepted traffic and reads through [intByValue]; the
     // presence gate keeps an absent member rendering as "" as before.
-    val day = if ("day" in node) node.intByValue("day", 0).toString() else ""
-    val month = node.stringOr("month")
-    val year = if ("year" in node) node.intByValue("year", 0).toString() else ""
-    val time = node.stringOr("time")
-    val (headerColor, headerText) = monthColors(node.intByValue("month_index", 0))
+    val p = NodeProperties(node, DateStampMembers)
+    val day = p[DateStampMembers.Day]?.toString() ?: ""
+    val month = p[DateStampMembers.Month].orEmpty()
+    val year = p[DateStampMembers.Year]?.toString() ?: ""
+    val time = p[DateStampMembers.Time].orEmpty()
+    val (headerColor, headerText) = monthColors(p[DateStampMembers.MonthIndex] ?: 0)
     Column(modifier = m) {
         ElevatedCard(shape = RoundedCornerShape(6.dp), modifier = Modifier.width(64.dp)) {
             Column(
@@ -493,33 +539,34 @@ internal fun RenderDateStamp(node: JsonObject, m: Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RenderTooltip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val text = node.stringOr("text")
-    val rich = node.boolOr("rich")
-    val caret = node.boolOr("caret")
+    val p = NodeProperties(node, TooltipMembers)
+    val text = p.getOr(TooltipMembers.Text, "")
+    val rich = p.getOr(TooltipMembers.Rich, false)
+    val caret = p.getOr(TooltipMembers.Caret, false)
     // `caret_width`/`caret_height` resize the pointer — meaningful only with
     // `caret`, which the validator enforces as both-or-neither dp.
     val caretShape = if (!caret) null else {
-        val w = node["caret_width"]?.numOrNull()?.toFloat()
-        val h = node["caret_height"]?.numOrNull()?.toFloat()
+        val w = p[TooltipMembers.CaretWidth]
+        val h = p[TooltipMembers.CaretHeight]
         if (w != null && h != null) TooltipDefaults.caretShape(DpSize(w.dp, h.dp))
         else TooltipDefaults.caretShape()
     }
-    val position = when (node.stringOr("position")) {
-        "below" -> TooltipAnchorPosition.Below
-        "left" -> TooltipAnchorPosition.Left
-        "right" -> TooltipAnchorPosition.Right
-        "start" -> TooltipAnchorPosition.Start
-        "end" -> TooltipAnchorPosition.End
+    val position = when (p[TooltipMembers.Position]) {
+        TooltipPosition.Below -> TooltipAnchorPosition.Below
+        TooltipPosition.Left -> TooltipAnchorPosition.Left
+        TooltipPosition.Right -> TooltipAnchorPosition.Right
+        TooltipPosition.Start -> TooltipAnchorPosition.Start
+        TooltipPosition.End -> TooltipAnchorPosition.End
         else -> TooltipAnchorPosition.Above          // §12 rule 6 fallback
     }
     val state = rememberTooltipState(isPersistent = rich)
     // `shown` drives the state rather than the composition: re-pushing a
     // snapshot whose value flipped shows or dismisses it.
-    val shown = node.boolOr("shown")
+    val shown = p.getOr(TooltipMembers.Shown, false)
     LaunchedEffect(shown) { if (shown) state.show() else state.dismiss() }
-    val title = node.stringOr("title")
-    val actionLabel = node.stringOr("action_label")
-    val onAction = node.objOrNull("on_action")
+    val title = p[TooltipMembers.Title].orEmpty()
+    val actionLabel = p[TooltipMembers.ActionLabel].orEmpty()
+    val onAction = p[TooltipMembers.OnAction]
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(position),
         state = state,
@@ -541,6 +588,6 @@ internal fun RenderTooltip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 caretShape = caretShape,
             ) { Text(text) }
         }) {
-        RenderChildren(node.arrOrNull("children"), ctx)
+        RenderChildren(p[TooltipMembers.Children], ctx)
     }
 }
