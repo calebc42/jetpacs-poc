@@ -27,14 +27,29 @@ import kotlinx.serialization.json.JsonObject
 internal abstract class MaterialComponent(
     final override val nodeType: String,
     final override val members: NodeMemberSet,
-) : MaterialNodeComponent
+) : MaterialNodeComponent {
+    /**
+     * Whether this node's renderer owns presentation state that is meaningful
+     * after switching away and back (a scrolled list, an expanded section),
+     * so a retained-presentation provider is worth keeping for it.
+     */
+    open fun ownsRetainedPresentation(node: JsonObject): Boolean = false
+
+    /**
+     * Whether a lazy column may batch a run of these nodes into one
+     * presentation chunk: cheap, stateless leaves and plain rows.
+     */
+    open val batchable: Boolean = false
+}
 
 internal object MaterialTextComponent : MaterialComponent("text", TextMembers) {
+    override val batchable: Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderText(node, modifier)
 }
 
 internal object MaterialRichTextComponent : MaterialComponent("rich_text", RichTextMembers) {
+    override val batchable: Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderRichText(node, context.ctx, modifier)
 }
@@ -80,11 +95,14 @@ internal object MaterialDateStampComponent : MaterialComponent("date_stamp", Dat
 }
 
 internal object MaterialRowComponent : MaterialComponent("row", RowMembers) {
+    override val batchable: Boolean = true
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = RowMembers.Scroll.read(node) ?: false
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderRow(node, context.ctx, modifier)
 }
 
 internal object MaterialColumnComponent : MaterialComponent("column", ColumnMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = ColumnMembers.Scroll.read(node) ?: false
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderColumn(node, context.ctx, modifier)
 }
@@ -105,6 +123,7 @@ internal object MaterialSurfaceComponent : MaterialComponent("surface", SurfaceM
 }
 
 internal object MaterialLazyColumnComponent : MaterialComponent("lazy_column", LazyColumnMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderLazyColumn(node, context.ctx, modifier)
 }
@@ -120,11 +139,13 @@ internal object MaterialCardComponent : MaterialComponent("card", CardMembers) {
 }
 
 internal object MaterialCollapsibleComponent : MaterialComponent("collapsible", CollapsibleMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderCollapsible(node, context.ctx, modifier)
 }
 
 internal object MaterialTabsComponent : MaterialComponent("tabs", TabsMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderTabs(node, context.ctx, modifier)
 }
@@ -135,17 +156,20 @@ internal object MaterialTabSelectorComponent : MaterialComponent("tab_selector",
 }
 
 internal object MaterialTableComponent : MaterialComponent("table", TableMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderTable(node, context.ctx, modifier)
 }
 
 internal object MaterialPaneScaffoldComponent : MaterialComponent("pane_scaffold", PaneScaffoldMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderPaneScaffold(node, context.ctx, modifier)
 }
 
 internal object MaterialReorderableListComponent :
     MaterialComponent("reorderable_list", ReorderableListMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderReorderableList(node, context.ctx, modifier)
 }
@@ -161,11 +185,13 @@ internal object MaterialCanvasComponent : MaterialComponent("canvas", CanvasMemb
 }
 
 internal object MaterialMonthGridComponent : MaterialComponent("month_grid", MonthGridMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderMonthGrid(node, context.ctx, modifier)
 }
 
 internal object MaterialSpacerComponent : MaterialComponent("spacer", SpacerMembers) {
+    override val batchable: Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         Spacer(
             modifier
@@ -175,11 +201,13 @@ internal object MaterialSpacerComponent : MaterialComponent("spacer", SpacerMemb
 }
 
 internal object MaterialDividerComponent : MaterialComponent("divider", DividerMembers) {
+    override val batchable: Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         HorizontalDivider(modifier = modifier)
 }
 
 internal object MaterialScaffoldComponent : MaterialComponent("scaffold", ScaffoldMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderScaffold(node, context.ctx, modifier)
 }
@@ -239,11 +267,13 @@ internal object MaterialAppBarColumnComponent :
 }
 
 internal object MaterialCarouselComponent : MaterialComponent("carousel", CarouselMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderCarousel(node, context.ctx, modifier)
 }
 
 internal object MaterialFabMenuComponent : MaterialComponent("material3.fab_menu", Material3FabMenuMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderFabMenu(node, context.ctx, modifier)
 }
@@ -254,6 +284,7 @@ internal object MaterialButtonGroupComponent : MaterialComponent("button_group",
 }
 
 internal object MaterialLazyGridComponent : MaterialComponent("lazy_grid", LazyGridMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderLazyGrid(node, context.ctx, modifier)
 }

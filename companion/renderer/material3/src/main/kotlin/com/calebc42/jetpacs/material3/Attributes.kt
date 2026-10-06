@@ -180,10 +180,9 @@ internal fun lazyColumnProjection(
         // descriptor built from the configured name reads it typed.
         return BooleanMember(member, required = false).read(node) ?: false
     }
-    fun canBatch(index: Int): Boolean = when (nodeAt(index)?.stringOrNull("t")) {
-        "row", "rich_text", "text", "spacer", "divider" -> true
-        else -> false
-    }
+    fun canBatch(index: Int): Boolean =
+        (nodeAt(index)?.stringOrNull("t")?.let(MaterialComponents.registry::componentFor)
+            as? MaterialComponent)?.batchable ?: false
     fun flush() {
         if (start < 0) return
         val presentationChunk = canBatch(start)

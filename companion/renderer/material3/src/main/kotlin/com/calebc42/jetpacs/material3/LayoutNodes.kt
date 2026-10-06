@@ -259,14 +259,8 @@ internal val RETAINED_IDENTITY_OPAQUE_MEMBERS = setOf("args", "meta", "value")
  * the complete (up to 10k-node) authored tree. Descendants are still walked,
  * so a state owner beneath a stateless container gets its own registry. */
 internal fun retainedNodeOwnsSaveablePresentation(node: JsonObject): Boolean =
-    when (node.stringOr("t")) {
-        "lazy_column", "collapsible", "tabs", "table", "reorderable_list",
-        "pane_scaffold", "carousel", "material3.fab_menu", "lazy_grid", "month_grid",
-        "scaffold" -> true
-        "row" -> RowMembers.Scroll.read(node) ?: false
-        "column" -> ColumnMembers.Scroll.read(node) ?: false
-        else -> false
-    }
+    (MaterialComponents.registry.componentFor(node.stringOr("t")) as? MaterialComponent)
+        ?.ownsRetainedPresentation(node) ?: false
 
 /** Build a canonical tree-location inventory without composing the branch.
  * This is what lets an inactive accepted snapshot retire a removed nested
