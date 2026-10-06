@@ -19,7 +19,13 @@ Paths in this guide are relative to the Jetpacs repository root:
   generated `jetpacs-material3-typed-node-schema`, and the EBP contract carries
   no Material domain (SPEC §16.2.1, amendment #192).
 - `companion/renderer/material3` implements the native renderer in the existing
-  Companion Gradle build as `:renderer:material3`.
+  Companion Gradle build as `:renderer:material3`. Its canonical tier is the
+  `MaterialComponents` registry (one component object per advertised node
+  type, see `MaterialComponents.kt`), and every renderer file reads node
+  members through `NodeProperties` and the generated member sets
+  (`MaterialTypedReadsTest` forbids raw `JsonObject` reads there).
+  `companion/renderer/material3-testing` holds the recording host and the
+  headless `MaterialTestController` used by the Robolectric golden replay.
 - `emacs/apps/jetpacs-material3` contains the optional public Elisp API.
 - `emacs/apps/m3-catalog` contains the catalog and its entrypoint.
 - `test/material3` owns catalog/REPL ERT; `lookup-tables/` beside this guide
