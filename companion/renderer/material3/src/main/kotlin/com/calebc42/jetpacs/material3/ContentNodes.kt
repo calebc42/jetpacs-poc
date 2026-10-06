@@ -82,15 +82,26 @@ import kotlinx.serialization.json.JsonObject
  * executable format. content_scale maps fit/crop/fill; width/height/
  * aspect_ratio size the box.
  */
+/**
+ * Where `image` nodes fetch from: the shared [ImageCache] in production, a
+ * stub in headless tests so no socket is opened. The only seam the Material
+ * renderer exposes for the network.
+ */
+val LocalMaterialImageSource =
+    androidx.compose.runtime.staticCompositionLocalOf<suspend (String, ImageLoader.Limits) -> android.graphics.Bitmap?> {
+        ImageCache::get
+    }
+
 @Composable
 internal fun RenderImage(node: JsonObject, m: Modifier) {
     val url = node.stringOr("url")
     val desc = node.stringOr("content_description").takeIf { it.isNotEmpty() }
     val limits = ImageLoader.DEFAULT_LIMITS
+    val source = LocalMaterialImageSource.current
     // LD-11: through the cache, so scrolling a lazy_column back to a seen
     // image does not re-fetch, and N nodes on one URL share one load.
     val bitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, url) {
-        value = ImageCache.get(url, limits)
+        value = source(url, limits)
     }
     val scale = when (node.stringOr("content_scale")) {
         "crop" -> androidx.compose.ui.layout.ContentScale.Crop

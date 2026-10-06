@@ -50,7 +50,14 @@ advertise, semantically admit, or execute the extension.
 - `:renderer:compose` renders the EBP core with Compose Foundation/UI and owns
   shared semantics and input/editor controllers. It imports neither Material
   nor experimental Styles.
-- `:renderer:material3` implements Jetpacs' Material design and extension.
+- `:renderer:material3` implements Jetpacs' Material design and extension. Its
+  canonical tier is the `MaterialComponents` registry: one component object
+  per advertised node type (the 49 EBP nodes and the five `material3.*`
+  nodes), each bound to its generated member set; the registry's node types
+  are pinned to the advertised app profile.
+- `:renderer:compose-testing` and `:renderer:material3-testing` are
+  test-support libraries: recording hosts, headless test controllers, and the
+  golden-corpus loader. They enter only test and androidTest configurations.
 - `:renderer:jetpacs` implements both Jetpacs manifests with Foundation, private
   tokens, and experimental Styles; it has no Material dependency.
 - `:renderer:glance` derives a separate restricted widget profile.

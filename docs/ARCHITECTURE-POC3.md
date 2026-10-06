@@ -69,6 +69,8 @@ downstream application dependency.
 | `:core:testing` | Shared Jetpacs read-model fakes and fixtures |
 | `:renderer:model` | Toolkit-neutral contribution/profile registry, raw EBP readers, semantics, action/editor hosts, and editing models; sourced from `ebp-compose` |
 | `:renderer:compose` | Compose Foundation reference rendering and shared input/editor controllers; sourced from `ebp-compose`, with no Material dependency |
+| `:renderer:compose-testing` | Test-support library (test and androidTest configurations only): recording render context and editor host, the headless component test controller, the golden-corpus loader; sourced from `ebp-compose` |
+| `:renderer:material3-testing` | Test-support library over the Material renderer: the recording Material host and the headless Material test controller; owned locally in `companion/renderer/material3-testing` |
 | `:renderer:glance` | Restricted generic home-screen-widget renderer and profile |
 | `:renderer:jetpacs` | Foundation-only `jetpacs.components` and optional `jetpacs.design` implementations; sourced from the in-repository `jetpacs-components/` module |
 | `:renderer:material3` | Jetpacs Material 3 implementation and optional extension; owned locally in `companion/renderer/material3` |
@@ -136,6 +138,18 @@ and namespaced node types are owned by downstream manifests; EBP transports
 them opaquely. Admission requires both the node type and its owning extension.
 The app derives welcome profiles from the same installed contributions used by
 Compose dispatch, preventing an advertised/implemented split.
+
+Compose dispatch is a registry of components, one object per node type
+(`ComposeNodeComponent`, assembled in a `ComposeComponentRegistry`). Each
+component declares the generated member set it reads through
+(`:renderer:model` `vocabulary/generated`, derived from `contract.json` and the
+extension manifests) and presents the accepted JSON node directly; there is no
+parallel tree. The Material renderer resolves a node in this order: the
+advertised-type check for the target, universal attributes and semantics,
+the owning extension renderer, a design-scoped canonical override that
+applies, then the canonical Material component from `MaterialComponents`, and
+finally the SPEC §16.2 children fallback. `NodeSupportPinTest` pins the
+registry's node types to the advertised app profile.
 
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,

@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Pins the renderer's `when (type)` dispatch to NodeSupport.APP_NODE_TYPES —
-// which is also what DeviceBridge advertises (surface_profiles is BUILT from
-// NodeSupport), so: dispatch == advertised ⊆ installed vocabulary. A renderer case added
-// without advertising fails here; advertising without a case fails here;
-// advertising outside installed renderer schemas fails here. Ported from
-// poc-v1's SduiRendererNodeTypesTest source-scan walker (a `when`'s string
-// labels are not introspectable at runtime; only the shallowest case indent
-// inside the dispatch `when` is collected, so nested `when`s for
-// style/variant sit deeper and are ignored).
+// Pins the renderer's component registry (MaterialComponents) to
+// NodeSupport.APP_NODE_TYPES — which is also what DeviceBridge advertises
+// (surface_profiles is BUILT from NodeSupport), so: dispatch == advertised ⊆
+// installed vocabulary. A component installed without advertising fails
+// here; advertising without a component fails here; advertising outside
+// installed renderer schemas fails here. The registry replaced a `when`
+// whose labels this test used to scrape from the source.
 package com.calebc42.jetpacs.material3
 
 import com.calebc42.ebp.wire.CORE_NODE_SET
@@ -39,42 +37,28 @@ class NodeSupportPinTest {
         error("Renderer.kt not found from ${System.getProperty("user.dir")}")
     }
 
-    private fun dispatchTypes(src: String): Set<String> {
-        val lines = src.lines()
-        // The literal `when (type) {` — the opening brace keeps a prose
-        // mention in a comment from matching.
-        val start = lines.indexOfFirst { it.contains("when (type) {") }
-        require(start >= 0) { "dispatch `when (type) {` not found" }
-        val label = Regex("""^(\s+)"[a-z0-9_.]+"(\s*,\s*"[a-z0-9_.]+")*\s*->""")
-        val quoted = Regex(""""([a-z0-9_.]+)"""")
-        val types = sortedSetOf<String>()
-        var depth = 0
-        var started = false
-        var caseIndent = -1
-        for (i in start until lines.size) {
-            val line = lines[i]
-            depth += line.count { it == '{' } - line.count { it == '}' }
-            if (!started) {
-                if (depth >= 1) started = true
-                continue
-            }
-            label.find(line)?.let { m ->
-                val indent = m.groupValues[1].length
-                if (caseIndent < 0) caseIndent = indent
-                if (indent == caseIndent) {
-                    quoted.findAll(line.substringBefore("->"))
-                        .forEach { types += it.groupValues[1] }
-                }
-            }
-            if (depth <= 0) break
-        }
-        return types
-    }
-
     @Test
     fun dispatchMatchesAdvertisedAppNodeTypes() {
         assertEquals(NodeSupport.APP_NODE_TYPES.toSortedSet(),
-            dispatchTypes(rendererSource()))
+            MaterialComponents.nodeTypes.toSortedSet())
+    }
+
+    @Test
+    fun everyComponentReadsThroughItsOwnMemberSet() {
+        // The registry rejects a mismatch at construction; this pins that the
+        // generated member sets cover every installed component and that the
+        // five Material extension nodes read through the manifest's typed
+        // members rather than core ones.
+        for (component in MaterialComponents.registry.components) {
+            assertEquals(component.nodeType, component.members.nodeType)
+            assertFalse("${component.nodeType} has no typed members",
+                component.members.all.isEmpty() && component.nodeType != "spacer" &&
+                    component.nodeType != "divider")
+        }
+        assertEquals(
+            JETPACS_MATERIAL3_NODE_SCHEMA.keys,
+            MaterialComponents.nodeTypes.filter { it.startsWith("material3.") }.toSet(),
+        )
     }
 
     @Test

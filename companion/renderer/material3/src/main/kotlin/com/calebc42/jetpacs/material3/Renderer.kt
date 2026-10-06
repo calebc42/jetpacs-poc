@@ -103,6 +103,7 @@ import androidx.compose.ui.unit.dp
 import com.calebc42.jetpacs.material3.MaterialRendererHost
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
+import com.calebc42.ebp.renderer.compose.ComposeNodeComponent
 import com.calebc42.ebp.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.ebp.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.ebp.renderer.compose.ebpSemantics
@@ -474,10 +475,21 @@ fun RenderDialogRoot(dialogId: String, spec: JsonObject, bridge: MaterialRendere
     }
 }
 
-/** Adapter that keeps alternate rendering behind the ordinary host paths. */
-private open class MaterialNodeRenderContext(
+/** The Material component type: a component rendered with the Material context. */
+internal typealias MaterialNodeComponent = ComposeNodeComponent<MaterialNodeRenderContext>
+
+/**
+ * Adapter that keeps alternate rendering behind the ordinary host paths.
+ *
+ * Material components receive this context and reach the richer [ctx] through
+ * it; extension and override renderers see only the shared interface.
+ */
+@Stable
+internal open class MaterialNodeRenderContext(
     protected val context: RenderCtx,
 ) : ComposeNodeRenderContext {
+    /** The Material render context this adapter wraps. */
+    val ctx: RenderCtx get() = context
     override val surface: String get() = context.surface
     override val path: String get() = context.path
     override val inDialog: Boolean get() = context.inDialog
@@ -521,7 +533,7 @@ private open class MaterialNodeRenderContext(
 }
 
 /** Extension adapter whose scoped-child operation can select only its owner. */
-private class MaterialExtensionRenderContext(
+internal class MaterialExtensionRenderContext(
     context: RenderCtx,
     override val extensionId: String,
 ) : MaterialNodeRenderContext(context), ComposeExtensionRenderContext {
@@ -617,69 +629,19 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
         canonicalOverride.render(node, MaterialNodeRenderContext(ctx), m)
         return
     }
-    when (type) {
-        "text" -> RenderText(node, m)
-        "rich_text" -> RenderRichText(node, ctx, m)
-        "icon" -> RenderIcon(node, m)
-        "badge" -> RenderBadge(node, ctx, m)
-        "tooltip" -> RenderTooltip(node, ctx, m)
-        "image" -> RenderImage(node, m)
-        "section_header" -> RenderSectionHeader(node, ctx, m)
-        "empty_state" -> RenderEmptyState(node, ctx, m)
-        "progress" -> RenderProgress(node, m)
-        "date_stamp" -> RenderDateStamp(node, m)
-        "row" -> RenderRow(node, ctx, m)
-        "column" -> RenderColumn(node, ctx, m)
-        "flow_row" -> RenderFlowRow(node, ctx, m)
-        "box" -> RenderBox(node, ctx, m)
-        "surface" -> RenderSurfaceNode(node, ctx, m)
-        "lazy_column" -> RenderLazyColumn(node, ctx, m)
-        "variant_host" -> RenderVariantHost(node, ctx, m)
-        "card" -> RenderCard(node, ctx, m)
-        "collapsible" -> RenderCollapsible(node, ctx, m)
-        "tabs" -> RenderTabs(node, ctx, m)
-        "tab_selector" -> RenderTabSelector(node, ctx, m)
-        "table" -> RenderTable(node, ctx, m)
-        "pane_scaffold" -> RenderPaneScaffold(node, ctx, m)
-        "reorderable_list" -> RenderReorderableList(node, ctx, m)
-        "chart" -> RenderChart(node, ctx, m)
-        "canvas" -> RenderCanvas(node, m)
-        "month_grid" -> RenderMonthGrid(node, ctx, m)
-        "spacer" -> Spacer(m
-            .width((safeDp(node.doubleOr("width", 0.0)) ?: 0f).dp)
-            .height((safeDp(node.doubleOr("height", 0.0)) ?: 0f).dp))
-        "divider" -> HorizontalDivider(modifier = m)
-        "scaffold" -> RenderScaffold(node, ctx, m)
-        "editor" -> RenderEditor(node, ctx, m)
-        "button" -> RenderButton(node, ctx, m)
-        "icon_button" -> RenderIconButton(node, ctx, m)
-        "material3.split_button" -> RenderSplitButton(node, ctx, m)
-        "navigation_rail" -> RenderNavigationRail(node, ctx, m)
-        "search_bar" -> RenderSearchBar(node, ctx, m)
-        "dropdown" -> RenderDropdown(node, ctx, m)
-        "segmented_button" -> RenderSegmentedButton(node, ctx, m)
-        "material3.app_bar_row" -> RenderAppBarStrip(node, ctx, m, vertical = false)
-        "material3.app_bar_column" -> RenderAppBarStrip(node, ctx, m, vertical = true)
-        "carousel" -> RenderCarousel(node, ctx, m)
-        "material3.fab_menu" -> RenderFabMenu(node, ctx, m)
-        "button_group" -> RenderButtonGroup(node, ctx, m)
-        "lazy_grid" -> RenderLazyGrid(node, ctx, m)
-        "chip" -> RenderChip(node, ctx, m)
-        "material3.assist_chip" -> RenderAssistChip(node, ctx, m)
-        "menu" -> RenderMenu(node, ctx, m)
-        "checkbox" -> RenderCheckbox(node, ctx, m)
-        "switch" -> RenderSwitch(node, ctx, m)
-        "enum_list" -> RenderEnumList(node, ctx, m)
-        "slider" -> RenderSlider(node, ctx, m)
-        "date_button" -> RenderDateButton(node, ctx, m)
-        "time_button" -> RenderTimeButton(node, ctx, m)
-        "text_input" -> RenderTextInput(node, ctx, m)
-        else ->
-            // SPEC 16.2: unknown types render children as a neutral
-            // vertical sequence, or nothing.
-            node.arrOrNull("children")?.let { children ->
-                Column(modifier = m) { RenderColumnChildren(children, ctx) }
-            }
+    // The canonical tier: one component per advertised type, owned by
+    // MaterialComponents. NodeSupportPinTest pins the registry's node types
+    // to the advertised app profile.
+    val component = MaterialComponents.registry.componentFor(type)
+    if (component != null) {
+        val materialContext = remember(ctx) { MaterialNodeRenderContext(ctx) }
+        component.render(node, materialContext, m)
+        return
+    }
+    // SPEC 16.2: unknown types render children as a neutral vertical
+    // sequence, or nothing.
+    node.arrOrNull("children")?.let { children ->
+        Column(modifier = m) { RenderColumnChildren(children, ctx) }
     }
 }
 
@@ -786,7 +748,7 @@ fun ColumnScope.RenderColumnChildren(children: JsonArray?, ctx: RenderCtx) {
 // ------------------------------------------------------------ input nodes
 
 @Composable
-private fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+internal fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val binding = com.calebc42.ebp.renderer.compose.rememberTextInputBinding(
         node,
         MaterialNodeRenderContext(ctx),
@@ -1056,7 +1018,7 @@ private fun LegacyMaskedMaterialTextField(
 // its entire TalkBack surface, so the label is not optional decoration.
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val binding = com.calebc42.ebp.renderer.compose.rememberEditorBinding(
         node,
         MaterialNodeRenderContext(ctx),
