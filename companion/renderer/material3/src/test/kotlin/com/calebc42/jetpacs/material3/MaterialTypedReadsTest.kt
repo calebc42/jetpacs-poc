@@ -14,13 +14,14 @@ import org.junit.Test
  * reads inside structured members (`span.stringOr(...)`) are not matched.
  */
 class MaterialTypedReadsTest {
-    private val converted = listOf("ContentNodes.kt", "InputNodes.kt")
-    private val remaining = listOf(
-        "Attributes.kt", "LayoutNodes.kt", "Renderer.kt", "VisualizationNodes.kt",
-    )
+    private val converted = listOf("ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt")
+    private val remaining = listOf("Attributes.kt", "Renderer.kt", "VisualizationNodes.kt")
     private val rawRead = Regex(
         """\bnode\.(stringOr|stringOrNull|boolOr|boolOrNull|objOrNull|arrOrNull|doubleOr|dimInt|intByValue|numOrNull)\(|\bnode\[""",
     )
+
+    /** The discriminator is not a member; reading `t` raw is the one allowed exception. */
+    private val discriminatorRead = Regex("""\bnode\.stringOr(?:Null)?\("t"\)""")
 
     private fun sourceDirectory(): File {
         var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
@@ -38,7 +39,8 @@ class MaterialTypedReadsTest {
     fun convertedFilesReadOnlyThroughTypedMembers() {
         val offenders = converted.flatMap { name ->
             File(sourceDirectory(), name).readLines().mapIndexedNotNull { index, line ->
-                line.takeIf { rawRead.containsMatchIn(it) }?.let { "$name:${index + 1}: ${it.trim()}" }
+                line.takeIf { rawRead.containsMatchIn(discriminatorRead.replace(it, "")) }
+                    ?.let { "$name:${index + 1}: ${it.trim()}" }
             }
         }
         assertTrue("raw node reads in converted renderer files:\n${offenders.joinToString("\n")}",

@@ -8,6 +8,8 @@
 // builtins to dialog completion and text_input edits to dialog-local state.
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.generated.AlignSelf
+import com.calebc42.ebp.renderer.model.vocabulary.generated.UniversalMembers
 import com.calebc42.ebp.renderer.model.*
 
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -718,22 +720,34 @@ fun RenderChildren(children: List<JsonObject>?, ctx: RenderCtx) {
 // applied it; they did not, so it was a declared, elisp-validated, never-read
 // member — the `badge ""` defect class.
 private fun weightOf(node: JsonObject): Float? =
-    node.doubleOr("weight", 0.0).toFloat().takeIf { it.isFinite() && it > 0f }
+    UniversalMembers.Weight.read(node)?.toFloat()?.takeIf { it.isFinite() && it > 0f }
 
 @Composable
 fun RowScope.RenderRowChildren(children: JsonArray?, ctx: RenderCtx) {
     if (children == null) return
     for (i in 0 until children.size) {
         val child = children[i] as? JsonObject ?: continue
-        var m = weightOf(child)?.let { Modifier.weight(it) } ?: Modifier
-        m = when (child.stringOr("align_self")) {
-            "start" -> m.align(Alignment.Top)
-            "center" -> m.align(Alignment.CenterVertically)
-            "end" -> m.align(Alignment.Bottom)
-            "stretch" -> m.fillMaxHeight()
-            else -> m
-        }
-        RenderNode(child, ctx.child(child, i), m)
+        RenderNode(child, ctx.child(child, i), rowChildModifier(child))
+    }
+}
+
+/** The typed-member form: a `NodeArrayMember` read, already filtered to objects. */
+@Composable
+fun RowScope.RenderRowChildren(children: List<JsonObject>?, ctx: RenderCtx) {
+    if (children == null) return
+    for (i in children.indices) {
+        RenderNode(children[i], ctx.child(children[i], i), rowChildModifier(children[i]))
+    }
+}
+
+private fun RowScope.rowChildModifier(child: JsonObject): Modifier {
+    val m = weightOf(child)?.let { Modifier.weight(it) } ?: Modifier
+    return when (UniversalMembers.AlignSelf.read(child)) {
+        AlignSelf.Start -> m.align(Alignment.Top)
+        AlignSelf.Center -> m.align(Alignment.CenterVertically)
+        AlignSelf.End -> m.align(Alignment.Bottom)
+        AlignSelf.Stretch -> m.fillMaxHeight()
+        null -> m
     }
 }
 
@@ -742,15 +756,27 @@ fun ColumnScope.RenderColumnChildren(children: JsonArray?, ctx: RenderCtx) {
     if (children == null) return
     for (i in 0 until children.size) {
         val child = children[i] as? JsonObject ?: continue
-        var m = weightOf(child)?.let { Modifier.weight(it) } ?: Modifier
-        m = when (child.stringOr("align_self")) {
-            "start" -> m.align(Alignment.Start)
-            "center" -> m.align(Alignment.CenterHorizontally)
-            "end" -> m.align(Alignment.End)
-            "stretch" -> m.fillMaxWidth()
-            else -> m
-        }
-        RenderNode(child, ctx.child(child, i), m)
+        RenderNode(child, ctx.child(child, i), columnChildModifier(child))
+    }
+}
+
+/** The typed-member form: a `NodeArrayMember` read, already filtered to objects. */
+@Composable
+fun ColumnScope.RenderColumnChildren(children: List<JsonObject>?, ctx: RenderCtx) {
+    if (children == null) return
+    for (i in children.indices) {
+        RenderNode(children[i], ctx.child(children[i], i), columnChildModifier(children[i]))
+    }
+}
+
+private fun ColumnScope.columnChildModifier(child: JsonObject): Modifier {
+    val m = weightOf(child)?.let { Modifier.weight(it) } ?: Modifier
+    return when (UniversalMembers.AlignSelf.read(child)) {
+        AlignSelf.Start -> m.align(Alignment.Start)
+        AlignSelf.Center -> m.align(Alignment.CenterHorizontally)
+        AlignSelf.End -> m.align(Alignment.End)
+        AlignSelf.Stretch -> m.fillMaxWidth()
+        null -> m
     }
 }
 

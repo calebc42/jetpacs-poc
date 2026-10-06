@@ -19,6 +19,10 @@
 //   org-specific promote/demote does not.
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.BooleanOrAuto
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
+import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
+import com.calebc42.ebp.renderer.model.vocabulary.generated.*
 import com.calebc42.ebp.renderer.model.*
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -185,7 +189,7 @@ internal data class RetainedVariant(
  * accepted wire document has already been validated, but keeping malformed
  * entries out here preserves the renderer's never-throw boundary. */
 internal fun retainedVariants(node: JsonObject): List<RetainedVariant> =
-    node.arrOrNull("variants").orEmpty().mapNotNull { raw ->
+    VariantHostMembers.Variants.read(node).orEmpty().mapNotNull { raw ->
         val entry = raw as? JsonObject ?: return@mapNotNull null
         val value = entry.stringOrNull("value") ?: return@mapNotNull null
         val content = entry.objOrNull("content") ?: return@mapNotNull null
@@ -259,7 +263,8 @@ internal fun retainedNodeOwnsSaveablePresentation(node: JsonObject): Boolean =
         "lazy_column", "collapsible", "tabs", "table", "reorderable_list",
         "pane_scaffold", "carousel", "material3.fab_menu", "lazy_grid", "month_grid",
         "scaffold" -> true
-        "row", "column" -> node.boolOr("scroll")
+        "row" -> RowMembers.Scroll.read(node) ?: false
+        "column" -> ColumnMembers.Scroll.read(node) ?: false
         else -> false
     }
 
@@ -275,8 +280,8 @@ internal fun retainedIdentityInventory(
     val providerPaths = LinkedHashSet<String>()
 
     fun nestedPath(parentPath: String, node: JsonObject, position: String): String {
-        val key = node.stringOrNull("key").orEmpty()
-        val id = node.stringOrNull("id").orEmpty()
+        val key = UniversalMembers.Key.read(node).orEmpty()
+        val id = UniversalMembers.Id.read(node).orEmpty()
         val type = node.stringOrNull("t").orEmpty()
         val segment = when {
             key.isNotEmpty() -> typedIdentitySegment("k", key, type)
@@ -362,13 +367,14 @@ internal val LocalRetainedSaveableScope =
  */
 @Composable
 internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, VariantHostMembers)
     val variants = remember(node) { retainedVariants(node) }
     if (variants.isEmpty()) return
     val selections by ctx.bridge.variantSelections.collectAsState()
     val selected = selectedRetainedVariantIndex(
         variants,
-        selections[ctx.surface to node.stringOr("id")],
-        node.stringOr("value"),
+        selections[ctx.surface to p[VariantHostMembers.Id].orEmpty()],
+        p[VariantHostMembers.Value].orEmpty(),
     ).coerceIn(variants.indices)
     val activeSlots = retainedVariantActiveSlots(variants.size, selected)
 
@@ -493,48 +499,50 @@ internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 
 // §17.3: arrange distributes available space; a non-start value takes
 // precedence over spacing.
+// `arrange`, `overlap` and `spacing` are the same members on row, flow_row
+// and column; the row descriptors read them on every horizontal container
+// and the column descriptors on the vertical one.
 private fun horizontalArrange(node: JsonObject): Arrangement.Horizontal =
-    when (node.stringOr("arrange")) {
-        "center" -> Arrangement.Center
-        "end" -> Arrangement.End
-        "space_between" -> Arrangement.SpaceBetween
-        "space_around" -> Arrangement.SpaceAround
-        "space_evenly" -> Arrangement.SpaceEvenly
+    when (RowMembers.Arrange.read(node)) {
+        Arrange.Center -> Arrangement.Center
+        Arrange.End -> Arrangement.End
+        Arrange.SpaceBetween -> Arrangement.SpaceBetween
+        Arrange.SpaceAround -> Arrangement.SpaceAround
+        Arrange.SpaceEvenly -> Arrangement.SpaceEvenly
         // §16.5 keeps `spacing` non-negative; `overlap` is the one door to
         // Arrangement.spacedBy(-dp) — children interlocking, the vertical
         // connected button group's -6dp.
         else -> {
-            val overlap = safeDp(node.doubleOr("overlap", 0.0)) ?: 0f
+            val overlap = RowMembers.Overlap.read(node) ?: 0f
             if (overlap > 0f) Arrangement.spacedBy(-overlap.dp)
-            else Arrangement.spacedBy(
-                (safeDp(node.doubleOr("spacing", 0.0)) ?: 0f).dp)
+            else Arrangement.spacedBy((RowMembers.Spacing.read(node) ?: 0f).dp)
         }
     }
 
 private fun verticalArrange(node: JsonObject): Arrangement.Vertical =
-    when (node.stringOr("arrange")) {
-        "center" -> Arrangement.Center
-        "end" -> Arrangement.Bottom
-        "space_between" -> Arrangement.SpaceBetween
-        "space_around" -> Arrangement.SpaceAround
-        "space_evenly" -> Arrangement.SpaceEvenly
+    when (ColumnMembers.Arrange.read(node)) {
+        Arrange.Center -> Arrangement.Center
+        Arrange.End -> Arrangement.Bottom
+        Arrange.SpaceBetween -> Arrangement.SpaceBetween
+        Arrange.SpaceAround -> Arrangement.SpaceAround
+        Arrange.SpaceEvenly -> Arrangement.SpaceEvenly
         else -> {
-            val overlap = safeDp(node.doubleOr("overlap", 0.0)) ?: 0f
+            val overlap = ColumnMembers.Overlap.read(node) ?: 0f
             if (overlap > 0f) Arrangement.spacedBy(-overlap.dp)
-            else Arrangement.spacedBy(
-                (safeDp(node.doubleOr("spacing", 0.0)) ?: 0f).dp)
+            else Arrangement.spacedBy((ColumnMembers.Spacing.read(node) ?: 0f).dp)
         }
     }
 
 @Composable
 internal fun RenderRow(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val scroll = node.boolOr("scroll")
-    val fill = node.boolOr("fill")
+    val p = NodeProperties(node, RowMembers)
+    val scroll = p.getOr(RowMembers.Scroll, false)
+    val fill = p.getOr(RowMembers.Fill, false)
     // §17.3 `content_padding`: INSIDE the scroll viewport (after
     // horizontalScroll in the chain), so the content scrolls under it —
     // upstream LazyRow's contentPadding, which the universal `padding`
     // (applied before the scroll) cannot express.
-    val contentPad = (safeDp(node.doubleOr("content_padding", 0.0)) ?: 0f).dp
+    val contentPad = (safeDp((p[RowMembers.ContentPadding]?.toDouble() ?: 0.0)) ?: 0f).dp
     val mod = when {
         scroll -> m.fillMaxWidth().horizontalScroll(rememberScrollState())
             .let { if (contentPad > 0.dp) it.padding(horizontal = contentPad) else it }
@@ -544,29 +552,30 @@ internal fun RenderRow(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     Row(
         modifier = mod,
         horizontalArrangement = horizontalArrange(node),
-        verticalAlignment = when (node.stringOr("align")) {
+        verticalAlignment = when (p[RowMembers.Align]?.wire.orEmpty()) {
             "top" -> Alignment.Top
             "bottom" -> Alignment.Bottom
             // baseline needs per-child alignBy; center is the honest default.
             else -> Alignment.CenterVertically
         }) {
         // Weights are meaningless with unbounded width (§ port note).
-        if (scroll) RenderChildren(node.arrOrNull("children"), ctx)
-        else RenderRowChildren(node.arrOrNull("children"), ctx)
+        if (scroll) RenderChildren(p[RowMembers.Children], ctx)
+        else RenderRowChildren(p[RowMembers.Children], ctx)
     }
 }
 
 @Composable
 internal fun RenderColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, ColumnMembers)
     // Inside a dialog the host already wraps in verticalScroll (MainActivity
     // DialogHost); honouring a spec-level scroll:true here would nest two
     // scrollable containers, which Compose refuses with an
     // IllegalStateException.  Suppress it.
-    val scroll = node.boolOr("scroll") && ctx.dialog == null
+    val scroll = p.getOr(ColumnMembers.Scroll, false) && ctx.dialog == null
     // The §17.6 body-scroll signal: a scrolling column inside a scaffold
     // body publishes whether it rests at its start.
     val signal = LocalBodyScrollSignal.current
-    val fill = node.boolOr("fill")
+    val fill = p.getOr(ColumnMembers.Fill, false)
     val mod = (if (fill) m.fillMaxWidth() else m).let {
         if (scroll) {
             val state = rememberScrollState()
@@ -575,37 +584,38 @@ internal fun RenderColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 LaunchedEffect(atStart) { signal.atStart = atStart }
             }
             it.verticalScroll(state,
-                reverseScrolling = node.boolOr("reverse_scroll"))
+                reverseScrolling = p.getOr(ColumnMembers.ReverseScroll, false))
         } else it
     }
     Column(
         modifier = mod,
         verticalArrangement = verticalArrange(node),
-        horizontalAlignment = when (node.stringOr("align")) {
+        horizontalAlignment = when (p[ColumnMembers.Align]?.wire.orEmpty()) {
             "center" -> Alignment.CenterHorizontally
             "end" -> Alignment.End
             else -> Alignment.Start
         }) {
-        RenderColumnChildren(node.arrOrNull("children"), ctx)
+        RenderColumnChildren(p[ColumnMembers.Children], ctx)
     }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RenderFlowRow(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, FlowRowMembers)
     FlowRow(
         modifier = m,
         horizontalArrangement = horizontalArrange(node),
         // SPEC 17.3: flow_row.align is the per-run cross-axis alignment
         // (top|center|bottom, default top).
-        itemVerticalAlignment = when (node.stringOr("align")) {
+        itemVerticalAlignment = when (p[FlowRowMembers.Align]?.wire.orEmpty()) {
             "center" -> Alignment.CenterVertically
             "bottom" -> Alignment.Bottom
             else -> Alignment.Top
         },
         verticalArrangement = Arrangement.spacedBy(
-            (safeDp(node.doubleOr("run_spacing", 0.0)) ?: 0f).dp)) {
-        RenderChildren(node.arrOrNull("children"), ctx)
+            (safeDp((p[FlowRowMembers.RunSpacing]?.toDouble() ?: 0.0)) ?: 0f).dp)) {
+        RenderChildren(p[FlowRowMembers.Children], ctx)
     }
 }
 
@@ -614,10 +624,11 @@ internal fun RenderFlowRow(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
 internal fun RenderBox(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onTap = node.objOrNull("on_tap")
-    val onLongTap = node.objOrNull("on_long_tap")
+    val p = NodeProperties(node, BoxMembers)
+    val onTap = p[BoxMembers.OnTap]
+    val onLongTap = p[BoxMembers.OnLongTap]
     // §17.3: the full 9-value alignment vocabulary; default top_start.
-    val alignment = when (node.stringOr("alignment")) {
+    val alignment = when (p[BoxMembers.Alignment]?.wire.orEmpty()) {
         "top_center" -> Alignment.TopCenter
         "top_end" -> Alignment.TopEnd
         "center_start" -> Alignment.CenterStart
@@ -636,36 +647,37 @@ internal fun RenderBox(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         else -> m
     }
     Box(modifier = mod, contentAlignment = alignment) {
-        RenderChildren(node.arrOrNull("children"), ctx)
+        RenderChildren(p[BoxMembers.Children], ctx)
     }
 }
 
 @Composable
 internal fun RenderSurfaceNode(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val color = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
+    val p = NodeProperties(node, SurfaceMembers)
+    val color = resolveColor(p[SurfaceMembers.Color].orEmpty().takeIf { it.isNotEmpty() })
         ?: MaterialTheme.colorScheme.surface
     // §16.5: a numeric universal corner overrides shape, except circle.
     // Beyond the three classics, `shape` accepts the M3 MaterialShapes
     // polygon vocabulary — resolved here so bg/clip/border honor it; an
     // unknown name stays rectangular per §12 rule 6.
-    val base = when (val s = node.stringOr("shape")) {
+    val base = when (val s = p[SurfaceMembers.Shape]?.wire.orEmpty()) {
         "rounded" -> RoundedCornerShape(8.dp)
         "rounded_small" -> RoundedCornerShape(4.dp)
         "circle" -> CircleShape
         else -> materialShapeOf(s) ?: RectangleShape
     }
-    val shape = if ("corner" in node && base != CircleShape)
+    val shape = if (p.has(UniversalMembers.Corner) && base != CircleShape)
         cornerShape(node) else base
     Surface(
         modifier = m,
         color = color,
         shape = shape,
-        tonalElevation = (safeDp(node.doubleOr("elevation", 0.0)) ?: 0f).dp,
+        tonalElevation = (safeDp((p[SurfaceMembers.Elevation]?.toDouble() ?: 0.0)) ?: 0f).dp,
         // §17.3: `elevation` is TONAL — applyTonalElevation returns the colour
         // unchanged for every container but colorScheme.surface, so it can
         // never make a container float. `shadow_elevation` is the cast shadow.
-        shadowElevation = (safeDp(node.doubleOr("shadow_elevation", 0.0)) ?: 0f).dp) {
-        RenderChildren(node.arrOrNull("children"), ctx)
+        shadowElevation = (safeDp((p[SurfaceMembers.ShadowElevation]?.toDouble() ?: 0.0)) ?: 0f).dp) {
+        RenderChildren(p[SurfaceMembers.Children], ctx)
     }
 }
 
@@ -1151,7 +1163,8 @@ private fun rememberRetainedLazyItemListState(
 
 @Composable
 internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val children = node.arrOrNull("children") ?: return
+    val p = NodeProperties(node, LazyColumnMembers)
+    val children = (p.raw(LazyColumnMembers.Children) as? JsonArray) ?: return
     // Build keys and bounded presentation chunks once per accepted snapshot. A marked
     // scroll_here row always starts a chunk, so scrolling to the chunk retains
     // the contract's exact child-at-top behavior.
@@ -1162,7 +1175,7 @@ internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val scrollTargetToken = remember(projection) {
         lazyColumnScrollTargetToken(projection)
     }
-    val itemSpacing = (safeDp(node.doubleOr("spacing", 0.0)) ?: 0f).dp
+    val itemSpacing = (safeDp((p[LazyColumnMembers.Spacing]?.toDouble() ?: 0.0)) ?: 0f).dp
     // New map for every authored child ordering: stale offsets from an old
     // intra-chunk order, content height, or spacing must not be used to
     // reconcile the keyed viewport before the replacement is measured.
@@ -1196,7 +1209,7 @@ internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         state = listState,
         modifier = m.fillMaxSize(),
         contentPadding = PaddingValues(
-            (safeDp(node.doubleOr("content_padding", 0.0)) ?: 0f).dp),
+            (safeDp((p[LazyColumnMembers.ContentPadding]?.toDouble() ?: 0.0)) ?: 0f).dp),
         verticalArrangement = Arrangement.spacedBy(itemSpacing)) {
         var index = 0
         while (index < projection.chunks.size) {
@@ -1400,11 +1413,12 @@ internal fun SwipeActionBox(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun RenderCard(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onTap = node.objOrNull("on_tap")
-    val onLongTap = node.objOrNull("on_long_tap")
+    val p = NodeProperties(node, CardMembers)
+    val onTap = p[CardMembers.OnTap]
+    val onLongTap = p[CardMembers.OnLongTap]
     val body: @Composable () -> Unit = {
         Box(Modifier.padding(16.dp)) {
-            RenderChildren(node.arrOrNull("children"), ctx)
+            RenderChildren(p[CardMembers.Children], ctx)
         }
     }
     // §17.3 `card.variant`: omitted stays `elevated`, which is the only card
@@ -1422,14 +1436,14 @@ internal fun RenderCard(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 }
             },
         )
-        when (node.stringOr("variant")) {
+        when (p[CardMembers.Variant]?.wire.orEmpty()) {
             "filled" -> Card(modifier = cardModifier) { body() }
             "outlined" -> OutlinedCard(modifier = cardModifier) { body() }
             else -> ElevatedCard(modifier = cardModifier) { body() }
         }
     }
-    val swipeStart = node.objOrNull("swipe_start")
-    val swipeEnd = node.objOrNull("swipe_end")
+    val swipeStart = p[CardMembers.SwipeStart]
+    val swipeEnd = p[CardMembers.SwipeEnd]
     if (swipeStart != null || swipeEnd != null)
         SwipeActionBox(swipeStart, swipeEnd, ctx, content)
     else content(false) {}
@@ -1440,12 +1454,13 @@ internal fun RenderCard(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun RenderCollapsible(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val collapsed = node.boolOr("collapsed")
+    val p = NodeProperties(node, CollapsibleMembers)
+    val collapsed = p.getOr(CollapsibleMembers.Collapsed, false)
     // §17.3: `collapsed` seeds only the FIRST snapshot for a presentation
     // identity; later same-identity pushes keep the user's expansion state.
     var expanded by rememberSaveable(ctx.path) { mutableStateOf(!collapsed) }
-    val header = node.objOrNull("header")
-    val onLongTap = node.objOrNull("on_long_tap")
+    val header = p[CollapsibleMembers.Header]
+    val onLongTap = p[CollapsibleMembers.OnLongTap]
     val chevron by animateFloatAsState(
         targetValue = if (expanded) 0f else -90f, label = "chevron")
     Column(modifier = m.fillMaxWidth()) {
@@ -1476,12 +1491,12 @@ internal fun RenderCollapsible(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 header?.let { RenderNode(it, ctx.child(it, 0)) }
             }
         }
-        val swipeStart = node.objOrNull("swipe_start")
-        val swipeEnd = node.objOrNull("swipe_end")
+        val swipeStart = p[CollapsibleMembers.SwipeStart]
+        val swipeEnd = p[CollapsibleMembers.SwipeEnd]
         if (swipeStart != null || swipeEnd != null)
             SwipeActionBox(swipeStart, swipeEnd, ctx, headerRow)
         else headerRow(false) {}
-        if (expanded) RenderColumnChildren(node.arrOrNull("children"), ctx)
+        if (expanded) RenderColumnChildren(p[CollapsibleMembers.Children], ctx)
     }
 }
 
@@ -1502,16 +1517,17 @@ internal fun retainedTabsResetIndex(
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun RenderTabs(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val items = node.arrOrNull("items")
-    val children = node.arrOrNull("children") ?: return
+    val p = NodeProperties(node, TabsMembers)
+    val items = p[TabsMembers.Items]
+    val children = p[TabsMembers.Children] ?: return
     val pageCount = children.size
     if (pageCount == 0) return
     // C6: `initial` is integer-TYPED but validated integral BY VALUE upstream
     // (SpecValidator floors an asDouble read, so `"initial": 2.0` is accepted
     // traffic and org.json's optInt truncated it). A spelling-strict read would
     // default it to 0 and silently open the tabs on the first page.
-    val initial = node.intByValue("initial", 0).coerceIn(0, pageCount - 1)
-    val onChange = node.objOrNull("on_change")
+    val initial = (p[TabsMembers.Initial] ?: 0).coerceIn(0, pageCount - 1)
+    val onChange = p[TabsMembers.OnChange]
 
     // §16.1/§17.3: selection keys on the presentation identity — a new
     // identity resets to `initial`; a same-identity push preserves it.
@@ -1557,7 +1573,7 @@ internal fun RenderTabs(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             Text(label, style = LocalTextStyle.current.merge(chrome?.tabLabel ?: TextStyle.Default))
         }
         Column(modifier = m.fillMaxWidth()) {
-            if (!node.boolOr("pager_only") && items != null) {
+            if (!p.getOr(TabsMembers.PagerOnly, false) && items != null) {
                 val selected = pagerState.currentPage.coerceIn(0, pageCount - 1)
                 val tabs: @Composable () -> Unit = {
                     for (i in 0 until minOf(items.size, pageCount)) {
@@ -1653,20 +1669,20 @@ internal fun RenderTabs(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 // indicator this renderer has always drawn; primary is M3's
                 // content-width rounded one. Naming them explicitly also
                 // retires the deprecated TabRow/ScrollableTabRow calls.
-                val primary = node.stringOr("style") == "primary"
+                val primary = p[TabsMembers.Style]?.wire.orEmpty() == "primary"
                 // §17.3 `indicator`: outline is the bounded FancyIndicator
                 // vocabulary — a 2dp border in a RoundedCornerShape(5dp),
                 // inset from the selected tab's bounds, still animated by the
                 // standard tabIndicatorOffset. underline/absent keeps each
                 // row's own default.
-                val indSpec = node.objOrNull("indicator")
+                val indSpec = p[TabsMembers.Indicator]
                 val outline = indSpec?.stringOr("kind") == "outline"
                 val indColor = resolveColor(
                     indSpec?.stringOr("color")?.takeIf { it.isNotEmpty() })
                     ?: MaterialTheme.colorScheme.primary
                 val indInset = (indSpec?.doubleOr("inset", 5.0) ?: 5.0).dp
                 val chromeIndicator = chrome?.tabIndicator
-                if (node.boolOr("scrollable")) {
+                if (p.getOr(TabsMembers.Scrollable, false)) {
                     if (primary && chromeIndicator != null) PrimaryScrollableTabRow(
                         selectedTabIndex = selected,
                         indicator = {
@@ -1729,10 +1745,11 @@ internal fun RenderTabs(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun RenderTabSelector(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val items = node.arrOrNull("items") ?: return
+    val p = NodeProperties(node, TabSelectorMembers)
+    val items = p[TabSelectorMembers.Items] ?: return
     if (items.isEmpty()) return
-    val selected = node.intByValue("selected", 0).coerceIn(0, items.lastIndex)
-    val onChange = node.objOrNull("on_change") ?: return
+    val selected = (p[TabSelectorMembers.Selected] ?: 0).coerceIn(0, items.lastIndex)
+    val onChange = p[TabSelectorMembers.OnChange] ?: return
     val tabs: @Composable () -> Unit = {
         for (i in items.indices) {
             val item = items[i] as? JsonObject ?: continue
@@ -1806,15 +1823,15 @@ internal fun RenderTabSelector(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             }
         }
     }
-    val primary = node.stringOr("style") == "primary"
-    val indicator = node.objOrNull("indicator")
+    val primary = p[TabSelectorMembers.Style]?.wire.orEmpty() == "primary"
+    val indicator = p[TabSelectorMembers.Indicator]
     val outline = indicator?.stringOr("kind") == "outline"
     val indicatorColor = resolveColor(
         indicator?.stringOr("color")?.takeIf { it.isNotEmpty() },
     ) ?: MaterialTheme.colorScheme.primary
     val indicatorInset = (indicator?.doubleOr("inset", 5.0) ?: 5.0).dp
     Box(modifier = m.fillMaxWidth()) {
-        if (node.boolOr("scrollable")) {
+        if (p.getOr(TabSelectorMembers.Scrollable, false)) {
             if (primary) PrimaryScrollableTabRow(selectedTabIndex = selected) { tabs() }
             else SecondaryScrollableTabRow(selectedTabIndex = selected) { tabs() }
         } else {
@@ -1849,7 +1866,8 @@ private data class RuleSpec(val afterHeader: Boolean) : TableRowSpec
  * header rows emphasize; on_add_row/on_add_col inject `index` (§14.3). */
 @Composable
 internal fun RenderTable(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val rowsJson = node.arrOrNull("rows") ?: return
+    val p = NodeProperties(node, TableMembers)
+    val rowsJson = p[TableMembers.Rows] ?: return
     val specs = buildList {
         var prevHeader = false
         for (i in 0 until rowsJson.size) {
@@ -1871,14 +1889,14 @@ internal fun RenderTable(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     }
     if (specs.none { it is CellsSpec && it.cells.isNotEmpty() }) return
     val aligns = buildList {
-        node.arrOrNull("aligns")?.let { a ->
+        p[TableMembers.Aligns]?.let { a ->
             for (i in 0 until a.size) add(a[i].strOrNull().orEmpty())
         }
     }
     val nrows = specs.count { it is CellsSpec }
     val ncols = specs.filterIsInstance<CellsSpec>().maxOf { it.cells.size }
-    val onAddRow = node.objOrNull("on_add_row")
-    val onAddCol = node.objOrNull("on_add_col")
+    val onAddRow = p[TableMembers.OnAddRow]
+    val onAddCol = p[TableMembers.OnAddCol]
     Column(modifier = m) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -2036,8 +2054,9 @@ internal fun reorderableDisplayKeys(
  * the server's next snapshot is the truth. */
 @Composable
 internal fun RenderReorderableList(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onReorder = node.objOrNull("on_reorder")
-    val itemsJson = node.arrOrNull("items") ?: return
+    val p = NodeProperties(node, ReorderableListMembers)
+    val onReorder = p[ReorderableListMembers.OnReorder]
+    val itemsJson = (p.raw(ReorderableListMembers.Items) as? JsonArray) ?: return
     val itemKey = { i: Int ->
         val it = itemsJson.getOrNull(i) as? JsonObject
         it?.stringOr("key").takeIf { k -> !k.isNullOrEmpty() }
@@ -2184,10 +2203,11 @@ internal fun RenderReorderableList(node: JsonObject, ctx: RenderCtx, m: Modifier
 @OptIn(ExperimentalMaterial3AdaptiveApi::class)
 @Composable
 internal fun RenderPaneScaffold(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val list = node.objOrNull("list") ?: return
-    val detail = node.objOrNull("detail") ?: return
-    val extra = node.objOrNull("extra")
-    val supporting = node.stringOr("variant") == "supporting"
+    val p = NodeProperties(node, PaneScaffoldMembers)
+    val list = p[PaneScaffoldMembers.List] ?: return
+    val detail = p[PaneScaffoldMembers.Detail] ?: return
+    val extra = p[PaneScaffoldMembers.Extra]
+    val supporting = p[PaneScaffoldMembers.Variant]?.wire.orEmpty() == "supporting"
     // Each variant needs its OWN navigator. They differ in which pane ROLE is
     // the initial destination: the list-detail navigator opens on Secondary
     // (the list), the supporting one on Primary (the main pane). Sharing the
@@ -2235,9 +2255,10 @@ internal fun RenderPaneScaffold(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 internal fun RenderAppBarStrip(
     node: JsonObject, ctx: RenderCtx, m: Modifier, vertical: Boolean,
 ) {
-    val items = node.arrOrNull("items") ?: return
-    val overflowIcon = node.stringOr("overflow_icon")
-    val maxItems = node.doubleOr("max_items", 0.0).toInt()
+    val p = NodeProperties(node, Material3AppBarRowMembers)
+    val items = p[Material3AppBarRowMembers.Items] ?: return
+    val overflowIcon = p[Material3AppBarRowMembers.OverflowIcon].orEmpty()
+    val maxItems = (p[Material3AppBarRowMembers.MaxItems]?.toDouble() ?: 0.0).toInt()
         .takeIf { it > 0 } ?: Int.MAX_VALUE
     val indicator: @Composable (AppBarMenuState) -> Unit =
         if (overflowIcon.isEmpty()) { state -> AppBarOverflowIndicator(state) }
@@ -2280,7 +2301,8 @@ internal fun RenderAppBarStrip(
     androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderCarousel(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val children = node.arrOrNull("children") ?: return
+    val p = NodeProperties(node, CarouselMembers)
+    val children = (p.raw(CarouselMembers.Children) as? JsonArray) ?: return
     val keys = remember(children) { lazyChildKeys(children) }
     var savedAnchor by rememberSaveable(
         ctx.path,
@@ -2306,11 +2328,11 @@ internal fun RenderCarousel(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             savedAnchor = captureKeyedViewportAnchor(keys, index, 0)
         }
     }
-    val spacing = (safeDp(node.doubleOr("item_spacing", 0.0)) ?: 0f).dp
+    val spacing = (safeDp((p[CarouselMembers.ItemSpacing]?.toDouble() ?: 0.0)) ?: 0f).dp
     val contentPad = PaddingValues(
-        horizontal = (safeDp(node.doubleOr("content_padding", 0.0)) ?: 0f).dp)
-    val itemWidth = (safeDp(node.doubleOr("item_width", 186.0)) ?: 186f).dp
-    val corner = node["item_corner"]?.numOrNull()
+        horizontal = (safeDp((p[CarouselMembers.ContentPadding]?.toDouble() ?: 0.0)) ?: 0f).dp)
+    val itemWidth = (safeDp((p[CarouselMembers.ItemWidth]?.toDouble() ?: 186.0)) ?: 186f).dp
+    val corner = p.raw(CarouselMembers.ItemCorner)?.numOrNull()
     val item: @Composable CarouselItemScope.(Int) -> Unit = { i ->
         val child = children[i] as? JsonObject
         if (child != null) {
@@ -2320,7 +2342,7 @@ internal fun RenderCarousel(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             Box(mask) { RenderNode(child, ctx.child(child, i)) }
         }
     }
-    when (node.stringOr("strategy")) {
+    when (p[CarouselMembers.Strategy]?.wire.orEmpty()) {
         "uncontained" -> HorizontalUncontainedCarousel(
             state = state, modifier = m.fillMaxWidth(),
             itemWidth = itemWidth, itemSpacing = spacing,
@@ -2346,9 +2368,10 @@ internal fun RenderCarousel(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderFabMenu(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val items = node.arrOrNull("items") ?: return
-    val openName = node.stringOr("icon").ifEmpty { "add" }
-    val closeName = node.stringOr("close_icon").ifEmpty { "close" }
+    val p = NodeProperties(node, Material3FabMenuMembers)
+    val items = p[Material3FabMenuMembers.Items] ?: return
+    val openName = p[Material3FabMenuMembers.Icon].orEmpty().ifEmpty { "add" }
+    val closeName = p[Material3FabMenuMembers.CloseIcon].orEmpty().ifEmpty { "close" }
     var expanded by rememberSaveable { mutableStateOf(false) }
     FloatingActionButtonMenu(
         modifier = m,
@@ -2397,8 +2420,9 @@ internal fun RenderFabMenu(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderButtonGroup(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val items = node.arrOrNull("items") ?: return
-    val overflowIcon = node.stringOr("overflow_icon")
+    val p = NodeProperties(node, ButtonGroupMembers)
+    val items = p[ButtonGroupMembers.Items] ?: return
+    val overflowIcon = p[ButtonGroupMembers.OverflowIcon].orEmpty()
     val indicator: @Composable (ButtonGroupMenuState) -> Unit =
         if (overflowIcon.isEmpty()) { state ->
             ButtonGroupDefaults.OverflowIndicator(menuState = state)
@@ -2429,13 +2453,14 @@ internal fun RenderButtonGroup(node: JsonObject, ctx: RenderCtx, m: Modifier) {
  * the Companion never asks Emacs which end is the start. */
 @Composable
 internal fun RenderLazyGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val children = node.arrOrNull("children") ?: return
+    val p = NodeProperties(node, LazyGridMembers)
+    val children = (p.raw(LazyGridMembers.Children) as? JsonArray) ?: return
     val keys = remember(children) { lazyChildKeys(children) }
-    val minItem = node["min_item_width"]?.numOrNull()?.let { safeDp(it) }
+    val minItem = p.raw(LazyGridMembers.MinItemWidth)?.numOrNull()?.let { safeDp(it) }
     val cells = if (minItem != null) GridCells.Adaptive(minItem.dp)
-        else GridCells.Fixed(node.doubleOr("columns", 2.0).toInt().coerceAtLeast(1))
-    val spacing = (safeDp(node.doubleOr("spacing", 0.0)) ?: 0f).dp
-    val pad = (safeDp(node.doubleOr("content_padding", 0.0)) ?: 0f).dp
+        else GridCells.Fixed((p[LazyGridMembers.Columns]?.toDouble() ?: 2.0).toInt().coerceAtLeast(1))
+    val spacing = (safeDp((p[LazyGridMembers.Spacing]?.toDouble() ?: 0.0)) ?: 0f).dp
+    val pad = (safeDp((p[LazyGridMembers.ContentPadding]?.toDouble() ?: 0.0)) ?: 0f).dp
     val gridState = rememberRetainedLazyGridState(keys, ctx.path)
     // The §17.6 body-scroll signal; the Companion derives at-start itself,
     // reverseLayout included — never Emacs.
@@ -2449,7 +2474,7 @@ internal fun RenderLazyGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     LazyVerticalGrid(
         columns = cells,
         state = gridState,
-        reverseLayout = node.boolOr("reverse"),
+        reverseLayout = p.getOr(LazyGridMembers.Reverse, false),
         verticalArrangement = Arrangement.spacedBy(spacing),
         horizontalArrangement = Arrangement.spacedBy(spacing),
         contentPadding = PaddingValues(pad),
