@@ -717,6 +717,12 @@ internal fun leadingLazyColumnViewport(
     if (firstVisibleItemIndex == 0 && firstVisibleItemScrollOffset == 0)
         return ResolvedViewport(0, 0)
 
+    // Item offsets and LazyListState.scrollToItem share one origin: the
+    // content start, after `content_padding`. The viewport's own start lies
+    // `beforeContentPadding` before it (viewportStartOffset <= 0), so it
+    // decides which item is leading but never enters the retained offset —
+    // an offset measured from the viewport edge restores short by the
+    // padding, and every re-render then creeps the list by that much.
     val leading = visibleItems.asSequence()
         .filter { it.index in projection.chunks.indices }
         .filter { !projection.chunks[it.index].pinned }
@@ -729,7 +735,7 @@ internal fun leadingLazyColumnViewport(
     if (leading != null) {
         return ResolvedViewport(
             leading.index,
-            (viewportStartOffset - leading.offset).coerceAtLeast(0),
+            (-leading.offset).coerceAtLeast(0),
         )
     }
 
@@ -740,7 +746,7 @@ internal fun leadingLazyColumnViewport(
             ?.let {
                 ResolvedViewport(
                     it.index,
-                    (viewportStartOffset - it.offset).coerceAtLeast(0),
+                    (-it.offset).coerceAtLeast(0),
                 )
             }
 }

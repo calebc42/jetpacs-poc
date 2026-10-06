@@ -116,6 +116,59 @@ class KeyedViewportAnchorTest {
     }
 
     @Test
+    fun contentPaddingDoesNotEnterTheRetainedOffset() {
+        // Item offsets and LazyListState.scrollToItem share the padded content
+        // origin; the viewport starts `content_padding` before it, so
+        // viewportStartOffset is negative. Grove's planning canvas, scrolled
+        // 1400 px into its calendar card above a 12 dp (34 px) padding, crept
+        // 34 px toward the start on every re-render while the anchor was
+        // measured from the viewport edge and restored from the origin.
+        val children = Json.parseToJsonElement("""[
+            {"t":"text","key":"caption","text":"c"},
+            {"t":"card","key":"calendar","children":[]},
+            {"t":"card","key":"editor","children":[]}
+        ]""") as JsonArray
+        val projection = lazyColumnProjection(children, pinnedNodeMembers = emptyMap())
+
+        val leading = leadingLazyColumnViewport(
+            projection = projection,
+            firstVisibleItemIndex = 1,
+            firstVisibleItemScrollOffset = 1400,
+            viewportStartOffset = -34,
+            visibleItems = listOf(
+                LazyViewportItemInfo(index = 1, offset = -1400, size = 1500),
+                LazyViewportItemInfo(index = 2, offset = 110, size = 600),
+            ),
+        )
+
+        assertEquals(ResolvedViewport(index = 1, scrollOffset = 1400), leading)
+        assertEquals(
+            KeyedViewportAnchor(key("calendar", "card"), 1, 1400),
+            captureLazyColumnViewportAnchor(
+                projection,
+                leading!!.index,
+                leading.scrollOffset,
+                emptyMap(),
+            ),
+        )
+        // Within the padding zone no item covers the viewport edge; Compose's
+        // own first-item offset, already origin-relative, stands in.
+        assertEquals(
+            ResolvedViewport(index = 0, scrollOffset = 20),
+            leadingLazyColumnViewport(
+                projection = projection,
+                firstVisibleItemIndex = 0,
+                firstVisibleItemScrollOffset = 20,
+                viewportStartOffset = -34,
+                visibleItems = listOf(
+                    LazyViewportItemInfo(index = 0, offset = -20, size = 48),
+                    LazyViewportItemInfo(index = 1, offset = 38, size = 1500),
+                ),
+            ),
+        )
+    }
+
+    @Test
     fun stickyViewportPreservesTopAndAllPinnedFallbacks() {
         val mixed = lazyColumnProjection(
             Json.parseToJsonElement("""[

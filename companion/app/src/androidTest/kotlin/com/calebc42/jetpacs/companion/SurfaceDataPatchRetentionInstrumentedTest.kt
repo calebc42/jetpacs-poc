@@ -45,7 +45,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
     private val host = RecordingMaterialHost()
 
     /** A status line bound above a long list with one bound row deep inside. */
-    private fun authored(): JsonObject = buildJsonObject {
+    private fun authored(contentPadding: Int? = null): JsonObject = buildJsonObject {
         put("t", "column")
         put("children", buildJsonArray {
             add(buildJsonObject {
@@ -58,6 +58,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                 put("t", "lazy_column")
                 put("key", "rows")
                 put("weight", 1)
+                if (contentPadding != null) put("content_padding", contentPadding)
                 put("children", buildJsonArray {
                     (0 until 40).forEach { index ->
                         add(buildJsonObject {
@@ -127,5 +128,53 @@ class SurfaceDataPatchRetentionInstrumentedTest {
             "the lazy column must keep its scroll position across the patch",
             before, after, 1f,
         )
+    }
+
+    @Test
+    fun aPaddedLazyColumnDoesNotCreepAcrossRepeatedPatches() {
+        // Grove's planning canvas on the S21 Ultra: `content_padding` 12 and
+        // a viewport scrolled deep into a tall item moved 12 dp toward the
+        // start on every re-render, patch or snapshot alike, because the
+        // retained anchor was measured from the viewport edge and restored
+        // from the padded content origin.
+        val spec = authored(contentPadding = 12)
+        var data = buildJsonObject {
+            put("planning", buildJsonObject {
+                put("status", "Scheduled · 2026-10-08")
+                put("row31", "Row 31")
+            })
+        }
+        var shown by mutableStateOf(materialize(spec, data))
+        compose.setContent {
+            MaterialTheme {
+                RenderNode(
+                    shown,
+                    "app:padded-patch-retention-test",
+                    host,
+                    configuration = CompanionRenderer.installation(true).composeConfiguration,
+                )
+            }
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Row 30"))
+        val before = compose.onNodeWithText("Row 30").assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot.top
+
+        repeat(3) { round ->
+            compose.runOnIdle {
+                data = JsonPointer.set(
+                    data, listOf("planning", "row31"),
+                    JsonPrimitive("Row 31, patch $round"), "params.ops[0].path",
+                )
+                shown = materialize(spec, data)
+            }
+            compose.waitForIdle()
+            compose.onNodeWithText("Row 31, patch $round").assertIsDisplayed()
+            val after = compose.onNodeWithText("Row 30").assertIsDisplayed()
+                .fetchSemanticsNode().boundsInRoot.top
+            assertEquals(
+                "patch $round moved the padded lazy column",
+                before, after, 1f,
+            )
+        }
     }
 }
