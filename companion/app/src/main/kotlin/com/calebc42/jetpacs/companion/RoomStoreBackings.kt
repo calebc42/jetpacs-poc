@@ -66,6 +66,8 @@ internal class RoomSurfaceBacking(
                 currentView = row.currentView,
                 staleSpec = row.staleSpec,
                 staleAfterSeconds = row.staleAfterSeconds,
+                authoredSpec = row.authoredSpec,
+                data = row.data,
             )
         }
         val drafts = snapshot.drafts.map { row ->
@@ -133,6 +135,8 @@ internal class RoomSurfaceBacking(
                             currentView = record.currentView,
                             acceptedAtMs = accepted,
                             firstSeenOrdinal = ordinal,
+                            authoredSpec = record.authoredSpec,
+                            data = record.data,
                         ),
                     )
                     nextAcceptedAt[record.surface] = accepted

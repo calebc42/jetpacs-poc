@@ -1008,6 +1008,8 @@ private fun SurfaceRecordEntity.toDurableSurface(json: Json) = DurableSurfaceRec
     currentView = currentView,
     acceptedAtMs = acceptedAtEpochMs,
     firstSeenOrdinal = firstSeenOrdinal,
+    authoredSpec = authoredSpecJson?.let { json.decodeObject(it) },
+    data = dataJson?.let { json.decodeObject(it) },
 )
 
 private fun DurableSurfaceRecord.toEntity(pairingId: PairingId, json: Json) =
@@ -1022,6 +1024,8 @@ private fun DurableSurfaceRecord.toEntity(pairingId: PairingId, json: Json) =
         currentView = currentView,
         acceptedAtEpochMs = acceptedAtMs,
         firstSeenOrdinal = firstSeenOrdinal,
+        authoredSpecJson = authoredSpec?.let { json.encodeObject(it) },
+        dataJson = data?.let { json.encodeObject(it) },
     )
 
 private fun SurfaceDraftEntity.toDurableDraft(json: Json) = DurableDraft(

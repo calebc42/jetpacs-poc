@@ -321,6 +321,56 @@ class RoomEbpDurableStoreTest {
     }
 
     @Test
+    fun surfaceRecordsRoundTripTheAuthoredTreeAndDataDocument() = runTest {
+        // EBP 13.8 (amendment #194): the materialized spec stays what every
+        // reader presents; the authored tree and the document travel beside it
+        // so a patch can re-materialize, and a record without them is the
+        // prior format.
+        withFixture { fixture ->
+            val pairing = pairingId('d')
+            activate(fixture.store, pairing)
+            val authored = buildJsonObject {
+                put("t", "text")
+                put("bind", buildJsonObject { put("text", "/title") })
+            }
+            val document = buildJsonObject { put("title", "Morning") }
+            fixture.store.write(pairing) {
+                putSurface(
+                    DurableSurfaceRecord(
+                        surfaceId = SURFACE_ID,
+                        revision = 1,
+                        present = true,
+                        spec = buildJsonObject {
+                            put("t", "text")
+                            put("text", "Morning")
+                            put("bind", buildJsonObject { put("text", "/title") })
+                        },
+                        acceptedAtMs = 1,
+                        firstSeenOrdinal = 1,
+                        authoredSpec = authored,
+                        data = document,
+                    ),
+                )
+                putSurface(
+                    DurableSurfaceRecord(
+                        surfaceId = "app:plain",
+                        revision = 2,
+                        present = true,
+                        spec = buildJsonObject { put("t", "text"); put("text", "x") },
+                        acceptedAtMs = 2,
+                        firstSeenOrdinal = 2,
+                    ),
+                )
+            }
+            val restored = fixture.store.restore(pairing).surfaces.associateBy { it.surfaceId }
+            assertEquals(authored, restored.getValue(SURFACE_ID).authoredSpec)
+            assertEquals(document, restored.getValue(SURFACE_ID).data)
+            assertEquals(null, restored.getValue("app:plain").authoredSpec)
+            assertEquals(null, restored.getValue("app:plain").data)
+        }
+    }
+
+    @Test
     fun exceptionFromWriteBlockRollsBackEveryMutation() = runTest {
         withFixture { fixture ->
             val pairing = pairingId('e')

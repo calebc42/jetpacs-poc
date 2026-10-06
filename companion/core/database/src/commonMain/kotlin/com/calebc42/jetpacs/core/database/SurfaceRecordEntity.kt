@@ -49,6 +49,16 @@ data class SurfaceRecordEntity(
     val acceptedAtEpochMs: Long,
     @ColumnInfo(name = "first_seen_ordinal")
     val firstSeenOrdinal: Long,
+    /** EBP 13.8 (amendment #194): the authored tree, with its `bind`
+     * members, that a data patch re-materializes. Null for a record written
+     * before the amendment — the prior format (EBP 3.3) — which loads as the
+     * spec itself, and for a tombstone. */
+    @ColumnInfo(name = "authored_spec_json", defaultValue = "NULL")
+    val authoredSpecJson: String? = null,
+    /** EBP 13.8: the surface data document; null before the amendment, for a
+     * session without `data.model`, and for a tombstone. */
+    @ColumnInfo(name = "data_json", defaultValue = "NULL")
+    val dataJson: String? = null,
 ) {
     init {
         require(pairingId.isNotBlank()) { "pairingId must not be blank" }
@@ -66,6 +76,8 @@ data class SurfaceRecordEntity(
             require(staleSpecJson == null) { "A tombstone cannot retain staleSpecJson" }
             require(staleAfterSeconds == null) { "A tombstone cannot retain staleAfterSeconds" }
             require(currentView == null) { "A tombstone cannot retain currentView" }
+            require(authoredSpecJson == null) { "A tombstone cannot retain authoredSpecJson" }
+            require(dataJson == null) { "A tombstone cannot retain dataJson" }
         }
     }
 }

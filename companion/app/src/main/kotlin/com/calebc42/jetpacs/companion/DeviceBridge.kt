@@ -339,7 +339,9 @@ class DeviceBridge(
             "presentation.pie-menu", "reminders.owner", "reminders.actions",
             "surfaces.notification",
             "surfaces.widget", "surfaces.tile",
-            "editor.sync", "capabilities", "triggers"),
+            "editor.sync", "capabilities", "triggers",
+            // EBP 13.8 (amendment #194): the surface data document.
+            "data.model"),
         // `offline.wake` is deliberately absent until the user configures an
         // exact, inert OS-local Emacs wake target and the host rechecks it at
         // every send (SPEC 5.3). A durable queue alone is not a wake grant.

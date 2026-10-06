@@ -26,8 +26,13 @@ import androidx.room3.RoomDatabaseConstructor
         WidgetBindingEntity::class,
         WidgetActionTokenEntity::class,
     ],
-    version = 2,
-    autoMigrations = [AutoMigration(from = 1, to = 2)],
+    version = 3,
+    autoMigrations = [
+        AutoMigration(from = 1, to = 2),
+        // EBP 13.8 (amendment #194): surface_records gains the nullable
+        // authored_spec_json and data_json columns.
+        AutoMigration(from = 2, to = 3),
+    ],
     exportSchema = true,
 )
 @ConstructedBy(JetpacsDatabaseConstructor::class)
