@@ -15,6 +15,10 @@
 // the single ordered dispatch executor (state-before-action holds by FIFO).
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.BooleanOrAuto
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
+import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
+import com.calebc42.ebp.renderer.model.vocabulary.generated.*
 import com.calebc42.ebp.renderer.model.*
 
 import android.icu.util.Calendar
@@ -198,25 +202,26 @@ private fun buttonHeightOf(name: String): Dp? = when (name) {
  * state-BEFORE-action ordering (§14.6). A node without `checked` is not
  * stateful at all and never reaches here. */
 @Composable
-private fun rememberToggle(node: JsonObject, ctx: RenderCtx, id: String): MutableState<Boolean> =
+private fun rememberToggle(authoredChecked: Boolean, ctx: RenderCtx, id: String): MutableState<Boolean> =
     rememberSaveable(ctx.surface, id, ctx.epochOf(id),
         key = "tg:${ctx.surface}:$id:${ctx.epochOf(id)}") {
         mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
             ?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
-            ?: node.boolOr("checked"))
+            ?: authoredChecked)
     }
 
 /** §17.4 button with variant/size/shape/animate_shape/icon/checked/enabled. */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val enabled = node.boolOr("enabled", true)
-    val onTap = node.objOrNull("on_tap")
-    val iconName = node.stringOr("icon")
-    val isToggle = "checked" in node
-    val id = node.stringOr("id")
-    val toggle = if (isToggle) rememberToggle(node, ctx, id) else null
-    val onChange = node.objOrNull("on_change")
+    val p = NodeProperties(node, ButtonMembers)
+    val enabled = p.getOr(ButtonMembers.Enabled, true)
+    val onTap = p[ButtonMembers.OnTap]
+    val iconName = p[ButtonMembers.Icon].orEmpty()
+    val isToggle = p.has(ButtonMembers.Checked)
+    val id = p[UniversalMembers.Id].orEmpty()
+    val toggle = if (isToggle) rememberToggle(p.getOr(ButtonMembers.Checked, false), ctx, id) else null
+    val onChange = p[ButtonMembers.OnChange]
     val onClick = if (toggle != null) {
         {
             val next = !toggle.value
@@ -229,7 +234,7 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             else onButton(onTap, ctx)
         }
     } else { { onButton(onTap, ctx) } }
-    val h = buttonHeightOf(node.stringOr("size"))
+    val h = buttonHeightOf(p[ButtonMembers.Size]?.wire.orEmpty())
     // Absent `size` keeps the literals this renderer has always used, so no
     // existing traffic changes meaning.
     val pad = if (h != null) ButtonDefaults.contentPaddingFor(h)
@@ -241,8 +246,8 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // icon-only FAB; "auto" derives from the scaffold body's own scroll
     // signal — expanded while the body rests at its start — entirely
     // device-local, so no per-scroll traffic ever crosses the wire.
-    val hasExpanded = "expanded" in node
-    val expandedNow = when (val e = node["expanded"]) {
+    val hasExpanded = p.has(ButtonMembers.Expanded)
+    val expandedNow = when (val e = p.raw(ButtonMembers.Expanded)) {
         is JsonPrimitive ->
             if (e.isString)
                 e.content != "auto" ||
@@ -252,14 +257,14 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     }
     // §17.4 `checked_icon`: the glyph drawn while the LIVE checked state is
     // true (upstream swaps Outlined for Filled) — `icon` stays the resting one.
-    val checkedIconName = node.stringOr("checked_icon")
+    val checkedIconName = p[ButtonMembers.CheckedIcon].orEmpty()
     val shownIcon = if (toggle?.value == true && checkedIconName.isNotEmpty())
         checkedIconName else iconName
     val content: @Composable () -> Unit = {
         if (shownIcon.isNotEmpty())
             Icon(IconMap.get(shownIcon), null, Modifier.size(iconSize))
         val label = @Composable {
-            Text(node.stringOr("label"), maxLines = 1, softWrap = false,
+            Text(p[ButtonMembers.Label].orEmpty(), maxLines = 1, softWrap = false,
                 overflow = TextOverflow.Ellipsis)
         }
         val styled = @Composable {
@@ -291,13 +296,13 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // `shape` names the container's OWN shape, which universal `corner` cannot
     // reach — that decorates the modifier outside minimumInteractiveComponentSize,
     // i.e. the 48dp touch box rather than the container.
-    val square = node.stringOr("shape") == "square"
+    val square = p[ButtonMembers.Shape]?.wire.orEmpty() == "square"
     val shapes: ButtonShapes? = when {
-        !node.boolOr("animate_shape") -> null
+        !p.getOr(ButtonMembers.AnimateShape, false) -> null
         h != null -> ButtonDefaults.shapesFor(h)
         else -> ButtonDefaults.shapes()
     }
-    val variant = node.stringOr("variant")
+    val variant = p[ButtonMembers.Variant]?.wire.orEmpty()
     // A `checked` button is M3's ToggleButton, not a Button wearing state: the
     // toggle has its OWN checked container and its own selected/unselected
     // shape pair, so holding the boolean while drawing a plain Button would
@@ -310,13 +315,13 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         // inverted square-at-rest/round-checked set is two members, each
         // saying exactly one thing. (`shape` on a toggle used to be read
         // and silently ignored; this closes that too.)
-        val checkedShapeName = node.stringOr("checked_shape")
+        val checkedShapeName = p[ButtonMembers.CheckedShape]?.wire.orEmpty()
         val base = ToggleButtonDefaults.shapesFor(h ?: ButtonDefaults.MinHeight)
         // §17.4 `shape_role`: one position of a CONNECTED group. The M3
         // leading/middle/trailing shape sets carry the caps, the press morph
         // and the checked morph; top/bottom are the vertical caps upstream
         // builds by copying CornerSize(100) onto the middle shape.
-        val roleShapes: ToggleButtonShapes? = when (node.stringOr("shape_role")) {
+        val roleShapes: ToggleButtonShapes? = when (p[ButtonMembers.ShapeRole]?.wire.orEmpty()) {
             "leading" -> ButtonGroupDefaults.connectedLeadingButtonShapes()
             "middle" -> ButtonGroupDefaults.connectedMiddleButtonShapes()
             "trailing" -> ButtonGroupDefaults.connectedTrailingButtonShapes()
@@ -324,7 +329,7 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 val mid = ButtonGroupDefaults.connectedMiddleButtonShapes()
                 val midShape = mid.shape as? RoundedCornerShape
                 val capped = if (midShape != null) {
-                    if (node.stringOr("shape_role") == "top")
+                    if (p[ButtonMembers.ShapeRole]?.wire.orEmpty() == "top")
                         midShape.copy(topStart = CornerSize(100), topEnd = CornerSize(100))
                     else
                         midShape.copy(bottomStart = CornerSize(100), bottomEnd = CornerSize(100))
@@ -362,7 +367,7 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // §17.4 `color`: a §16.6 role recoloring a TEXT button's content — the
     // node draws its own Text, so no universal attribute could reach it
     // (the custom-snackbar action's error-vs-normal textButtonColors).
-    val textColors = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
+    val textColors = resolveColor(p[ButtonMembers.Color].orEmpty().takeIf { it.isNotEmpty() })
         ?.let { ButtonDefaults.textButtonColors(contentColor = it) }
     if (shapes != null) {
         // The shapes= overloads carry the press-state morph. They take
@@ -402,13 +407,14 @@ internal fun RenderButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderIconButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val badge = node.stringOr("badge")
-    val enabled = node.boolOr("enabled", true)
-    val isToggle = "checked" in node
-    val id = node.stringOr("id")
-    val toggle = if (isToggle) rememberToggle(node, ctx, id) else null
-    val onChange = node.objOrNull("on_change")
-    val onTap = node.objOrNull("on_tap")
+    val p = NodeProperties(node, IconButtonMembers)
+    val badge = ((p[IconButtonMembers.Badge] as? StringOrNumber.Text)?.value ?: "")
+    val enabled = p.getOr(IconButtonMembers.Enabled, true)
+    val isToggle = p.has(IconButtonMembers.Checked)
+    val id = p[UniversalMembers.Id].orEmpty()
+    val toggle = if (isToggle) rememberToggle(p.getOr(IconButtonMembers.Checked, false), ctx, id) else null
+    val onChange = p[IconButtonMembers.OnChange]
+    val onTap = p[IconButtonMembers.OnTap]
     val onClick = if (toggle != null) {
         {
             val next = !toggle.value
@@ -421,17 +427,17 @@ internal fun RenderIconButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     } else { { onButton(onTap, ctx) } }
     // `checked_icon` swaps the glyph while checked; IconMap is the only path a
     // vector reaches the device, so the swap is by NAME.
-    val checkedIcon = node.stringOr("checked_icon")
+    val checkedIcon = p[IconButtonMembers.CheckedIcon].orEmpty()
     val shownIcon = if (toggle?.value == true && checkedIcon.isNotEmpty())
-        checkedIcon else node.stringOr("icon")
+        checkedIcon else p[IconButtonMembers.Icon].orEmpty()
     // §17.4 icon_button geometry. A size step is a coordinated set here too:
     // the CONTAINER grows via IconButtonDefaults.<step>ContainerSize(width) and
     // the inner Icon must be sized to match, because RenderIconButton draws it
     // with no size modifier at all — a container member alone would leave a
     // baseline glyph rattling inside a large button.
-    val sizeName = node.stringOr("size")
-    val square = node.stringOr("shape") == "square"
-    val widthOption = when (node.stringOr("width_mode")) {
+    val sizeName = p[IconButtonMembers.Size]?.wire.orEmpty()
+    val square = p[IconButtonMembers.Shape]?.wire.orEmpty() == "square"
+    val widthOption = when (p[IconButtonMembers.WidthMode]?.wire.orEmpty()) {
         "narrow" -> IconButtonDefaults.IconButtonWidthOption.Narrow
         "wide" -> IconButtonDefaults.IconButtonWidthOption.Wide
         else -> IconButtonDefaults.IconButtonWidthOption.Uniform
@@ -461,7 +467,7 @@ internal fun RenderIconButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // §17.4 `color`: the Icon's tint — the one member TintedIconButtonSample
     // exists for. The node draws its own Icon, so without this no §16.6 color
     // could ever reach the glyph.
-    val iconTint = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
+    val iconTint = resolveColor(p[IconButtonMembers.Color].orEmpty().takeIf { it.isNotEmpty() })
     val body: @Composable () -> Unit = {
         val icon: @Composable () -> Unit = {
             Icon(IconMap.get(shownIcon),
@@ -475,7 +481,7 @@ internal fun RenderIconButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             BadgedBox(badge = { Badge { Text(badge) } }) { icon() }
         else icon()
     }
-    when (node.stringOr("variant")) {
+    when (p[IconButtonMembers.Variant]?.wire.orEmpty()) {
         "filled" -> if (stepShape != null)
             FilledIconButton(onClick, mm, enabled, shape = stepShape) { body() }
             else FilledIconButton(onClick, mm, enabled) { body() }
@@ -493,13 +499,14 @@ internal fun RenderIconButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
  * state; the tap dispatches — Emacs flips selected on the next snapshot. */
 @Composable
 internal fun RenderChip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onTap = node.objOrNull("on_tap")
-    val iconName = node.stringOr("icon")
-    val trailingName = node.stringOr("trailing_icon")
-    val selected = node.boolOr("selected")
-    val enabled = node.boolOr("enabled", true)
+    val p = NodeProperties(node, ChipMembers)
+    val onTap = p[ChipMembers.OnTap]
+    val iconName = p[ChipMembers.Icon].orEmpty()
+    val trailingName = p[ChipMembers.TrailingIcon].orEmpty()
+    val selected = p.getOr(ChipMembers.Selected, false)
+    val enabled = p.getOr(ChipMembers.Enabled, true)
     val click = { if (onTap != null) onButton(onTap, ctx) }
-    val label: @Composable () -> Unit = { Text(node.stringOr("label")) }
+    val label: @Composable () -> Unit = { Text(p[ChipMembers.Label].orEmpty()) }
     val lead: (@Composable () -> Unit)? = if (iconName.isNotEmpty()) {
         { Icon(IconMap.get(iconName), null, Modifier.size(18.dp)) }
     } else null
@@ -510,15 +517,15 @@ internal fun RenderChip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     } else null
     // §17.4 `avatar`: InputChip's 24dp circular slot — distinct from the
     // 18dp leadingIcon, which is why it is its own member (input only).
-    val avatarName = node.stringOr("avatar")
+    val avatarName = p[ChipMembers.Avatar].orEmpty()
     val avatar: (@Composable () -> Unit)? = if (avatarName.isNotEmpty()) {
         { Icon(IconMap.get(avatarName), null,
             Modifier.size(InputChipDefaults.AvatarSize)) }
     } else null
     // §17.4 `content_spacing`: the gap between the chip's own slots —
     // FilterChipDefaults.horizontalArrangement, not a modifier.
-    val spacing = node["content_spacing"]?.numOrNull()
-    when (node.stringOr("variant")) {
+    val spacing = p.raw(ChipMembers.ContentSpacing)?.numOrNull()
+    when (p[ChipMembers.Variant]?.wire.orEmpty()) {
         "elevated" -> ElevatedFilterChip(selected, click, label, m, enabled,
             leadingIcon = lead, trailingIcon = trail)
         "input" -> InputChip(selected, click, label, m, enabled,
@@ -537,15 +544,16 @@ internal fun RenderChip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 
 @Composable
 internal fun RenderAssistChip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onTap = node.objOrNull("on_tap")
-    val iconName = node.stringOr("icon")
-    val enabled = node.boolOr("enabled", true)
+    val p = NodeProperties(node, Material3AssistChipMembers)
+    val onTap = p[Material3AssistChipMembers.OnTap]
+    val iconName = p[Material3AssistChipMembers.Icon].orEmpty()
+    val enabled = p.getOr(Material3AssistChipMembers.Enabled, true)
     val click = { if (onTap != null) onButton(onTap, ctx) }
-    val label: @Composable () -> Unit = { Text(node.stringOr("label")) }
+    val label: @Composable () -> Unit = { Text(p[Material3AssistChipMembers.Label].orEmpty()) }
     val lead: (@Composable () -> Unit)? = if (iconName.isNotEmpty()) {
         { Icon(IconMap.get(iconName), null, Modifier.size(18.dp)) }
     } else null
-    when (node.stringOr("variant")) {
+    when (p[Material3AssistChipMembers.Variant]?.wire.orEmpty()) {
         "elevated" -> ElevatedAssistChip(click, label, m, enabled, leadingIcon = lead)
         // A SuggestionChip's single graphic slot IS its icon slot, so the
         // authored `icon` rides it rather than being dropped.
@@ -561,13 +569,14 @@ internal fun RenderAssistChip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 internal fun RenderMenu(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, MenuMembers)
     var open by remember { mutableStateOf(false) }
-    val items = node.arrOrNull("items")
-    val groups = node.arrOrNull("groups")
+    val items = p[MenuMembers.Items]
+    val groups = p[MenuMembers.Groups]
     val scrollState = rememberScrollState()
     // `initial_scroll: end` — the literal upstream effect: every open lands
     // the popup at the bottom of a list longer than the screen.
-    if (node.stringOr("initial_scroll") == "end") {
+    if (p[MenuMembers.InitialScroll]?.wire.orEmpty() == "end") {
         LaunchedEffect(open) { if (open) scrollState.scrollTo(scrollState.maxValue) }
     }
     // The host modifier carries §16.4's authored or fallback name; it
@@ -577,8 +586,8 @@ internal fun RenderMenu(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         IconButton(
             modifier = m,
             onClick = { open = true },
-            enabled = node.boolOr("enabled", true)) {
-            Icon(IconMap.get(node.stringOr("icon", "more_vert")),
+            enabled = p.getOr(MenuMembers.Enabled, true)) {
+            Icon(IconMap.get(p.getOr(MenuMembers.Icon, "more_vert")),
                 // The surrounding IconButton carries §16.4's authored/fallback
                 // name. The glyph itself is decorative inside that control.
                 contentDescription = null)
@@ -614,7 +623,7 @@ internal fun RenderMenu(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             }
             // The footer is popup content below the items — the client
             // includes or omits it per its own state (SPEC 17.4).
-            node.objOrNull("footer")?.let { RenderNode(it, ctx) }
+            p[MenuMembers.Footer]?.let { RenderNode(it, ctx) }
         }
     }
 }
@@ -694,10 +703,11 @@ private fun MenuItemRow(
  * pair — the rounded-strokes samples are exactly this member. */
 @Composable
 internal fun RenderCheckbox(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
-    val onChange = node.objOrNull("on_change")
-    val strokes = node.objOrNull("stroke")?.let { spec ->
+    val p = NodeProperties(node, CheckboxMembers)
+    val id = p[CheckboxMembers.Id].orEmpty()
+    val enabled = p.getOr(CheckboxMembers.Enabled, true)
+    val onChange = p[CheckboxMembers.OnChange]
+    val strokes = p[CheckboxMembers.Stroke]?.let { spec ->
         val width = with(LocalDensity.current) {
             ((spec["width"]?.numOrNull()?.toFloat())?.dp
                 ?: CheckboxDefaults.StrokeWidth).toPx()
@@ -715,16 +725,16 @@ internal fun RenderCheckbox(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         Stroke(width = width, cap = cap, join = join)
     }
     val label: @Composable () -> Unit = {
-        node.stringOr("label").takeIf { it.isNotEmpty() }?.let {
+        p[CheckboxMembers.Label].orEmpty().takeIf { it.isNotEmpty() }?.let {
             Text(it, modifier = Modifier.padding(start = 8.dp))
         }
     }
-    if ("state" in node) {
+    if (p.has(CheckboxMembers.State)) {
         var tri by rememberSaveable(ctx.surface, id, ctx.epochOf(id),
             key = "in:${ctx.surface}:$id:${ctx.epochOf(id)}") {
             mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
                 ?.takeIf { it.isString && it.content in SurfaceStore.TRI_STATES }
-                ?.content ?: node.stringOr("state").ifEmpty { "off" })
+                ?.content ?: p[CheckboxMembers.State]?.wire.orEmpty().ifEmpty { "off" })
         }
         val toggleable = when (tri) {
             "on" -> ToggleableState.On
@@ -756,7 +766,7 @@ internal fun RenderCheckbox(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         // JSON string "true" is not a boolean (SpecValidator gates the member).
         mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
             ?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
-            ?: node.boolOr("checked"))
+            ?: p.getOr(CheckboxMembers.Checked, false))
     }
     val flip: (Boolean) -> Unit = {
         checked = it
@@ -775,21 +785,22 @@ internal fun RenderCheckbox(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 
 @Composable
 internal fun RenderSwitch(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
+    val p = NodeProperties(node, SwitchMembers)
+    val id = p[SwitchMembers.Id].orEmpty()
+    val enabled = p.getOr(SwitchMembers.Enabled, true)
     var checked by rememberSaveable(ctx.surface, id, ctx.epochOf(id),
         key = "in:${ctx.surface}:$id:${ctx.epochOf(id)}") {
         // C6: the explicit primitive read, same reasoning as RenderCheckbox.
         mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
             ?.takeIf { !it.isString }?.content?.toBooleanStrictOrNull()
-            ?: node.boolOr("checked"))
+            ?: p.getOr(SwitchMembers.Checked, false))
     }
-    val onChange = node.objOrNull("on_change")
+    val onChange = p[SwitchMembers.OnChange]
     Row(verticalAlignment = Alignment.CenterVertically, modifier = m) {
-        node.stringOr("label").takeIf { it.isNotEmpty() }?.let {
+        p[SwitchMembers.Label].orEmpty().takeIf { it.isNotEmpty() }?.let {
             Text(it, modifier = Modifier.weight(1f))
         }
-        val thumbIcon = node.stringOr("thumb_icon")
+        val thumbIcon = p[SwitchMembers.ThumbIcon].orEmpty()
         Switch(checked = checked, enabled = enabled,
             // Drawn only while the LIVE checked value is true, matching the
             // upstream sample's own lambda.
@@ -815,12 +826,13 @@ internal fun RenderSwitch(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RenderEnumList(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
-    val multi = node.boolOr("multi_select")
-    val allowAdd = node.boolOr("allow_add")
-    val onChange = node.objOrNull("on_change")
-    val options = node.arrOrNull("options") ?: JsonArray(emptyList())
+    val p = NodeProperties(node, EnumListMembers)
+    val id = p[EnumListMembers.Id].orEmpty()
+    val enabled = p.getOr(EnumListMembers.Enabled, true)
+    val multi = p.getOr(EnumListMembers.MultiSelect, false)
+    val allowAdd = p.getOr(EnumListMembers.AllowAdd, false)
+    val onChange = p[EnumListMembers.OnChange]
+    val options = p[EnumListMembers.Options] ?: JsonArray(emptyList())
 
     val optionValues = options.mapNotNull { (it as? JsonObject)?.get("value") }
     // Seed selection from the authored value (§4.3 equality), keeping only
@@ -828,7 +840,7 @@ internal fun RenderEnumList(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     fun seedValues(): List<JsonElement> {
         // T3/LD-2: the store's value (the draft when one stands, else the
         // authored value) — the node member is only the fallback.
-        val v = ctx.storeValue(id) ?: node["value"] ?: return emptyList()
+        val v = ctx.storeValue(id) ?: p.raw(EnumListMembers.Value) ?: return emptyList()
         val wanted: List<JsonElement> = if (v is JsonArray)
             v.toList() else listOf(v)
         return wanted.filter { w -> optionValues.any { jsonValueEquals(w, it) } }
@@ -863,7 +875,7 @@ internal fun RenderEnumList(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         val values = selectedValues + selectedAdded.map(::JsonPrimitive)
         // C6: `JsonNull`, never Kotlin null. This value reaches putDraft, and
         // the draft feeds back into the seeding elvis at storeValue(id) ?:
-        // node["value"] — a Kotlin null would fall through and re-seed a
+        // p.raw(EnumListMembers.Value) — a Kotlin null would fall through and re-seed a
         // selection the user just cleared. On the wire both spell `null`.
         return if (multi) JsonArray(values)
         else values.firstOrNull() ?: JsonNull
@@ -882,8 +894,8 @@ internal fun RenderEnumList(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // `children` is authored (its universal attributes ride, so a segmented
     // bg/corner reaches each row whole). allow_add stays a chips-only
     // affordance; the elisp constructor refuses the pairing.
-    val childRows = node.arrOrNull("children")
-    if (node.stringOr("variant") == "radio" || childRows != null) {
+    val childRows = p[EnumListMembers.Children]
+    if (p[EnumListMembers.Variant]?.wire.orEmpty() == "radio" || childRows != null) {
         Column(modifier = m.fillMaxWidth().selectableGroup()) {
             for (i in 0 until options.size) {
                 val opt = options[i] as? JsonObject ?: continue
@@ -1003,28 +1015,31 @@ internal fun RenderEnumList(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @Composable
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
-    val onChange = node.objOrNull("on_change")
-    val values = node.arrOrNull("values")
+    val p = NodeProperties(node, SliderMembers)
+    val id = p[SliderMembers.Id].orEmpty()
+    val enabled = p.getOr(SliderMembers.Enabled, true)
+    val onChange = p[SliderMembers.OnChange]
+    // Read raw on purpose: the EXACT authored elements are republished on
+    // commit (spelling preserved), which a numeric projection would lose.
+    val values = p.raw(SliderMembers.Values) as? JsonArray
     // §17.4 presentation members. `color` tints the thumb and the active
     // track together, which is the pair every upstream custom-colour sample
     // sets; `color_end` tints the END thumb of a range alone; `track` picks
     // M3's centred track; `thumb_icon` names a vector, since IconMap is the
     // only path a drawable reaches the device.
-    val tint = resolveColor(node.stringOr("color").takeIf { it.isNotEmpty() })
-    val endTint = resolveColor(node.stringOr("color_end").takeIf { it.isNotEmpty() })
+    val tint = resolveColor(p[SliderMembers.Color].orEmpty().takeIf { it.isNotEmpty() })
+    val endTint = resolveColor(p[SliderMembers.ColorEnd].orEmpty().takeIf { it.isNotEmpty() })
     val sliderColors = if (tint != null)
         SliderDefaults.colors(thumbColor = tint, activeTrackColor = tint)
         else SliderDefaults.colors()
     val endColors = if (endTint != null)
         SliderDefaults.colors(thumbColor = endTint) else sliderColors
-    val centered = node.stringOr("track") == "centered"
-    val vertical = node.stringOr("orientation") == "vertical"
-    val showLabel = node.boolOr("value_label")
-    val thumbIconName = node.stringOr("thumb_icon")
-    val startIconName = node.stringOr("track_icon_start")
-    val endIconName = node.stringOr("track_icon_end")
+    val centered = p[SliderMembers.Track]?.wire.orEmpty() == "centered"
+    val vertical = p[SliderMembers.Orientation]?.wire.orEmpty() == "vertical"
+    val showLabel = p.getOr(SliderMembers.ValueLabel, false)
+    val thumbIconName = p[SliderMembers.ThumbIcon].orEmpty()
+    val startIconName = p[SliderMembers.TrackIconStart].orEmpty()
+    val endIconName = p[SliderMembers.TrackIconEnd].orEmpty()
     // SliderDefaults.Thumb wants the slider's OWN interaction source, so it is
     // hoisted and handed to both — otherwise the default thumb loses its
     // press/hover feedback the moment we supply the slot at all.
@@ -1089,14 +1104,14 @@ internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         else SliderDefaults.Thumb(interaction, colors = sliderColors,
             enabled = enabled)
     }
-    val min = node.doubleOr("min", 0.0).toFloat()
-    val max = node.doubleOr("max", 1.0).toFloat()
+    val min = p.getOr(SliderMembers.Min, 0.0).toFloat()
+    val max = p.getOr(SliderMembers.Max, 1.0).toFloat()
     fun nearestAuthored(x: Float): JsonElement? =
         values?.minByOrNull { v ->
             val n = v.numOrNull()?.toFloat() ?: return@minByOrNull Float.MAX_VALUE
             kotlin.math.abs(n - x)
         }
-    if ("value_end" in node) {
+    if (p.has(SliderMembers.ValueEnd)) {
         // ---- RangeSlider: two thumbs, a two-number array on the wire.
         val lo = if (values != null && values.isNotEmpty())
             values.first().numOrNull()?.toFloat() ?: min else min
@@ -1106,9 +1121,9 @@ internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         val state = remember(ctx.surface, id, ctx.epochOf(id)) {
             val draft = (ctx.storeValue(id) as? JsonArray)?.takeIf { it.size == 2 }
             val start = draft?.get(0)?.numOrNull()?.toFloat()
-                ?: node.doubleOr("value", lo.toDouble()).toFloat()
+                ?: p.getOr(SliderMembers.Value, lo.toDouble()).toFloat()
             val end = draft?.get(1)?.numOrNull()?.toFloat()
-                ?: node.doubleOr("value_end", hi.toDouble()).toFloat()
+                ?: p.getOr(SliderMembers.ValueEnd, hi.toDouble()).toFloat()
             RangeSliderState(start, end, steps = steps, valueRange = lo..hi)
         }
         state.onValueChangeFinished = {
@@ -1159,7 +1174,7 @@ internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         val steps = if (values != null) (values.size - 2).coerceAtLeast(0) else 0
         val state = remember(ctx.surface, id, ctx.epochOf(id)) {
             val seed = ctx.storeValue(id)?.numOrNull()?.toFloat()
-                ?: node.doubleOr("value", lo.toDouble()).toFloat()
+                ?: p.getOr(SliderMembers.Value, lo.toDouble()).toFloat()
             SliderState(seed, steps = steps, valueRange = lo..hi)
         }
         state.onValueChangeFinished = {
@@ -1184,7 +1199,7 @@ internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             // C6: the org.json gate was `as? Number ?: return 0` — keep only a
             // NUMERIC element, so a string/boolean/null draft seeds index 0 as
             // before. jsonValueEquals then does the §4.3 numeric compare.
-            val v = (ctx.storeValue(id) ?: node["value"])
+            val v = (ctx.storeValue(id) ?: p.raw(SliderMembers.Value))
                 ?.takeIf { it.numOrNull() != null } ?: return 0
             for (i in 0 until n)
                 if (jsonValueEquals(values[i], v)) return i
@@ -1218,7 +1233,7 @@ internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         var pos by remember(ctx.surface, id, ctx.epochOf(id)) {
             mutableFloatStateOf(
                 (ctx.storeValue(id)?.numOrNull()?.toFloat()
-                    ?: node.doubleOr("value", min.toDouble()).toFloat()))
+                    ?: p.getOr(SliderMembers.Value, min.toDouble()).toFloat()))
         }
         Slider(
             value = pos,
@@ -1248,21 +1263,22 @@ internal fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RenderDateButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onPick = node.objOrNull("on_pick")
+    val p = NodeProperties(node, DateButtonMembers)
+    val onPick = p[DateButtonMembers.OnPick]
     var show by remember { mutableStateOf(false) }
     OutlinedButton(
         onClick = { show = true },
-        enabled = node.boolOr("enabled", true),
-        modifier = m) { Text(node.stringOr("label")) }
+        enabled = p.getOr(DateButtonMembers.Enabled, true),
+        modifier = m) { Text(p[DateButtonMembers.Label].orEmpty()) }
     if (show) {
-        val initialMillis = remember { parseIsoDateUtc(node.stringOr("value")) }
+        val initialMillis = remember { parseIsoDateUtc(p[DateButtonMembers.Value].orEmpty()) }
         // §17.4 day-level bounds: the declarative predicate is the ONLY form
         // the wire can carry — SelectableDates is a Kotlin lambda — and the
         // weekday rule covers every navigable month, which a per-date list
         // could not.
-        val minMillis = remember { parseIsoDateUtc(node.stringOr("min_date")) }
-        val maxMillis = remember { parseIsoDateUtc(node.stringOr("max_date")) }
-        val disabledDays = node.arrOrNull("disabled_weekdays")
+        val minMillis = remember { parseIsoDateUtc(p[DateButtonMembers.MinDate].orEmpty()) }
+        val maxMillis = remember { parseIsoDateUtc(p[DateButtonMembers.MaxDate].orEmpty()) }
+        val disabledDays = p[DateButtonMembers.DisabledWeekdays]
             ?.mapNotNull { it.numOrNull()?.toInt() } ?: emptyList()
         val bounded = minMillis != null || maxMillis != null ||
             disabledDays.isNotEmpty()
@@ -1297,7 +1313,7 @@ internal fun RenderDateButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             }
         val state = rememberDatePickerState(
             initialSelectedDateMillis = initialMillis,
-            initialDisplayMode = if (node.stringOr("mode") == "input")
+            initialDisplayMode = if (p[DateButtonMembers.Mode]?.wire.orEmpty() == "input")
                 DisplayMode.Input else DisplayMode.Picker,
             selectableDates = selectable)
         DatePickerDialog(
@@ -1325,14 +1341,15 @@ internal fun RenderDateButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val onPick = node.objOrNull("on_pick")
+    val p = NodeProperties(node, TimeButtonMembers)
+    val onPick = p[TimeButtonMembers.OnPick]
     var show by remember { mutableStateOf(false) }
     OutlinedButton(
         onClick = { show = true },
-        enabled = node.boolOr("enabled", true),
-        modifier = m) { Text(node.stringOr("label")) }
+        enabled = p.getOr(TimeButtonMembers.Enabled, true),
+        modifier = m) { Text(p[TimeButtonMembers.Label].orEmpty()) }
     if (show) {
-        val (h, min) = remember { parseHm(node.stringOr("value")) }
+        val (h, min) = remember { parseHm(p[TimeButtonMembers.Value].orEmpty()) }
         val state = rememberTimePickerState(initialHour = h, initialMinute = min)
         val confirm: @Composable () -> Unit = {
             TextButton(onClick = {
@@ -1345,7 +1362,7 @@ internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         val dismiss: @Composable () -> Unit = {
             TextButton(onClick = { show = false }) { Text("Cancel") }
         }
-        if (node.stringOr("display_mode") == "switchable") {
+        if (p[TimeButtonMembers.DisplayMode]?.wire.orEmpty() == "switchable") {
             // The mid-dialog flip is the whole member: TimePickerDialog owns
             // the Title(displayMode) and the toggle affordance itself.
             var mode by remember { mutableStateOf(TimePickerDisplayMode.Picker) }
@@ -1371,7 +1388,7 @@ internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             confirmButton = { confirm() },
             dismissButton = { dismiss() },
             text = {
-                if (node.stringOr("display_mode") == "input")
+                if (p[TimeButtonMembers.DisplayMode]?.wire.orEmpty() == "input")
                     TimeInput(state = state)
                 else TimePicker(state = state)
             })
@@ -1421,14 +1438,15 @@ internal fun isoDateFromUtcMillis(millis: Long): String {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val enabled = node.boolOr("enabled", true)
-    val h = buttonHeightOf(node.stringOr("size")) ?: SplitButtonDefaults.SmallContainerHeight
-    val variant = node.stringOr("variant")
-    val id = node.stringOr("id")
-    val isToggle = "checked" in node
-    val toggle = if (isToggle) rememberToggle(node, ctx, id) else null
-    val onChange = node.objOrNull("on_change")
-    val items = node.arrOrNull("items")
+    val p = NodeProperties(node, Material3SplitButtonMembers)
+    val enabled = p.getOr(Material3SplitButtonMembers.Enabled, true)
+    val h = buttonHeightOf(p[Material3SplitButtonMembers.Size]?.wire.orEmpty()) ?: SplitButtonDefaults.SmallContainerHeight
+    val variant = p[Material3SplitButtonMembers.Variant]?.wire.orEmpty()
+    val id = p[UniversalMembers.Id].orEmpty()
+    val isToggle = p.has(Material3SplitButtonMembers.Checked)
+    val toggle = if (isToggle) rememberToggle(p.getOr(Material3SplitButtonMembers.Checked, false), ctx, id) else null
+    val onChange = p[Material3SplitButtonMembers.OnChange]
+    val items = p[Material3SplitButtonMembers.Items]
     var menuOpen by remember { mutableStateOf(false) }
 
     // Both halves take the same colour treatment, so the pair reads as one
@@ -1445,7 +1463,7 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         modifier = m,
         leadingButton = {
             SplitButtonDefaults.LeadingButton(
-                onClick = { onButton(node.objOrNull("on_tap"), ctx) },
+                onClick = { onButton(p[Material3SplitButtonMembers.OnTap], ctx) },
                 enabled = enabled,
                 shapes = SplitButtonDefaults.leadingButtonShapesFor(h),
                 colors = colors,
@@ -1456,8 +1474,8 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 // neither (the constructor refuses it). Icon-only keeps its
                 // accessible name via the icon identifier, the tabs precedent
                 // for §16.4's icon-not-sole-carrier rule.
-                val iconName = node.stringOr("icon")
-                val label = node.stringOr("label")
+                val iconName = p[Material3SplitButtonMembers.Icon].orEmpty()
+                val label = p[Material3SplitButtonMembers.Label].orEmpty()
                 if (iconName.isNotEmpty()) {
                     Icon(IconMap.get(iconName),
                         contentDescription = if (label.isEmpty()) iconName else null,
@@ -1472,8 +1490,8 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             }
         },
         trailingButton = {
-            val trailingLabel = node.stringOr("trailing_label")
-            val trailingIcon = node.stringOr("trailing_icon").ifEmpty { "keyboard_arrow_down" }
+            val trailingLabel = p[Material3SplitButtonMembers.TrailingLabel].orEmpty()
+            val trailingIcon = p[Material3SplitButtonMembers.TrailingIcon].orEmpty().ifEmpty { "keyboard_arrow_down" }
             val expanded = toggle?.value == true || menuOpen
             // The arrow flips with the state — the sample's own animateFloatAsState.
             val rotation by animateFloatAsState(
@@ -1483,7 +1501,7 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     Text(trailingLabel, maxLines = 1, softWrap = false,
                         overflow = TextOverflow.Ellipsis)
                 else Icon(IconMap.get(trailingIcon),
-                    contentDescription = node.stringOr("trailing_description")
+                    contentDescription = p[Material3SplitButtonMembers.TrailingDescription].orEmpty()
                         .takeIf { it.isNotEmpty() },
                     modifier = Modifier
                         .size(SplitButtonDefaults.TrailingIconSize)
@@ -1507,7 +1525,7 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                         enabled = enabled, shapes = shapes, colors = colors,
                         border = border, contentPadding = pad, content = trailingContent)
                     else -> SplitButtonDefaults.TrailingButton(
-                        onClick = { onButton(node.objOrNull("on_trailing_tap"), ctx) },
+                        onClick = { onButton(p[Material3SplitButtonMembers.OnTrailingTap], ctx) },
                         enabled = enabled, shapes = shapes, colors = colors,
                         border = border, contentPadding = pad, content = trailingContent)
                 }
@@ -1539,13 +1557,14 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderNavigationRail(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val items = node.arrOrNull("items") ?: return
-    val header = node.objOrNull("header")
-    val variant = node.stringOr("variant")
+    val p = NodeProperties(node, NavigationRailMembers)
+    val items = p[NavigationRailMembers.Items] ?: return
+    val header = p[NavigationRailMembers.Header]
+    val variant = p[NavigationRailMembers.Variant]?.wire.orEmpty()
     val wide = variant == "wide" || variant == "modal"
-    val expanded = node.boolOr("expanded")
-    val onExpandChange = node.objOrNull("on_expand_change")
-    val arrangement = when (node.stringOr("arrangement")) {
+    val expanded = (p[NavigationRailMembers.Expanded] == BooleanOrAuto.True)
+    val onExpandChange = p[NavigationRailMembers.OnExpandChange]
+    val arrangement = when (p[NavigationRailMembers.Arrangement]?.wire.orEmpty()) {
         "center" -> Arrangement.Center
         "bottom" -> Arrangement.Bottom
         else -> Arrangement.Top
@@ -1622,7 +1641,7 @@ internal fun RenderNavigationRail(node: JsonObject, ctx: RenderCtx, m: Modifier)
             ModalWideNavigationRail(
                 modifier = m,
                 state = state,
-                hideOnCollapse = node.boolOr("hide_on_collapse"),
+                hideOnCollapse = p.getOr(NavigationRailMembers.HideOnCollapse, false),
                 header = headerSlot,
                 arrangement = arrangement,
                 content = destinations)
@@ -1651,18 +1670,19 @@ internal fun RenderNavigationRail(node: JsonObject, ctx: RenderCtx, m: Modifier)
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RenderSearchBar(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
-    val onSearch = node.objOrNull("on_search")
-    val onChange = node.objOrNull("on_change")
+    val p = NodeProperties(node, SearchBarMembers)
+    val id = p[SearchBarMembers.Id].orEmpty()
+    val enabled = p.getOr(SearchBarMembers.Enabled, true)
+    val onSearch = p[SearchBarMembers.OnSearch]
+    val onChange = p[SearchBarMembers.OnChange]
     var query by rememberSaveable(ctx.surface, id, ctx.epochOf(id),
         key = "sb:${ctx.surface}:$id:${ctx.epochOf(id)}") {
         mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
-            ?.takeIf { it.isString }?.content ?: node.stringOr("value"))
+            ?.takeIf { it.isString }?.content ?: p[SearchBarMembers.Value].orEmpty())
     }
     var expanded by rememberSaveable(ctx.surface, id) { mutableStateOf(false) }
-    val leading = node.stringOr("leading_icon")
-    val trailing = node.stringOr("trailing_icon")
+    val leading = p[SearchBarMembers.LeadingIcon].orEmpty()
+    val trailing = p[SearchBarMembers.TrailingIcon].orEmpty()
     val inputField: @Composable () -> Unit = {
         SearchBarDefaults.InputField(
             query = query,
@@ -1678,7 +1698,7 @@ internal fun RenderSearchBar(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             expanded = expanded,
             onExpandedChange = { expanded = it },
             enabled = enabled,
-            placeholder = node.stringOr("hint").takeIf { it.isNotEmpty() }
+            placeholder = p[SearchBarMembers.Hint].orEmpty().takeIf { it.isNotEmpty() }
                 ?.let { { Text(it) } },
             leadingIcon = leading.takeIf { it.isNotEmpty() }
                 ?.let { { Icon(IconMap.get(it), contentDescription = null) } },
@@ -1686,9 +1706,9 @@ internal fun RenderSearchBar(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 ?.let { { Icon(IconMap.get(it), contentDescription = null) } })
     }
     val results: @Composable ColumnScope.() -> Unit = {
-        RenderChildren(node.arrOrNull("children"), ctx)
+        RenderChildren(p[SearchBarMembers.Children], ctx)
     }
-    if (node.stringOr("variant") == "docked")
+    if (p[SearchBarMembers.Variant]?.wire.orEmpty() == "docked")
         DockedSearchBar(inputField = inputField, expanded = expanded,
             onExpandedChange = { expanded = it }, modifier = m, content = results)
     else SearchBar(inputField = inputField, expanded = expanded,
@@ -1708,11 +1728,12 @@ internal fun RenderSearchBar(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun RenderDropdown(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
-    val editable = node.boolOr("editable")
-    val onChange = node.objOrNull("on_change")
-    val options = node.arrOrNull("options") ?: return
+    val p = NodeProperties(node, DropdownMembers)
+    val id = p[DropdownMembers.Id].orEmpty()
+    val enabled = p.getOr(DropdownMembers.Enabled, true)
+    val editable = p.getOr(DropdownMembers.Editable, false)
+    val onChange = p[DropdownMembers.OnChange]
+    val options = p[DropdownMembers.Options] ?: return
     fun labelOf(v: String): String {
         for (o in options) {
             val obj = o as? JsonObject ?: continue
@@ -1724,11 +1745,11 @@ internal fun RenderDropdown(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // SPEC 14.6.1: report_caret switches the editable form to a
     // TextFieldValue so the SELECTION is observable — every edit reports
     // value + caret, and a caret-only move reports too.
-    val reportCaret = editable && node.boolOr("report_caret")
+    val reportCaret = editable && p.getOr(DropdownMembers.ReportCaret, false)
     var value by rememberSaveable(ctx.surface, id, ctx.epochOf(id),
         key = "dd:${ctx.surface}:$id:${ctx.epochOf(id)}") {
         mutableStateOf((ctx.storeValue(id) as? JsonPrimitive)
-            ?.takeIf { it.isString }?.content ?: node.stringOr("value"))
+            ?.takeIf { it.isString }?.content ?: (p[DropdownMembers.Value]?.takeIf { it.isString }?.content ?: ""))
     }
     var field by remember(ctx.surface, id, ctx.epochOf(id)) {
         mutableStateOf(TextFieldValue(value, TextRange(value.length)))
@@ -1752,9 +1773,9 @@ internal fun RenderDropdown(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             },
             enabled = enabled,
             singleLine = true,
-            label = node.stringOr("label").takeIf { it.isNotEmpty() }
+            label = p[DropdownMembers.Label].orEmpty().takeIf { it.isNotEmpty() }
                 ?.let { { Text(it) } },
-            placeholder = node.stringOr("hint").takeIf { it.isNotEmpty() }
+            placeholder = p[DropdownMembers.Hint].orEmpty().takeIf { it.isNotEmpty() }
                 ?.let { { Text(it) } },
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
@@ -1773,9 +1794,9 @@ internal fun RenderDropdown(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             readOnly = !editable,
             enabled = enabled,
             singleLine = true,
-            label = node.stringOr("label").takeIf { it.isNotEmpty() }
+            label = p[DropdownMembers.Label].orEmpty().takeIf { it.isNotEmpty() }
                 ?.let { { Text(it) } },
-            placeholder = node.stringOr("hint").takeIf { it.isNotEmpty() }
+            placeholder = p[DropdownMembers.Hint].orEmpty().takeIf { it.isNotEmpty() }
                 ?.let { { Text(it) } },
             trailingIcon = {
                 ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
@@ -1840,11 +1861,12 @@ internal fun RenderDropdown(node: JsonObject, ctx: RenderCtx, m: Modifier) {
  * enum_list exactly: one option value, or an array under multi_select. */
 @Composable
 internal fun RenderSegmentedButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val id = node.stringOr("id")
-    val enabled = node.boolOr("enabled", true)
-    val multi = node.boolOr("multi_select")
-    val onChange = node.objOrNull("on_change")
-    val options = node.arrOrNull("options") ?: return
+    val p = NodeProperties(node, SegmentedButtonMembers)
+    val id = p[SegmentedButtonMembers.Id].orEmpty()
+    val enabled = p.getOr(SegmentedButtonMembers.Enabled, true)
+    val multi = p.getOr(SegmentedButtonMembers.MultiSelect, false)
+    val onChange = p[SegmentedButtonMembers.OnChange]
+    val options = p[SegmentedButtonMembers.Options] ?: return
     val n = options.size
     val segIcon: @Composable (JsonObject, Boolean) -> (@Composable () -> Unit)? =
         { obj, active ->
@@ -1860,7 +1882,7 @@ internal fun RenderSegmentedButton(node: JsonObject, ctx: RenderCtx, m: Modifier
     if (multi) {
         var chosen by remember(ctx.surface, id, ctx.epochOf(id)) {
             mutableStateOf((ctx.storeValue(id) as? JsonArray)?.toList()
-                ?: (node["value"] as? JsonArray)?.toList() ?: emptyList())
+                ?: (p.raw(SegmentedButtonMembers.Value) as? JsonArray)?.toList() ?: emptyList())
         }
         MultiChoiceSegmentedButtonRow(modifier = m) {
             options.forEachIndexed { i, o ->
@@ -1889,7 +1911,7 @@ internal fun RenderSegmentedButton(node: JsonObject, ctx: RenderCtx, m: Modifier
         }
     } else {
         var value by remember(ctx.surface, id, ctx.epochOf(id)) {
-            mutableStateOf(ctx.storeValue(id) ?: node["value"])
+            mutableStateOf(ctx.storeValue(id) ?: p.raw(SegmentedButtonMembers.Value))
         }
         SingleChoiceSegmentedButtonRow(modifier = m) {
             options.forEachIndexed { i, o ->
