@@ -13,6 +13,8 @@
 package com.calebc42.jetpacs.material3
 
 import com.calebc42.ebp.renderer.model.*
+import com.calebc42.ebp.renderer.model.vocabulary.BooleanMember
+import com.calebc42.ebp.renderer.model.vocabulary.generated.UniversalMembers
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -173,7 +175,9 @@ internal fun lazyColumnProjection(
     fun isPinned(node: JsonObject?): Boolean {
         val type = node?.stringOrNull("t") ?: return false
         val member = pinnedNodeMembers[type] ?: return false
-        return node.boolOr(member)
+        // The pinned member is extension-owned (not a core member): a
+        // descriptor built from the configured name reads it typed.
+        return BooleanMember(member, required = false).read(node) ?: false
     }
     fun canBatch(index: Int): Boolean = when (nodeAt(index)?.stringOrNull("t")) {
         "row", "rich_text", "text", "spacer", "divider" -> true
@@ -277,7 +281,7 @@ internal fun identityPath(parentPath: String, node: JsonObject?, i: Int): String
 /** The node's corner shape: a number or per-corner object; 0/absent is
  * rectangular. Exposed so containers can stroke borders with the same shape. */
 internal fun cornerShape(node: JsonObject): Shape {
-    val c = node["corner"] ?: return RectangleShape
+    val c = UniversalMembers.Corner.read(node) ?: return RectangleShape
     return when (c) {
         // numOrNull carries the old `is Number` guard: a string, boolean or
         // JSON null corner reads as no number and stays rectangular, exactly
@@ -303,55 +307,55 @@ internal fun cornerShape(node: JsonObject): Shape {
 internal fun Modifier.universal(node: JsonObject): Modifier {
     var m = this
     // padding / pad (per-side wins over its axis shorthand).
-    val pad = node.objOrNull("pad")
+    val pad = UniversalMembers.Pad.read(node)
     if (pad != null) {
         fun side(specific: String, axis: String): Dp {
             val v = when {
                 specific in pad -> pad.doubleOr(specific, 0.0)
                 axis in pad -> pad.doubleOr(axis, 0.0)
-                else -> node.doubleOr("padding", 0.0)
+                else -> UniversalMembers.Padding.read(node)?.toDouble() ?: 0.0
             }
             return (safeDp(v) ?: 0f).dp
         }
         m = m.padding(start = side("start", "horizontal"), top = side("top", "vertical"),
             end = side("end", "horizontal"), bottom = side("bottom", "vertical"))
-    } else if ("padding" in node) {
-        safeDp(node.doubleOr("padding", 0.0))?.let { m = m.padding(it.dp) }
+    } else {
+        UniversalMembers.Padding.read(node)?.let { m = m.padding(it.dp) }
     }
     // Requested size + constraints. These read a member that may be absent
     // AND may be non-numeric, and both must SKIP the modifier: the 1-arg
     // optDouble they ported from defaulted to NaN, which every safe* clamp
     // rejects. Never `?: 0.0` — that would apply a 0.dp width and collapse
     // the node. The null-safe read carries the old has() gate with it.
-    node["width"]?.numOrNull()?.let { v -> safeDp(v)?.let { m = m.width(it.dp) } }
-    node["height"]?.numOrNull()?.let { v -> safeDp(v)?.let { m = m.height(it.dp) } }
-    val minW = node["min_width"]?.numOrNull()?.let { safeDp(it) }
-    val maxW = node["max_width"]?.numOrNull()?.let { safeDp(it) }
+    UniversalMembers.Width.read(node)?.let { v -> safeDp(v)?.let { m = m.width(it.dp) } }
+    UniversalMembers.Height.read(node)?.let { v -> safeDp(v)?.let { m = m.height(it.dp) } }
+    val minW = UniversalMembers.MinWidth.read(node)?.let { safeDp(it) }
+    val maxW = UniversalMembers.MaxWidth.read(node)?.let { safeDp(it) }
     if (minW != null || maxW != null)
         m = m.widthIn(min = minW?.dp ?: Dp.Unspecified, max = maxW?.dp ?: Dp.Unspecified)
-    val minH = node["min_height"]?.numOrNull()?.let { safeDp(it) }
-    val maxH = node["max_height"]?.numOrNull()?.let { safeDp(it) }
+    val minH = UniversalMembers.MinHeight.read(node)?.let { safeDp(it) }
+    val maxH = UniversalMembers.MaxHeight.read(node)?.let { safeDp(it) }
     if (minH != null || maxH != null)
         m = m.heightIn(min = minH?.dp ?: Dp.Unspecified, max = maxH?.dp ?: Dp.Unspecified)
-    node["fill_fraction"]?.numOrNull()
+    UniversalMembers.FillFraction.read(node)
         ?.let { v -> safeFraction(v)?.let { m = m.fillMaxWidth(it) } }
-    node["aspect_ratio"]?.numOrNull()
+    UniversalMembers.AspectRatio.read(node)
         ?.let { v -> safeAspect(v)?.let { m = m.aspectRatio(it) } }
     // Visual ops in SPEC order: corner shape, clipping, background, border.
     val shape = cornerShape(node)
     // SPEC 16.5: `clip` applies overflow clipping to the node's shape — a
     // rectangular shape (no corner) still clips the bounding box, so this MUST
     // NOT be gated on a non-rectangular corner.
-    if (node.boolOr("clip")) m = m.clip(shape)
-    resolveColor(node.stringOr("bg").takeIf { it.isNotEmpty() })?.let {
+    if (UniversalMembers.Clip.read(node) == true) m = m.clip(shape)
+    resolveColor(UniversalMembers.Bg.read(node)?.takeIf { it.isNotEmpty() })?.let {
         m = m.background(it, shape)
     }
-    node.objOrNull("border")?.let { b ->
+    UniversalMembers.Border.read(node)?.let { b ->
         val width = (safeDp(b.doubleOr("width", 1.0)) ?: 1f).dp
         val color = resolveColor(b.stringOr("color").takeIf { it.isNotEmpty() })
             ?: MaterialTheme.colorScheme.outline
         m = m.border(width, color, shape)
     }
-    node["alpha"]?.numOrNull()?.let { v -> safeAlpha(v)?.let { m = m.alpha(it) } }
+    UniversalMembers.Alpha.read(node)?.let { v -> safeAlpha(v)?.let { m = m.alpha(it) } }
     return m
 }

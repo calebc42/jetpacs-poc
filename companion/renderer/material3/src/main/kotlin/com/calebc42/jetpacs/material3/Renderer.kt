@@ -8,6 +8,11 @@
 // builtins to dialog completion and text_input edits to dialog-local state.
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.renderer.model.vocabulary.BooleanOrAuto
+import com.calebc42.ebp.renderer.model.vocabulary.NodeArrayMember
+import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
+import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
+import com.calebc42.ebp.renderer.model.vocabulary.generated.*
 import com.calebc42.ebp.renderer.model.vocabulary.generated.AlignSelf
 import com.calebc42.ebp.renderer.model.vocabulary.generated.UniversalMembers
 import com.calebc42.ebp.renderer.model.*
@@ -596,7 +601,7 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
         ctx.configuration.appNodeTypes
     }
     if (type !in advertised) {
-        node.arrOrNull("children")?.let { kids ->
+        FallbackChildren.read(node)?.let { kids ->
             Column(modifier) { RenderChildren(kids, ctx) }
         }
         return
@@ -642,10 +647,17 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
     }
     // SPEC 16.2: unknown types render children as a neutral vertical
     // sequence, or nothing.
-    node.arrOrNull("children")?.let { children ->
+    FallbackChildren.read(node)?.let { children ->
         Column(modifier = m) { RenderColumnChildren(children, ctx) }
     }
 }
+
+/**
+ * SPEC §16.2's structural rule: a node of a type this target does not present
+ * degrades to its `children`. No member set owns an unknown type, so the
+ * descriptor stands alone.
+ */
+private val FallbackChildren = NodeArrayMember("children", required = false)
 
 /**
  * Restart/skipping boundary for one visible lazy item. [LazyRenderItem] is an
@@ -784,6 +796,7 @@ private fun ColumnScope.columnChildModifier(child: JsonObject): Modifier {
 
 @Composable
 internal fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, TextInputMembers)
     val binding = com.calebc42.ebp.renderer.compose.rememberTextInputBinding(
         node,
         MaterialNodeRenderContext(ctx),
@@ -1054,6 +1067,7 @@ private fun LegacyMaskedMaterialTextField(
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, EditorMembers)
     val binding = com.calebc42.ebp.renderer.compose.rememberEditorBinding(
         node,
         MaterialNodeRenderContext(ctx),
@@ -1413,11 +1427,12 @@ fun RenderScaffold(
     ctx: RenderCtx,
     modifier: Modifier = Modifier,
 ) {
+    val p = NodeProperties(node, ScaffoldMembers)
     val hostState = remember { SnackbarHostState() }
     val scrollSignal = remember { BodyScrollSignal() }
-    val snackbar = node.stringOr("snackbar").takeIf { it.isNotEmpty() }
-    val action = node.objOrNull("snackbar_action")
-    val drawer = node.objOrNull("drawer")
+    val snackbar = p[ScaffoldMembers.Snackbar].orEmpty().takeIf { it.isNotEmpty() }
+    val action = p[ScaffoldMembers.SnackbarAction]
+    val drawer = p[ScaffoldMembers.Drawer]
     // The state belongs to this drawer-bearing SURFACE, not merely to this
     // call-site in the resolved-view renderer.  A pushed screen occupies the
     // same composition position as the root it replaced.  Remembering here
@@ -1436,14 +1451,14 @@ fun RenderScaffold(
     val scope = androidx.compose.runtime.rememberCoroutineScope()
     LaunchedEffect(snackbar) {
         if (snackbar != null) {
-            val durationName = node.stringOr("snackbar_duration")
+            val durationName = p[ScaffoldMembers.SnackbarDuration]?.wire.orEmpty()
             val result = hostState.showSnackbar(
                 message = snackbar,
                 actionLabel = action?.stringOr("label")?.takeIf { it.isNotEmpty() },
                 // §17.6: `snackbar_dismiss` is the trailing X, and an
                 // INDEFINITE snackbar implies it — such a snackbar must
                 // always leave the user an exit.
-                withDismissAction = node.boolOr("snackbar_dismiss") ||
+                withDismissAction = p.getOr(ScaffoldMembers.SnackbarDismiss, false) ||
                     durationName == "indefinite",
                 duration = when (durationName) {
                     "long" -> SnackbarDuration.Long
@@ -1459,9 +1474,9 @@ fun RenderScaffold(
     // present one asks for the real M3 TopAppBar, which is the only thing a
     // scroll behavior can attach to — the authored `top_bar` node becomes its
     // title slot, and the drawer hamburger its navigationIcon.
-    val topBarStyle = node.stringOr("top_bar_style")
+    val topBarStyle = p[ScaffoldMembers.TopBarStyle]?.wire.orEmpty()
     val scrollBehavior: TopAppBarScrollBehavior? =
-        if (topBarStyle.isEmpty()) null else when (node.stringOr("scroll_behavior")) {
+        if (topBarStyle.isEmpty()) null else when (p[ScaffoldMembers.ScrollBehavior]?.wire.orEmpty()) {
             "pinned" -> TopAppBarDefaults.pinnedScrollBehavior()
             "enter_always" -> TopAppBarDefaults.enterAlwaysScrollBehavior()
             "exit_until_collapsed" -> TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -1471,18 +1486,18 @@ fun RenderScaffold(
     // body scrolls up and returns it on the way down — Companion-local
     // nested scroll, the same discipline as the top bar's behaviors.
     val bottomBarBehavior =
-        if (node.stringOr("bottom_bar_behavior") == "exit_always")
+        if (p[ScaffoldMembers.BottomBarBehavior]?.wire.orEmpty() == "exit_always")
             androidx.compose.material3.BottomAppBarDefaults.exitAlwaysScrollBehavior()
         else null
     // §17.6 floating toolbar. Absent orientation keeps the full-width band in
     // the bottomBar slot; present, it becomes M3's real pill floating OVER the
     // body, which is what every upstream sample actually shows.
-    val toolbarOrientation = node.stringOr("floating_toolbar_orientation")
-    val toolbarScroll = node.boolOr("floating_toolbar_scroll")
+    val toolbarOrientation = p[ScaffoldMembers.FloatingToolbarOrientation]?.wire.orEmpty()
+    val toolbarScroll = p.getOr(ScaffoldMembers.FloatingToolbarScroll, false)
     val toolbarBehavior: FloatingToolbarScrollBehavior? =
         if (!toolbarScroll || toolbarOrientation.isEmpty()) null
         else FloatingToolbarDefaults.exitAlwaysScrollBehavior(
-            exitDirection = when (node.stringOr("floating_toolbar_exit_direction")) {
+            exitDirection = when (p[ScaffoldMembers.FloatingToolbarExitDirection]?.wire.orEmpty()) {
                 "top" -> FloatingToolbarExitDirection.Top
                 "start" -> FloatingToolbarExitDirection.Start
                 "end" -> FloatingToolbarExitDirection.End
@@ -1529,7 +1544,7 @@ fun RenderScaffold(
     // rail from the same items, the NavigationSuiteScaffold swap. The slot
     // hosts an authored navigation_rail, whose own variant and synced
     // expanded state carry the collapsed/expanded forms.
-    val rail = node.objOrNull("rail")
+    val rail = p[ScaffoldMembers.Rail]
     val scaffold: @Composable () -> Unit = {
         Scaffold(
             modifier = modifier
@@ -1538,7 +1553,7 @@ fun RenderScaffold(
                 .let { m -> toolbarBehavior?.let { m.nestedScroll(it) } ?: m },
             // §17.6 `fab_position`: end_overlay rides the FAB OVER the
             // bottom bar — the ExitAlways pairing.
-            floatingActionButtonPosition = when (node.stringOr("fab_position")) {
+            floatingActionButtonPosition = when (p[ScaffoldMembers.FabPosition]?.wire.orEmpty()) {
                 "end_overlay" -> androidx.compose.material3.FabPosition.EndOverlay
                 "center" -> androidx.compose.material3.FabPosition.Center
                 else -> androidx.compose.material3.FabPosition.End
@@ -1550,11 +1565,11 @@ fun RenderScaffold(
                     // timing and dismissal; the plain `snackbar` string stays
                     // the message and the accessible text, so the author
                     // repeats it inside the face.
-                    val custom = node.objOrNull("snackbar_content")
+                    val custom = p[ScaffoldMembers.SnackbarContent]
                     // §17.6 `snackbar_max_lines`: clamp the VISIBLE message
                     // to the Material-recommended line count; Text semantics
                     // keep the whole string, so a screen reader loses nothing.
-                    val cap = node.doubleOr("snackbar_max_lines", 0.0).toInt()
+                    val cap = (p[ScaffoldMembers.SnackbarMaxLines]?.toDouble() ?: 0.0).toInt()
                     // A design scope's chrome slots reach the snackbar here;
                     // a null field keeps the M3 default.
                     val chrome = LocalComposeChromeStyles.current
@@ -1596,7 +1611,7 @@ fun RenderScaffold(
                 }
             },
             topBar = {
-                val topBar = node.objOrNull("top_bar")
+                val topBar = p[ScaffoldMembers.TopBar]
                 if (topBarStyle.isNotEmpty()) {
                     val title: @Composable () -> Unit = {
                         topBar?.let { RenderNode(it, ctx.child(it, 0)) }
@@ -1606,7 +1621,7 @@ fun RenderScaffold(
                         // would toggle nothing, so it is suppressed.
                         val state = drawerState
                         if (state != null &&
-                            node.stringOr("drawer_variant") != "permanent")
+                            p[ScaffoldMembers.DrawerVariant]?.wire.orEmpty() != "permanent")
                             IconButton(onClick = {
                                 scope.launch {
                                     if (state.isClosed) state.open()
@@ -1617,13 +1632,13 @@ fun RenderScaffold(
                                     contentDescription = "Menu")
                             }
                     }
-                    val subtitle = node.stringOr("top_bar_subtitle")
+                    val subtitle = p[ScaffoldMembers.TopBarSubtitle].orEmpty()
                     // §17.6 heights: authored dp overrides the per-style M3
                     // default; -1 marks "unauthored" (dp members are >= 0).
-                    val collapsedH = node.doubleOr("top_bar_collapsed_height", -1.0)
-                    val expandedH = node.doubleOr("top_bar_expanded_height", -1.0)
+                    val collapsedH = (p[ScaffoldMembers.TopBarCollapsedHeight]?.toDouble() ?: -1.0)
+                    val expandedH = (p[ScaffoldMembers.TopBarExpandedHeight]?.toDouble() ?: -1.0)
                     val titleAlign =
-                        if (node.boolOr("top_bar_centered")) Alignment.CenterHorizontally
+                        if (p.getOr(ScaffoldMembers.TopBarCentered, false)) Alignment.CenterHorizontally
                         else Alignment.Start
                     val subtitleSlot: (@Composable () -> Unit)? =
                         if (subtitle.isNotEmpty()) { { Text(subtitle) } } else null
@@ -1662,7 +1677,7 @@ fun RenderScaffold(
                         topBarStyle == "two_rows" -> TwoRowsTopAppBar(
                             title = { expanded ->
                                 val n = if (expanded)
-                                    node.objOrNull("top_bar_expanded") ?: topBar
+                                    p[ScaffoldMembers.TopBarExpanded] ?: topBar
                                 else topBar
                                 n?.let { RenderNode(it, ctx.child(it, 0)) }
                             },
@@ -1704,7 +1719,7 @@ fun RenderScaffold(
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         val state = drawerState
                         if (state != null &&
-                            node.stringOr("drawer_variant") != "permanent") {
+                            p[ScaffoldMembers.DrawerVariant]?.wire.orEmpty() != "permanent") {
                             androidx.compose.material3.IconButton(
                                 onClick = {
                                     scope.launch {
@@ -1724,13 +1739,13 @@ fun RenderScaffold(
                 // §17.6 `fab_hide_on_scroll`: scale the slot's occupant away
                 // as the body leaves its start — the derived form; an
                 // author-driven boolean alone would have no driver.
-                val fabMod = if (node.boolOr("fab_hide_on_scroll"))
+                val fabMod = if (p.getOr(ScaffoldMembers.FabHideOnScroll, false))
                     Modifier.animateFloatingActionButton(
                         visible = scrollSignal.atStart,
                         alignment = Alignment.BottomEnd)
                 else Modifier
                 Box(fabMod) {
-                    node.objOrNull("fab")?.let { RenderNode(it, ctx.child(it, 2)) }
+                    p[ScaffoldMembers.Fab]?.let { RenderNode(it, ctx.child(it, 2)) }
                 }
             },
             bottomBar = {
@@ -1738,9 +1753,9 @@ fun RenderScaffold(
                 // instead, so it is excluded here — the band below is the
                 // unstyled rendering this slot has always drawn.
                 val floatingToolbar =
-                    if (toolbarOrientation.isEmpty()) node.objOrNull("floating_toolbar")
+                    if (toolbarOrientation.isEmpty()) p[ScaffoldMembers.FloatingToolbar]
                     else null
-                val bottomBar = node.objOrNull("bottom_bar")
+                val bottomBar = p[ScaffoldMembers.BottomBar]
                 if (floatingToolbar != null || bottomBar != null) {
                     Column {
                         floatingToolbar?.let {
@@ -1781,8 +1796,8 @@ fun RenderScaffold(
             val bodyModifier = Modifier.padding(inner)
                 .consumeWindowInsets(inner)
                 .imePadding()
-            val onRefresh = node.objOrNull("on_refresh")
-            val body = node.objOrNull("body")
+            val onRefresh = p[ScaffoldMembers.OnRefresh]
+            val body = p[ScaffoldMembers.Body]
             if (onRefresh != null) {
                 var localRefreshing by remember { mutableStateOf(false) }
                 LaunchedEffect(localRefreshing) {
@@ -1792,11 +1807,11 @@ fun RenderScaffold(
                 // flag replaces the optimistic local one (which stays the
                 // default so existing senders are unaffected), and the next
                 // accepted snapshot clears it.
-                val refreshing = if ("is_refreshing" in node)
-                    node.boolOr("is_refreshing") else localRefreshing
+                val refreshing = if (p.has(ScaffoldMembers.IsRefreshing))
+                    p.getOr(ScaffoldMembers.IsRefreshing, false) else localRefreshing
                 val ptrState =
                     androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
-                val indicatorName = node.stringOr("refresh_indicator")
+                val indicatorName = p[ScaffoldMembers.RefreshIndicator]?.wire.orEmpty()
                 androidx.compose.material3.pulltorefresh.PullToRefreshBox(
                     isRefreshing = refreshing,
                     state = ptrState,
@@ -1839,11 +1854,11 @@ fun RenderScaffold(
                 }
             }
             // The pill sits OVER the body, aligned by `placement`.
-            val toolbar = node.objOrNull("floating_toolbar")
+            val toolbar = p[ScaffoldMembers.FloatingToolbar]
             if (toolbar != null && toolbarOrientation.isNotEmpty()) {
-                val expanded = node.boolOr("floating_toolbar_expanded", true)
-                val fab = node.objOrNull("floating_toolbar_fab")
-                val align = when (node.stringOr("floating_toolbar_placement")) {
+                val expanded = p.getOr(ScaffoldMembers.FloatingToolbarExpanded, true)
+                val fab = p[ScaffoldMembers.FloatingToolbarFab]
+                val align = when (p[ScaffoldMembers.FloatingToolbarPlacement]?.wire.orEmpty()) {
                     "bottom_start" -> Alignment.BottomStart
                     "bottom_end" -> Alignment.BottomEnd
                     "center_start" -> Alignment.CenterStart
@@ -1886,14 +1901,14 @@ fun RenderScaffold(
     // at its peek over everything and drags between peek and expanded;
     // nested scroll from a lazy_column inside the sheet comes free. User
     // drags report through on_sheet_change with the settled state name.
-    val persistentSheet = node.objOrNull("sheet")
-        ?.takeIf { "sheet_peek_height" in node }
+    val persistentSheet = p[ScaffoldMembers.Sheet]
+        ?.takeIf { p.has(ScaffoldMembers.SheetPeekHeight) }
     val sheetWrap: @Composable (@Composable () -> Unit) -> Unit =
         if (persistentSheet == null) { content -> content() }
         else { content ->
-            val peek = (safeDp(node.doubleOr("sheet_peek_height", 0.0)) ?: 0f).dp
-            val onSheetChange = node.objOrNull("on_sheet_change")
-            val authored = node.stringOr("sheet_state")
+            val peek = (safeDp((p[ScaffoldMembers.SheetPeekHeight]?.toDouble() ?: 0.0)) ?: 0f).dp
+            val onSheetChange = p[ScaffoldMembers.OnSheetChange]
+            val authored = p[ScaffoldMembers.SheetState]?.wire.orEmpty()
             val sheetScaffoldState =
                 androidx.compose.material3.rememberBottomSheetScaffoldState(
                     bottomSheetState =
@@ -1984,7 +1999,7 @@ fun RenderScaffold(
         // owns system back — it composes after, and therefore outranks, the
         // chrome BackHandler in MainActivity. The stateless overload handles
         // no back at all, and the view stack would move under the open sheet.
-        when (node.stringOr("drawer_variant")) {
+        when (p[ScaffoldMembers.DrawerVariant]?.wire.orEmpty()) {
             "dismissible" ->
                 androidx.compose.material3.DismissibleNavigationDrawer(
                     drawerState = state,
@@ -2034,10 +2049,10 @@ fun RenderScaffold(
     // CHANGES, so a re-push cannot slam the sheet back open (the tooltip.shown
     // discipline). The persistent form wraps the body inside RenderScaffold's
     // Scaffold — see the sheetWrap seam there.
-    val sheet = node.objOrNull("sheet")
+    val sheet = p[ScaffoldMembers.Sheet]
     if (sheet != null && "sheet_peek_height" !in node) {
-        val authored = node.stringOr("sheet_state")
-        val onSheetChange = node.objOrNull("on_sheet_change")
+        val authored = p[ScaffoldMembers.SheetState]?.wire.orEmpty()
+        val onSheetChange = p[ScaffoldMembers.OnSheetChange]
         var dismissedWhile by remember { mutableStateOf<String?>(null) }
         val show = authored.isNotEmpty() && authored != "hidden" &&
             dismissedWhile != authored

@@ -14,8 +14,11 @@ import org.junit.Test
  * reads inside structured members (`span.stringOr(...)`) are not matched.
  */
 class MaterialTypedReadsTest {
-    private val converted = listOf("ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt")
-    private val remaining = listOf("Attributes.kt", "Renderer.kt", "VisualizationNodes.kt")
+    private val converted = listOf(
+        "Attributes.kt", "ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt",
+        "MaterialComponents.kt", "Renderer.kt", "VisualizationNodes.kt",
+    )
+    private val remaining = emptyList<String>()
     private val rawRead = Regex(
         """\bnode\.(stringOr|stringOrNull|boolOr|boolOrNull|objOrNull|arrOrNull|doubleOr|dimInt|intByValue|numOrNull)\(|\bnode\[""",
     )
@@ -51,7 +54,7 @@ class MaterialTypedReadsTest {
     fun everyRendererFileIsEitherConvertedOrListedAsRemaining() {
         val renderers = sourceDirectory().listFiles()!!
             .filter { it.extension == "kt" && it.readText().contains("@Composable\ninternal fun Render") ||
-                it.name == "Attributes.kt" || it.name == "Renderer.kt" }
+                it.name == "Attributes.kt" || it.name == "Renderer.kt" || it.name == "MaterialComponents.kt" }
             .map { it.name }
             .toSortedSet()
         assertEquals(renderers, (converted + remaining).toSortedSet())

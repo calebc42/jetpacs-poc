@@ -9,7 +9,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.calebc42.ebp.renderer.compose.ComposeComponentRegistry
-import com.calebc42.ebp.renderer.model.doubleOr
 import com.calebc42.ebp.renderer.model.vocabulary.NodeMemberSet
 // One generated member set per node type; the registry pins each component to its own.
 import com.calebc42.ebp.renderer.model.vocabulary.generated.*
@@ -170,8 +169,8 @@ internal object MaterialSpacerComponent : MaterialComponent("spacer", SpacerMemb
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         Spacer(
             modifier
-                .width((safeDp(node.doubleOr("width", 0.0)) ?: 0f).dp)
-                .height((safeDp(node.doubleOr("height", 0.0)) ?: 0f).dp),
+                .width((UniversalMembers.Width.read(node)?.let(::safeDp) ?: 0f).dp)
+                .height((UniversalMembers.Height.read(node)?.let(::safeDp) ?: 0f).dp),
         )
 }
 
