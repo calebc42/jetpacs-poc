@@ -814,9 +814,14 @@ class JetpacsComponentsSemanticsTest {
 
         val previewBounds = preview.getUnclippedBoundsInRoot()
         val sourceBounds = source.getUnclippedBoundsInRoot()
+        // Fixed tabs share the row's width equally; when that width is not a
+        // multiple of the tab count, Compose gives the remainder pixels to the
+        // first tabs, so the widths agree to within one pixel on any device.
+        val onePixel = with(compose.density) { 1f.toDp() }
         assertEquals(
-            previewBounds.right - previewBounds.left,
-            sourceBounds.right - sourceBounds.left,
+            (previewBounds.right - previewBounds.left).value,
+            (sourceBounds.right - sourceBounds.left).value,
+            onePixel.value,
         )
 
         compose.runOnIdle {
