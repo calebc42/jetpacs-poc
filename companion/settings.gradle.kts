@@ -30,6 +30,7 @@ include(":renderer:compose")
 include(":renderer:glance")
 include(":renderer:jetpacs")
 include(":renderer:material3")
+include(":renderer:material3-testing")
 include(":renderer:compose-testing")
 
 // External checkouts live under one explicitly configured collection. Only
@@ -57,3 +58,5 @@ project(":renderer:jetpacs").projectDir =
     file("../jetpacs-components/renderer/jetpacs")
 project(":renderer:material3").projectDir =
     file("renderer/material3")
+project(":renderer:material3-testing").projectDir =
+    file("renderer/material3-testing")

@@ -54,7 +54,7 @@ Paths below are relative to the Jetpacs repository root.
 | `ebp.el` | `../ebp.el` | Emacs session/wire endpoint, sync/completion, durable store, path helpers, ERT |
 | `ebp-org` | `../ebp-org` | Reusable Org protocol engine and tests |
 | `ebp-kmp` | `../ebp-kmp` | `:ebp-kmp`, `:wire`, generators, and Kotlin tests |
-| `ebp-compose` | `../ebp-compose` | `:renderer:model`, `:renderer:compose`, and generic extension projection tooling |
+| `ebp-compose` | `../ebp-compose` | `:renderer:model`, `:renderer:compose`, `:renderer:compose-testing`, and generic extension and member projection tooling |
 | Jetpacs module | `jetpacs-components` | Foundation design renderer, `jetpacs.components` and `jetpacs.design` manifests/projections, builders/tests |
 | `jetpacs-authoring` | `../jetpacs-authoring` | Shared inert Elisp authoring and source-inspection support |
 | Jetpacs module | `jetpacs-automations` | Automation model/runtime, applet, and tests |
@@ -78,6 +78,8 @@ The following stay in this repository:
 - `companion/core/*`: product read models, Room database/store, data
   projections, Navigation keys, and shared product tests;
 - `companion/renderer/glance`: the Jetpacs home-screen widget renderer;
+- `companion/renderer/material3-testing`: the recording Material host and
+  headless Material test controller (test configurations only);
 - `companion/renderer/material3`, `emacs/apps/jetpacs-material3`, and
   `emacs/apps/m3-catalog`: optional Material rendering, authoring, and catalog;
 - `renderer-extensions/jetpacs-material3.json`: the Material extension authority;

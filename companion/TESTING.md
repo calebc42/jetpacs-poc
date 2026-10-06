@@ -16,7 +16,22 @@ references when the explicit update task is used.
 ./gradlew :renderer:jetpacs:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:material3:compileDebugAndroidTestKotlin
 ./gradlew :renderer:material3:compileDebugScreenshotTestKotlin
+./gradlew :renderer:compose-testing:testDebugUnitTest
+./gradlew :renderer:material3:testDebugUnitTest --tests '*MaterialWidgetsGoldenReplayTest*'
 ```
+
+The two headless gates run under Robolectric (`@Config(sdk = [34])`, native
+graphics) with no device. `:renderer:compose-testing` replays every
+`widgets.golden` line through the core components. The Material golden replay
+mounts the production Material renderer against `RecordingMaterialHost`
+through `MaterialTestController` and proves that every `widgets.golden` and
+`jetpacs-material3.golden` line renders or degrades without throwing, that
+every bare descriptor line reaches the host exactly once, that text inputs
+and toggles publish state before their change action, and that an
+unadvertised type degrades to its children. Image nodes read
+`LocalMaterialImageSource`, which the controller stubs so no socket opens.
+Use the controllers for new renderer tests instead of hand-rolled inert
+hosts.
 
 The model suite pins registry-derived profiles, semantic name/default/state
 projection, and the no-Material dependency boundary for EBP, wire, core,
@@ -305,6 +320,7 @@ transitive Espresso cannot initialize on Android 17/API 37.
   :renderer:jetpacs:compileDebugAndroidTestKotlin \
   :renderer:material3:testDebugUnitTest \
   :renderer:material3:compileDebugAndroidTestKotlin \
+  :renderer:compose-testing:testDebugUnitTest \
   :app:testDebugUnitTest \
   :app:assembleDebug \
   :renderer:jetpacs:validateDebugScreenshotTest \
