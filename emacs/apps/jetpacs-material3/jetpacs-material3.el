@@ -25,14 +25,27 @@
  jetpacs-material3-node-schema
  jetpacs-material3-target-node-types)
 
+(defun jetpacs-material3--enum-values (node-type member)
+  "Return the enum domain of MEMBER on NODE-TYPE from the typed manifest.
+The values are generated into `jetpacs-material3-typed-node-schema' from
+renderer-extensions/jetpacs-material3.json, so the authoring checks and the
+Companion's admission read one definition."
+  (let* ((row (cdr (assoc node-type jetpacs-material3-typed-node-schema)))
+         (schema (or (cdr (assoc member (plist-get row :optional)))
+                     (cdr (assoc member (plist-get row :required))))))
+    (unless (eq (plist-get schema :type) 'enum)
+      (error "jetpacs-material3: %s.%s is not an enum member"
+             node-type member))
+    (plist-get schema :values)))
+
 (defconst jetpacs--material3-assist-chip-variants
-  '("flat" "elevated" "suggestion" "elevated_suggestion"))
+  (jetpacs-material3--enum-values "material3.assist_chip" "variant"))
 
 (defconst jetpacs--material3-split-button-variants
-  '("filled" "tonal" "elevated" "outlined"))
+  (jetpacs-material3--enum-values "material3.split_button" "variant"))
 
 (defconst jetpacs--material3-split-button-sizes
-  '("xsmall" "small" "medium" "large" "xlarge"))
+  (jetpacs-material3--enum-values "material3.split_button" "size"))
 
 (cl-defun jetpacs-material3-assist-chip
     (label &key on-tap icon variant enabled)

@@ -10,6 +10,14 @@ Paths in this guide are relative to the Jetpacs repository root:
 
 - `renderer-extensions/jetpacs-material3.json` owns extension identity, schemas,
   target support, and stateful rules; Kotlin and Elisp projections are generated.
+  It is a format-2 (typed) manifest: every member carries its type, enum
+  domain, item-object shape, or bounds, and the generated
+  `JETPACS_MATERIAL3_TYPED_NODE_SCHEMA` is installed into Companion admission
+  (`NodeSupport.NODE_VOCABULARY` and the app installation) exactly as the
+  `jetpacs.design` schema is. The enum domains live only here;
+  `jetpacs-material3.el` derives its variant and size constants from the
+  generated `jetpacs-material3-typed-node-schema`, and the EBP contract carries
+  no Material domain (SPEC §16.2.1, amendment #192).
 - `companion/renderer/material3` implements the native renderer in the existing
   Companion Gradle build as `:renderer:material3`.
 - `emacs/apps/jetpacs-material3` contains the optional public Elisp API.

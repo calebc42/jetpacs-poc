@@ -5,6 +5,7 @@ import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_EXTENSION
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_NODE_SCHEMA
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_STATEFUL_WHEN_PRESENT
+import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.material3.NodeSupport
 import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
 import com.calebc42.ebp.wire.NODE_SCHEMA
@@ -133,7 +134,7 @@ object CompanionRenderer {
             selectionOptions = JETPACS_COMPONENTS_SELECTION_OPTIONS,
             trueRequiresParent = JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT,
             extensions = extensionOwners,
-            extensionSchemas = if (designRuntimeEnabled) {
+            extensionSchemas = JETPACS_MATERIAL3_TYPED_NODE_SCHEMA + if (designRuntimeEnabled) {
                 JETPACS_DESIGN_TYPED_NODE_SCHEMA
             } else {
                 emptyMap()

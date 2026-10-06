@@ -42,11 +42,19 @@ class JetpacsMaterial3VocabularyTest {
         val schemas = manifest.getValue("node_schema").jsonObject
         for ((nodeType, generated) in JETPACS_MATERIAL3_NODE_SCHEMA) {
             val authored = schemas.getValue(nodeType).jsonObject
-            fun strings(name: String): Set<String> =
-                authored.getValue(name).jsonArray.map { it.jsonPrimitive.content }.toSet()
-            assertEquals("$nodeType required", strings("required"), generated.required)
-            assertEquals("$nodeType optional", strings("optional"), generated.optional)
+            // Format 2 authors member-to-type maps; the member NAMES are the
+            // same projection a format-1 array carried.
+            fun members(name: String): Set<String> = when (val value = authored.getValue(name)) {
+                is JsonObject -> value.keys
+                else -> value.jsonArray.map { it.jsonPrimitive.content }.toSet()
+            }
+            assertEquals("$nodeType required", members("required"), generated.required)
+            assertEquals("$nodeType optional", members("optional"), generated.optional)
+            val typed = JETPACS_MATERIAL3_TYPED_NODE_SCHEMA.getValue(nodeType)
+            assertEquals("$nodeType typed required", generated.required, typed.required.keys)
+            assertEquals("$nodeType typed optional", generated.optional, typed.optional.keys)
         }
+        assertEquals(JETPACS_MATERIAL3_NODE_SCHEMA.keys, JETPACS_MATERIAL3_TYPED_NODE_SCHEMA.keys)
         val targets = manifest.getValue("targets").jsonObject.mapValues { (_, value) ->
             value.jsonArray.map { it.jsonPrimitive.content }.toSet()
         }

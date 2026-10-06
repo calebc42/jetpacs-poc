@@ -1,5 +1,5 @@
 {
-  "format": 1,
+  "format": 2,
   "extension": "jetpacs.material3",
   "description": "Jetpacs' Material 3 design implementation for Jetpacs Compose nodes.",
   "node_types": [
@@ -23,39 +23,135 @@
     ],
     "notification": []
   },
+  "definitions": {
+    "identifier": {
+      "type": "string",
+      "min_length": 1,
+      "max_length": 128
+    },
+    "text": {
+      "type": "string",
+      "min_length": 0,
+      "max_length": 4096
+    },
+    "menu-item": {
+      "type": "object",
+      "required": {
+        "label": {"type": "ref", "ref": "text"},
+        "on_tap": {"type": "action"}
+      },
+      "optional": {
+        "icon": {"type": "ref", "ref": "identifier"},
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "bar-item": {
+      "type": "object",
+      "required": {
+        "label": {"type": "ref", "ref": "text"},
+        "icon": {"type": "ref", "ref": "identifier"},
+        "on_tap": {"type": "action"}
+      },
+      "optional": {
+        "enabled": {"type": "boolean"}
+      }
+    },
+    "fab-item": {
+      "type": "object",
+      "required": {
+        "label": {"type": "ref", "ref": "text"},
+        "icon": {"type": "ref", "ref": "identifier"},
+        "on_tap": {"type": "action"}
+      },
+      "optional": {}
+    }
+  },
   "node_schema": {
     "material3.assist_chip": {
-      "required": ["label"],
-      "optional": ["on_tap", "icon", "enabled", "variant"]
+      "required": {
+        "label": {"type": "ref", "ref": "text"}
+      },
+      "optional": {
+        "on_tap": {"type": "action"},
+        "icon": {"type": "ref", "ref": "identifier"},
+        "enabled": {"type": "boolean"},
+        "variant": {
+          "type": "enum",
+          "values": ["flat", "elevated", "suggestion", "elevated_suggestion"]
+        }
+      }
     },
     "material3.split_button": {
-      "required": ["on_tap"],
-      "optional": [
-        "label",
-        "icon",
-        "variant",
-        "size",
-        "trailing_icon",
-        "trailing_label",
-        "trailing_description",
-        "checked",
-        "on_change",
-        "on_trailing_tap",
-        "items",
-        "enabled"
-      ]
+      "required": {
+        "on_tap": {"type": "action"}
+      },
+      "optional": {
+        "label": {"type": "ref", "ref": "text"},
+        "icon": {"type": "ref", "ref": "identifier"},
+        "variant": {
+          "type": "enum",
+          "values": ["filled", "tonal", "elevated", "outlined"]
+        },
+        "size": {
+          "type": "enum",
+          "values": ["xsmall", "small", "medium", "large", "xlarge"]
+        },
+        "trailing_icon": {"type": "ref", "ref": "identifier"},
+        "trailing_label": {"type": "ref", "ref": "text"},
+        "trailing_description": {"type": "ref", "ref": "text"},
+        "checked": {"type": "boolean"},
+        "on_change": {"type": "action"},
+        "on_trailing_tap": {"type": "action"},
+        "items": {
+          "type": "array",
+          "items": {"type": "ref", "ref": "menu-item"},
+          "min_items": 0,
+          "max_items": 64
+        },
+        "enabled": {"type": "boolean"}
+      }
     },
     "material3.app_bar_row": {
-      "required": ["items"],
-      "optional": ["overflow_icon", "max_items"]
+      "required": {
+        "items": {
+          "type": "array",
+          "items": {"type": "ref", "ref": "bar-item"},
+          "min_items": 1,
+          "max_items": 64
+        }
+      },
+      "optional": {
+        "overflow_icon": {"type": "ref", "ref": "identifier"},
+        "max_items": {"type": "integer", "minimum": 1, "maximum": 64}
+      }
     },
     "material3.app_bar_column": {
-      "required": ["items"],
-      "optional": ["overflow_icon", "max_items"]
+      "required": {
+        "items": {
+          "type": "array",
+          "items": {"type": "ref", "ref": "bar-item"},
+          "min_items": 1,
+          "max_items": 64
+        }
+      },
+      "optional": {
+        "overflow_icon": {"type": "ref", "ref": "identifier"},
+        "max_items": {"type": "integer", "minimum": 1, "maximum": 64}
+      }
     },
     "material3.fab_menu": {
-      "required": ["items"],
-      "optional": ["icon", "close_icon"]
+      "required": {
+        "items": {
+          "type": "array",
+          "items": {"type": "ref", "ref": "fab-item"},
+          "min_items": 1,
+          "max_items": 64
+        }
+      },
+      "optional": {
+        "icon": {"type": "ref", "ref": "identifier"},
+        "close_icon": {"type": "ref", "ref": "identifier"}
+      }
     }
   },
   "stateful_when_present": {

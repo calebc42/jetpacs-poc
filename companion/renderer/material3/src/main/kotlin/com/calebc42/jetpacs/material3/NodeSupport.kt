@@ -87,6 +87,9 @@ object NodeSupport {
         extensions = mapOf(
             JETPACS_MATERIAL3_EXTENSION to JETPACS_MATERIAL3_NODE_SCHEMA.keys,
         ),
+        // The format-2 manifest types every Material member (enum domains,
+        // item objects, bounds); admission validates against it.
+        extensionSchemas = JETPACS_MATERIAL3_TYPED_NODE_SCHEMA,
     )
 
     private val appProfile: RendererProfile =
