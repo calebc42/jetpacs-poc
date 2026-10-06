@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.jetpacs.material3.testing.RecordingMaterialHost
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -37,7 +38,7 @@ class LazyColumnPinnedTest {
         val node = longList(pinned = true)
         val root = RenderCtx(
             surface = "app:sticky-test",
-            bridge = InertMaterialHost(),
+            bridge = RecordingMaterialHost(),
             configuration = configuration,
         )
         compose.setContent { RenderNode(node, root.child(node, 0)) }
@@ -58,7 +59,7 @@ class LazyColumnPinnedTest {
         val node = longList(pinned = true)
         val root = RenderCtx(
             surface = "app:ordinary-test",
-            bridge = InertMaterialHost(),
+            bridge = RecordingMaterialHost(),
             configuration = NodeSupport.COMPOSE_CONFIGURATION,
         )
         compose.setContent { RenderNode(node, root.child(node, 0)) }
@@ -76,7 +77,7 @@ class LazyColumnPinnedTest {
         var node by mutableStateOf(longList(pinned = false))
         val root = RenderCtx(
             surface = "app:sticky-retention-test",
-            bridge = InertMaterialHost(),
+            bridge = RecordingMaterialHost(),
             configuration = configuration,
         )
         compose.setContent {
@@ -116,7 +117,7 @@ class LazyColumnPinnedTest {
         var node by mutableStateOf(longList(pinned = true))
         val root = RenderCtx(
             surface = "app:sticky-target-test",
-            bridge = InertMaterialHost(),
+            bridge = RecordingMaterialHost(),
             configuration = configuration,
         )
         compose.setContent {
@@ -152,7 +153,7 @@ class LazyColumnPinnedTest {
         )
         val root = RenderCtx(
             surface = "app:sticky-resize-target-test",
-            bridge = InertMaterialHost(),
+            bridge = RecordingMaterialHost(),
             configuration = configuration,
         )
         compose.setContent {
@@ -192,7 +193,7 @@ class LazyColumnPinnedTest {
         var node by mutableStateOf(pinnedTargetList(targeted = false))
         val root = RenderCtx(
             surface = "app:pinned-scroll-target-test",
-            bridge = InertMaterialHost(),
+            bridge = RecordingMaterialHost(),
             configuration = configuration,
         )
         compose.setContent {

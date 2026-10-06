@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.jetpacs.material3.testing.RecordingMaterialHost
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.semantics.SemanticsActions
@@ -30,7 +31,7 @@ class ChromeStylesSeamTest {
     @get:Rule
     val compose = createAndroidComposeRule<SemanticsHostActivity>()
 
-    private val bridge = InertMaterialHost()
+    private val bridge = RecordingMaterialHost()
 
     private fun spec(json: String): JsonObject = Json.parseToJsonElement(json) as JsonObject
 

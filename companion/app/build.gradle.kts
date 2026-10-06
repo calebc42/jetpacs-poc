@@ -255,6 +255,7 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(projects.renderer.material3Testing)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     // Compose UI Test 1.12 still requests Espresso 3.5.0 transitively. Pin the
     // matching AndroidX Test 1.7 line so instrumentation also runs on API 37.

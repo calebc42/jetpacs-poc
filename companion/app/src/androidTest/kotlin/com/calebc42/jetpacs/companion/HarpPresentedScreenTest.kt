@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion
 
+import com.calebc42.jetpacs.material3.testing.RecordingMaterialHost
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -44,7 +45,7 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class HarpPresentedScreenTest {
     @get:Rule val compose = createAndroidComposeRule<CompanionTestHostActivity>()
-    private val host = InertHost()
+    private val host = RecordingMaterialHost()
 
     private fun present(name: String) {
         val source = InstrumentationRegistry.getInstrumentation().context.assets
@@ -72,7 +73,7 @@ class HarpPresentedScreenTest {
     @Test fun profileOpensUsingAnOpaqueIdentity() {
         present("profiles-light")
         compose.onNodeWithText("Example Profile").assertIsDisplayed().performClick()
-        assertEquals("harp.profile", host.actions.single().descriptor["action"]?.jsonPrimitive?.content)
+        assertEquals("harp.profile", host.dispatched.single().request.descriptor["action"]?.jsonPrimitive?.content)
         compose.onNodeWithContentDescription("Refresh profiles").assertWidthIsAtLeast(48.dp)
         screenshot("profiles-light")
     }
@@ -82,12 +83,12 @@ class HarpPresentedScreenTest {
         compose.onNodeWithText("Synthetic journal #sample(3).").performScrollTo()
             .assert(hasSetTextAction()).performTextReplacement("Changed on tablet #sample(4)")
         compose.onNodeWithText("Save").performScrollTo().performClick()
-        val save = host.actions.single().descriptor
+        val save = host.dispatched.single().request.descriptor
         assertEquals("harp.save", save["action"]?.jsonPrimitive?.content)
         val fields = (save["capture_fields"] as JsonArray).map { it.jsonPrimitive.content }
         assertEquals(6, fields.size)
-        assertTrue(host.publishedFields.any { (id, value) ->
-            id in fields && value?.jsonPrimitive?.content == "Changed on tablet #sample(4)"
+        assertTrue(host.published.any {
+            it.id in fields && it.value?.jsonPrimitive?.content == "Changed on tablet #sample(4)"
         })
         screenshot("entry-form-light")
     }
@@ -107,7 +108,7 @@ class HarpPresentedScreenTest {
     @Test fun doseButtonsDispatchTheSelectedOccurrence() {
         present("medications-light")
         compose.onAllNodesWithText("Taken")[0].performScrollTo().performClick()
-        val action = host.actions.single().descriptor
+        val action = host.dispatched.single().request.descriptor
         assertEquals("harp.dose", action["action"]?.jsonPrimitive?.content)
         val args = action["args"] as JsonObject
         assertEquals("taken", args["state"]?.jsonPrimitive?.content)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion
 
+import com.calebc42.jetpacs.material3.testing.RecordingMaterialHost
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
@@ -43,7 +44,7 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class OrgzlyPresentedScreenTest {
     @get:Rule val compose = createAndroidComposeRule<CompanionTestHostActivity>()
-    private val host = InertHost()
+    private val host = RecordingMaterialHost()
 
     private fun present(name: String) {
         val source = InstrumentationRegistry.getInstrumentation().context.assets
@@ -71,7 +72,7 @@ class OrgzlyPresentedScreenTest {
     @Test fun notebookRowsOpenOneOpaqueBookAction() {
         present("notebooks-light")
         compose.onNodeWithText("gtd").assertIsDisplayed().performClick()
-        assertEquals("orgzly.book.open", host.actions.single().descriptor["action"]?.jsonPrimitive?.content)
+        assertEquals("orgzly.book.open", host.dispatched.single().request.descriptor["action"]?.jsonPrimitive?.content)
         compose.onNodeWithContentDescription("Refresh notebooks").assertWidthIsAtLeast(48.dp)
         screenshot("notebooks-light")
     }
@@ -79,9 +80,9 @@ class OrgzlyPresentedScreenTest {
     @Test fun outlineRichTextKeepsOneNoteActionAndSeparateFoldTarget() {
         present("outline-light")
         compose.onNodeWithText("Call mom", substring = true).assertIsDisplayed().assertHasClickAction().performClick()
-        assertEquals("orgzly.note.open", host.actions.single().descriptor["action"]?.jsonPrimitive?.content)
+        assertEquals("orgzly.note.open", host.dispatched.single().request.descriptor["action"]?.jsonPrimitive?.content)
         compose.onNodeWithContentDescription("Fold or unfold note").assertWidthIsAtLeast(48.dp).performClick()
-        assertEquals("orgzly.note.fold", host.actions.last().descriptor["action"]?.jsonPrimitive?.content)
+        assertEquals("orgzly.note.fold", host.dispatched.last().request.descriptor["action"]?.jsonPrimitive?.content)
         screenshot("outline-light")
     }
 
@@ -101,12 +102,12 @@ class OrgzlyPresentedScreenTest {
         screenshot("note-light")
         compose.onNodeWithText("Call mom").performTextReplacement("Changed on tablet")
         compose.onNodeWithText("Save note").performScrollTo().performClick()
-        val save = host.actions.single().descriptor
+        val save = host.dispatched.single().request.descriptor
         assertEquals("orgzly.note.save", save["action"]?.jsonPrimitive?.content)
         val fields = (save["capture_fields"] as JsonArray).map { it.jsonPrimitive.content }
         assertEquals(7, fields.size)
-        assertTrue(host.publishedFields.any { (id, value) ->
-            id in fields && value?.jsonPrimitive?.content == "Changed on tablet"
+        assertTrue(host.published.any {
+            it.id in fields && it.value?.jsonPrimitive?.content == "Changed on tablet"
         })
     }
 }

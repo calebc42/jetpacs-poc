@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.jetpacs.material3.testing.RecordingMaterialHost
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
@@ -63,7 +64,7 @@ class ScopedCoreOverrideDispatchTest {
     @get:Rule
     val compose = createAndroidComposeRule<SemanticsHostActivity>()
 
-    private val bridge = InertMaterialHost()
+    private val bridge = RecordingMaterialHost()
 
     @Test
     fun nearestAdmittedScopeOverridesCoreWhileExtensionsAndOutsideStayCanonical() {
@@ -249,8 +250,8 @@ class ScopedCoreOverrideDispatchTest {
         compose.onNodeWithText("Visual").assertIsNotSelected().performClick()
         compose.runOnIdle {
             assertEquals(1, bridge.dispatched.size)
-            assertEquals(descriptor, bridge.dispatched.single().descriptor)
-            assertEquals(JsonPrimitive(1), bridge.dispatched.single().value)
+            assertEquals(descriptor, bridge.dispatched.single().request.descriptor)
+            assertEquals(JsonPrimitive(1), bridge.dispatched.single().request.value)
         }
         compose.onNodeWithText("Preview").assertIsSelected()
         compose.onNodeWithText("Visual").assertIsNotSelected()
@@ -333,90 +334,4 @@ private class LocalEditorOverride(
     ) {
         BasicText("Local editor override", modifier)
     }
-}
-
-/** Package-visible inert bridge shared by renderer instrumentation tests. */
-internal class InertMaterialHost : MaterialRendererHost {
-    val dispatched = mutableListOf<RendererActionRequest>()
-    override val inputDisplays = MutableStateFlow<Map<Pair<String, String>, InputDisplay>>(emptyMap())
-    override val maxFieldBytes = 65_536
-    override val maxEditorBytes = 65_536
-    override val editorConnectionPhase = MutableStateFlow(EditorConnectionPhase.READY)
-    override val editorMirrors = MutableStateFlow<Map<Pair<String, String>, EditorMirror>>(emptyMap())
-    override val editorAnnotations =
-        MutableStateFlow<Map<Pair<String, String>, EditorAnnotationState>>(emptyMap())
-    override val completionOffers =
-        MutableStateFlow<Map<Pair<String, String>, CompletionOffer>>(emptyMap())
-    override val completionOfferViews =
-        MutableStateFlow<Map<Pair<String, String>, CompletionOfferView>>(emptyMap())
-    override val candidateDocuments =
-        MutableStateFlow<Map<Pair<String, String>, CandidateDocument>>(emptyMap())
-    override var completionNarrowing = CompletionNarrowing.STRICT
-    override val variantSelections: StateFlow<Map<Pair<String, String>, String>> =
-        MutableStateFlow(emptyMap())
-    override val retainedPresentationIncarnations: StateFlow<Map<Pair<String, String>, Long>> =
-        MutableStateFlow(emptyMap())
-
-    override fun dispatch(
-        request: RendererActionRequest,
-        onOutcome: (RendererActionOutcome) -> Unit,
-    ): ActionHandoff {
-        dispatched += request
-        return ActionHandoff.HandedOff
-    }
-    override fun publishState(
-        surface: String,
-        id: String,
-        value: JsonElement?,
-        caret: Int?,
-    ) = Unit
-    override fun dialogDefaults(dialogId: String): JsonObject? = null
-    override fun submitDialog(
-        dialogId: String,
-        value: JsonElement?,
-        fields: JsonObject,
-        secret: com.calebc42.ebp.renderer.model.RendererVolatileSecret?,
-        onOutcome: (RendererActionOutcome) -> Unit,
-    ) = ActionHandoff.HandedOff
-    override fun dismissDialog(dialogId: String) = Unit
-    override fun requestEditorCompletion(document: String, editorId: String) = Unit
-    override fun selectEditorCompletion(
-        document: String,
-        editorId: String,
-        label: String,
-        insert: String,
-    ) = Unit
-    override fun requestCandidateDocument(
-        document: String,
-        editorId: String,
-        index: Int,
-        epoch: Long,
-    ) = Unit
-    override fun publishEditorEdit(
-        document: String,
-        editorId: String,
-        start: ScalarPos,
-        deletedScalars: Int,
-        inserted: String,
-        base: String,
-        onOutcome: (EditorEditOutcome) -> Unit,
-    ) = Unit
-    override fun publishEditorCaret(
-        document: String,
-        editorId: String,
-        cursorUtf16: Int,
-        selectionStartUtf16: Int,
-        selectionEndUtf16: Int,
-    ) = Unit
-    override fun dispatchEditorCommand(
-        surface: String,
-        document: String,
-        editorId: String,
-        command: String,
-        cursorUtf16: Int,
-        selectionStartUtf16: Int,
-        selectionEndUtf16: Int,
-    ) = Unit
-    override fun pieMenuSelect(menuId: String, categoryIndex: Int, itemIndex: Int?) = Unit
-    override fun pieMenuDismiss(menuId: String) = Unit
 }
