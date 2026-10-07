@@ -33,7 +33,7 @@
   "The SPEC version this vocabulary was generated from.")
 
 (defconst jetpacs-universal-attributes
-  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner :border :alpha :clip :align_self :semantics :bind :template)
+  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner :border :alpha :clip :align_self :semantics :bind :template :visible_when)
   "Contract-projected universal member keywords accepted on every Node.")
 
 (defconst jetpacs-semantics-schema
@@ -110,9 +110,15 @@
 ;; SPEC 4.5 / 13.8.5 (amendment #195): elements expanded from one template.
 (defconst jetpacs-max-template-items
   10000)
+;; SPEC 4.5 / 13.8.6 (amendment #198): predicates on one conditional node
+;; and in one snapshot.
+(defconst jetpacs-max-visible-predicates-per-node
+  8)
+(defconst jetpacs-max-visible-predicates-per-snapshot
+  10000)
 
 (defconst jetpacs-data-contract
-  '(:capability "data.model" :pointer (:rfc 6901 :absolute_outside_template t :relative_inside_template t :max_bytes_limit "max_pointer_bytes" :max_segments_limit "max_pointer_segments") :ops (:set (:required ("op" "path" "value") :optional ()) :remove (:required ("op" "path") :optional ()) :insert (:required ("op" "path" "value") :optional ()) :max_ops_limit "max_data_ops" :insert_feature "data.insert") :unbindable_members ("t" "id" "key" "children" "bind" "template" "args" "meta" "semantics" "variants" "swipe_start" "swipe_end") :unbindable_tags ("action-descriptor" "node" "node-array" "variant-array" "swipe-object" "semantics-object" "menu-item-array" "menu-group-array" "tab-item-array" "rail-item-array" "button-group-item-array" "label-on-tap-object" "toolbar-id-or-item-array" "canvas-op-array" "table-row-array" "rich-span-array") :template (:feature "data.template" :attribute "template" :children_binding "children" :max_items_limit "max_template_items" :max_nesting 4 :root_must_bind ("key") :root_forbidden_members ("key" "id") :forbidden_inside (:members ("id") :descriptor_members ("capture_fields") :node_types ("editor" "variant_host") :stateful t) :injection "item" :admitted_in ("app")))
+  '(:capability "data.model" :pointer (:rfc 6901 :absolute_outside_template t :relative_inside_template t :max_bytes_limit "max_pointer_bytes" :max_segments_limit "max_pointer_segments") :ops (:set (:required ("op" "path" "value") :optional ()) :remove (:required ("op" "path") :optional ()) :insert (:required ("op" "path" "value") :optional ()) :max_ops_limit "max_data_ops" :insert_feature "data.insert") :unbindable_members ("t" "id" "key" "children" "bind" "template" "args" "meta" "semantics" "variants" "swipe_start" "swipe_end" "visible_when") :unbindable_tags ("action-descriptor" "node" "node-array" "variant-array" "swipe-object" "semantics-object" "menu-item-array" "menu-group-array" "tab-item-array" "rail-item-array" "button-group-item-array" "label-on-tap-object" "toolbar-id-or-item-array" "canvas-op-array" "table-row-array" "rich-span-array") :template (:feature "data.template" :attribute "template" :children_binding "children" :max_items_limit "max_template_items" :max_nesting 4 :root_must_bind ("key") :root_forbidden_members ("key" "id") :forbidden_inside (:members ("id") :descriptor_members ("capture_fields") :node_types ("editor" "variant_host") :stateful t) :injection "item" :admitted_in ("app")) :visible (:feature "data.visible" :attribute "visible_when" :ops (:no_value ("present" "absent" "empty" "non_empty") :scalar_value ("eq" "neq") :number_value ("lt" "lte" "gt" "gte")) :operand_types ("string" "number" "boolean") :null_is_nothing t :placement "children" :siblings_must_key t :forbidden_inside (:members ("id") :descriptor_members () :node_types ("editor" "variant_host") :stateful t) :max_per_node_limit "max_visible_predicates_per_node" :max_per_snapshot_limit "max_visible_predicates_per_snapshot" :admitted_in ("app")))
   "Contract-projected SPEC 13.8 data-document rules: the gating
 capability, the pointer and DataOp shapes, and the members and field
 types a `bind' may never name.")
@@ -209,6 +215,8 @@ types a `bind' may never name.")
     ("button.shape_role" . ("leading" "middle" "trailing" "top" "bottom"))
     ("theme.layout_direction" . ("ltr" "rtl"))
     ("window.size_class" . ("compact" "medium" "expanded"))
+    ("locale.hour_cycle" . ("h12" "h23"))
+    ("visible.op" . ("present" "absent" "empty" "non_empty" "eq" "neq" "lt" "lte" "gt" "gte"))
     ("snackbar.result" . ("dismissed" "action")))
   "Contract-projected enum values keyed by their qualified field name.")
 
@@ -448,7 +456,8 @@ types a `bind' may never name.")
     ("weight" . "number")
     ("corner" . "number-or-corner-object")
     ("border" . "border-object")
-    ("alpha" . "number"))
+    ("alpha" . "number")
+    ("visible_when" . "visible-when-array"))
   "Contract-projected wire field names and their declared value types.")
 
 (defconst jetpacs-action-hook-keys

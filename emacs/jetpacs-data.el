@@ -147,6 +147,162 @@ reaches nothing, or a null member, yields FOUND nil."
      spec (lambda (node _path) (when (plist-member node :template) (throw 'templated t))))
     nil))
 
+(defun jetpacs-data-conditional-p (spec)
+  "Non-nil when any node of SPEC carries `:visible_when' (SPEC 13.8.6)."
+  (catch 'conditional
+    (jetpacs-data--walk-nodes
+     spec (lambda (node _path) (when (plist-member node :visible_when) (throw 'conditional t))))
+    nil))
+
+(defconst jetpacs-data--probe (make-symbol "probe")
+  "The scope of the one check a template gets when its array is empty.")
+
+;;;; Conditional nodes (SPEC 13.8.6, amendment #198)
+
+(defvar jetpacs-data--predicates 0
+  "Predicates seen so far in one walk (SPEC 13.8.6).
+Bound by each walk and checked against
+`jetpacs-max-visible-predicates-per-snapshot'.")
+
+(defun jetpacs-data--json-type (value)
+  "The JSON type name of VALUE in the document representations."
+  (cond ((null value) "null")
+        ((memq value '(t :json-false)) "boolean")
+        ((numberp value) "number")
+        ((stringp value) "string")
+        ((vectorp value) "array")
+        ((jetpacs-data--object-p value) "object")
+        (t "other")))
+
+(defun jetpacs-data--holds (op found reached operand)
+  "SPEC 13.8.6: whether predicate OP holds for what its pointer REACHED.
+FOUND is nil when the pointer reached nothing or a JSON null — the
+resolver's own convention, so null is nothing here as it is for a binding."
+  (pcase op
+    ("present" (and found t))
+    ("absent" (not found))
+    (_ (and found
+            (pcase op
+              ("empty"
+               (or (and (stringp reached) (string-empty-p reached))
+                   (and (vectorp reached) (zerop (length reached)))
+                   (and (hash-table-p reached) (zerop (hash-table-count reached)))))
+              ("non_empty"
+               (or (and (stringp reached) (not (string-empty-p reached)))
+                   (and (vectorp reached) (> (length reached) 0))
+                   (and (hash-table-p reached) (> (hash-table-count reached) 0))
+                   (and (consp reached) (keywordp (car reached)))))
+              ((or "eq" "neq")
+               (let ((same (and (equal (jetpacs-data--json-type reached)
+                                       (jetpacs-data--json-type operand))
+                                (if (and (numberp reached) (numberp operand))
+                                    (= reached operand)
+                                  (jetpacs-data--same-p reached operand)))))
+                 (if (equal op "eq") same (not same))))
+              (_ (and (jetpacs-data--finite-number-p reached)
+                      (jetpacs-data--finite-number-p operand)
+                      (pcase op
+                        ("lt" (< reached operand))
+                        ("lte" (<= reached operand))
+                        ("gt" (> reached operand))
+                        ("gte" (>= reached operand))))))))))
+
+(defun jetpacs-data-visible-p (predicates data scope)
+  "Whether the SPEC 13.8.6 conjunction PREDICATES holds against DATA.
+SCOPE is the template item for relative pointers, nil outside a template,
+or `jetpacs-data--probe' for the empty-array check, where a relative
+predicate is present-but-unknown and holds.  Total: an index token that
+is not a decimal, a pointer that reaches nothing or a null, and a value of
+the wrong type each fail the predicate, never the snapshot."
+  (cl-every
+   (lambda (pred)
+     (pcase-let ((`(,absolute . ,tokens)
+                  (jetpacs-pointer-parse (plist-get pred :path) "visible_when" (and scope t))))
+       (if (and (not absolute) (eq scope jetpacs-data--probe))
+           t
+         (let ((hit (condition-case nil
+                        (jetpacs-data-resolve (if absolute data scope) tokens "visible_when")
+                      (jetpacs-data-error (cons nil nil)))))
+           (jetpacs-data--holds (plist-get pred :op) (car hit) (cdr hit)
+                                (plist-get pred :value))))))
+   predicates))
+
+(defun jetpacs-data--check-conditional-subtree (node path)
+  "SPEC 13.8.6: signal unless NODE and its subtree may be conditional.
+The closed list a conditional node may not contain: a stateful node, an
+editor, a `variant_host', an `id' — reported at the offending node or
+member under PATH.  A descriptor with `capture_fields' may stay: a hidden
+node never dispatches, and the ids it names live outside the subtree."
+  (let ((forbidden-types
+         (plist-get (plist-get jetpacs--visible-contract :forbidden_inside) :node_types)))
+    (cl-labels
+        ((scan (value vpath)
+           (cond
+            ((vectorp value)
+             (let ((i -1))
+               (mapc (lambda (child) (scan child (format "%s[%d]" vpath (cl-incf i)))) value)))
+            ((hash-table-p value)
+             (maphash (lambda (k child) (scan child (format "%s.%s" vpath k))) value))
+            ((and (consp value) (keywordp (car value)))
+             (let ((node-p (plist-member value :t)) (type (plist-get value :t)))
+               (when node-p
+                 (when (or (member type forbidden-types)
+                           (and (member type jetpacs-stateful-node-types)
+                                (pcase type
+                                  ((or "button" "icon_button") (plist-member value :checked))
+                                  (_ t))))
+                   (signal 'jetpacs-data-error
+                           (list vpath (format "%s is prohibited under a conditional node (SPEC 13.8.6)"
+                                               type))))
+                 (when (plist-member value :id)
+                   (signal 'jetpacs-data-error
+                           (list (concat vpath ".id")
+                                 "id is prohibited under a conditional node (SPEC 13.8.6)"))))
+               (let ((p value))
+                 (while p
+                   (let ((k (pop p)) (child (pop p)))
+                     (unless (and node-p (memq k '(:bind :args :meta :value)))
+                       (scan child (format "%s.%s" vpath (jetpacs--wire-name k))))))))))))
+      (scan node path))))
+
+(defun jetpacs-data--check-conditional-array (children path in-scope)
+  "SPEC 13.8.6: the structural rules of the `children' vector at PATH.
+Returns the indices of the conditional elements, oldest first.  When any
+element is conditional every element must carry `:key'; each conditional
+element's predicates are checked, counted against the snapshot limit, and
+its subtree scanned."
+  (let ((conditional nil) (i -1))
+    (mapc (lambda (el)
+            (cl-incf i)
+            (when (and (jetpacs-node-p el) (plist-member el :t) (plist-member el :visible_when))
+              (push i conditional)))
+          children)
+    (setq conditional (nreverse conditional))
+    (when conditional
+      (let ((j -1))
+        (mapc (lambda (el)
+                (cl-incf j)
+                (unless (and (jetpacs-node-p el) (plist-member el :key))
+                  (signal 'jetpacs-data-error
+                          (list (format "%s[%d].key" path j)
+                                "every sibling of a conditional node MUST carry key (SPEC 13.8.6)"))))
+              children))
+      (dolist (k conditional)
+        (let* ((el (aref children k)) (epath (format "%s[%d]" path k))
+               (preds (plist-get el :visible_when)))
+          (jetpacs-check-visible-when preds (concat epath ".visible_when") in-scope)
+          (let ((n -1))
+            (mapc (lambda (_pred)
+                    (cl-incf n)
+                    (when (> (cl-incf jetpacs-data--predicates)
+                             jetpacs-max-visible-predicates-per-snapshot)
+                      (signal 'jetpacs-data-error
+                              (list (format "%s.visible_when[%d]" epath n)
+                                    "exceeds max_visible_predicates_per_snapshot"))))
+                  preds))
+          (jetpacs-data--check-conditional-subtree el epath))))
+    conditional))
+
 (defun jetpacs-data--walk-nodes (value fn &optional path)
   "Call FN with each node plist of VALUE and its SPEC 13.8 path.
 A `:template' member is walked as the node it is; `:bind' and the opaque
@@ -179,12 +335,17 @@ template item scope, SPEC 13.8.5), the authored-and-bound conflict,
 `jetpacs-max-bindings-per-snapshot', and every template's structural
 rules; a document is not consulted, so a required member whose pointer
 reaches nothing is the Companion's to refuse.  Returns the binding count."
-  (let ((count 0))
+  (let ((count 0) (jetpacs-data--predicates 0))
     (cl-labels
-        ((check-node (node path in-scope template-root)
+        ((check-node (node path in-scope template-root in-children)
            (let ((type (plist-get node :t))
                  (bind (plist-get node :bind))
                  (templated (plist-member node :template)))
+             ;; SPEC 13.8.6: admitted only on an element of a children array.
+             (when (and (plist-member node :visible_when) (not in-children))
+               (signal 'jetpacs-data-error
+                       (list (concat path ".visible_when")
+                             "visible_when is admitted only on an element of a children array (SPEC 13.8.6)")))
              (when templated
                (jetpacs--check-templated-node node path)
                ;; Nested templates are scanned by their enclosing one.
@@ -209,7 +370,7 @@ reaches nothing is the Companion's to refuse.  Returns the binding count."
                        (signal 'jetpacs-data-error
                                (list bpath (format "%s is both authored and bound" name))))
                      (jetpacs-pointer-tokens pointer bpath in-scope)))))))
-         (walk (value path in-scope template-root)
+         (walk (value path in-scope template-root &optional in-children)
            (cond
             ((vectorp value)
              (let ((i -1))
@@ -221,7 +382,7 @@ reaches nothing is the Companion's to refuse.  Returns the binding count."
                       value))
             ((and (consp value) (keywordp (car value)))
              (let ((node-p (plist-member value :t)))
-               (when node-p (check-node value path in-scope template-root))
+               (when node-p (check-node value path in-scope template-root in-children))
                (let ((p value))
                  (while p
                    (let ((k (pop p)) (child (pop p)))
@@ -229,13 +390,18 @@ reaches nothing is the Companion's to refuse.  Returns the binding count."
                       ((and node-p (memq k jetpacs--opaque-members)))
                       ((and node-p (eq k :template))
                        (walk child (concat path ".template") t t))
+                      ((and node-p (eq k :children) (vectorp child))
+                       ;; SPEC 13.8.6: the children array's structural rules,
+                       ;; then every element as a children element.
+                       (let ((cpath (concat path ".children")) (i -1))
+                         (jetpacs-data--check-conditional-array child cpath in-scope)
+                         (mapc (lambda (el)
+                                 (walk el (format "%s[%d]" cpath (cl-incf i)) in-scope nil t))
+                               child)))
                       (t (walk child (format "%s.%s" path (jetpacs--wire-name k))
                                in-scope nil)))))))))))
       (walk spec "spec" nil nil))
     count))
-
-(defconst jetpacs-data--probe (make-symbol "probe")
-  "The scope of the one check a template gets when its array is empty.")
 
 (defconst jetpacs-data--hook-keywords
   (mapcar (lambda (n) (intern (concat ":" n))) jetpacs-action-hook-keys)
@@ -286,9 +452,11 @@ violation is reported at the authored template's path.  With STRIP
 non-nil the `:bind' and `:template' members are removed and every remote
 descriptor inside an expanded item receives the item's key as `:item' in
 its `:args', as a snapshot bound for a Companion without `data.model' or
-without the `data.template' feature needs."
+without the `data.template' feature needs; a `:visible_when' (SPEC
+13.8.6) is evaluated, hidden children are dropped, and with STRIP the
+attribute is removed from the shown ones."
   (jetpacs-data-check-document data)
-  (let ((count 0))
+  (let ((count 0) (jetpacs-data--predicates 0))
     (cl-labels
         ((walk (value path scope depth item)
            (cond
@@ -306,9 +474,24 @@ without the `data.template' feature needs."
                out))
             ((and (consp value) (keywordp (car value)))
              (if (plist-member value :t)
-                 (walk-node value path scope depth nil item)
+                 (walk-node value path scope depth nil item nil)
                (walk-plist value path scope depth item)))
             (t value)))
+         (walk-children (children path scope depth item)
+           ;; SPEC 13.8.6: evaluate every conditional element before anything
+           ;; beneath it is resolved; a failed conjunction drops the element.
+           (jetpacs-data--check-conditional-array children path scope)
+           (let ((i -1) out)
+             (mapc (lambda (el)
+                     (let ((epath (format "%s[%d]" path (cl-incf i))))
+                       (cond
+                        ((and (jetpacs-node-p el) (plist-member el :t))
+                         (when (or (not (plist-member el :visible_when))
+                                   (jetpacs-data-visible-p (plist-get el :visible_when) data scope))
+                           (push (walk-node el epath scope depth nil item t) out)))
+                        (t (push (walk el epath scope depth item) out)))))
+                   children)
+             (vconcat (nreverse out))))
          (walk-plist (plist path scope depth item)
            (let (out)
              (while plist
@@ -317,12 +500,17 @@ without the `data.template' feature needs."
                  (push (walk v (format "%s.%s" path (jetpacs--wire-name k)) scope depth item)
                        out)))
              (nreverse out)))
-         (walk-node (node path scope depth template-root item)
+         (walk-node (node path scope depth template-root item in-children)
            (let* ((type (plist-get node :t))
                   (bind (plist-get node :bind))
                   (templated (plist-member node :template))
                   (expansion 'none)
                   resolved out)
+             ;; SPEC 13.8.6: admitted only on an element of a children array.
+             (when (and (plist-member node :visible_when) (not in-children))
+               (signal 'jetpacs-data-error
+                       (list (concat path ".visible_when")
+                             "visible_when is admitted only on an element of a children array (SPEC 13.8.6)")))
              ;; SPEC 13.8.5: the structural rules once, at the authored
              ;; path; copies and nested templates were covered by that scan.
              (when (and templated (null scope))
@@ -340,9 +528,12 @@ without the `data.template' feature needs."
                (while p
                  (let ((k (pop p)) (v (pop p)))
                    (cond
-                    ((and (memq k '(:bind :template)) strip))
-                    ((memq k '(:bind :template)) (push k out) (push v out))
+                    ((and (memq k '(:bind :template :visible_when)) strip))
+                    ((memq k '(:bind :template :visible_when)) (push k out) (push v out))
                     ((memq k jetpacs--opaque-members) (push k out) (push v out))
+                    ((and (eq k :children) (vectorp v))
+                     (push k out)
+                     (push (walk-children v (concat path ".children") scope depth item) out))
                     (t (push k out)
                        (push (walk v (format "%s.%s" path (jetpacs--wire-name k))
                                    scope depth item)
@@ -356,7 +547,7 @@ without the `data.template' feature needs."
                  (if (zerop (length expansion))
                      (progn
                        (walk-node template (concat path ".template")
-                                  jetpacs-data--probe (1+ depth) t nil)
+                                  jetpacs-data--probe (1+ depth) t nil nil)
                        (setq out (plist-put out :children [])))
                    (let ((keys (make-hash-table :test #'equal)) (i -1))
                      (setq out
@@ -365,7 +556,7 @@ without the `data.template' feature needs."
                                        (mapcar (lambda (element)
                                                  (let* ((cpath (format "%s.children[%d]" path (cl-incf i)))
                                                         (copy (walk-node template cpath element
-                                                                         (1+ depth) t nil))
+                                                                         (1+ depth) t nil nil))
                                                         (key (plist-get copy :key)))
                                                    ;; SPEC 16.1 after expansion: the
                                                    ;; bound keys are the copies' identity.

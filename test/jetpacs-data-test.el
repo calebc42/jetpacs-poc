@@ -24,15 +24,23 @@
   "The ebp specification checkout holding goldens/.")
 
 (defun jetpacs-data-test--vectors ()
+  "The data.golden vectors as (INDEX . VECTOR).
+The spec and the expectation are plists, the IR authors write; the data
+document is re-parsed as hash tables, the lossless document form: a plist
+`()' is nil, which is JSON null, so an empty object has no plist spelling."
   (with-temp-buffer
     (insert-file-contents
      (expand-file-name "goldens/data.golden" jetpacs-data-test--ebp-spec-dir))
     (cl-loop for line in (split-string (buffer-string) "\n" t)
-             collect (cons (substring line 0 2)
-                           (json-parse-string
-                            (substring line 3)
-                            :object-type 'plist :array-type 'array
-                            :null-object nil :false-object :json-false)))))
+             collect (let* ((text (substring line 3))
+                            (vector (json-parse-string
+                                     text :object-type 'plist :array-type 'array
+                                     :null-object nil :false-object :json-false))
+                            (documents (json-parse-string
+                                        text :object-type 'hash-table :array-type 'array
+                                        :null-object nil :false-object :json-false)))
+                       (cons (substring line 0 2)
+                             (plist-put vector :data (gethash "data" documents)))))))
 
 (ert-deftest jetpacs-data-test-every-golden-vector-reproduces ()
   "SPEC 24.5: the materialization corpus, known answer by known answer."
@@ -282,6 +290,101 @@ no bindings."
       (should (equal (plist-get (aref (plist-get sent :children) 0) :key) "n1")))
     ;; The analysis gates see the template as the node it is.
     (should (member "text" (plist-get (jetpacs-shell--analyze-spec spec) :types)))))
+
+(ert-deftest jetpacs-data-test-conditional-nodes-build-and-evaluate ()
+  "SPEC 13.8.6 (#198): `jetpacs-when' builds a checked predicate,
+`jetpacs-with-attrs' places it, the materializer evaluates it, strip mode
+drops hidden nodes and the attribute, and the structural rules signal at
+the authored path."
+  (let* ((warn (jetpacs-with-attrs (jetpacs-text (jetpacs-ref "/planning/feedback"))
+                                   :key "warn"
+                                   :visible_when (vector (jetpacs-when "/planning/feedback_kind"
+                                                                       "eq" "warning"))))
+         (info (jetpacs-with-attrs (jetpacs-text "info") :key "info"
+                                   :visible_when (vector (jetpacs-when "/planning/feedback_kind"
+                                                                       "eq" "info"))))
+         (always (jetpacs-with-attrs (jetpacs-text "Planning") :key "always"))
+         (spec (jetpacs-column warn info always))
+         (data (list :planning (list :feedback "Deadline first" :feedback_kind "warning"))))
+    (should (equal (jetpacs-when "/a" "present") '(:path "/a" :op "present")))
+    ;; A null operand is not a scalar: a reached null is nothing (SPEC 13.8.6).
+    (should-error (jetpacs-when "/a" "eq" nil) :type 'jetpacs-data-error)
+    (should (equal (jetpacs-when "/a" "eq" :json-false) '(:path "/a" :op "eq" :value :json-false)))
+    (should (jetpacs-data-conditional-p spec))
+    ;; Authored: the attribute is a vector of one predicate on the first child.
+    (should (= 1 (length (plist-get (aref (plist-get spec :children) 0) :visible_when))))
+    (let ((kept (jetpacs-data-materialize spec data)))
+      (should (equal (mapcar (lambda (n) (plist-get n :key)) (plist-get kept :children))
+                     '("warn" "always")))
+      (should (equal (plist-get (aref (plist-get kept :children) 0) :text) "Deadline first"))
+      (should (plist-member (aref (plist-get kept :children) 0) :visible_when)))
+    (let ((stripped (jetpacs-data-materialize spec data :strip t)))
+      (should (equal (mapcar (lambda (n) (plist-get n :key)) (plist-get stripped :children))
+                     '("warn" "always")))
+      (should-not (plist-member (aref (plist-get stripped :children) 0) :visible_when))
+      (should-not (plist-member (aref (plist-get stripped :children) 0) :bind)))
+    ;; A wrong type hides, never rejects; a null is nothing.
+    (should (equal (mapcar (lambda (n) (plist-get n :key))
+                           (plist-get (jetpacs-data-materialize
+                                       spec (list :planning (list :feedback_kind 7)))
+                                      :children))
+                   '("always")))
+    (should (jetpacs-data-visible-p (vector (jetpacs-when "/v" "absent"))
+                                    (list :v nil) nil))
+    (should-not (jetpacs-data-visible-p (vector (jetpacs-when "/v" "present"))
+                                        (list :v nil) nil))
+    (should (jetpacs-data-visible-p (vector (jetpacs-when "/n" "gte" 3)
+                                            (jetpacs-when "/s" "non_empty"))
+                                    (list :n 3 :s "x") nil))
+    (should-not (jetpacs-data-visible-p (vector (jetpacs-when "/n" "gt" 3))
+                                        (list :n "10") nil))
+    ;; The analysis gate sees the same rules as the materializer.
+    (should (= 1 (jetpacs-data-check-bindings spec)))
+    (should-error (jetpacs-when "/a" "matches" "x") :type 'jetpacs-data-error)
+    (should-error (jetpacs-when "/a" "eq") :type 'jetpacs-data-error)
+    (should-error (jetpacs-when "/a" "present" t) :type 'jetpacs-data-error)
+    (should-error (jetpacs-when "/a" "eq" (vector 1)) :type 'jetpacs-data-error)
+    (should-error (jetpacs-when "a" "present") :type 'jetpacs-data-error)
+    (should-error (jetpacs-with-attrs (jetpacs-text "x") :visible_when [])
+                  :type 'jetpacs-data-error)
+    ;; Structural rules: placement, keyed siblings, the forbidden subtree.
+    (let ((root (jetpacs-with-attrs (jetpacs-text "x")
+                                    :visible_when (vector (jetpacs-when "/a" "present")))))
+      (should (equal (cadr (should-error (jetpacs-data-check-bindings root)
+                                         :type 'jetpacs-data-error))
+                     "spec.visible_when")))
+    (let ((unkeyed (jetpacs-column warn (jetpacs-text "nokey"))))
+      (should (equal (cadr (should-error (jetpacs-data-materialize unkeyed data)
+                                         :type 'jetpacs-data-error))
+                     "spec.children[1].key")))
+    (let ((stateful (jetpacs-column
+                     (jetpacs-with-attrs (jetpacs-column (jetpacs-text-input "q"))
+                                         :key "c"
+                                         :visible_when (vector (jetpacs-when "/a" "present"))))))
+      (should (equal (cadr (should-error (jetpacs-data-check-bindings stateful)
+                                         :type 'jetpacs-data-error))
+                     "spec.children[0].children[0]")))))
+
+(ert-deftest jetpacs-data-test-the-shell-sends-conditionals-only-with-the-feature ()
+  "SPEC 22.4 (#198): a conditional snapshot travels to a Companion that
+granted `data.model' AND advertises `data.visible'; otherwise Emacs
+evaluates it and the hidden nodes never reach the wire."
+  (skip-unless (require 'jetpacs-shell nil t))
+  (let ((spec (jetpacs-column
+               (jetpacs-with-attrs (jetpacs-text "warn") :key "warn"
+                                   :visible_when (vector (jetpacs-when "/kind" "eq" "warning")))
+               (jetpacs-with-attrs (jetpacs-text "info") :key "info"
+                                   :visible_when (vector (jetpacs-when "/kind" "eq" "info")))))
+        (data (list :kind "info")))
+    (should (equal (jetpacs-shell--prepare-data spec data t t t) (cons spec data)))
+    (pcase-let ((`(,sent . ,document) (jetpacs-shell--prepare-data spec data t t nil)))
+      (should-not document)
+      (should (= 1 (length (plist-get sent :children))))
+      (should (equal (plist-get (aref (plist-get sent :children) 0) :key) "info"))
+      (should-not (plist-member (aref (plist-get sent :children) 0) :visible_when)))
+    (pcase-let ((`(,sent . ,document) (jetpacs-shell--prepare-data spec data nil nil nil)))
+      (should-not document)
+      (should (equal (plist-get (aref (plist-get sent :children) 0) :key) "info")))))
 
 (defun jetpacs-data-test--op-vectors ()
   (with-temp-buffer

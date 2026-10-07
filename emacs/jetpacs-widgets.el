@@ -347,6 +347,8 @@ Runs VAL-FN on each (KEY VALUE); WHAT names the field."
     (:semantics (jetpacs--check-semantics-object v))
     (:bind (jetpacs--check-bind-plist v))
     (:template (jetpacs-check-template v ":template" (1+ jetpacs--template-depth)))
+    (:visible_when (jetpacs-check-visible-when v ":visible_when"
+                                               (> jetpacs--template-depth 0)))
     (_ nil)))
 
 (defun jetpacs--check-bind-plist (v)
@@ -882,6 +884,84 @@ b))' and `(jetpacs-row a b)' mean the same."
 (defconst jetpacs-template-feature (plist-get jetpacs--template-contract :feature)
   "The SPEC 22.4 member-gating feature a templated snapshot needs.")
 
+(defconst jetpacs--visible-contract (plist-get jetpacs-data-contract :visible)
+  "The contract's `data_model_schema.visible' block (SPEC 13.8.6).")
+
+(defconst jetpacs-visible-feature (plist-get jetpacs--visible-contract :feature)
+  "The SPEC 22.4 member-gating feature a conditional node needs.")
+
+(defun jetpacs-when (path op &rest value)
+  "A SPEC 13.8.6 predicate: hold when what POINTER PATH reaches satisfies OP.
+OP is one of the contract's `visible.op' values: `present', `absent',
+`empty' and `non_empty' take no VALUE; `eq' and `neq' compare with a
+string, number or boolean VALUE of the same JSON type; `lt', `lte', `gt'
+and `gte' compare numbers.  VALUE is variadic so an explicit nil is never
+mistaken for an omitted operand.  PATH is absolute, or relative inside a
+`jetpacs-template' body where it resolves from the item.  Place the
+predicates on a keyed child with `jetpacs-with-attrs' `:visible_when'.
+Signals `jetpacs-data-error' on a malformed predicate."
+  (let ((pred (list :path path :op op)))
+    (when value (setq pred (append pred (list :value (car value)))))
+    (jetpacs--check-predicate pred "visible_when[0]" (> jetpacs--template-depth 0))
+    pred))
+
+(defun jetpacs--check-predicate (pred path in-scope)
+  "Signal `jetpacs-data-error' unless PRED is a SPEC 13.8.6 predicate at PATH.
+IN-SCOPE admits a relative pointer (SPEC 13.8.5).  Returns PRED."
+  (unless (and (consp pred) (keywordp (car pred)))
+    (signal 'jetpacs-data-error (list path "a predicate must be an object")))
+  (let ((p pred))
+    (while p
+      (let ((k (pop p)))
+        (pop p)
+        (unless (memq k '(:path :op :value))
+          (signal 'jetpacs-data-error
+                  (list (format "%s.%s" path (jetpacs--wire-name k))
+                        "unknown predicate member"))))))
+  (unless (plist-member pred :path)
+    (signal 'jetpacs-data-error (list (concat path ".path") "a predicate requires path")))
+  (let* ((ops (plist-get jetpacs--visible-contract :ops))
+         (op (plist-get pred :op))
+         (kind (cond ((member op (plist-get ops :no_value)) 'none)
+                     ((member op (plist-get ops :scalar_value)) 'scalar)
+                     ((member op (plist-get ops :number_value)) 'number)))
+         (has-value (plist-member pred :value))
+         (value (plist-get pred :value)))
+    (unless kind
+      (signal 'jetpacs-data-error (list (concat path ".op") "unregistered predicate op")))
+    (pcase kind
+      ('none (when has-value
+               (signal 'jetpacs-data-error
+                       (list (concat path ".value") (format "%s takes no value" op)))))
+      ('number (unless (and has-value (numberp value) (jetpacs--finite-number-p value))
+                 (signal 'jetpacs-data-error
+                         (list (concat path ".value")
+                               (format "%s requires a finite number" op)))))
+      ('scalar (unless (and has-value
+                            (or (stringp value) (memq value '(t :json-false))
+                                (and (numberp value) (jetpacs--finite-number-p value))))
+                 (signal 'jetpacs-data-error
+                         (list (concat path ".value")
+                               (format "%s requires a string, number or boolean" op)))))))
+  (jetpacs-pointer-tokens (plist-get pred :path) (concat path ".path") in-scope)
+  pred)
+
+(defun jetpacs-check-visible-when (v path in-scope)
+  "Signal `jetpacs-data-error' unless V is a SPEC 13.8.6 predicate array; return V.
+PATH names the attribute (`spec.children[2].visible_when'); IN-SCOPE admits
+relative pointers.  The structural rules — a keyed `children' element,
+keyed siblings, nothing stateful beneath — are the walk's (`jetpacs-data.el')."
+  (unless (and (vectorp v) (> (length v) 0))
+    (signal 'jetpacs-data-error
+            (list path "visible_when must be a non-empty array of predicates (SPEC 13.8.6)")))
+  (when (> (length v) jetpacs-max-visible-predicates-per-node)
+    (signal 'jetpacs-data-error (list path "exceeds max_visible_predicates_per_node")))
+  (let ((i -1))
+    (mapc (lambda (pred)
+            (jetpacs--check-predicate pred (format "%s[%d]" path (cl-incf i)) in-scope))
+          v))
+  v)
+
 (defmacro jetpacs-template (pointer &rest body)
   "Expand BODY's node once per element of the array POINTER reaches.
 SPEC 13.8.5: pass the result where a container takes its children,
@@ -953,6 +1033,11 @@ carries `id', input state, an editor, a `variant_host', a descriptor with
       (signal 'jetpacs-data-error
               (list (format "%s.%s" path member)
                     (format "a template node MUST bind %s (SPEC 13.8.5)" member)))))
+  ;; SPEC 13.8.6: Emacs filters arrays; a template root is never conditional.
+  (when (plist-member template :visible_when)
+    (signal 'jetpacs-data-error
+            (list (concat path ".visible_when")
+                  "a template node MUST NOT carry visible_when (SPEC 13.8.6)")))
   (let ((forbidden-types
          (plist-get (plist-get jetpacs--template-contract :forbidden_inside) :node_types))
         (hooks (jetpacs--template-member-keywords jetpacs-action-hook-keys)))

@@ -1197,7 +1197,7 @@ A crash signals like a stale builder's: the push is refused, loudly."
                                (list :surface surface :phase 'data) e))))
         (funcall fn)))))
 
-(defun jetpacs-shell--prepare-data (spec data granted &optional templates)
+(defun jetpacs-shell--prepare-data (spec data granted &optional templates visibles)
   "Return (SPEC . DATA) as the wire carries them (SPEC 13.8, 12 rule 3).
 With GRANTED non-nil the bindings travel and DATA rides the snapshot;
 they are checked here so a refused push never reaches the wire.  Without
@@ -1206,14 +1206,20 @@ document is sent — the same builders serve a Companion either way.  A
 snapshot carrying a `:template' (SPEC 13.8.5) travels only when TEMPLATES
 is non-nil too — the target advertises the `data.template' feature (SPEC
 22.4) — and is otherwise expanded here, with the item keys written into
-its descriptors, and sent without a document."
+its descriptors, and sent without a document.  Likewise a snapshot
+carrying a `:visible_when' (SPEC 13.8.6) travels only when VISIBLES is
+non-nil — the target advertises `data.visible' — and is otherwise
+evaluated here, its hidden nodes dropped."
   (condition-case err
       (cond
-       ((and granted (or templates (not (jetpacs-data-templated-p spec))))
+       ((and granted
+             (or templates (not (jetpacs-data-templated-p spec)))
+             (or visibles (not (jetpacs-data-conditional-p spec))))
         (jetpacs-data-check-bindings spec)
         (when data (jetpacs-data-check-document data))
         (cons spec data))
-       ((or data (jetpacs-data-bound-p spec) (jetpacs-data-templated-p spec))
+       ((or data (jetpacs-data-bound-p spec) (jetpacs-data-templated-p spec)
+            (jetpacs-data-conditional-p spec))
         (cons (jetpacs-data-materialize spec data :strip t) nil))
        (t (cons spec nil)))
     (jetpacs-data-error
@@ -1498,7 +1504,13 @@ MUSTs are loud, never sanitized.  On any failure a queued
                    ;; advertises `data.template'; otherwise Emacs expands it.
                    (templates-ok (jetpacs-feature-advertised-p
                                   jetpacs-template-feature
-                                  (jetpacs-shell--surface-target surface))))
+                                  (jetpacs-shell--surface-target surface)))
+                   ;; SPEC 22.4 (#198): a conditional node travels only to a
+                   ;; target that advertises `data.visible'; otherwise Emacs
+                   ;; evaluates it and omits the hidden nodes.
+                   (visibles-ok (jetpacs-feature-advertised-p
+                                 jetpacs-visible-feature
+                                 (jetpacs-shell--surface-target surface))))
               ;; The gates, in check order — ALL of them under the
               ;; recorder seam, GATE 2 included; the signal continues to
               ;; the caller unchanged (the sender MUSTs stay loud).
@@ -1514,7 +1526,7 @@ MUSTs are loud, never sanitized.  On any failure a queued
                   (setq stale-spec (jetpacs-data-materialize stale-spec data :strip t)))
                 (pcase-let ((`(,resolved . ,document)
                              (jetpacs-shell--prepare-data
-                              spec data data-granted templates-ok)))
+                              spec data data-granted templates-ok visibles-ok)))
                   (setq spec resolved data document)
                   (puthash surface (and document t) jetpacs-shell--documented)
                   (if document (puthash surface document jetpacs-shell--sent-data)

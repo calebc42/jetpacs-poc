@@ -216,6 +216,39 @@ whichever is smaller, the diff or one `set` of the array. Orgzly's fold went
 from an 11 KB set of `/rows` to 204 bytes (1.1 KB when rows flow in from the
 next page).
 
+Amendment #197 adds device locale advice (EBP §20.1.2): the Companion
+reports `{tag, hour_cycle, time_zone}` as the welcome's `locale` mirror and
+the `locale.changed` notification, on the `window.changed` model.
+`AppCapabilities.deviceLocale` reads the platform, `DeviceBridge` seeds every
+new session and re-reports on the locale, time-zone and time broadcasts, and
+the engine emits only on change. ebp.el keeps the advice beside the window
+geometry; `jetpacs-dates-today` and `jetpacs-dates-format-clock` take it as
+explicit arguments so Grove's planning "today" and time labels follow the
+phone's zone and clock cycle. The Companion formats nothing: it reports facts
+and Emacs authors the strings.
+
+Amendment #198 adds conditional nodes (EBP §13.8.6, feature `data.visible`).
+The universal attribute `visible_when` is a flat AND of at most eight
+predicates `{path, op, value?}` over the data document; `Materializer`
+evaluates it for each element of a `children` array before that element's
+bindings and omits a hidden subtree from the materialized children, so a
+`surface.data` patch shows or hides a node at an ordinary revision. Identity
+positions count materialized siblings, which is why an array holding a
+conditional node must be keyed throughout; nothing beneath a conditional node
+may carry an `id`, input state, an editor or a `variant_host`, so §13.6 drafts
+are untouched. The attribute is admitted in app snapshots only and shares the
+template's admission checks in `SurfaceStore`; a dialog document rejects it.
+On the Emacs side `jetpacs-when` builds predicates, `jetpacs-with-attrs
+:visible_when` places them, `jetpacs-data-visible-p` is the reference
+evaluator replayed against `data.golden`, and the shell sends conditionals
+only to a target advertising `data.visible`, otherwise dropping the hidden
+nodes before pushing. Pilots: Grove's three feedback cards are keyed
+conditional siblings reading `/planning/feedback_kind`, so a feedback-kind
+change is a 319–711-byte `surface.data` frame where the 6.3 KB screen and
+its stack went out before; Orgzly's row template hides an empty state,
+priority, tag or planning line with relative predicates. The renderers are
+unchanged: a hidden node never reaches one.
+
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,
 widget, and tile targets have their own narrower profiles. The optional

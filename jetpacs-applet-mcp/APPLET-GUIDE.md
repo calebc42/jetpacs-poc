@@ -64,16 +64,31 @@ pushing, so the same builders serve either Companion; identity (`id`,
 authored.
 
 The rule for choosing between a patch and a refresh: bindings change
-values, never the shape of the tree. If a state change adds, removes, or
-re-shapes a node (a card that appears once two dates exist), the handler
-refreshes; if it changes only bound values, it patches. Make the shape a
+values, never the shape of the tree. A node that should appear or
+disappear with the state is a **conditional node** (EBP §13.8.6, feature
+`data.visible`): give it `(jetpacs-with-attrs NODE :key "k" :visible_when
+(vector (jetpacs-when "/planning/feedback_kind" "eq" "warning")))` — a flat
+AND of predicates (`present`, `absent`, `empty`, `non_empty`, `eq`, `neq`,
+`lt`, `lte`, `gt`, `gte`) over the document that the Companion evaluates
+before the node's own bindings, so a `set` of the value it reads shows or
+hides the node as a patch; a reached null or a value of the wrong type
+hides, never rejects. Every sibling in that `children` array must carry a
+`:key`, nothing beneath a conditional node may carry an `id`, input
+state, an editor or a `variant_host`, and inside a `jetpacs-template` the
+predicate's pointer may be relative to the row. What still needs a
+refresh is a change that re-shapes the tree some other way (a different
+number of editors, a pager appearing): make that remaining shape a
 function of the state (`grove-document--planning-shape` in Grove is the
-model), compute it before and after the handler's change, and patch when
-it is unchanged. A value an action must carry at tap time (a suggested
-date) belongs to the handler, which reads the state then, not to the
-button's `args`, which cannot be bound. Grove's planning screen is the
-reference pilot: a picker tap sends one `surface.data` frame of under a
-kilobyte instead of the whole app stack.
+model — constant since its feedback cards became conditional), compute
+it before and after the handler's change, and patch when it is
+unchanged. A value an action must carry at tap time (a suggested date)
+belongs to the handler, which reads the state then, not to the button's
+`args`, which cannot be bound. Grove's planning screen is the reference
+pilot: a picker tap — one that changes which feedback card shows
+included — sends one `surface.data` frame of 319 to 711 bytes instead of
+the 6.3 KB screen and its stack. A Companion without `data.visible`
+receives the tree with the hidden nodes already dropped, and the shell
+then re-pushes instead of patching, exactly as for templates.
 
 A list whose rows share one shape is a **template** (EBP §13.8.5): give the
 container `(jetpacs-template "/rows" ROW)` as its children, where ROW is one
@@ -84,10 +99,13 @@ document, and the row binds its identity with
 hash tables (string keys) or non-empty plists. The Companion expands the
 template once per element and injects the row's key as `item` into the
 `args` of every hook inside it, so one `on_tap` per row reads
-`(plist-get args :item)` and branches in the handler — a template row cannot
-vary its shape, its action names, or carry an `id`, an input, an editor, a
-`variant_host`, `capture_fields` or an authored `:item` arg; rich-text spans
-are not nodes and cannot bind, so bind a row of `jetpacs-text`s instead.
+`(plist-get args :item)` and branches in the handler — a template row varies
+its shape only through conditional parts (`orgzly-ui--row-text` hides an
+empty state, priority, tag or planning line with a relative `jetpacs-when`),
+keeps its action names fixed, and cannot carry an `id`, an input, an editor,
+a `variant_host`, `capture_fields` or an authored `:item` arg; rich-text
+spans are not nodes and cannot bind, so bind a row of `jetpacs-text`s
+instead.
 Inserting, removing, folding or re-sorting rows is then one
 `jetpacs-data-set` of the array, re-expanded by the Companion with scroll
 position kept by key; compare the screen's remaining shape (a pager, an
@@ -145,6 +163,14 @@ resulting state.
 Use stable domain identity for node IDs and sibling keys. Do not derive them
 from hash iteration or unstable traversal order. Keep unordered source data
 sorted before rendering.
+
+The Companion's locale advice (EBP §20.1.2: its BCP 47 tag, `h12`/`h23`
+clock cycle and IANA time zone) is reconciled device state a builder may
+read through `jetpacs-device-time-zone` and `jetpacs-device-hour-cycle`;
+`jetpacs-dates-today` and `jetpacs-dates-format-clock` take it as explicit
+arguments, so a builder shows the device its own civil day and clock cycle
+and stays deterministic. Without advice both helpers behave as before: the
+Emacs zone and a 24-hour clock.
 
 For trusted code, `jetpacs_check_render_determinism` builds a surface twice,
 compares canonical SHA-256 hashes, reports the structural walk and context,

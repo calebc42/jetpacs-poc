@@ -234,6 +234,12 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
 ;; SPEC 4.5 / 13.8.5 (amendment #195): elements expanded from one template.
 (defconst jetpacs-max-template-items
   {contract["limits"]["fixed"]["max_template_items"]})
+;; SPEC 4.5 / 13.8.6 (amendment #198): predicates on one conditional node
+;; and in one snapshot.
+(defconst jetpacs-max-visible-predicates-per-node
+  {contract["limits"]["fixed"]["max_visible_predicates_per_node"]})
+(defconst jetpacs-max-visible-predicates-per-snapshot
+  {contract["limits"]["fixed"]["max_visible_predicates_per_snapshot"]})
 
 (defconst jetpacs-data-contract
   '{el_plist(contract["data_model_schema"])}
