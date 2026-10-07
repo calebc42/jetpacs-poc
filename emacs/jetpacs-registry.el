@@ -736,14 +736,21 @@ trailer `diff' prints are left out."
             (unwind-protect
                 (with-current-buffer buffer
                   (goto-char (point-min))
-                  (let ((start (if (re-search-forward "^--- " nil t)
-                                   (match-beginning 0)
-                                 (point-min)))
-                        (end (progn (goto-char (point-max))
-                                    (if (re-search-backward "^Diff finished" nil t)
-                                        (match-beginning 0)
-                                      (point-max)))))
-                    (string-trim-right (buffer-substring-no-properties start end))))
+                  (let* ((start (if (re-search-forward "^--- " nil t)
+                                    (match-beginning 0)
+                                  (point-min)))
+                         (end (progn (goto-char (point-max))
+                                     (if (re-search-backward "^Diff finished" nil t)
+                                         (match-beginning 0)
+                                       (point-max))))
+                         (text (buffer-substring-no-properties start end)))
+                    ;; `diff' prints the expanded temporary paths and a
+                    ;; timestamp in the two header lines; the reader wants
+                    ;; `--- a/NAME' and `+++ b/NAME'.
+                    (string-trim-right
+                     (replace-regexp-in-string
+                      "^\\(---\\|\\+\\+\\+\\) .*/\\([ab]/[^\t\n]*\\).*$" "\\1 \\2"
+                      text))))
               (kill-buffer buffer))))
       (delete-directory dir t))))
 
