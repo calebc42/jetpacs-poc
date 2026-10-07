@@ -49,7 +49,10 @@
     },
     "property-map": {
       "type": "identifier-map",
-      "values": {"type": "ref", "ref": "design-value"},
+      "values": {
+        "type": "ref",
+        "ref": "design-value"
+      },
       "min_entries": 0,
       "max_entries": 64
     },
@@ -67,59 +70,96 @@
             "pressed"
           ]
         },
-        "properties": {"type": "ref", "ref": "property-map"}
+        "properties": {
+          "type": "ref",
+          "ref": "property-map"
+        }
       },
       "optional": {
-        "motion": {"type": "ref", "ref": "identifier"}
+        "motion": {
+          "type": "ref",
+          "ref": "identifier"
+        }
       }
     },
     "style": {
       "type": "object",
       "required": {
-        "properties": {"type": "ref", "ref": "property-map"},
+        "properties": {
+          "type": "ref",
+          "ref": "property-map"
+        },
         "rules": {
           "type": "array",
-          "items": {"type": "ref", "ref": "state-rule"},
+          "items": {
+            "type": "ref",
+            "ref": "state-rule"
+          },
           "min_items": 0,
           "max_items": 16
         }
       },
       "optional": {
-        "motion": {"type": "ref", "ref": "identifier"}
+        "motion": {
+          "type": "ref",
+          "ref": "identifier"
+        }
       }
     },
     "motion": {
       "type": "object",
       "required": {
-        "duration_ms": {"type": "integer", "minimum": 0, "maximum": 10000},
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000
+        },
         "easing": {
           "type": "enum",
-          "values": ["linear", "ease-in", "ease-out", "ease-in-out", "spring"]
+          "values": [
+            "linear",
+            "ease-in",
+            "ease-out",
+            "ease-in-out",
+            "spring"
+          ]
         }
       },
       "optional": {}
     },
     "token-map": {
       "type": "identifier-map",
-      "values": {"type": "ref", "ref": "design-value"},
+      "values": {
+        "type": "ref",
+        "ref": "design-value"
+      },
       "min_entries": 0,
       "max_entries": 256
     },
     "style-map": {
       "type": "identifier-map",
-      "values": {"type": "ref", "ref": "style"},
+      "values": {
+        "type": "ref",
+        "ref": "style"
+      },
       "min_entries": 0,
       "max_entries": 256
     },
     "motion-map": {
       "type": "identifier-map",
-      "values": {"type": "ref", "ref": "motion"},
+      "values": {
+        "type": "ref",
+        "ref": "motion"
+      },
       "min_entries": 0,
       "max_entries": 64
     },
     "style-references": {
       "type": "array",
-      "items": {"type": "ref", "ref": "identifier"},
+      "items": {
+        "type": "ref",
+        "ref": "identifier"
+      },
       "min_items": 1,
       "max_items": 16
     },
@@ -230,54 +270,115 @@
     "component-style-binding": {
       "type": "object",
       "required": {
-        "slot": {"type": "ref", "ref": "component-style-slot"},
-        "styles": {"type": "ref", "ref": "style-references"}
+        "slot": {
+          "type": "ref",
+          "ref": "component-style-slot"
+        },
+        "styles": {
+          "type": "ref",
+          "ref": "style-references"
+        }
       },
       "optional": {}
     },
     "component-style-bindings": {
       "type": "array",
-      "items": {"type": "ref", "ref": "component-style-binding"},
+      "items": {
+        "type": "ref",
+        "ref": "component-style-binding"
+      },
       "min_items": 0,
       "max_items": 99
     },
     "theme-role-map": {
       "type": "identifier-map",
-      "values": {"type": "ref", "ref": "design-value"},
+      "values": {
+        "type": "ref",
+        "ref": "design-value"
+      },
       "min_entries": 0,
       "max_entries": 13
     }
   },
   "node_schema": {
     "jetpacs.design_scope": {
+      "description": "The root of the Elisp-authored design runtime: tokens, named styles, motions and component styles that its subtree may reference.",
       "required": {
-        "tokens": {"type": "ref", "ref": "token-map"},
-        "styles": {"type": "ref", "ref": "style-map"},
-        "children": {"type": "node-array", "min_items": 0, "max_items": 10000}
+        "tokens": {
+          "type": "ref",
+          "ref": "token-map",
+          "description": "Named design tokens the styles resolve."
+        },
+        "styles": {
+          "type": "ref",
+          "ref": "style-map",
+          "description": "Named styles available to jetpacs.styled and jetpacs.pressable beneath."
+        },
+        "children": {
+          "type": "node-array",
+          "min_items": 0,
+          "max_items": 10000
+        }
       },
       "optional": {
-        "motions": {"type": "ref", "ref": "motion-map"},
-        "component_styles": {"type": "ref", "ref": "component-style-bindings"},
-        "theme_roles": {"type": "ref", "ref": "theme-role-map"}
+        "motions": {
+          "type": "ref",
+          "ref": "motion-map"
+        },
+        "component_styles": {
+          "type": "ref",
+          "ref": "component-style-bindings"
+        },
+        "theme_roles": {
+          "type": "ref",
+          "ref": "theme-role-map"
+        }
       }
     },
     "jetpacs.styled": {
+      "description": "Applies named styles from the enclosing design scope to its children.",
       "required": {
-        "styles": {"type": "ref", "ref": "style-references"},
-        "children": {"type": "node-array", "min_items": 0, "max_items": 10000}
+        "styles": {
+          "type": "ref",
+          "ref": "style-references",
+          "description": "The style names applied, in order."
+        },
+        "children": {
+          "type": "node-array",
+          "min_items": 0,
+          "max_items": 10000
+        }
       },
       "optional": {}
     },
     "jetpacs.pressable": {
+      "description": "A styled pressable region dispatching on_tap, with enabled, selected and toggled presentation states.",
       "required": {
-        "styles": {"type": "ref", "ref": "style-references"},
-        "on_tap": {"type": "action"},
-        "children": {"type": "node-array", "min_items": 1, "max_items": 16}
+        "styles": {
+          "type": "ref",
+          "ref": "style-references",
+          "description": "The style names applied, in order."
+        },
+        "on_tap": {
+          "type": "action",
+          "description": "The action dispatched by a tap."
+        },
+        "children": {
+          "type": "node-array",
+          "min_items": 1,
+          "max_items": 16
+        }
       },
       "optional": {
-        "enabled": {"type": "boolean"},
-        "selected": {"type": "boolean"},
-        "toggled": {"type": "boolean"}
+        "enabled": {
+          "type": "boolean"
+        },
+        "selected": {
+          "type": "boolean"
+        },
+        "toggled": {
+          "type": "boolean"
+        }
       }
     }
   },

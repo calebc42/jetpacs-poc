@@ -37,120 +37,253 @@
     "menu-item": {
       "type": "object",
       "required": {
-        "label": {"type": "ref", "ref": "text"},
-        "on_tap": {"type": "action"}
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "on_tap": {
+          "type": "action"
+        }
       },
       "optional": {
-        "icon": {"type": "ref", "ref": "identifier"},
-        "enabled": {"type": "boolean"}
+        "icon": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
       }
     },
     "bar-item": {
       "type": "object",
       "required": {
-        "label": {"type": "ref", "ref": "text"},
-        "icon": {"type": "ref", "ref": "identifier"},
-        "on_tap": {"type": "action"}
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "icon": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "on_tap": {
+          "type": "action"
+        }
       },
       "optional": {
-        "enabled": {"type": "boolean"}
+        "enabled": {
+          "type": "boolean"
+        }
       }
     },
     "fab-item": {
       "type": "object",
       "required": {
-        "label": {"type": "ref", "ref": "text"},
-        "icon": {"type": "ref", "ref": "identifier"},
-        "on_tap": {"type": "action"}
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "icon": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "on_tap": {
+          "type": "action"
+        }
       },
       "optional": {}
     }
   },
   "node_schema": {
     "material3.assist_chip": {
+      "description": "A compact Material assist chip with a label, an optional icon and tap action.",
       "required": {
-        "label": {"type": "ref", "ref": "text"}
+        "label": {
+          "type": "ref",
+          "ref": "text",
+          "description": "The chip text."
+        }
       },
       "optional": {
-        "on_tap": {"type": "action"},
-        "icon": {"type": "ref", "ref": "identifier"},
-        "enabled": {"type": "boolean"},
+        "on_tap": {
+          "type": "action"
+        },
+        "icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "A Material icon identifier shown before the label."
+        },
+        "enabled": {
+          "type": "boolean"
+        },
         "variant": {
           "type": "enum",
-          "values": ["flat", "elevated", "suggestion", "elevated_suggestion"]
+          "values": [
+            "flat",
+            "elevated",
+            "suggestion",
+            "elevated_suggestion"
+          ],
+          "description": "The chip style."
         }
       }
     },
     "material3.split_button": {
+      "description": "A Material split button: a leading action half and a trailing half that opens items or toggles; checked and on_change make it stateful.",
       "required": {
-        "on_tap": {"type": "action"}
+        "on_tap": {
+          "type": "action",
+          "description": "The leading half's action."
+        }
       },
       "optional": {
-        "label": {"type": "ref", "ref": "text"},
-        "icon": {"type": "ref", "ref": "identifier"},
+        "label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "icon": {
+          "type": "ref",
+          "ref": "identifier"
+        },
         "variant": {
           "type": "enum",
-          "values": ["filled", "tonal", "elevated", "outlined"]
+          "values": [
+            "filled",
+            "tonal",
+            "elevated",
+            "outlined"
+          ]
         },
         "size": {
           "type": "enum",
-          "values": ["xsmall", "small", "medium", "large", "xlarge"]
+          "values": [
+            "xsmall",
+            "small",
+            "medium",
+            "large",
+            "xlarge"
+          ]
         },
-        "trailing_icon": {"type": "ref", "ref": "identifier"},
-        "trailing_label": {"type": "ref", "ref": "text"},
-        "trailing_description": {"type": "ref", "ref": "text"},
-        "checked": {"type": "boolean"},
-        "on_change": {"type": "action"},
-        "on_trailing_tap": {"type": "action"},
+        "trailing_icon": {
+          "type": "ref",
+          "ref": "identifier"
+        },
+        "trailing_label": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "trailing_description": {
+          "type": "ref",
+          "ref": "text"
+        },
+        "checked": {
+          "type": "boolean",
+          "description": "The published toggle state when the button is a toggle."
+        },
+        "on_change": {
+          "type": "action",
+          "description": "Dispatched with the next toggle value injected as args.value."
+        },
+        "on_trailing_tap": {
+          "type": "action",
+          "description": "The trailing half's action when it has no items."
+        },
         "items": {
           "type": "array",
-          "items": {"type": "ref", "ref": "menu-item"},
+          "items": {
+            "type": "ref",
+            "ref": "menu-item"
+          },
           "min_items": 0,
-          "max_items": 64
+          "max_items": 64,
+          "description": "Menu items the trailing half opens."
         },
-        "enabled": {"type": "boolean"}
+        "enabled": {
+          "type": "boolean"
+        }
       }
     },
     "material3.app_bar_row": {
+      "description": "A horizontal Material app-bar item strip that overflows surplus items into a menu.",
       "required": {
         "items": {
           "type": "array",
-          "items": {"type": "ref", "ref": "bar-item"},
+          "items": {
+            "type": "ref",
+            "ref": "bar-item"
+          },
           "min_items": 1,
-          "max_items": 64
+          "max_items": 64,
+          "description": "The bar items in order."
         }
       },
       "optional": {
-        "overflow_icon": {"type": "ref", "ref": "identifier"},
-        "max_items": {"type": "integer", "minimum": 1, "maximum": 64}
+        "overflow_icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The icon of the overflow menu button."
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "How many items stay visible before the rest overflow."
+        }
       }
     },
     "material3.app_bar_column": {
+      "description": "A vertical Material app-bar item strip that overflows surplus items into a menu.",
       "required": {
         "items": {
           "type": "array",
-          "items": {"type": "ref", "ref": "bar-item"},
+          "items": {
+            "type": "ref",
+            "ref": "bar-item"
+          },
           "min_items": 1,
-          "max_items": 64
+          "max_items": 64,
+          "description": "The bar items in order."
         }
       },
       "optional": {
-        "overflow_icon": {"type": "ref", "ref": "identifier"},
-        "max_items": {"type": "integer", "minimum": 1, "maximum": 64}
+        "overflow_icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The icon of the overflow menu button."
+        },
+        "max_items": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64,
+          "description": "How many items stay visible before the rest overflow."
+        }
       }
     },
     "material3.fab_menu": {
+      "description": "A Material floating-action-button menu that expands into labeled items.",
       "required": {
         "items": {
           "type": "array",
-          "items": {"type": "ref", "ref": "fab-item"},
+          "items": {
+            "type": "ref",
+            "ref": "fab-item"
+          },
           "min_items": 1,
-          "max_items": 64
+          "max_items": 64,
+          "description": "The menu items, each a label, an icon and an action."
         }
       },
       "optional": {
-        "icon": {"type": "ref", "ref": "identifier"},
-        "close_icon": {"type": "ref", "ref": "identifier"}
+        "icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The collapsed toggle glyph."
+        },
+        "close_icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The expanded toggle glyph."
+        }
       }
     }
   },
@@ -158,6 +291,9 @@
     "material3.split_button": "checked"
   },
   "at_least_one_non_empty": {
-    "material3.split_button": ["label", "icon"]
+    "material3.split_button": [
+      "label",
+      "icon"
+    ]
   }
 }

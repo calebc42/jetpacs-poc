@@ -104,36 +104,44 @@
   },
   "node_schema": {
     "jetpacs.action": {
+      "description": "A labeled Jetpacs action control that dispatches on_tap; the editor-native button of the components design.",
       "required": {
         "label": {
           "type": "ref",
-          "ref": "text"
+          "ref": "text",
+          "description": "The visible label."
         },
         "on_tap": {
-          "type": "action"
+          "type": "action",
+          "description": "The action dispatched by a tap."
         }
       },
       "optional": {
         "enabled": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether the control accepts input; absent means enabled."
         }
       }
     },
     "jetpacs.choice": {
+      "description": "One stateful yes/no choice: a labeled checkable row whose on_change carries the next boolean.",
       "required": {
         "id": {
           "type": "ref",
-          "ref": "identifier"
+          "ref": "identifier",
+          "description": "The stateful node id drafts and state.changed address."
         },
         "label": {
           "type": "ref",
           "ref": "text"
         },
         "checked": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "The published boolean value."
         },
         "on_change": {
-          "type": "action"
+          "type": "action",
+          "description": "Dispatched with the next value injected as args.value."
         }
       },
       "optional": {
@@ -143,34 +151,42 @@
       }
     },
     "jetpacs.list_item": {
+      "description": "A flat list row with title, optional overline, subtitle, leading and trailing slots, tap and long-tap actions, swipe sides and selection.",
       "required": {
         "title": {
           "type": "ref",
-          "ref": "text"
+          "ref": "text",
+          "description": "The primary line."
         }
       },
       "optional": {
         "overline": {
           "type": "ref",
-          "ref": "text"
+          "ref": "text",
+          "description": "A short line above the title."
         },
         "subtitle": {
           "type": "ref",
-          "ref": "text"
+          "ref": "text",
+          "description": "A secondary line below the title."
         },
         "title_max_lines": {
           "type": "ref",
-          "ref": "line-limit"
+          "ref": "line-limit",
+          "description": "Line limit for the title before it is truncated."
         },
         "subtitle_max_lines": {
           "type": "ref",
-          "ref": "line-limit"
+          "ref": "line-limit",
+          "description": "Line limit for the subtitle before it is truncated."
         },
         "leading": {
-          "type": "node"
+          "type": "node",
+          "description": "A node shown before the text, such as an icon."
         },
         "trailing": {
-          "type": "node"
+          "type": "node",
+          "description": "A node shown after the text, such as a chevron or control."
         },
         "on_tap": {
           "type": "action"
@@ -185,7 +201,8 @@
           "type": "swipe-side"
         },
         "selected": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Whether the row is drawn selected."
         },
         "enabled": {
           "type": "boolean"
@@ -193,10 +210,12 @@
       }
     },
     "jetpacs.panel": {
+      "description": "A labeled panel grouping its children under one heading.",
       "required": {
         "label": {
           "type": "ref",
-          "ref": "text"
+          "ref": "text",
+          "description": "The panel heading."
         },
         "children": {
           "type": "ref",
@@ -206,6 +225,7 @@
       "optional": {}
     },
     "jetpacs.scope": {
+      "description": "Selects Jetpacs core rendering for canonical EBP children, so a mixed design screen can hand a subtree back to the core components.",
       "required": {
         "children": {
           "type": "ref",
@@ -215,6 +235,7 @@
       "optional": {}
     },
     "jetpacs.section_navigator": {
+      "description": "A stateful hierarchical section navigator over leveled section options; on_change carries the selected section value.",
       "required": {
         "id": {
           "type": "ref",
@@ -222,11 +243,13 @@
         },
         "options": {
           "type": "ref",
-          "ref": "section-options"
+          "ref": "section-options",
+          "description": "The leveled section options, each a label, a stable value and a level from 1."
         },
         "value": {
           "type": "ref",
-          "ref": "option-value"
+          "ref": "option-value",
+          "description": "The selected section's value."
         },
         "on_change": {
           "type": "action"
@@ -237,11 +260,13 @@
           "type": "boolean"
         },
         "pinned": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Keep the navigator visible while its lazy column scrolls; only under a lazy_column."
         }
       }
     },
     "jetpacs.tabs": {
+      "description": "A stateful tab strip over tab options; on_change carries the selected tab value, variant and pinning are presentation hints.",
       "required": {
         "id": {
           "type": "ref",
@@ -249,11 +274,13 @@
         },
         "options": {
           "type": "ref",
-          "ref": "tab-options"
+          "ref": "tab-options",
+          "description": "The tab options, each a label and a stable value."
         },
         "value": {
           "type": "ref",
-          "ref": "option-value"
+          "ref": "option-value",
+          "description": "The selected tab's value."
         },
         "on_change": {
           "type": "action"
@@ -264,15 +291,18 @@
           "type": "boolean"
         },
         "scrollable": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Let the strip scroll instead of squeezing its tabs."
         },
         "pinned": {
-          "type": "boolean"
+          "type": "boolean",
+          "description": "Keep the strip visible while its lazy column scrolls; only under a lazy_column."
         },
         "variant": {
           "type": "string",
           "min_length": 1,
-          "max_length": 64
+          "max_length": 64,
+          "description": "A bounded presentation name; an unknown variant renders as the default, so new names stay forward-compatible."
         }
       }
     }
