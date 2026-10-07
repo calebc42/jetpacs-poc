@@ -231,6 +231,9 @@ body = f''';;; jetpacs-vocabulary.el --- the contract node schema -*- lexical-bi
   {contract["limits"]["fixed"]["max_bindings_per_snapshot"]})
 (defconst jetpacs-max-data-ops
   {contract["limits"]["fixed"]["max_data_ops"]})
+;; SPEC 4.5 / 13.8.5 (amendment #195): elements expanded from one template.
+(defconst jetpacs-max-template-items
+  {contract["limits"]["fixed"]["max_template_items"]})
 
 (defconst jetpacs-data-contract
   '{el_plist(contract["data_model_schema"])}

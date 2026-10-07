@@ -33,7 +33,7 @@
   "The SPEC version this vocabulary was generated from.")
 
 (defconst jetpacs-universal-attributes
-  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner :border :alpha :clip :align_self :semantics :bind)
+  '(:key :id :scroll_here :padding :pad :width :height :min_width :max_width :min_height :max_height :fill_fraction :aspect_ratio :weight :bg :corner :border :alpha :clip :align_self :semantics :bind :template)
   "Contract-projected universal member keywords accepted on every Node.")
 
 (defconst jetpacs-semantics-schema
@@ -107,9 +107,12 @@
   10000)
 (defconst jetpacs-max-data-ops
   1000)
+;; SPEC 4.5 / 13.8.5 (amendment #195): elements expanded from one template.
+(defconst jetpacs-max-template-items
+  10000)
 
 (defconst jetpacs-data-contract
-  '(:capability "data.model" :pointer (:rfc 6901 :absolute_only t :max_bytes_limit "max_pointer_bytes" :max_segments_limit "max_pointer_segments") :ops (:set (:required ("op" "path" "value") :optional ()) :remove (:required ("op" "path") :optional ()) :max_ops_limit "max_data_ops") :unbindable_members ("t" "id" "key" "children" "bind" "template" "args" "meta" "semantics" "variants" "swipe_start" "swipe_end") :unbindable_tags ("action-descriptor" "node" "node-array" "variant-array" "swipe-object" "semantics-object" "menu-item-array" "menu-group-array" "tab-item-array" "rail-item-array" "button-group-item-array" "label-on-tap-object" "toolbar-id-or-item-array" "canvas-op-array" "table-row-array" "rich-span-array"))
+  '(:capability "data.model" :pointer (:rfc 6901 :absolute_outside_template t :relative_inside_template t :max_bytes_limit "max_pointer_bytes" :max_segments_limit "max_pointer_segments") :ops (:set (:required ("op" "path" "value") :optional ()) :remove (:required ("op" "path") :optional ()) :max_ops_limit "max_data_ops") :unbindable_members ("t" "id" "key" "children" "bind" "template" "args" "meta" "semantics" "variants" "swipe_start" "swipe_end") :unbindable_tags ("action-descriptor" "node" "node-array" "variant-array" "swipe-object" "semantics-object" "menu-item-array" "menu-group-array" "tab-item-array" "rail-item-array" "button-group-item-array" "label-on-tap-object" "toolbar-id-or-item-array" "canvas-op-array" "table-row-array" "rich-span-array") :template (:feature "data.template" :attribute "template" :children_binding "children" :max_items_limit "max_template_items" :max_nesting 4 :root_must_bind ("key") :root_forbidden_members ("key" "id") :forbidden_inside (:members ("id") :descriptor_members ("capture_fields") :node_types ("editor" "variant_host") :stateful t) :injection "item" :admitted_in ("app")))
   "Contract-projected SPEC 13.8 data-document rules: the gating
 capability, the pointer and DataOp shapes, and the members and field
 types a `bind' may never name.")
@@ -229,6 +232,7 @@ types a `bind' may never name.")
     ("key" . "identifier")
     ("semantics" . "semantics-object")
     ("bind" . "bind-object")
+    ("template" . "node")
     ("document" . "identifier")
     ("keyboard" . "enum")
     ("children" . "node-array")

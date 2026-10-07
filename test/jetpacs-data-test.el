@@ -37,7 +37,7 @@
 (ert-deftest jetpacs-data-test-every-golden-vector-reproduces ()
   "SPEC 24.5: the materialization corpus, known answer by known answer."
   (let ((vectors (jetpacs-data-test--vectors)))
-    (should (>= (length vectors) 21))
+    (should (>= (length vectors) 38))
     (pcase-dolist (`(,index . ,vector) vectors)
       (let* ((expect (plist-get vector :expect))
              (outcome (condition-case err
@@ -182,6 +182,106 @@ between two members holds only between two literals (SPEC 13.8.3)."
     ;; A binding the Companion would refuse is refused here first.
     (should-error (jetpacs-shell--prepare-data
                    '(:t "text" :text "x" :bind (:text "/t")) data t))))
+
+(ert-deftest jetpacs-data-test-templates-build-and-expand ()
+  "SPEC 13.8.5: a `jetpacs-template' becomes `:template' beside a
+`:children' binding, relative refs are admitted only inside it, the
+structural rules are checked at build time, and the Elisp expansion
+writes the item key into every descriptor when it stands in for the
+Companion."
+  (let ((list (jetpacs-lazy-column
+               (jetpacs-template "/rows"
+                 (jetpacs-with-attrs
+                  (jetpacs-row (jetpacs-text (jetpacs-ref "title"))
+                               (jetpacs-button "Open" (jetpacs-action "note.open")))
+                  :key (jetpacs-ref "id")))
+               :spacing 4)))
+    (should (equal (plist-get list :bind) '(:children "/rows")))
+    (should (equal (plist-get (plist-get list :template) :bind) '(:key "id")))
+    (should-not (plist-member list :children))
+    (let* ((data (list :rows (vector (list :id "n1" :title "Inbox")
+                                     (list :id "n2" :title "Projects"))))
+           (sent (jetpacs-data-materialize list data))
+           (expanded (jetpacs-data-materialize list data :strip t))
+           (row (aref (plist-get expanded :children) 1)))
+      ;; Sent to a Companion with the feature: the template stays, the
+      ;; copies carry their relative bindings.
+      (should (plist-member sent :template))
+      (should (equal (mapcar (lambda (r) (plist-get r :key))
+                             (append (plist-get sent :children) nil))
+                     '("n1" "n2")))
+      ;; Expanded here: no template, no bindings, and the item injected.
+      (should-not (plist-member expanded :template))
+      (should-not (plist-member expanded :bind))
+      (should (equal (plist-get row :key) "n2"))
+      (should (equal (plist-get (aref (plist-get row :children) 0) :text) "Projects"))
+      (should (equal (plist-get (plist-get (plist-get (aref (plist-get row :children) 1) :on_tap)
+                                           :args)
+                                :item)
+                     "n2"))
+      ;; A patch to the array re-expands.
+      (should (equal (length (plist-get (jetpacs-data-materialize
+                                         list (list :rows []) :strip t)
+                                        :children))
+                     0))))
+  ;; Relative refs are refused outside a template; `:key' binds only on
+  ;; the template node; the template node needs a bound key.
+  (should-error (jetpacs-text (jetpacs-ref "title")))
+  (should-error (jetpacs-with-attrs (jetpacs-text "x") :key (jetpacs-ref "/k")))
+  (should-error (jetpacs-template "/rows" (jetpacs-text (jetpacs-ref "title")))
+                :type 'jetpacs-data-error)
+  (should-error (jetpacs-template "/rows"
+                  (jetpacs-with-attrs (jetpacs-text (jetpacs-ref "title"))
+                                      :key (jetpacs-ref "id") :id "fixed"))
+                :type 'jetpacs-data-error)
+  (should-error (jetpacs-template "/rows"
+                  (jetpacs-with-attrs (jetpacs-row (jetpacs-text-input "f"))
+                                      :key (jetpacs-ref "id")))
+                :type 'jetpacs-data-error)
+  (should-error (jetpacs-template "/rows"
+                  (jetpacs-with-attrs
+                   (jetpacs-button "Go" (jetpacs-action "x.y" :args '(:item "z")))
+                   :key (jetpacs-ref "id")))
+                :type 'jetpacs-data-error)
+  ;; A template only ever expands :children.
+  (should-error (jetpacs-make-node "text" :text (jetpacs--make-template-spec "/r" nil)))
+  ;; Nested templates resolve the inner array in the outer item.
+  (let* ((nested (jetpacs-column
+                  (jetpacs-template "/rows"
+                    (jetpacs-with-attrs
+                     (jetpacs-column
+                      (jetpacs-template "subs"
+                        (jetpacs-with-attrs (jetpacs-text (jetpacs-ref "label"))
+                                            :key (jetpacs-ref "id"))))
+                     :key (jetpacs-ref "id")))))
+         (out (jetpacs-data-materialize
+               nested (list :rows (vector (list :id "a" :subs (vector (list :id "a1" :label "A1")))))
+               :strip t))
+         (inner (aref (plist-get (aref (plist-get out :children) 0) :children) 0)))
+    (should (equal (plist-get inner :key) "a1"))
+    (should (equal (plist-get inner :text) "A1"))))
+
+(ert-deftest jetpacs-data-test-the-shell-sends-templates-only-with-the-feature ()
+  "SPEC 22.4: a templated snapshot travels to a Companion that granted
+`data.model' AND advertises `data.template'; otherwise Emacs expands it,
+and a later patch re-pushes instead of patching a snapshot that holds
+no bindings."
+  (skip-unless (require 'jetpacs-shell nil t))
+  (let ((spec (jetpacs-column
+               (jetpacs-template "/rows"
+                 (jetpacs-with-attrs (jetpacs-text (jetpacs-ref "title"))
+                                     :key (jetpacs-ref "id")))))
+        (data (list :rows (vector (list :id "n1" :title "Hi")))))
+    (should (equal (jetpacs-shell--prepare-data spec data t t) (cons spec data)))
+    (pcase-let ((`(,sent . ,document) (jetpacs-shell--prepare-data spec data t nil)))
+      (should-not document)
+      (should-not (plist-member sent :template))
+      (should (equal (plist-get (aref (plist-get sent :children) 0) :text) "Hi")))
+    (pcase-let ((`(,sent . ,document) (jetpacs-shell--prepare-data spec data nil nil)))
+      (should-not document)
+      (should (equal (plist-get (aref (plist-get sent :children) 0) :key) "n1")))
+    ;; The analysis gates see the template as the node it is.
+    (should (member "text" (plist-get (jetpacs-shell--analyze-spec spec) :types)))))
 
 (provide 'jetpacs-data-test)
 ;;; jetpacs-data-test.el ends here

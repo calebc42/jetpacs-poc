@@ -147,11 +147,18 @@ does so only when it is a local draft with `publish_state'.")
 Pass one where a constructor takes a member value: `jetpacs-make-node'
 hoists it into the node's `:bind' member and the Companion resolves it
 against the document at materialization.  POINTER is an absolute RFC
-6901 JSON Pointer string such as \"/planning/scheduled\".  A ref is
-accepted by every constructor check that only types its member; a
-constructor that derives further members from a value treats it as
-absent there and leaves the check to the Companion."
+6901 JSON Pointer string such as \"/planning/scheduled\", or — inside
+a `jetpacs-template' body — a relative one such as \"title\" that
+resolves from the template item (SPEC 13.8.5).  A ref is accepted by
+every constructor check that only types its member; a constructor that
+derives further members from a value treats it as absent there and
+leaves the check to the Companion."
   (pointer nil :read-only t))
+
+(defvar jetpacs--template-depth 0
+  "How many `jetpacs-template' bodies enclose the node being built.
+Positive while a template's root form is evaluated (SPEC 13.8.5): there a
+relative `jetpacs-ref' is admitted and `:key' may be bound.")
 
 (define-error 'jetpacs-data-error
               "jetpacs: the surface data document rejected this binding")
@@ -160,34 +167,46 @@ absent there and leaves the check to the Companion."
   "V when it is an authored literal, nil when it is a `jetpacs-ref'."
   (and (not (jetpacs-ref-p v)) v))
 
-(defun jetpacs-pointer-tokens (pointer what)
-  "The reference tokens of POINTER, an absolute RFC 6901 pointer (SPEC 13.8.2).
-Signals `jetpacs-data-error' with (WHAT REASON) on a non-string, a
-relative pointer, a bad `~' escape, or one over `jetpacs-max-pointer-bytes'
-or `jetpacs-max-pointer-segments'.  The empty pointer names the whole
-document and has no tokens."
+(defun jetpacs-pointer-parse (pointer what &optional in-scope)
+  "Parse POINTER, an RFC 6901 pointer, into (ABSOLUTE . TOKENS).
+SPEC 13.8.2: outside a template item scope a non-empty pointer begins
+with `/' and the empty pointer names the whole document.  With IN-SCOPE
+non-nil (SPEC 13.8.5) a pointer without a leading `/' — the empty pointer
+included — is relative and resolves from the item.  Signals
+`jetpacs-data-error' with (WHAT REASON) on a non-string, a relative
+pointer outside a scope, a bad `~' escape, or one over
+`jetpacs-max-pointer-bytes' or `jetpacs-max-pointer-segments'."
   (unless (stringp pointer)
     (signal 'jetpacs-data-error (list what "pointer must be a string")))
   (when (> (string-bytes pointer) jetpacs-max-pointer-bytes)
     (signal 'jetpacs-data-error
             (list what "pointer exceeds max_pointer_bytes")))
-  (cond
-   ((string-empty-p pointer) nil)
-   ((not (string-prefix-p "/" pointer))
-    (signal 'jetpacs-data-error
-            (list what "pointer must be absolute (SPEC 13.8.2)")))
-   (t
-    (let ((tokens (split-string (substring pointer 1) "/")))
-      (when (> (length tokens) jetpacs-max-pointer-segments)
-        (signal 'jetpacs-data-error
-                (list what "pointer exceeds max_pointer_segments")))
-      (mapcar (lambda (token)
-                (when (string-match-p "~\\([^01]\\|\\'\\)" token)
-                  (signal 'jetpacs-data-error
-                          (list what "invalid ~ escape in pointer")))
-                (replace-regexp-in-string
-                 "~0" "~" (replace-regexp-in-string "~1" "/" token t t) t t))
-              tokens)))))
+  (let (absolute body)
+    (cond
+     ((string-empty-p pointer) (setq absolute (not in-scope) body nil))
+     ((string-prefix-p "/" pointer)
+      (setq absolute t body (substring pointer 1)))
+     (in-scope (setq absolute nil body pointer))
+     (t (signal 'jetpacs-data-error
+                (list what "pointer must be absolute outside a template (SPEC 13.8.2)"))))
+    (cons absolute
+          (and body
+               (let ((tokens (split-string body "/")))
+                 (when (> (length tokens) jetpacs-max-pointer-segments)
+                   (signal 'jetpacs-data-error
+                           (list what "pointer exceeds max_pointer_segments")))
+                 (mapcar (lambda (token)
+                           (when (string-match-p "~\\([^01]\\|\\'\\)" token)
+                             (signal 'jetpacs-data-error
+                                     (list what "invalid ~ escape in pointer")))
+                           (replace-regexp-in-string
+                            "~0" "~" (replace-regexp-in-string "~1" "/" token t t) t t))
+                         tokens))))))
+
+(defun jetpacs-pointer-tokens (pointer what &optional in-scope)
+  "The reference tokens of POINTER (SPEC 13.8.2); see `jetpacs-pointer-parse'.
+Absolute unless IN-SCOPE; the empty absolute pointer has no tokens."
+  (cdr (jetpacs-pointer-parse pointer what in-scope)))
 
 (defun jetpacs-identifier-p (s)
   "Non-nil when S is a valid SPEC §4.4 identifier."
@@ -327,6 +346,7 @@ Runs VAL-FN on each (KEY VALUE); WHAT names the field."
        (error "jetpacs: :align_self must be start/center/end/stretch (SPEC 16.5), got %S" v)))
     (:semantics (jetpacs--check-semantics-object v))
     (:bind (jetpacs--check-bind-plist v))
+    (:template (jetpacs-check-template v ":template" (1+ jetpacs--template-depth)))
     (_ nil)))
 
 (defun jetpacs--check-bind-plist (v)
@@ -339,7 +359,8 @@ Runs VAL-FN on each (KEY VALUE); WHAT names the field."
         (unless (keywordp k)
           (error "jetpacs: :bind member %S must be a keyword" k))
         (condition-case err
-            (jetpacs-pointer-tokens pointer (jetpacs--wire-name k))
+            (jetpacs-pointer-tokens pointer (jetpacs--wire-name k)
+                                    (> jetpacs--template-depth 0))
           (jetpacs-data-error
            (error "jetpacs: :bind %s: %s" (nth 1 err) (nth 2 err)))))))
   v)
@@ -600,19 +621,30 @@ sub-specs (action descriptors, spans, table cells) that carry no type.
 A `jetpacs-ref' VALUE is hoisted into the node's `:bind' member (SPEC
 13.8.3) — the member itself stays absent and the Companion resolves it
 from the surface data document — after checking that the member may be
-bound and that the pointer is well formed.  Only a typed node may bind."
-  (let (body binds)
+bound and that the pointer is well formed.  Only a typed node may bind.
+A `jetpacs-template' VALUE for `:children' becomes the node's
+`:template' beside a `:children' binding (SPEC 13.8.5)."
+  (let (body binds (in-template (> jetpacs--template-depth 0)))
     (while kvs
       (let ((k (pop kvs)) (v (pop kvs)))
         (cond
          ((null v))
+         ((jetpacs-template-spec-p v)
+          (unless (and type (eq k :children))
+            (error "jetpacs: a template expands a node's :children, not %S (SPEC 13.8.5)" k))
+          (push :children binds)
+          (push (jetpacs-template-spec-pointer v) binds)
+          (push :template body)
+          (push (jetpacs-template-spec-root v) body))
          ((jetpacs-ref-p v)
           (unless type
             (error "jetpacs: %S binds a member of a sub-spec; only a node may bind (SPEC 13.8.3)" k))
           (let ((name (jetpacs--wire-name k)))
-            (when-let* ((reason (jetpacs-unbindable-reason type name)))
+            ;; Inside a template `key' may be bound; `jetpacs-check-template'
+            ;; then confirms it is the template node that binds it.
+            (when-let* ((reason (jetpacs-unbindable-reason type name in-template)))
               (error "jetpacs: %s" reason))
-            (jetpacs-pointer-tokens (jetpacs-ref-pointer v) name)
+            (jetpacs-pointer-tokens (jetpacs-ref-pointer v) name in-template)
             (push k binds)
             (push (jetpacs-ref-pointer v) binds)))
          (t (push k body) (push v body)))))
@@ -749,13 +781,18 @@ rule.  An unknown TYPE types only the universal attributes."
           (and (string-prefix-p "on_" name) "action-descriptor")
           (and (equal name "children") "node-array")))))
 
-(defun jetpacs-unbindable-reason (type name)
+(defun jetpacs-unbindable-reason (type name &optional template-root beside-template)
   "Why member NAME of node TYPE may not be bound (SPEC 13.8.3), or nil.
 Identity, dispatch, and every member whose type may carry a Node or an
 ActionDescriptor stay authored; the lists come from the contract's
-`data_model_schema' through `jetpacs-data-contract'."
+`data_model_schema' through `jetpacs-data-contract'.  SPEC 13.8.5 admits
+exactly two exceptions: `key' on a template node (TEMPLATE-ROOT) and
+`children' on the node carrying the template (BESIDE-TEMPLATE)."
   (let ((row (and type (jetpacs-node-schema-row type))))
     (cond
+     ((or (and template-root (equal name "key"))
+          (and beside-template (equal name "children")))
+      nil)
      ((member name (plist-get jetpacs-data-contract :unbindable_members))
       (format "%s MUST NOT be bound (SPEC 13.8.3)" name))
      ((string-prefix-p "on_" name)
@@ -816,14 +853,161 @@ options are validated against (`jetpacs--check-options')."
 Accepts nodes as `&rest' -- (NODE NODE ...) -- or as a single list
 argument -- ((NODE NODE ...)) or a lone nil -- so `(jetpacs-row (list a
 b))' and `(jetpacs-row a b)' mean the same."
-  (let ((kids (if (and (consp args) (null (cdr args))
-                       (let ((only (car args)))
-                         (or (null only)
-                             (and (proper-list-p only)
-                                  (cl-every #'jetpacs-node-p only)))))
-                  (car args)
-                args)))
-    (vconcat (remq nil kids))))
+  (if (and (consp args) (null (cdr args)) (jetpacs-template-spec-p (car args)))
+      (car args)                        ; SPEC 13.8.5: expanded by the Companion
+    (let ((kids (if (and (consp args) (null (cdr args))
+                         (let ((only (car args)))
+                           (or (null only)
+                               (and (proper-list-p only)
+                                    (cl-every #'jetpacs-node-p only)))))
+                    (car args)
+                  args)))
+      (vconcat (remq nil kids)))))
+
+;;;; Templates over bound arrays (SPEC 13.8.5)
+
+(cl-defstruct (jetpacs-template-spec
+               (:constructor jetpacs--make-template-spec (pointer root))
+               (:copier nil))
+  "A `jetpacs-template': the array POINTER and the ROOT node expanded per element."
+  (pointer nil :read-only t) (root nil :read-only t))
+
+(defconst jetpacs--template-contract (plist-get jetpacs-data-contract :template)
+  "The contract's `data_model_schema.template' block (SPEC 13.8.5).")
+
+(defconst jetpacs-template-max-nesting
+  (plist-get jetpacs--template-contract :max_nesting)
+  "How deep template item scopes may nest (SPEC 13.8.5).")
+
+(defconst jetpacs-template-feature (plist-get jetpacs--template-contract :feature)
+  "The SPEC 22.4 member-gating feature a templated snapshot needs.")
+
+(defmacro jetpacs-template (pointer &rest body)
+  "Expand BODY's node once per element of the array POINTER reaches.
+SPEC 13.8.5: pass the result where a container takes its children,
+`(jetpacs-lazy-column (jetpacs-template \"/rows\" ROW))', and the node
+carries the template beside a `:children' binding.  Inside
+BODY a `jetpacs-ref' without a leading `/' resolves from the item; the
+template node MUST bind `:key' (`(jetpacs-ref \"id\")'), may not author
+`:key' or `:id', and nothing inside may carry `:id', input state, an
+editor, a `variant_host', `capture_fields' or an authored `:item' arg,
+which the Companion injects on every hook inside the item.  A Companion
+without the `data.template' feature receives the expansion from Emacs."
+  (declare (indent 1))
+  `(jetpacs--template ,pointer
+                      (let ((jetpacs--template-depth (1+ jetpacs--template-depth)))
+                        ,@body)))
+
+(defun jetpacs--template (pointer root)
+  "Check ROOT as a template over POINTER and return the template spec."
+  (jetpacs-pointer-tokens pointer "template" (> jetpacs--template-depth 0))
+  (jetpacs-check-template root "template" (1+ jetpacs--template-depth))
+  (jetpacs--make-template-spec pointer root))
+
+(defun jetpacs--template-member-keywords (names)
+  (mapcar (lambda (n) (intern (concat ":" n))) names))
+
+(defun jetpacs--check-template-descriptor (descriptor path)
+  "SPEC 13.8.5/14.3: what an ActionDescriptor inside a template may not carry."
+  (when (jetpacs-node-p descriptor)
+    (when (plist-member descriptor :capture_fields)
+      (signal 'jetpacs-data-error
+              (list (concat path ".capture_fields")
+                    "capture_fields is prohibited inside a template (SPEC 13.8.5)")))
+    (when (plist-member (plist-get descriptor :args) :item)
+      (signal 'jetpacs-data-error
+              (list (concat path ".args.item")
+                    "conflicts with the item injection (SPEC 14.3)")))))
+
+(defun jetpacs--check-templated-node (node path)
+  "SPEC 13.8.5: a node carrying `:template' binds `:children' and authors none."
+  (unless (plist-member (plist-get node :bind) :children)
+    (signal 'jetpacs-data-error
+            (list (concat path ".template") "template requires bind.children (SPEC 13.8.5)")))
+  (when (plist-member node :children)
+    (signal 'jetpacs-data-error
+            (list (concat path ".children")
+                  "children is both authored and templated (SPEC 13.8.5)"))))
+
+(defun jetpacs-check-template (template path depth)
+  "Signal `jetpacs-data-error' unless TEMPLATE obeys SPEC 13.8.5; return it.
+PATH names the template (`spec.template'); DEPTH is its nesting, one for
+an outermost template.  The structural rules are reported at the authored
+template's path, as the Companion reports them: nesting, the bound `key',
+no authored `key' or `id' on the template node, and nothing inside that
+carries `id', input state, an editor, a `variant_host', a descriptor with
+`capture_fields' or an authored `args.item'."
+  (unless (and (jetpacs-node-p template) (plist-member template :t))
+    (signal 'jetpacs-data-error (list path "must be a Node")))
+  (when (> depth jetpacs-template-max-nesting)
+    (signal 'jetpacs-data-error
+            (list path (format "template scopes nest deeper than %d (SPEC 13.8.5)"
+                               jetpacs-template-max-nesting))))
+  (dolist (member (plist-get jetpacs--template-contract :root_forbidden_members))
+    (when (plist-member template (intern (concat ":" member)))
+      (signal 'jetpacs-data-error
+              (list (format "%s.%s" path member)
+                    (format "a template node MUST NOT author %s (SPEC 13.8.5)" member)))))
+  (dolist (member (plist-get jetpacs--template-contract :root_must_bind))
+    (unless (plist-member (plist-get template :bind) (intern (concat ":" member)))
+      (signal 'jetpacs-data-error
+              (list (format "%s.%s" path member)
+                    (format "a template node MUST bind %s (SPEC 13.8.5)" member)))))
+  (let ((forbidden-types
+         (plist-get (plist-get jetpacs--template-contract :forbidden_inside) :node_types))
+        (hooks (jetpacs--template-member-keywords jetpacs-action-hook-keys)))
+    (cl-labels
+        ((scan (value vpath)
+           (cond
+            ((vectorp value)
+             (let ((i -1))
+               (mapc (lambda (child) (scan child (format "%s[%d]" vpath (cl-incf i))))
+                     value)))
+            ((hash-table-p value)
+             (maphash (lambda (k child) (scan child (format "%s.%s" vpath k))) value))
+            ((and (consp value) (keywordp (car value)))
+             (let ((node-p (plist-member value :t)) (type (plist-get value :t)))
+               (when node-p
+                 (when (plist-member value :id)
+                   (signal 'jetpacs-data-error
+                           (list (concat vpath ".id")
+                                 "id is prohibited inside a template (SPEC 13.8.5)")))
+                 ;; `jetpacs-stateful-node-p' wants `:t' first; a parsed
+                 ;; document orders members arbitrarily, so mirror it here.
+                 (when (or (member type forbidden-types)
+                           (and (member type jetpacs-stateful-node-types)
+                                (pcase type
+                                  ((or "button" "icon_button") (plist-member value :checked))
+                                  ("editor" t)
+                                  (_ t))))
+                   (signal 'jetpacs-data-error
+                           (list vpath (format "%s is prohibited inside a template (SPEC 13.8.5)" type))))
+                 (dolist (hook hooks)
+                   (when-let* ((d (plist-get value hook)))
+                     (jetpacs--check-template-descriptor
+                      d (format "%s.%s" vpath (jetpacs--wire-name hook)))))
+                 (dolist (side '(:swipe_start :swipe_end))
+                   (when-let* ((swipe (plist-get value side)))
+                     (let ((spath (format "%s.%s" vpath (jetpacs--wire-name side))))
+                       (jetpacs--check-template-descriptor
+                        (plist-get swipe :on_trigger) (concat spath ".on_trigger"))
+                       (let ((i -1))
+                         (mapc (lambda (action)
+                                 (jetpacs--check-template-descriptor
+                                  (plist-get action :on_trigger)
+                                  (format "%s.actions[%d].on_trigger" spath (cl-incf i))))
+                               (or (plist-get swipe :actions) []))))))
+                 (when (plist-member value :template)
+                   (jetpacs--check-templated-node value vpath)
+                   (jetpacs-check-template (plist-get value :template)
+                                           (concat vpath ".template") (1+ depth))))
+               (let ((p value))
+                 (while p
+                   (let ((k (pop p)) (child (pop p)))
+                     (unless (and node-p (memq k '(:bind :template :args :meta :value)))
+                       (scan child (format "%s.%s" vpath (jetpacs--wire-name k))))))))))))
+      (scan template path)))
+  template)
 
 ;;;; Universal attributes (§16.5) and colors (§16.6)
 
@@ -1014,15 +1198,27 @@ ATTRS is a plist of universal attribute keywords; nil-valued members are
 dropped, and a supplied attribute OVERRIDES an existing one of the same
 name (last wins, no duplicate member).  Each value is validated against
 its §16.5 grammar.  Signals an error on a non-universal key or an invalid
-value.  NODE is not mutated."
-  (let ((out (copy-sequence node)))
+value.  NODE is not mutated.  A `jetpacs-ref' value is hoisted into
+`:bind' exactly as `jetpacs-make-node' hoists one (SPEC 13.8.3); inside a
+`jetpacs-template' that is how the template node binds its `:key'."
+  (let ((out (copy-sequence node))
+        (in-template (> jetpacs--template-depth 0)))
     (while attrs
       (let ((k (pop attrs)) (v (pop attrs)))
         (when v
           (unless (memq k jetpacs-universal-attributes)
             (error "jetpacs-with-attrs: %S is not a universal attribute" k))
-          (jetpacs--check-attr k v)
-          (setq out (plist-put out k v)))))
+          (if (jetpacs-ref-p v)
+              (let ((name (jetpacs--wire-name k)))
+                (when-let* ((reason (jetpacs-unbindable-reason
+                                     (plist-get node :t) name in-template)))
+                  (error "jetpacs: %s" reason))
+                (jetpacs-pointer-tokens (jetpacs-ref-pointer v) name in-template)
+                (setq out (plist-put out :bind
+                                     (plist-put (copy-sequence (plist-get out :bind))
+                                                k (jetpacs-ref-pointer v)))))
+            (jetpacs--check-attr k v)
+            (setq out (plist-put out k v))))))
     out))
 
 (defun jetpacs-color-valid-p (color)

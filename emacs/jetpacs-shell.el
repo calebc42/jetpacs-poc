@@ -561,6 +561,10 @@ toolbar constraining features plus the `action.open_surface' member gate."
                 (not (member "action.open_surface" allowed)))
        (error "jetpacs: remote open_surface needs the unadvertised feature %S for %s (SPEC 14.1)"
               "action.open_surface" what))
+     (when (and (plist-member p :template)
+                (not (member jetpacs-template-feature allowed)))
+       (error "jetpacs: a template needs the unadvertised feature %S for %s (SPEC 13.8.5)"
+              jetpacs-template-feature what))
      (pcase (plist-get p :t)
        ("image"
         (let* ((url (plist-get p :url))
@@ -602,7 +606,8 @@ combining discovery does not change which sender MUST has precedence."
        (when-let* ((builtin (plist-get p :builtin)))
          (push builtin used-builtins))
        (when (or (member (plist-get p :t) '("image" "editor"))
-                 (plist-member p :open_surface))
+                 (plist-member p :open_surface)
+                 (plist-member p :template))
          (push p constrained))))
     (dolist (type (delete-dups used-types))
       (unless (member type types)
@@ -618,6 +623,10 @@ combining discovery does not change which sender MUST has precedence."
                  (not (member "action.open_surface" features)))
         (error "jetpacs: remote open_surface needs the unadvertised feature %S for %s (SPEC 14.1)"
                "action.open_surface" what))
+      (when (and (plist-member p :template)
+                 (not (member jetpacs-template-feature features)))
+        (error "jetpacs: a template needs the unadvertised feature %S for %s (SPEC 13.8.5)"
+               jetpacs-template-feature what))
       (pcase (plist-get p :t)
         ("image"
          (let* ((url (plist-get p :url))
@@ -1188,23 +1197,33 @@ A crash signals like a stale builder's: the push is refused, loudly."
                                (list :surface surface :phase 'data) e))))
         (funcall fn)))))
 
-(defun jetpacs-shell--prepare-data (spec data granted)
+(defun jetpacs-shell--prepare-data (spec data granted &optional templates)
   "Return (SPEC . DATA) as the wire carries them (SPEC 13.8, 12 rule 3).
 With GRANTED non-nil the bindings travel and DATA rides the snapshot;
 they are checked here so a refused push never reaches the wire.  Without
 the grant the bindings are resolved against DATA and stripped, and no
-document is sent — the same builders serve a Companion either way."
+document is sent — the same builders serve a Companion either way.  A
+snapshot carrying a `:template' (SPEC 13.8.5) travels only when TEMPLATES
+is non-nil too — the target advertises the `data.template' feature (SPEC
+22.4) — and is otherwise expanded here, with the item keys written into
+its descriptors, and sent without a document."
   (condition-case err
       (cond
-       (granted
+       ((and granted (or templates (not (jetpacs-data-templated-p spec))))
         (jetpacs-data-check-bindings spec)
         (when data (jetpacs-data-check-document data))
         (cons spec data))
-       ((or data (jetpacs-data-bound-p spec))
+       ((or data (jetpacs-data-bound-p spec) (jetpacs-data-templated-p spec))
         (cons (jetpacs-data-materialize spec data :strip t) nil))
        (t (cons spec nil)))
     (jetpacs-data-error
      (error "jetpacs: %s: %s (SPEC 13.8)" (nth 1 err) (nth 2 err)))))
+
+(defvar jetpacs-shell--documented (make-hash-table :test #'equal)
+  "Surfaces whose latest push carried its data document (SPEC 13.8).
+A `surface.data' patch only means something against a snapshot the
+Companion holds WITH its bindings; a surface pushed expanded — no grant,
+or a template the target cannot expand — is re-pushed whole instead.")
 
 (cl-defun jetpacs-shell-data-patch (surface-or-owner ops &key callback)
   "Patch SURFACE-OR-OWNER's data document with OPS (SPEC 13.8.4).
@@ -1220,7 +1239,8 @@ stood in."
         (client (jetpacs-client)))
     (dolist (op ops) (jetpacs-data-check-op op))
     (if (and client (jetpacs-connected-p)
-             (jetpacs-granted-p "data.model" client))
+             (jetpacs-granted-p "data.model" client)
+             (gethash surface jetpacs-shell--documented))
         (let ((revision nil))
           (setq revision
                 (ebp-client-surface-data
@@ -1423,7 +1443,12 @@ MUSTs are loud, never sanitized.  On any failure a queued
                    (stale-after-s (or stale-after-s
                                       (plist-get entry :stale-after-s)))
                    (data (or data (jetpacs-shell--build-data surface entry)))
-                   (data-granted (jetpacs-granted-p "data.model" client)))
+                   (data-granted (jetpacs-granted-p "data.model" client))
+                   ;; SPEC 22.4: a template travels only to a target that
+                   ;; advertises `data.template'; otherwise Emacs expands it.
+                   (templates-ok (jetpacs-feature-advertised-p
+                                  jetpacs-template-feature
+                                  (jetpacs-shell--surface-target surface))))
               ;; The gates, in check order — ALL of them under the
               ;; recorder seam, GATE 2 included; the signal continues to
               ;; the caller unchanged (the sender MUSTs stay loud).
@@ -1438,8 +1463,10 @@ MUSTs are loud, never sanitized.  On any failure a queued
                 (when stale-spec
                   (setq stale-spec (jetpacs-data-materialize stale-spec data :strip t)))
                 (pcase-let ((`(,resolved . ,document)
-                             (jetpacs-shell--prepare-data spec data data-granted)))
-                  (setq spec resolved data document))
+                             (jetpacs-shell--prepare-data
+                              spec data data-granted templates-ok)))
+                  (setq spec resolved data document)
+                  (puthash surface (and document t) jetpacs-shell--documented))
                 ;; GATE 2 first half: stale_spec discipline (SPEC 13.5).
                 (when stale-spec
                   (unless (eq (not (plist-member spec :views))

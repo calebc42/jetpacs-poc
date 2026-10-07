@@ -20,7 +20,9 @@
 ;; object), a hash table with string keys, or a vector; arrays are vectors.
 ;; An Elisp plist cannot tell a JSON null member from an absent one, so a
 ;; null in the document reaches nothing here, which is the only difference
-;; from the Companion and never affects a usable member value.
+;; from the Companion and never affects a usable member value.  The same
+;; holds for an empty-plist template item (SPEC 13.8.5): build items as
+;; hash tables or non-empty plists.
 
 ;;; Code:
 
@@ -138,8 +140,17 @@ reaches nothing, or a null member, yields FOUND nil."
      spec (lambda (node _path) (when (plist-member node :bind) (throw 'bound t))))
     nil))
 
+(defun jetpacs-data-templated-p (spec)
+  "Non-nil when any node of SPEC carries `:template' (SPEC 13.8.5)."
+  (catch 'templated
+    (jetpacs-data--walk-nodes
+     spec (lambda (node _path) (when (plist-member node :template) (throw 'templated t))))
+    nil))
+
 (defun jetpacs-data--walk-nodes (value fn &optional path)
-  "Call FN with each node plist of VALUE and its SPEC 13.8 path."
+  "Call FN with each node plist of VALUE and its SPEC 13.8 path.
+A `:template' member is walked as the node it is; `:bind' and the opaque
+members are not."
   (let ((path (or path "spec")))
     (cond
      ((vectorp value)
@@ -163,33 +174,103 @@ reaches nothing, or a null member, yields FOUND nil."
 
 (defun jetpacs-data-check-bindings (spec)
   "Signal unless every `:bind' of SPEC may travel as authored (SPEC 13.8.3).
-Checks the bindable-member rule, the pointer grammar, the authored-and-
-bound conflict, and `jetpacs-max-bindings-per-snapshot'; a document is
-not consulted, so a required member whose pointer reaches nothing is the
-Companion's to refuse.  Returns the binding count."
+Checks the bindable-member rule, the pointer grammar (relative inside a
+template item scope, SPEC 13.8.5), the authored-and-bound conflict,
+`jetpacs-max-bindings-per-snapshot', and every template's structural
+rules; a document is not consulted, so a required member whose pointer
+reaches nothing is the Companion's to refuse.  Returns the binding count."
   (let ((count 0))
-    (jetpacs-data--walk-nodes
-     spec
-     (lambda (node path)
-       (when-let* ((bind (plist-get node :bind)))
-         (let ((type (plist-get node :t)))
-           (unless (and (consp bind) (keywordp (car bind)))
-             (signal 'jetpacs-data-error (list (concat path ".bind") "bind must be an object")))
-           (let ((b bind))
-             (while b
-               (let* ((k (pop b)) (pointer (pop b))
-                      (name (jetpacs--wire-name k))
-                      (bpath (format "%s.bind.%s" path name)))
-                 (when (> (cl-incf count) jetpacs-max-bindings-per-snapshot)
-                   (signal 'jetpacs-data-error
-                           (list bpath "exceeds max_bindings_per_snapshot")))
-                 (when-let* ((reason (jetpacs-unbindable-reason type name)))
-                   (signal 'jetpacs-data-error (list bpath reason)))
-                 (when (plist-member node k)
-                   (signal 'jetpacs-data-error
-                           (list bpath (format "%s is both authored and bound" name))))
-                 (jetpacs-pointer-tokens pointer bpath))))))))
+    (cl-labels
+        ((check-node (node path in-scope template-root)
+           (let ((type (plist-get node :t))
+                 (bind (plist-get node :bind))
+                 (templated (plist-member node :template)))
+             (when templated
+               (jetpacs--check-templated-node node path)
+               ;; Nested templates are scanned by their enclosing one.
+               (unless in-scope
+                 (jetpacs-check-template (plist-get node :template)
+                                         (concat path ".template") 1)))
+             (when bind
+               (unless (and (consp bind) (keywordp (car bind)))
+                 (signal 'jetpacs-data-error (list (concat path ".bind") "bind must be an object")))
+               (let ((b bind))
+                 (while b
+                   (let* ((k (pop b)) (pointer (pop b))
+                          (name (jetpacs--wire-name k))
+                          (bpath (format "%s.bind.%s" path name)))
+                     (when (> (cl-incf count) jetpacs-max-bindings-per-snapshot)
+                       (signal 'jetpacs-data-error
+                               (list bpath "exceeds max_bindings_per_snapshot")))
+                     (when-let* ((reason (jetpacs-unbindable-reason
+                                          type name template-root templated)))
+                       (signal 'jetpacs-data-error (list bpath reason)))
+                     (when (plist-member node k)
+                       (signal 'jetpacs-data-error
+                               (list bpath (format "%s is both authored and bound" name))))
+                     (jetpacs-pointer-tokens pointer bpath in-scope)))))))
+         (walk (value path in-scope template-root)
+           (cond
+            ((vectorp value)
+             (let ((i -1))
+               (mapc (lambda (child)
+                       (walk child (format "%s[%d]" path (cl-incf i)) in-scope nil))
+                     value)))
+            ((hash-table-p value)
+             (maphash (lambda (k child) (walk child (format "%s.%s" path k) in-scope nil))
+                      value))
+            ((and (consp value) (keywordp (car value)))
+             (let ((node-p (plist-member value :t)))
+               (when node-p (check-node value path in-scope template-root))
+               (let ((p value))
+                 (while p
+                   (let ((k (pop p)) (child (pop p)))
+                     (cond
+                      ((and node-p (memq k jetpacs--opaque-members)))
+                      ((and node-p (eq k :template))
+                       (walk child (concat path ".template") t t))
+                      (t (walk child (format "%s.%s" path (jetpacs--wire-name k))
+                               in-scope nil)))))))))))
+      (walk spec "spec" nil nil))
     count))
+
+(defconst jetpacs-data--probe (make-symbol "probe")
+  "The scope of the one check a template gets when its array is empty.")
+
+(defconst jetpacs-data--hook-keywords
+  (mapcar (lambda (n) (intern (concat ":" n))) jetpacs-action-hook-keys)
+  "The contract's hook members as keywords.")
+
+(defun jetpacs-data--inject-item (node item)
+  "A copy of NODE whose remote descriptors carry `:item' ITEM in `:args'.
+SPEC 14.3 (amendment #195): the Companion injects the enclosing item's key
+on every hook dispatched from a templated node; when Emacs expands the
+template itself it writes the same member, so a handler reads
+`(plist-get args :item)' either way."
+  (cl-labels ((inject (d)
+                (if (and (jetpacs-node-p d) (plist-member d :action))
+                    (plist-put (copy-sequence d) :args
+                               (plist-put (copy-sequence (plist-get d :args)) :item item))
+                  d)))
+    (let ((out (copy-sequence node)))
+      (dolist (hook jetpacs-data--hook-keywords)
+        (when (plist-member out hook)
+          (setq out (plist-put out hook (inject (plist-get out hook))))))
+      (dolist (side '(:swipe_start :swipe_end))
+        (when-let* ((swipe (plist-get out side)))
+          (let ((copy (copy-sequence swipe)))
+            (when (plist-member copy :on_trigger)
+              (setq copy (plist-put copy :on_trigger (inject (plist-get copy :on_trigger)))))
+            (when (vectorp (plist-get copy :actions))
+              (setq copy (plist-put copy :actions
+                                    (vconcat (mapcar (lambda (a)
+                                                       (if (plist-member a :on_trigger)
+                                                           (plist-put (copy-sequence a) :on_trigger
+                                                                      (inject (plist-get a :on_trigger)))
+                                                         a))
+                                                     (plist-get copy :actions))))))
+            (setq out (plist-put out side copy)))))
+      out)))
 
 (cl-defun jetpacs-data-materialize (spec data &key strip)
   "Resolve every `:bind' of SPEC against DATA (SPEC 13.8.3); return a copy.
@@ -198,57 +279,110 @@ reaches, or are omitted when it reaches nothing; a required member left
 absent, an unbindable or unknown member, a member both authored and
 bound, a malformed pointer, or a resolved value of the wrong type signals
 `jetpacs-data-error' with (PATH REASON) at `<node>.bind.<member>', in
-walk order.  With STRIP non-nil the `:bind' members are removed, as a
-snapshot bound for a Companion without `data.model' needs."
+walk order.  A `:template' (SPEC 13.8.5) is expanded once per element of
+the array its `:children' pointer reaches, each copy in an item scope
+where a relative pointer resolves from the element; a structural
+violation is reported at the authored template's path.  With STRIP
+non-nil the `:bind' and `:template' members are removed and every remote
+descriptor inside an expanded item receives the item's key as `:item' in
+its `:args', as a snapshot bound for a Companion without `data.model' or
+without the `data.template' feature needs."
   (jetpacs-data-check-document data)
   (let ((count 0))
     (cl-labels
-        ((walk (value path)
+        ((walk (value path scope depth item)
            (cond
             ((vectorp value)
              (let ((i -1))
                (vconcat (mapcar (lambda (child)
-                                  (walk child (format "%s[%d]" path (cl-incf i))))
+                                  (walk child (format "%s[%d]" path (cl-incf i)) scope depth item))
                                 value))))
             ((hash-table-p value)
              (let ((out (make-hash-table :test (hash-table-test value)
                                          :size (hash-table-count value))))
                (maphash (lambda (k child)
-                          (puthash k (walk child (format "%s.%s" path k)) out))
+                          (puthash k (walk child (format "%s.%s" path k) scope depth item) out))
                         value)
                out))
             ((and (consp value) (keywordp (car value)))
-             (if (plist-member value :t) (walk-node value path) (walk-plist value path)))
+             (if (plist-member value :t)
+                 (walk-node value path scope depth nil item)
+               (walk-plist value path scope depth item)))
             (t value)))
-         (walk-plist (plist path)
+         (walk-plist (plist path scope depth item)
            (let (out)
              (while plist
                (let ((k (pop plist)) (v (pop plist)))
                  (push k out)
-                 (push (walk v (format "%s.%s" path (jetpacs--wire-name k))) out)))
+                 (push (walk v (format "%s.%s" path (jetpacs--wire-name k)) scope depth item)
+                       out)))
              (nreverse out)))
-         (walk-node (node path)
+         (walk-node (node path scope depth template-root item)
            (let* ((type (plist-get node :t))
                   (bind (plist-get node :bind))
-                  (resolved (and bind (resolve node type bind path)))
-                  (p node)
-                  out)
-             (while p
-               (let ((k (pop p)) (v (pop p)))
-                 (cond
-                  ((and (eq k :bind) strip))
-                  ((memq k jetpacs--opaque-members) (push k out) (push v out))
-                  (t (push k out)
-                     (push (walk v (format "%s.%s" path (jetpacs--wire-name k))) out)))))
+                  (templated (plist-member node :template))
+                  (expansion 'none)
+                  resolved out)
+             ;; SPEC 13.8.5: the structural rules once, at the authored
+             ;; path; copies and nested templates were covered by that scan.
+             (when (and templated (null scope))
+               (jetpacs--check-templated-node node path)
+               (jetpacs-check-template (plist-get node :template)
+                                       (concat path ".template") (1+ depth)))
+             (when bind
+               (pcase-let ((`(,r . ,e) (resolve node type bind path scope template-root)))
+                 (setq resolved r expansion e)))
+             (when template-root
+               (setq item (and (not (eq scope jetpacs-data--probe))
+                               (plist-get resolved :key))))
+             (when (and strip item) (setq node (jetpacs-data--inject-item node item)))
+             (let ((p node))
+               (while p
+                 (let ((k (pop p)) (v (pop p)))
+                   (cond
+                    ((and (memq k '(:bind :template)) strip))
+                    ((memq k '(:bind :template)) (push k out) (push v out))
+                    ((memq k jetpacs--opaque-members) (push k out) (push v out))
+                    (t (push k out)
+                       (push (walk v (format "%s.%s" path (jetpacs--wire-name k))
+                                   scope depth item)
+                             out))))))
              (setq out (nreverse out))
              (while resolved
                (let ((k (pop resolved)) (v (pop resolved)))
                  (setq out (plist-put out k v))))
+             (unless (eq expansion 'none)
+               (let ((template (plist-get node :template)))
+                 (if (zerop (length expansion))
+                     (progn
+                       (walk-node template (concat path ".template")
+                                  jetpacs-data--probe (1+ depth) t nil)
+                       (setq out (plist-put out :children [])))
+                   (let ((keys (make-hash-table :test #'equal)) (i -1))
+                     (setq out
+                           (plist-put out :children
+                                      (vconcat
+                                       (mapcar (lambda (element)
+                                                 (let* ((cpath (format "%s.children[%d]" path (cl-incf i)))
+                                                        (copy (walk-node template cpath element
+                                                                         (1+ depth) t nil))
+                                                        (key (plist-get copy :key)))
+                                                   ;; SPEC 16.1 after expansion: the
+                                                   ;; bound keys are the copies' identity.
+                                                   (when (gethash key keys)
+                                                     (signal 'jetpacs-data-error
+                                                             (list (concat cpath ".key")
+                                                                   "duplicate sibling key")))
+                                                   (puthash key t keys)
+                                                   copy))
+                                               expansion))))))))
              out))
-         (resolve (node type bind path)
+         (resolve (node type bind path scope template-root)
            (unless (and (consp bind) (keywordp (car bind)))
              (signal 'jetpacs-data-error (list (concat path ".bind") "bind must be an object")))
-           (let ((row (jetpacs-node-schema-row type)) (b bind) out)
+           (let ((row (jetpacs-node-schema-row type))
+                 (templated (plist-member node :template))
+                 (b bind) (expansion 'none) out)
              (while b
                (let* ((k (pop b)) (pointer (pop b))
                       (name (jetpacs--wire-name k))
@@ -256,27 +390,39 @@ snapshot bound for a Companion without `data.model' needs."
                  (when (> (cl-incf count) jetpacs-max-bindings-per-snapshot)
                    (signal 'jetpacs-data-error
                            (list bpath "exceeds max_bindings_per_snapshot")))
-                 (when-let* ((reason (jetpacs-unbindable-reason type name)))
+                 (when-let* ((reason (jetpacs-unbindable-reason
+                                      type name template-root templated)))
                    (signal 'jetpacs-data-error (list bpath reason)))
                  (when (plist-member node k)
                    (signal 'jetpacs-data-error
                            (list bpath (format "%s is both authored and bound" name))))
-                 (let* ((tokens (jetpacs-pointer-tokens pointer bpath))
-                        (hit (jetpacs-data-resolve data tokens bpath)))
-                   (cond
-                    ((car hit)
-                     (let ((tag (jetpacs-member-tag type name)))
-                       (unless (jetpacs-data--matches-tag tag (cdr hit) type name)
+                 (pcase-let ((`(,absolute . ,tokens)
+                              (jetpacs-pointer-parse pointer bpath (and scope t))))
+                   (unless (and (not absolute) (eq scope jetpacs-data--probe))
+                     (let ((hit (jetpacs-data-resolve (if absolute data scope) tokens bpath)))
+                       (cond
+                        ((and (eq k :children) templated)
+                         (let ((elements (if (car hit) (cdr hit) [])))
+                           (unless (vectorp elements)
+                             (signal 'jetpacs-data-error
+                                     (list bpath "a template's children pointer must reach an array (SPEC 13.8.5)")))
+                           (when (> (length elements) jetpacs-max-template-items)
+                             (signal 'jetpacs-data-error
+                                     (list bpath "exceeds max_template_items")))
+                           (setq expansion elements)))
+                        ((car hit)
+                         (let ((tag (jetpacs-member-tag type name)))
+                           (unless (jetpacs-data--matches-tag tag (cdr hit) type name)
+                             (signal 'jetpacs-data-error
+                                     (list bpath (format "resolved value is not %s"
+                                                         (or tag "typed")))))
+                           (push k out)
+                           (push (cdr hit) out)))
+                        ((and row (member name (nth 1 row)))
                          (signal 'jetpacs-data-error
-                                 (list bpath (format "resolved value is not %s"
-                                                     (or tag "typed")))))
-                       (push k out)
-                       (push (cdr hit) out)))
-                    ((and row (member name (nth 1 row)))
-                     (signal 'jetpacs-data-error
-                             (list bpath (format "required %s reaches nothing" name))))))))
-             (nreverse out))))
-      (walk spec "spec"))))
+                                 (list bpath (format "required %s reaches nothing" name))))))))))
+             (cons (nreverse out) expansion))))
+      (walk spec "spec" nil 0 nil))))
 
 ;;;; DataOps (SPEC 13.8.4)
 
