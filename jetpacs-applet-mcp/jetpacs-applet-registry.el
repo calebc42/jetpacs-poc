@@ -343,6 +343,167 @@ Never signals for an item's problems; the report lists them and ends in
             (string-join (nreverse lines) "\n")
             "\n")))
 
+;;;; The configured registries, with this checkout's own as the default
+
+(defun jetpacs-applet-registry-default-namespaces ()
+  "The `@jetpacs' namespace pointing at this checkout's committed build."
+  (list (cons jetpacs-registry-default-namespace
+              (list :url (concat "file://"
+                                 (expand-file-name jetpacs-applet-registry-output
+                                                   (jetpacs-applet-tooling-workspace-root))
+                                 "/{name}.json")))))
+
+(defun jetpacs-applet-registry-namespaces ()
+  "The effective registries: the environment's or customized, else the default."
+  (or (jetpacs-registry-namespaces)
+      (jetpacs-applet-registry-default-namespaces)))
+
+(defmacro jetpacs-applet-registry--with-namespaces (&rest body)
+  "Run BODY with the effective registries in force for the foundation."
+  (declare (indent 0))
+  `(let ((jetpacs-registry-namespaces (jetpacs-applet-registry-namespaces)))
+     ,@body))
+
+(defun jetpacs-applet-registry-namespaces-text ()
+  "The configured registries as text."
+  (let ((namespaces (jetpacs-applet-registry-namespaces)))
+    (concat (format "Registries (%d):\n" (length namespaces))
+            (mapconcat (lambda (entry)
+                         (format "- %s: %s%s" (car entry) (plist-get (cdr entry) :url)
+                                 (if (plist-get (cdr entry) :headers) " (with headers)" "")))
+                       namespaces "\n")
+            "\n\nAdd a registry with `jetpacs-registry-namespaces' or JETPACS_REGISTRIES; the registry an item comes from must be explicit.")))
+
+;;;; Indexes, listing and search
+
+(defun jetpacs-applet-registry-index (namespace)
+  "The published index of NAMESPACE as a hash table, items checked.
+The index sits beside the items, at the template with `{name}' = `registry'."
+  (jetpacs-applet-registry--with-namespaces
+    (let* ((parsed (jetpacs-registry-parse-address (format "%s/registry" namespace)))
+           (target (jetpacs-registry-address-url parsed))
+           (index (jetpacs-registry-parse-json
+                   (jetpacs-registry-fetch-sync (car target) (cdr target)))))
+      (unless (and (hash-table-p index)
+                   (eql (gethash "format" index) jetpacs-applet-registry-format)
+                   (vectorp (gethash "items" index)))
+        (signal 'jetpacs-registry-error (list "not a registry index" (car target))))
+      (seq-doseq (item (gethash "items" index))
+        (jetpacs-registry-check-item item))
+      index)))
+
+(defun jetpacs-applet-registry-list (&optional namespace)
+  "Items of NAMESPACE, or of every configured registry: (NAMESPACE . ITEM) pairs.
+A registry that cannot be read contributes one (NAMESPACE . ERROR-STRING)."
+  (let ((namespaces (if namespace
+                        (list namespace)
+                      (mapcar #'car (jetpacs-applet-registry-namespaces))))
+        result)
+    (dolist (ns namespaces)
+      (condition-case err
+          (seq-doseq (item (gethash "items" (jetpacs-applet-registry-index ns)))
+            (push (cons ns item) result))
+        (error (push (cons ns (format "unavailable: %s" (error-message-string err))) result))))
+    (nreverse result)))
+
+(defun jetpacs-applet-registry--item-line (namespace item)
+  "One line describing ITEM of NAMESPACE."
+  (format "- %s/%s %s — %s%s%s%s"
+          namespace (gethash "name" item) (gethash "version" item)
+          (gethash "description" item)
+          (if-let* ((c (gethash "categories" item)))
+              (format " [%s]" (string-join (append c nil) ", ")) "")
+          (if-let* ((e (gethash "requires_extensions" item)))
+              (format " [extensions: %s]" (string-join (append e nil) ", ")) "")
+          (if-let* ((d (gethash "registry_dependencies" item)))
+              (format " [depends: %s]" (string-join (append d nil) ", ")) "")))
+
+(defun jetpacs-applet-registry-list-text (&optional namespace limit)
+  "The items of NAMESPACE (or every registry) as text, at most LIMIT."
+  (let* ((entries (jetpacs-applet-registry-list namespace))
+         (shown (seq-take entries (or limit 100))))
+    (jetpacs-applet-tooling--cap
+     (concat (format "Items (%d%s):\n" (length entries)
+                     (if (< (length shown) (length entries))
+                         (format ", showing %d" (length shown)) ""))
+             (mapconcat (lambda (entry)
+                          (if (stringp (cdr entry))
+                              (format "- %s: %s" (car entry) (cdr entry))
+                            (jetpacs-applet-registry--item-line (car entry) (cdr entry))))
+                        shown "\n")))))
+
+(defun jetpacs-applet-registry-search (query &optional namespace limit)
+  "Items whose name, title, description or categories match QUERY.
+Every word of QUERY must appear, case-insensitively.  NAMESPACE narrows to
+one registry; the result is (NAMESPACE . ITEM) pairs, at most LIMIT."
+  (let ((words (split-string (downcase query) "[[:space:]]+" t)))
+    (seq-take
+     (seq-filter (lambda (entry)
+                   (and (hash-table-p (cdr entry))
+                        (let ((haystack (downcase
+                                         (string-join
+                                          (list (gethash "name" (cdr entry))
+                                                (gethash "title" (cdr entry))
+                                                (gethash "description" (cdr entry))
+                                                (string-join (append (gethash "categories" (cdr entry)) nil) " "))
+                                          " "))))
+                          (seq-every-p (lambda (word) (string-search word haystack)) words))))
+                 (jetpacs-applet-registry-list namespace))
+     (or limit 20))))
+
+(defun jetpacs-applet-registry-search-text (query &optional namespace limit)
+  "Search results for QUERY as text."
+  (let ((matches (jetpacs-applet-registry-search query namespace limit)))
+    (jetpacs-applet-tooling--cap
+     (if (null matches)
+         (format "No item matches %S in %s." query (or namespace "the configured registries"))
+       (concat (format "Matches for %S (%d):\n" query (length matches))
+               (mapconcat (lambda (entry)
+                            (jetpacs-applet-registry--item-line (car entry) (cdr entry)))
+                          matches "\n")
+               "\n\nNext: jetpacs_registry_view for the files, jetpacs_registry_resolve before adding.")))))
+
+(defun jetpacs-applet-registry-view-text (addresses)
+  "The items at ADDRESSES, fetched and sha-verified, as text with their files."
+  (jetpacs-applet-registry--with-namespaces
+    (jetpacs-applet-tooling--cap
+     (mapconcat
+      (lambda (address)
+        (let* ((item (jetpacs-registry-verify-item (jetpacs-registry-fetch-item address))))
+          (concat
+           (format "Item %s (%s %s)\n%s\n" address (gethash "name" item) (gethash "version" item)
+                   (gethash "description" item))
+           (if-let* ((docs (gethash "docs" item))) (format "Docs: %s\n" docs) "")
+           (if-let* ((e (gethash "requires_extensions" item)))
+               (format "Requires extensions: %s\n" (string-join (append e nil) ", ")) "")
+           (if-let* ((f (gethash "requires_features" item)))
+               (format "Requires features: %s\n" (string-join (append f nil) ", ")) "")
+           (if-let* ((d (gethash "registry_dependencies" item)))
+               (format "Depends on: %s\n" (string-join (append d nil) ", ")) "")
+           (mapconcat (lambda (file)
+                        (format "\n--- %s (sha256 %s)\n%s" (gethash "path" file)
+                                (gethash "sha256" file) (gethash "content" file)))
+                      (gethash "files" item) ""))))
+      addresses "\n\n"))))
+
+(defun jetpacs-applet-registry-resolve-text (addresses &optional dir)
+  "The resolve report for ADDRESSES into DIR as text; writes nothing."
+  (jetpacs-applet-registry--with-namespaces
+    (let* ((dir (or dir (expand-file-name "jetpacs/apps/" user-emacs-directory)))
+           (report (jetpacs-applet-registry-resolve-report addresses dir)))
+      (jetpacs-applet-tooling--cap
+       (concat (jetpacs-applet-registry--format-plan report)
+               (if (or (plist-get report :issues) (plist-get report :collisions))
+                   "\nNot installable as is."
+                 (concat "\nInstallable. " (jetpacs-applet-registry-install-command addresses dir))))))))
+
+(defun jetpacs-applet-registry-install-command (addresses &optional dir)
+  "The shell commands that preview and install ADDRESSES into DIR."
+  (let ((dir-arg (if dir (format " --dir %s" (shell-quote-argument dir)) ""))
+        (items (mapconcat #'shell-quote-argument addresses " ")))
+    (format "Preview first, then install:\n  sh tools/jetpacs-registry.sh dry-run %s%s\n  sh tools/jetpacs-registry.sh diff %s%s\n  sh tools/jetpacs-registry.sh install %s%s\nAdd --overwrite only with the user's explicit approval; installing writes files and the lockfile, and the App Store's consent gate is what loads an applet."
+            items dir-arg items dir-arg items dir-arg)))
+
 ;;;; Installing from the batch tool
 
 (defun jetpacs-applet-registry-installed-extensions ()
@@ -392,7 +553,8 @@ The batch tool may run without the platform on `load-path'; the checkout's
 (defun jetpacs-applet-registry-resolve-report (addresses dir)
   "Resolve ADDRESSES for DIR: order, requirement issues, collisions, dry run.
 A plist (:order :issues :collisions :plan :items), nothing written."
-  (let* ((resolved (jetpacs-registry-resolve addresses))
+  (let* ((resolved (jetpacs-applet-registry--with-namespaces
+                     (jetpacs-registry-resolve addresses)))
          (items (plist-get resolved :items))
          (extensions (jetpacs-applet-registry-installed-extensions))
          issues)
@@ -462,6 +624,9 @@ Prints a report and returns the exit status."
                       (nreverse acc))))
     (condition-case err
         (pcase command
+          ("list" (princ (jetpacs-applet-registry-list-text (car addresses))) (princ "\n") 0)
+          ("search" (princ (jetpacs-applet-registry-search-text (string-join addresses " ")))
+           (princ "\n") 0)
           ("build"
            (dolist (file (jetpacs-applet-registry-build (nth 0 args) (nth 1 args)))
              (princ (format "wrote %s\n" file)))

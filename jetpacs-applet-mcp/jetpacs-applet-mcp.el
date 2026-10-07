@@ -33,6 +33,12 @@
                          (or load-file-name
                              (bound-and-true-p byte-compile-current-file))))
       nil 'nomessage)
+;; The applet registry: the device-side foundation from the checkout's
+;; emacs/ directory, then the publisher's build/validate/search module.
+(let ((here (file-name-directory
+             (or load-file-name (bound-and-true-p byte-compile-current-file)))))
+  (load (expand-file-name "../emacs/jetpacs-registry.el" here) nil 'nomessage)
+  (load (expand-file-name "jetpacs-applet-registry.el" here) nil 'nomessage))
 
 ;; The tooling library is path-loaded so this entrypoint remains runnable from
 ;; an unpackaged checkout.  Declarations give byte compilation the same
@@ -62,6 +68,18 @@
 (declare-function jetpacs-applet-catalog-render "jetpacs-applet-catalog")
 (declare-function jetpacs-applet-catalog-node-examples "jetpacs-applet-catalog")
 (declare-function jetpacs-applet-catalog-info-json "jetpacs-applet-catalog")
+(declare-function jetpacs-applet-registry-namespaces-text "jetpacs-applet-registry")
+(declare-function jetpacs-applet-registry-list-text "jetpacs-applet-registry"
+                  (&optional namespace limit))
+(declare-function jetpacs-applet-registry-search-text "jetpacs-applet-registry"
+                  (query &optional namespace limit))
+(declare-function jetpacs-applet-registry-view-text "jetpacs-applet-registry" (addresses))
+(declare-function jetpacs-applet-registry-resolve-text "jetpacs-applet-registry"
+                  (addresses &optional dir))
+(declare-function jetpacs-applet-registry-validate "jetpacs-applet-registry" (registry-file))
+(declare-function jetpacs-applet-registry-install-command "jetpacs-applet-registry"
+                  (addresses &optional dir))
+(declare-function jetpacs-applet-tooling-resolve-file "jetpacs-applet-tooling" (path))
 
 ;;;; Protocol identity and JSON construction
 
@@ -131,17 +149,19 @@
 
 ;;;; Self-describing tool catalog
 
-(defun jetpacs-applet-mcp--tool (name title description schema &optional invokes-code)
+(defun jetpacs-applet-mcp--tool (name title description schema &optional invokes-code open-world)
   "Build tool NAME with TITLE, DESCRIPTION, and input SCHEMA.
 INVOKES-CODE marks the explicit trusted-runtime tool that calls an applet
-builder; static tools are read-only and idempotent."
+builder; static tools are read-only and idempotent.  OPEN-WORLD marks a
+tool that fetches from a configured registry: still read-only and
+idempotent, but it reaches outside the checkout."
   (jetpacs-applet-mcp--object
    "name" name "title" title "description" description "inputSchema" schema
    "annotations" (jetpacs-applet-mcp--object
                   "readOnlyHint" (if invokes-code :json-false t)
                   "destructiveHint" :json-false
                   "idempotentHint" (if invokes-code :json-false t)
-                  "openWorldHint" :json-false)))
+                  "openWorldHint" (if open-world t :json-false))))
 
 (defun jetpacs-applet-mcp--tools ()
   "Return all applet-authoring tool descriptors."
@@ -242,7 +262,59 @@ builder; static tools are read-only and idempotent."
      `(("id" . ,(jetpacs-applet-mcp--property "string" "Non-reserved EBP applet identifier."))
        ("label" . ,(jetpacs-applet-mcp--property "string" "Human-readable app label."))
        ("icon" . ,(jetpacs-applet-mcp--property "string" "Optional Material icon identifier.")))
-     '("id" "label"))))
+     '("id" "label")))
+   ;; The applet registry (shadcn's registry tools, ebp/slop-docs/
+   ;; SHADCN-harvest.md §5).  Fetching tools are open-world and still
+   ;; read-only; nothing here writes or loads — the install command is text
+   ;; for the batch tool, and the App Store's consent gate runs code.
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_namespaces" "List configured registries"
+    "The applet registries this checkout can add from: each namespace and its item URL template. Registry must be explicit — ask the user which one when they do not say."
+    (jetpacs-applet-mcp--schema nil))
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_list" "List a registry's items"
+    "Every item a registry publishes (name, version, title, description, categories, requirements), from its registry.json index."
+    (jetpacs-applet-mcp--schema
+     `(("registry" . ,(jetpacs-applet-mcp--property "string" "Namespace such as @jetpacs; defaults to every configured registry."))
+       ("limit" . ,(jetpacs-applet-mcp--property "integer" "At most this many items; defaults to 100."))))
+    nil t)
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_search" "Search registries"
+    "Find items whose name, title, description or categories match a query, across the configured registries. After finding an item, use jetpacs_registry_view for its files and jetpacs_registry_resolve before adding it."
+    (jetpacs-applet-mcp--schema
+     `(("query" . ,(jetpacs-applet-mcp--property "string" "Words to match, case-insensitively."))
+       ("registry" . ,(jetpacs-applet-mcp--property "string" "Namespace such as @jetpacs; defaults to every configured registry."))
+       ("limit" . ,(jetpacs-applet-mcp--property "integer" "At most this many matches; defaults to 20.")))
+     '("query"))
+    nil t)
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_view" "View registry items"
+    "Fetch items by address (@jetpacs/hello, owner/repo/item#ref, a URL or a .json path) and show their metadata, requirements and file contents, sha-verified."
+    (jetpacs-applet-mcp--schema
+     `(("items" . ,(jetpacs-applet-mcp--property "array" "Item addresses.")))
+     '("items"))
+    nil t)
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_resolve" "Resolve and dry-run registry items"
+    "Resolve items and their registry_dependencies into install order, check declared requirements against this checkout, validate the fetched Elisp statically, and classify every file as create, overwrite or skip for the install directory. Writes nothing. Run this before jetpacs_registry_install_command."
+    (jetpacs-applet-mcp--schema
+     `(("items" . ,(jetpacs-applet-mcp--property "array" "Item addresses."))
+       ("installDir" . ,(jetpacs-applet-mcp--property "string" "Install directory; defaults to ~/.emacs.d/jetpacs/apps/.")))
+     '("items"))
+    nil t)
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_validate" "Validate a source registry"
+    "Build every item of a workspace-relative source registry.json in memory and report what fails: authored metadata, the static validator, duplicate names, dangling dependencies. Writes nothing."
+    (jetpacs-applet-mcp--schema
+     `(("registryFile" . ,(jetpacs-applet-mcp--property "string" "Workspace-relative source index, such as jetpacs-applet-mcp/registry/registry.json.")))
+     '("registryFile")))
+   (jetpacs-applet-mcp--tool
+    "jetpacs_registry_install_command" "Get the install command"
+    "The shell commands that preview (dry-run, diff) and then install items with tools/jetpacs-registry.sh. Never run install with --overwrite without the user's explicit approval."
+    (jetpacs-applet-mcp--schema
+     `(("items" . ,(jetpacs-applet-mcp--property "array" "Item addresses."))
+       ("installDir" . ,(jetpacs-applet-mcp--property "string" "Install directory; defaults to ~/.emacs.d/jetpacs/apps/.")))
+     '("items"))))
    (if (jetpacs-applet-tooling-runtime-available-p)
        (vector
         (jetpacs-applet-mcp--tool
@@ -284,6 +356,14 @@ builder; static tools are read-only and idempotent."
           ((eq value t) t)
           ((eq value :json-false) nil)
           (t (error "Argument %s must be a boolean" key)))))
+
+(defun jetpacs-applet-mcp--required-string-list (object key)
+  "Read required non-empty array KEY of non-empty strings from OBJECT, as a list."
+  (let ((value (gethash key object jetpacs-applet-mcp--missing)))
+    (unless (and (vectorp value) (> (length value) 0)
+                 (seq-every-p (lambda (s) (and (stringp s) (not (string-empty-p s)))) value))
+      (error "Argument %s must be a non-empty array of strings" key))
+    (append value nil)))
 
 (defun jetpacs-applet-mcp--optional-int (object key default)
   "Read optional integer KEY from OBJECT, returning DEFAULT when absent."
@@ -374,6 +454,31 @@ builder; static tools are read-only and idempotent."
             (jetpacs-applet-tooling-describe-node
              (jetpacs-applet-mcp--required-string arguments "nodeType")))
            ("jetpacs_info" (jetpacs-applet-catalog-info-json))
+           ("jetpacs_registry_namespaces" (jetpacs-applet-registry-namespaces-text))
+           ("jetpacs_registry_list"
+            (jetpacs-applet-registry-list-text
+             (jetpacs-applet-mcp--optional-string arguments "registry")
+             (jetpacs-applet-mcp--optional-int arguments "limit" 100)))
+           ("jetpacs_registry_search"
+            (jetpacs-applet-registry-search-text
+             (jetpacs-applet-mcp--required-string arguments "query")
+             (jetpacs-applet-mcp--optional-string arguments "registry")
+             (jetpacs-applet-mcp--optional-int arguments "limit" 20)))
+           ("jetpacs_registry_view"
+            (jetpacs-applet-registry-view-text
+             (jetpacs-applet-mcp--required-string-list arguments "items")))
+           ("jetpacs_registry_resolve"
+            (jetpacs-applet-registry-resolve-text
+             (jetpacs-applet-mcp--required-string-list arguments "items")
+             (jetpacs-applet-mcp--optional-string arguments "installDir")))
+           ("jetpacs_registry_validate"
+            (jetpacs-applet-registry-validate
+             (jetpacs-applet-tooling-resolve-file
+              (jetpacs-applet-mcp--required-string arguments "registryFile"))))
+           ("jetpacs_registry_install_command"
+            (jetpacs-applet-registry-install-command
+             (jetpacs-applet-mcp--required-string-list arguments "items")
+             (jetpacs-applet-mcp--optional-string arguments "installDir")))
            ("jetpacs_node_examples"
             (jetpacs-applet-catalog-node-examples
              (jetpacs-applet-mcp--required-string arguments "nodeType")

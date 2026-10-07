@@ -227,6 +227,49 @@
 (provide 'jetpacs-applet-mcp-test)
 ;;; jetpacs-applet-mcp-test.el ends here
 
+(ert-deftest jetpacs-applet-mcp-test-registry-tools-search-resolve-and-command ()
+  "The registry tools list, search, view and resolve the checkout's own registry.
+Fetching tools are open-world and still read-only; nothing writes."
+  (jetpacs-applet-mcp-test--initialize)
+  (let* ((tools (gethash "tools"
+                         (gethash "result"
+                                  (jetpacs-applet-mcp-test--json
+                                   (jetpacs-applet-mcp-handle-line
+                                    "{\"jsonrpc\":\"2.0\",\"id\":50,\"method\":\"tools/list\"}")))))
+         (tool (lambda (name) (seq-find (lambda (tool) (equal (gethash "name" tool) name)) tools))))
+    (dolist (name '("jetpacs_registry_namespaces" "jetpacs_registry_list" "jetpacs_registry_search"
+                    "jetpacs_registry_view" "jetpacs_registry_resolve" "jetpacs_registry_validate"
+                    "jetpacs_registry_install_command"))
+      (should (funcall tool name))
+      (should (eq t (gethash "readOnlyHint" (gethash "annotations" (funcall tool name))))))
+    (should (eq t (gethash "openWorldHint" (gethash "annotations" (funcall tool "jetpacs_registry_search")))))
+    (should (eq :json-false
+                (gethash "openWorldHint" (gethash "annotations" (funcall tool "jetpacs_registry_install_command"))))))
+  (cl-flet ((call (id name arguments)
+              (let ((response (jetpacs-applet-mcp-test--json
+                               (jetpacs-applet-mcp-handle-line
+                                (format "{\"jsonrpc\":\"2.0\",\"id\":%d,\"method\":\"tools/call\",\"params\":{\"name\":%S,\"arguments\":%s}}"
+                                        id name arguments)))))
+                (gethash "text" (aref (gethash "content" (gethash "result" response)) 0)))))
+    (should (string-match-p "^- @jetpacs: file://" (call 51 "jetpacs_registry_namespaces" "{}")))
+    (should (string-match-p "^- @jetpacs/hello 0.1.0" (call 52 "jetpacs_registry_list" "{}")))
+    (should (string-match-p "@jetpacs/hello" (call 53 "jetpacs_registry_search" "{\"query\":\"minimal applet\"}")))
+    (should (string-match-p "^No item matches" (call 54 "jetpacs_registry_search" "{\"query\":\"xyzzy\"}")))
+    (should (string-match-p "^--- hello.el (sha256 " (call 55 "jetpacs_registry_view" "{\"items\":[\"hello\"]}")))
+    (let ((dir (make-temp-file "jetpacs-mcp-registry" t)))
+      (unwind-protect
+          (let ((text (call 56 "jetpacs_registry_resolve"
+                            (format "{\"items\":[\"hello\"],\"installDir\":%S}" dir))))
+            (should (string-match-p "^create +.*hello.el" text))
+            (should (string-match-p "Installable" text))
+            (should-not (file-exists-p (expand-file-name "hello.el" dir))))
+        (delete-directory dir t)))
+    (should (string-match-p "^Status: PASS"
+                            (call 57 "jetpacs_registry_validate"
+                                  "{\"registryFile\":\"jetpacs-applet-mcp/registry/registry.json\"}")))
+    (should (string-match-p "dry-run hello\n.*diff hello\n.*install hello"
+                            (call 58 "jetpacs_registry_install_command" "{\"items\":[\"hello\"]}")))))
+
 (ert-deftest jetpacs-applet-mcp-test-catalog-tool-and-resources ()
   "The catalog is a read-only tool and two readable resources."
   (jetpacs-applet-mcp-test--initialize)
