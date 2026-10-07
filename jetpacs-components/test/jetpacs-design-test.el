@@ -10,6 +10,7 @@
 (require 'jetpacs-design-material)
 (require 'jetpacs-design-profiles)
 (require 'jetpacs-design-baseline)
+(require 'jetpacs-data)
 
 (ert-deftest jetpacs-design-baseline-binds-every-slot-and-presents-once ()
   "The platform baseline is theme-neutral, complete, and presents only a
@@ -89,6 +90,18 @@ bare scaffold, only under an advertised runtime."
     (should (equal (plist-get card :t) "jetpacs.styled"))
     (should (equal (plist-get selector :t) "row"))
     (should (equal (plist-get scope :t) "jetpacs.design_scope"))))
+
+(ert-deftest jetpacs-design-pressable-styles-may-be-bound ()
+  "SPEC 13.8.3/13.8.5: a template row varies its face through the document."
+  (let ((pressable (jetpacs-design-pressable
+                    (jetpacs-ref "/styles") (jetpacs-action "demo.run")
+                    (list (jetpacs-text "Row")))))
+    (should-not (plist-member pressable :styles))
+    (should (equal (plist-get pressable :bind) '(:styles "/styles")))
+    (should (equal (plist-get (jetpacs-data-materialize
+                               pressable '(:styles ["orgzly.row" "orgzly.done"]) :strip t)
+                              :styles)
+                   ["orgzly.row" "orgzly.done"]))))
 
 (ert-deftest jetpacs-design-builds-theme-roles-and-sorted-component-bindings ()
   (let* ((style

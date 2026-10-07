@@ -473,7 +473,9 @@ THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
   "Build one accessible pressable face with STYLES and ON-TAP.
 CHILDREN must contain one to 16 passive presentation nodes.  ENABLED,
 SELECTED, and TOGGLED are t or `:json-false' when authored; transient hover,
-focus, and press state stays local to the receiver."
+focus, and press state stays local to the receiver.  STYLES may be a
+`jetpacs-ref' (SPEC 13.8.3): the ordered identifiers then come from the
+surface data document, which is how a template row varies its face."
   (jetpacs-check-descriptor on-tap ":on-tap")
   (unless (and (proper-list-p children) (<= 1 (length children) 16))
     (error "jetpacs-design: pressable children must contain one to 16 nodes"))
@@ -483,7 +485,8 @@ focus, and press state stays local to the receiver."
     (when (car pair) (jetpacs-check-bool (car pair) (cdr pair))))
   (jetpacs-make-node
    "jetpacs.pressable"
-   :styles (jetpacs-design--style-references styles)
+   :styles (if (jetpacs-ref-p styles) styles
+             (jetpacs-design--style-references styles))
    :on_tap on-tap
    :children (jetpacs-design--children children 16 "pressable children")
    :enabled enabled
