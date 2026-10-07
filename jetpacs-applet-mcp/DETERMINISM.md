@@ -92,7 +92,18 @@ The screen is data, so debugging stays in normal Emacs territory:
 (jetpacs-shell--analyze-spec spec)
 ```
 
-`jetpacs-devtools-inspect` presents the fresh plist itself through Jetpacs.
+`jetpacs-devtools-inspect` presents the fresh plist itself through Jetpacs,
+followed by the surface's data document (the one last sent, else built now)
+and the tree the Companion materializes from both — bindings resolved,
+templates expanded, hidden nodes dropped. `jetpacs-devtools-inspect-data`
+opens the document alone in a writable buffer; edit it and
+`jetpacs-devtools-patch-from-buffer` sends the difference as `surface.data`
+ops. The event ring (`jetpacs-devtools-events`) records every push, patch,
+remove and result, every dispatched action and `state.changed`, and — under
+the `jetpacs-devtools-stream-log` setting — every wire frame with its method
+and byte count; `*jetpacs-actions*` and `*jetpacs-stream*` render it, and the
+hub's Tools drawer opens both on the phone. Byte counts, status and timing are
+metadata; args, values and ops ride the recorder's developer setting.
 Edit the form and pass it to `jetpacs-shell-push` with `:spec` to test a
 hypothesis through the same gates and renderer. Builder/gate failures can be
 retained—with bounded count and lifetime—by the explicit devtools flight

@@ -222,7 +222,8 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; local and bounded, and only while this is on.
 (jetpacs-settings-register-section
  "Devtools"
- '((jetpacs-devtools-recording :label "Record failure details")))
+ '((jetpacs-devtools-recording :label "Record failure details")
+   (jetpacs-devtools-stream-log :label "Log wire frames")))
 (jetpacs-settings-register-section
  "Clipboard"
  '((jetpacs-clip-auto-refresh :label "Auto-refresh the kill ring")
@@ -285,6 +286,20 @@ rows: the push-loop report, and Inspect a screen."
     "Devtools" :subtitle "push loop, failures" :icon "build"
     :on-tap (jetpacs-action "hub.open" :args '(:buffer "*jetpacs-devtools*"))
     :key "drawer-tools-devtools")
+   ;; The data path, visible: every frame with its bytes (behind the
+   ;; wire-log setting), and every action, state report, push and patch.
+   (jetpacs-chrome-row
+    "Wire log" :subtitle "frames, bytes per method" :icon "swap_vert"
+    :on-tap (jetpacs-action "hub.open" :args '(:buffer "*jetpacs-stream*"))
+    :key "drawer-tools-stream")
+   (jetpacs-chrome-row
+    "Action log" :subtitle "actions, state, pushes, patches" :icon "history"
+    :on-tap (jetpacs-action "hub.open" :args '(:buffer "*jetpacs-actions*"))
+    :key "drawer-tools-actions")
+   (jetpacs-chrome-row
+    "Inspect a data document" :subtitle "edit it into a patch" :icon "edit_note"
+    :on-tap (jetpacs-action "jetpacs.devtools.inspect-data-pick")
+    :key "drawer-tools-inspect-data")
    ;; The homoiconic loop, one tap in: the verb picks a live surface
    ;; through the bridged picker, builds its spec fresh, and shows the
    ;; Lisp on the phone.  Copy the sexp into the Eval REPL two screens
@@ -390,6 +405,10 @@ and Files."
            ;; instrumentation is worse than none.
            (when (equal name "*jetpacs-devtools*")
              (jetpacs-devtools-report-buffer))
+           (when (equal name "*jetpacs-stream*")
+             (jetpacs-devtools-stream-log-buffer))
+           (when (equal name "*jetpacs-actions*")
+             (jetpacs-devtools-action-log-buffer))
            (condition-case err
                (jetpacs-navigate-buffer name "app:hub")
              (error (message "hub.open: %s" (jetpacs-error-label err))))))

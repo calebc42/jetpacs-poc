@@ -454,3 +454,268 @@ never a deferred continuation with nothing to build."
 
 (provide 'jetpacs-devtools-test)
 ;;; jetpacs-devtools-test.el ends here
+
+;;;; The event ring (the data path, actions and frames)
+
+(ert-deftest jetpacs-devtools-events-ring-is-bounded-and-typed ()
+  "Events are metadata, kept newest first, capped and aged out."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools-event-limit 5))
+    (dotimes (i 8) (jetpacs-devtools--push-event 'push :surface (format "app:%d" i)))
+    (should (= 5 (length jetpacs-devtools--events)))
+    (should (equal (plist-get (car jetpacs-devtools--events) :surface) "app:7"))
+    (should (= 5 (length (jetpacs-devtools-events 'push))))
+    (should (= 1 (length (jetpacs-devtools-events 'push "app:7"))))
+    (should-not (jetpacs-devtools-events 'patch))
+    ;; A nil field is dropped, so a member always means a value.
+    (jetpacs-devtools--push-event 'patch :surface "app:p" :bytes nil :count 2)
+    (should-not (plist-member (car jetpacs-devtools--events) :bytes))
+    (should (= 2 (plist-get (car jetpacs-devtools--events) :count)))
+    ;; TTL: an old entry falls off at the next prune.
+    (push (list :seq 0 :at 0.0 :kind 'push) jetpacs-devtools--events)
+    (jetpacs-devtools--prune-events)
+    (should-not (seq-find (lambda (e) (= 0 (plist-get e :seq))) jetpacs-devtools--events))
+    (jetpacs-devtools-events-clear)
+    (should-not jetpacs-devtools--events)))
+
+(ert-deftest jetpacs-devtools-patch-and-result-events-record-metadata ()
+  "A `surface.data' send records a patch event; its wrapped callback records
+the result and still reaches the caller's callback.  The ops are payload."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools-profile t) (jetpacs-devtools-recording nil)
+        captured)
+    (should (eq 'sent
+                (jetpacs-devtools--observe-patch
+                 (lambda (_c _s _ops &rest keys) (setq captured keys) 'sent)
+                 'client "app:x" (list (jetpacs-data-set "/a" 1))
+                 :callback (lambda (status error) (list status error)))))
+    (let ((patch (car (jetpacs-devtools-events 'patch))))
+      (should (equal (plist-get patch :surface) "app:x"))
+      (should (equal (plist-get patch :method) "surface.data"))
+      (should (= 1 (plist-get patch :count)))
+      (should (natnump (plist-get patch :bytes)))
+      (should-not (plist-member patch :detail))
+      (should (equal (funcall (plist-get captured :callback) "applied" nil)
+                     '("applied" nil)))
+      (let ((result (car (jetpacs-devtools-events 'result))))
+        (should (equal (plist-get result :status) "applied"))
+        (should (equal (plist-get result :method) "surface.data"))
+        (should (= (plist-get result :for-seq) (plist-get patch :seq)))
+        (should (numberp (plist-get result :ms)))))
+    ;; An error reply keeps its code and kind, never its message text.
+    (funcall (plist-get captured :callback) nil
+             '(:code 1201 :message "Invalid content" :data (:kind "content-invalid")))
+    (should (equal (plist-get (car (jetpacs-devtools-events 'result)) :error)
+                   '(:code 1201 :kind "content-invalid")))
+    ;; Recording keeps the ops; turning it off drops them from every event.
+    (let ((jetpacs-devtools-recording t))
+      (jetpacs-devtools--observe-patch (lambda (&rest _) 'sent)
+                                       'client "app:x" (list (jetpacs-data-set "/b" 2)))
+      (should (plist-get (car (jetpacs-devtools-events 'patch)) :detail)))
+    (customize-set-variable 'jetpacs-devtools-recording nil)
+    (should-not (plist-member (car (jetpacs-devtools-events 'patch)) :detail))
+    ;; A remove records too, with its own result.
+    (jetpacs-devtools--observe-remove (lambda (&rest _) 'sent) 'client "app:x")
+    (should (equal (plist-get (car (jetpacs-devtools-events 'remove)) :method)
+                   "surface.remove"))))
+
+(ert-deftest jetpacs-devtools-push-event-wraps-the-callback ()
+  "The push observer records the push and routes the result."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools-profile t) captured)
+    (jetpacs-devtools--observe-push
+     (lambda (_c _s _spec &rest keys) (setq captured keys) 7)
+     'client "app:x" (jetpacs-text "hello") :callback #'ignore)
+    (let ((push (car (jetpacs-devtools-events 'push))))
+      (should (equal (plist-get push :method) "surface.update"))
+      (should (natnump (plist-get push :bytes)))
+      (should (= 1 (plist-get push :count))))
+    (funcall (plist-get captured :callback) "stale" nil)
+    (should (equal (plist-get (car (jetpacs-devtools-events 'result)) :status) "stale"))))
+
+(ert-deftest jetpacs-devtools-dispatch-and-state-events ()
+  "Actions and state reports land as events; args and values ride the recorder."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools-recording nil))
+    (should (eq 'accepted
+                (jetpacs-devtools--observe-dispatch
+                 (lambda (&rest _) 'accepted) 'client
+                 '(:action "x.y" :surface "app:x" :revision_seen 4
+                   :event_id "e1" :args (:secret 1))
+                 #'ignore)))
+    (let ((ev (car (jetpacs-devtools-events 'action))))
+      (should (equal (plist-get ev :method) "x.y"))
+      (should (equal (plist-get ev :status) "accepted"))
+      (should (= 4 (plist-get ev :revision)))
+      (should (numberp (plist-get ev :ms)))
+      (should-not (plist-member ev :detail)))
+    ;; A dispatch that signals is recorded as such and still signals out.
+    (should-error (jetpacs-devtools--observe-dispatch
+                   (lambda (&rest _) (error "boom")) 'client
+                   '(:action "x.z" :surface "app:x") #'ignore))
+    (should (equal (plist-get (car (jetpacs-devtools-events 'action)) :status) "signalled"))
+    (jetpacs-devtools--observe-state 'client "app:x" 5 "title" "typed")
+    (let ((ev (car (jetpacs-devtools-events 'state))))
+      (should (equal (plist-get ev :method) "title"))
+      (should (= 5 (plist-get ev :revision)))
+      (should-not (plist-member ev :detail)))
+    (let ((jetpacs-devtools-recording t))
+      (jetpacs-devtools--observe-dispatch
+       (lambda (&rest _) 'accepted) 'client
+       '(:action "x.y" :surface "app:x" :event_id "e2" :args (:k 1)) #'ignore)
+      (should (equal (plist-get (plist-get (car (jetpacs-devtools-events 'action)) :detail)
+                                :event_id)
+                     "e2"))
+      (jetpacs-devtools--observe-state 'client "app:x" 6 "title" "typed more")
+      (should (equal (plist-get (car (jetpacs-devtools-events 'state)) :detail)
+                     "typed more")))
+    (with-current-buffer (jetpacs-devtools-action-log-buffer)
+      (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+        (should (string-match-p "x\\.y" text))
+        (should (string-match-p "→ accepted" text))
+        (should (string-match-p "typed more" text))))))
+
+(ert-deftest jetpacs-devtools-frame-events-ride-the-stream-log-toggle ()
+  "Frames are recorded only while the wire log is on, with their byte counts."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools--inbound-octets nil))
+    (cl-letf (((symbol-function 'ebp--connection-client) (lambda (_c) 'an-ebp-client)))
+      (let ((jetpacs-devtools-stream-log nil))
+        (jetpacs-devtools--observe-frame
+         'conn 'client :json "{\"a\":1}" :kind 'request
+         :message '(:method "surface.update" :params (:surface "app:x" :revision 3)))
+        (jetpacs-devtools--observe-inbound-octets 'conn "0123456789")
+        (should-not jetpacs-devtools--events)
+        (should-not jetpacs-devtools--inbound-octets))
+      (let ((jetpacs-devtools-stream-log t))
+        (jetpacs-devtools--observe-frame
+         'conn 'client :json "{\"a\":\"é\"}" :kind 'request
+         :message '(:method "surface.update" :params (:surface "app:x" :revision 3)))
+        (let ((ev (car (jetpacs-devtools-events 'frame))))
+          (should (eq (plist-get ev :origin) 'client))
+          (should (equal (plist-get ev :method) "surface.update"))
+          (should (= (plist-get ev :bytes) (string-bytes "{\"a\":\"é\"}")))
+          (should (equal (plist-get ev :surface) "app:x"))
+          (should (= 3 (plist-get ev :revision))))
+        ;; Inbound octets pair FIFO with the next server event.
+        (jetpacs-devtools--observe-inbound-octets 'conn "0123456789")
+        (jetpacs-devtools--observe-frame
+         'conn 'server :json nil :kind 'notification
+         :message '(:method "state.changed" :params (:surface "app:x" :id "t")))
+        (let ((ev (car (jetpacs-devtools-events 'frame))))
+          (should (eq (plist-get ev :origin) 'server))
+          (should (= 10 (plist-get ev :bytes)))
+          (should (equal (plist-get ev :method) "state.changed")))
+        (should-not jetpacs-devtools--inbound-octets)
+        ;; A reply has no method: its kind names it.
+        (jetpacs-devtools--observe-frame 'conn 'server :json nil :kind 'reply
+                                         :message '(:id 1 :result (:status "applied")))
+        (should (equal (plist-get (car (jetpacs-devtools-events 'frame)) :method) "reply"))
+        (with-current-buffer (jetpacs-devtools-stream-log-buffer)
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-match-p "→ surface.update" text))
+            (should (string-match-p "← state.changed" text))
+            (should (string-match-p "Totals per method" text))))))
+    ;; A non-ebp jsonrpc connection is ignored.
+    (cl-letf (((symbol-function 'ebp--connection-client) (lambda (_c) nil)))
+      (let ((jetpacs-devtools-stream-log t) (jetpacs-devtools--events nil))
+        (jetpacs-devtools--observe-frame 'conn 'client :json "{}" :kind 'request
+                                         :message '(:method "textDocument/hover"))
+        (should-not jetpacs-devtools--events)))))
+
+(ert-deftest jetpacs-devtools-report-counts-events ()
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0))
+    (jetpacs-devtools--push-event 'patch :surface "app:x" :count 1)
+    (with-current-buffer (jetpacs-devtools-report-buffer)
+      (should (string-match-p "Events kept: 1 (push 0, patch 1,"
+                              (buffer-substring-no-properties (point-min) (point-max)))))))
+
+;;;; The data inspector
+
+(ert-deftest jetpacs-devtools-document-ops-diff-members-and-keyed-arrays ()
+  "The edited document becomes the smallest DataOps the shell can send."
+  (should-not (jetpacs-devtools--document-ops '(:a 1) '(:a 1)))
+  (let ((ops (jetpacs-devtools--document-ops '(:a 1 :b "x") '(:a 2 :c t))))
+    (should (equal (mapcar (lambda (o) (plist-get o :path)) ops) '("/a" "/c" "/b")))
+    (should (equal (mapcar (lambda (o) (plist-get o :op)) ops) '("set" "set" "remove"))))
+  ;; Nested objects diff member by member; keyed arrays diff by id.
+  (let* ((old (list :p (list :title "A") :rows (vector (list :id "a" :n 1) (list :id "b" :n 2))))
+         (new (list :p (list :title "B") :rows (vector (list :id "a" :n 1) (list :id "b" :n 3))))
+         (ops (jetpacs-devtools--document-ops old new)))
+    (should (equal (mapcar (lambda (o) (plist-get o :path)) ops) '("/p/title" "/rows/1/n"))))
+  ;; Unkeyed arrays are set whole; a changed scalar is set; nothing sends nothing.
+  (should (equal (plist-get (car (jetpacs-devtools--document-ops '(:xs [1 2]) '(:xs [2 1]))) :path)
+                 "/xs"))
+  (should-not (jetpacs-devtools--document-ops '(:xs [1 2]) '(:xs [1 2])))
+  ;; No document on the Companion yet: one whole set at the root.
+  (let ((ops (jetpacs-devtools--document-ops nil '(:a 1))))
+    (should (= 1 (length ops)))
+    (should (equal (plist-get (car ops) :path) ""))
+    (should (equal (plist-get (car ops) :op) "set")))
+  ;; Pointer tokens are escaped (Elisp has no bar quoting; intern the key).
+  (let ((key (intern ":a/b")))
+    (should (equal (plist-get (car (jetpacs-devtools--document-ops (list key 1) (list key 2))) :path)
+                   "/a~1b"))))
+
+(ert-deftest jetpacs-devtools-inspect-data-and-patch-from-buffer ()
+  "The document opens as a datum, the edited datum goes back as a patch, and
+the spec inspector shows the document and the materialized tree."
+  (jetpacs-devtools-test--with (jetpacs-devtools-test--client)
+    (jetpacs-devtools-test--recording _recs
+      (with-jetpacs-owner "devt"
+        (jetpacs-chrome-define-root
+         "devt" "home"
+         (lambda (_back) (jetpacs-chrome-screen "Hub" (jetpacs-text (jetpacs-ref "/title"))))
+         :data-builder (lambda () (list :title "Hello" :rows (vector (list :id "a" :n 1))))))
+      (let ((buf (jetpacs-devtools-inspect-data-buffer "app:devt")))
+        (should (buffer-live-p buf))
+        (with-current-buffer buf
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-prefix-p "(" text))
+            (should (string-match-p ":title \"Hello\"" text))
+            (should (string-match-p "built now, never sent" text))
+            (should (string-match-p "jetpacs-devtools-patch-from-buffer" text)))
+          (should (equal jetpacs-devtools--inspected-surface "app:devt"))
+          ;; Nothing changed: no patch.
+          (should-not (jetpacs-devtools-patch-from-buffer))
+          ;; Edit the datum: retitle and bump the row.
+          (goto-char (point-min))
+          (forward-sexp)
+          (delete-region (point-min) (point))
+          (goto-char (point-min))
+          (insert "(:title \"Edited\" :rows [(:id \"a\" :n 2)])")
+          (let (sent)
+            (cl-letf (((symbol-function 'jetpacs-shell-data-patch)
+                       (cl-function (lambda (surface ops &rest _) (setq sent (list surface ops)) 'ok))))
+              (let ((ops (jetpacs-devtools-patch-from-buffer)))
+                (should (equal (car sent) "app:devt"))
+                (should (= 2 (length ops)))
+                (should (equal (sort (mapcar (lambda (o) (plist-get o :path)) ops) #'string<)
+                               '("/rows/0/n" "/title")))))))
+        (kill-buffer buf))
+      ;; The spec inspector carries the document and the materialized tree.
+      (let ((buf (jetpacs-devtools-inspect-buffer "app:devt")))
+        (with-current-buffer buf
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-prefix-p "(" text))
+            (should (string-match-p ";; --- data document (built now, never sent)" text))
+            (should (string-match-p ";; --- materialized" text))
+            ;; Authored: a binding. Materialized: the resolved text.
+            (should (string-match-p ":bind (:text \"/title\")" text))
+            (should (string-match-p ":text \"Hello\"" text))))
+        (kill-buffer buf)))))
+
+(ert-deftest jetpacs-devtools-inspect-data-verbs-declare-their-schema ()
+  (let ((schema (jetpacs-action-schema "jetpacs.devtools.inspect-data")))
+    (should schema)
+    (should (equal (plist-get schema :args) '((:name surface :type "text" :required t))))
+    (should (stringp (plist-get schema :doc)))
+    (should (plist-get schema :any-surface)))
+  (let ((schema (jetpacs-action-schema "jetpacs.devtools.inspect-data-pick")))
+    (should schema)
+    (should-not (plist-get schema :args))
+    (should (plist-get schema :any-surface))))
+
+(ert-deftest jetpacs-devtools-stream-log-defaults-off ()
+  (should-not (default-value 'jetpacs-devtools-stream-log)))
+

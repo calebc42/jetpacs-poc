@@ -62,9 +62,22 @@
 ;; STALE on a recording one.  So the inspector builds; the retention
 ;; is the flight recorder's business and stays that way.
 ;;
-;; Zero wire cost for the first two: this module observes one seam and
-;; two advised functions and never sends anything itself.  The
-;; inspector sends exactly what any drill-in sends — a buffer.
+;; EVENTS (always on, metadata only; payload under the recorder) — the
+;; fourth half, json-render's devtools panel brought to the Emacs side
+;; of the wire (W8 keeps devtools off the wire itself).  One bounded
+;; ring of typed entries: every push, `surface.data' patch and remove
+;; with its result; every dispatched action and `state.changed'; and,
+;; under `jetpacs-devtools-stream-log', every frame with its method and
+;; byte count — the measurement the #194–#198 amendments took with an
+;; ad-hoc `process-send-string' advice, made a toggle.  The inspector
+;; grew the other half of the data path: the document a surface last
+;; sent and the materialized tree the Companion presents, and a buffer
+;; whose edited document goes back as a `surface.data' patch.
+;;
+;; Zero wire cost throughout: this module observes seams and advised
+;; functions and never sends anything itself.  The inspector sends
+;; exactly what any drill-in sends — a buffer — and the data patch is
+;; the ordinary `jetpacs-shell-data-patch'.
 
 ;;; Code:
 
@@ -72,6 +85,7 @@
 (require 'backtrace)
 (require 'pp)
 (require 'jetpacs-shell)
+(require 'jetpacs-data)
 (require 'jetpacs-navigate)
 
 (defgroup jetpacs-devtools nil
@@ -104,7 +118,28 @@ is what makes the Settings path keep that promise."
            (when (boundp 'jetpacs-devtools--records)
              (setq jetpacs-devtools--records nil))
            (when (boundp 'jetpacs-devtools--specs)
-             (clrhash jetpacs-devtools--specs)))))
+             (clrhash jetpacs-devtools--specs))
+           (when (and (boundp 'jetpacs-devtools--events)
+                      (fboundp 'jetpacs-devtools--event-without-detail))
+             (setq jetpacs-devtools--events
+                   (mapcar #'jetpacs-devtools--event-without-detail
+                           jetpacs-devtools--events))))))
+
+(defcustom jetpacs-devtools-event-limit 500
+  "Most events the ring keeps; older entries fall off (SPEC 23.3 size bound).
+Events are metadata — kind, surface, method, revision, byte count, status,
+timing — so the ring is always on; payload members (`:detail') ride
+`jetpacs-devtools-recording' and are dropped when it turns off."
+  :type 'natnum :group 'jetpacs-devtools)
+
+(defcustom jetpacs-devtools-stream-log nil
+  "When non-nil, record every wire frame's method and byte count.
+A one-variable test on `jsonrpc-event-hook' while off.  Outbound frames
+measure their own JSON; inbound frames take the body octets
+`ebp--receive-strict' decoded, paired in order.  Metadata only: no body is
+kept, so SPEC 23.3 leaves it unconstrained — the cost is a hook call per
+frame, which is why it is a toggle."
+  :type 'boolean :group 'jetpacs-devtools)
 
 (defcustom jetpacs-devtools-record-limit 32
   "Most failure records kept; older entries fall off (SPEC 23.3 size bound)."
@@ -251,15 +286,16 @@ Pure, for tests."
   (>= (cl-count-if (lambda (tm) (<= (- now tm) window)) times)
       threshold))
 
-(defun jetpacs-devtools--note-push (surface spec)
+(defun jetpacs-devtools--note-push (surface spec &optional bytes)
   "Tally one outbound push of SPEC to SURFACE; watch for storms.
-Size is the compact live-wire measure used by GATE 5.  Key ordering does
-not change byte length, and recursively sorting a large hidden stack view
-solely for profiler metadata can cost more than the visible view build."
+Size is the compact live-wire measure used by GATE 5, computed here
+unless the caller measured BYTES already.  Key ordering does not change
+byte length, and recursively sorting a large hidden stack view solely
+for profiler metadata can cost more than the visible view build."
   (when jetpacs-devtools-profile
     (ignore-errors
       (let ((rec (gethash surface jetpacs-devtools--pushes))
-            (bytes (ignore-errors (jetpacs-node-wire-bytes spec)))
+            (bytes (or bytes (ignore-errors (jetpacs-node-wire-bytes spec))))
             (now (float-time)))
         (puthash surface (list :last-bytes bytes
                                :count (1+ (or (plist-get rec :count) 0))
@@ -286,9 +322,495 @@ solely for profiler metadata can cost more than the visible view build."
            :warning))))))
 
 (defun jetpacs-devtools--observe-push (orig client surface spec &rest keys)
-  "Around `ebp-client-surface-update': note the push, then send unchanged."
-  (jetpacs-devtools--note-push surface spec)
-  (apply orig client surface spec keys))
+  "Around ORIG, `ebp-client-surface-update': note the push, then send unchanged.
+Records a `push' event for CLIENT's SURFACE and SPEC and wraps the
+`:callback' in KEYS so the result lands as a `result' event; the value
+path is untouched."
+  (let* ((bytes (and jetpacs-devtools-profile
+                     (ignore-errors (jetpacs-node-wire-bytes spec))))
+         (seq (ignore-errors
+                (jetpacs-devtools--push-event
+                 'push :surface surface :method "surface.update" :bytes bytes
+                 :count (and jetpacs-devtools-profile
+                             (ignore-errors
+                               (jetpacs-devtools--node-count spec)))))))
+    (jetpacs-devtools--note-push surface spec bytes)
+    (apply orig client surface spec
+           (jetpacs-devtools--wrap-callback keys seq "surface.update"))))
+
+;; --- The event ring (the data path, actions, frames) ------------------------
+
+(defvar jetpacs-devtools--events nil
+  "Events, newest first, bounded by `jetpacs-devtools-event-limit' and the TTL.
+Each is a plist (:seq N :at FLOAT :kind KIND …) where KIND is `push',
+`patch', `remove', `result', `action', `state' or `frame', with the
+metadata members that kind carries: :surface :method :origin :revision
+:bytes :count :ms :status :error :for-seq, and :detail — the one payload
+member, present only while `jetpacs-devtools-recording' is on.")
+
+(defvar jetpacs-devtools--event-seq 0
+  "The sequence number the next event takes.")
+
+(defvar jetpacs-devtools--inbound-octets nil
+  "Body octet counts of decoded inbound frames awaiting their jsonrpc event.
+`ebp--receive-strict' decodes a body and schedules its dispatch from a
+0-delay timer, in order, so the counts pair FIFO with the `server'
+events `jsonrpc-event-hook' raises.  Bounded: a parse fault schedules no
+event, so the oldest entries are dropped past 64 to resynchronize.")
+
+(defun jetpacs-devtools--prune-events (&optional now)
+  "Enforce the ring's bounds: entry cap and TTL, as of NOW."
+  (let ((cutoff (- (or now (float-time)) jetpacs-devtools-record-ttl)))
+    (setq jetpacs-devtools--events
+          (seq-take (seq-filter (lambda (e) (> (plist-get e :at) cutoff))
+                                jetpacs-devtools--events)
+                    jetpacs-devtools-event-limit))))
+
+(defun jetpacs-devtools--push-event (kind &rest fields)
+  "Record one event of KIND with FIELDS; return its sequence number.
+A nil-valued field is dropped, so a plist member means a value."
+  (let ((seq (cl-incf jetpacs-devtools--event-seq))
+        (clean nil))
+    (while fields
+      (let ((k (pop fields)) (v (pop fields)))
+        (when v (push k clean) (push v clean))))
+    (push (append (list :seq seq :at (float-time) :kind kind) (nreverse clean))
+          jetpacs-devtools--events)
+    (jetpacs-devtools--prune-events)
+    seq))
+
+(defun jetpacs-devtools--event-without-detail (event)
+  "EVENT without its payload member."
+  (let ((p event) out)
+    (while p
+      (let ((k (pop p)) (v (pop p)))
+        (unless (eq k :detail) (push k out) (push v out))))
+    (nreverse out)))
+
+(defun jetpacs-devtools-events (&optional kind surface)
+  "The recorded events, newest first, narrowed to KIND and SURFACE when given."
+  (seq-filter (lambda (e)
+                (and (or (null kind) (eq (plist-get e :kind) kind))
+                     (or (null surface)
+                         (equal (plist-get e :surface) surface))))
+              jetpacs-devtools--events))
+
+(defun jetpacs-devtools-events-clear ()
+  "Drop every recorded event."
+  (interactive)
+  (setq jetpacs-devtools--events nil
+        jetpacs-devtools--inbound-octets nil))
+
+(defun jetpacs-devtools--node-count (spec)
+  "How many nodes SPEC holds, by the data walk."
+  (let ((n 0))
+    (jetpacs-data--walk-nodes spec (lambda (_node _path) (cl-incf n)))
+    n))
+
+(defun jetpacs-devtools--wrap-callback (keys seq method)
+  "KEYS with its `:callback' wrapped to record the result of event SEQ.
+The caller's callback still runs with the same (STATUS ERROR); METHOD
+names the request in the `result' event.  Nothing is wrapped when no
+event was recorded."
+  (if (null seq)
+      keys
+    (let ((callback (plist-get keys :callback))
+          (t0 (float-time)))
+      (plist-put (copy-sequence keys) :callback
+                 (lambda (status error)
+                   (ignore-errors
+                     (jetpacs-devtools--push-event
+                      'result :for-seq seq :method method
+                      :status (and status (format "%s" status))
+                      :error (and error
+                                  (if (consp error)
+                                      (list :code (plist-get error :code)
+                                            :kind (plist-get (plist-get error :data) :kind))
+                                    (format "%s" error)))
+                      :ms (* 1000 (- (float-time) t0))))
+                   (when callback (funcall callback status error)))))))
+
+(defun jetpacs-devtools--observe-patch (orig client surface ops &rest keys)
+  "Around ORIG, `ebp-client-surface-data': record the patch, then send unchanged.
+CLIENT, SURFACE, OPS and KEYS pass through.  The ops count is metadata;
+the ops themselves are payload and ride the recorder; their byte size
+rides the profiler like a push's."
+  (let ((seq (ignore-errors
+               (jetpacs-devtools--push-event
+                'patch :surface surface :method "surface.data"
+                :count (length ops)
+                :bytes (and jetpacs-devtools-profile
+                            (ignore-errors
+                              (jetpacs-node-wire-bytes
+                               (if (listp ops) (vconcat ops) ops))))
+                :detail (and jetpacs-devtools-recording ops)))))
+    (apply orig client surface ops
+           (jetpacs-devtools--wrap-callback keys seq "surface.data"))))
+
+(defun jetpacs-devtools--observe-remove (orig client surface &rest keys)
+  "Around ORIG, `ebp-client-surface-remove': record CLIENT's removal of SURFACE.
+KEYS pass through with the callback wrapped."
+  (let ((seq (ignore-errors
+               (jetpacs-devtools--push-event
+                'remove :surface surface :method "surface.remove"))))
+    (apply orig client surface
+           (jetpacs-devtools--wrap-callback keys seq "surface.remove"))))
+
+(defun jetpacs-devtools--observe-dispatch (orig client params fn)
+  "Around ORIG, `jetpacs--dispatch': record the action and its status.
+CLIENT, PARAMS and FN pass through.  The event id and the args are
+payload (SPEC 23.3) and ride the recorder; a dispatch that signals out
+is recorded with status `signalled'."
+  (let ((t0 (float-time)) (status 'signalled))
+    (unwind-protect
+        (setq status (funcall orig client params fn))
+      (ignore-errors
+        (jetpacs-devtools--push-event
+         'action :surface (plist-get params :surface)
+         :method (plist-get params :action)
+         :revision (plist-get params :revision_seen)
+         :status (format "%s" status)
+         :ms (* 1000 (- (float-time) t0))
+         :detail (and jetpacs-devtools-recording
+                      (list :event_id (plist-get params :event_id)
+                            :args (plist-get params :args))))))
+    status))
+
+(defun jetpacs-devtools--observe-state (_client surface revision id value)
+  "Before `jetpacs--on-state-changed': record SURFACE's report of ID.
+REVISION is metadata; VALUE is payload and rides the recorder."
+  (ignore-errors
+    (jetpacs-devtools--push-event
+     'state :surface surface :method id :revision revision
+     :detail (and jetpacs-devtools-recording value))))
+
+(defun jetpacs-devtools--observe-inbound-octets (_conn bytes)
+  "Before `ebp--receive-strict' on CONN: remember BYTES' size for its event."
+  (when jetpacs-devtools-stream-log
+    (setq jetpacs-devtools--inbound-octets
+          (nconc jetpacs-devtools--inbound-octets (list (length bytes))))
+    (while (> (length jetpacs-devtools--inbound-octets) 64)
+      (pop jetpacs-devtools--inbound-octets))))
+
+(defun jetpacs-devtools--observe-frame (conn origin &rest keys)
+  "On `jsonrpc-event-hook': record one frame of the ebp connection CONN.
+ORIGIN is `client' or `server'; KEYS carry the hook's :json, :kind and
+:message.  A one-variable test while `jetpacs-devtools-stream-log' is
+off; other jsonrpc connections are ignored.  The byte count is the
+outbound JSON's own size, or the inbound body size paired from
+`jetpacs-devtools--inbound-octets'."
+  (when (and jetpacs-devtools-stream-log
+             (fboundp 'ebp--connection-client)
+             (ignore-errors (ebp--connection-client conn)))
+    (ignore-errors
+      (let* ((json (plist-get keys :json))
+             (kind (plist-get keys :kind))
+             (message (plist-get keys :message))
+             (params (plist-get message :params))
+             (bytes (cond ((stringp json) (string-bytes json))
+                          ((eq origin 'server) (pop jetpacs-devtools--inbound-octets)))))
+        (jetpacs-devtools--push-event
+         'frame :origin origin
+         :method (or (plist-get message :method)
+                     (and kind (format "%s" kind)))
+         :bytes bytes
+         :surface (and (consp params) (plist-get params :surface))
+         :revision (and (consp params)
+                        (or (plist-get params :revision)
+                            (plist-get params :revision_seen))))))))
+
+(defun jetpacs-devtools-toggle-stream-log ()
+  "Flip the wire frame log."
+  (interactive)
+  (customize-set-variable 'jetpacs-devtools-stream-log
+                          (not jetpacs-devtools-stream-log))
+  (message "jetpacs-devtools: wire frame log %s"
+           (if jetpacs-devtools-stream-log "ON" "off")))
+
+;; --- The log views ----------------------------------------------------------
+
+(defun jetpacs-devtools--event-time (event)
+  "EVENT's time of day with milliseconds."
+  (let ((at (plist-get event :at)))
+    (format "%s.%03d" (format-time-string "%T" at)
+            (floor (* 1000 (- at (floor at)))))))
+
+(defun jetpacs-devtools--insert-inert (&rest strings)
+  "Insert STRINGS as they are — never through a format control (SPEC 23.2)."
+  (dolist (s strings) (insert (if (stringp s) s (format "%s" s)))))
+
+(defun jetpacs-devtools-stream-log-buffer ()
+  "Render the wire frame log into *jetpacs-stream* and return the buffer.
+Oldest first, one line per frame with its direction, kind, method, byte
+count and surface, then the totals per method."
+  (jetpacs-devtools--prune-events)
+  (let ((buf (get-buffer-create "*jetpacs-stream*"))
+        (frames (reverse (jetpacs-devtools-events 'frame)))
+        (totals (make-hash-table :test 'equal)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format "Jetpacs wire frames — %s   log: %s
+
+"
+                        (format-time-string "%F %T")
+                        (if jetpacs-devtools-stream-log "ON"
+                          "OFF (M-x jetpacs-devtools-toggle-stream-log)")))
+        (if (null frames)
+            (insert "  (no frames recorded)
+")
+          (dolist (e frames)
+            (let ((method (or (plist-get e :method) "?"))
+                  (bytes (plist-get e :bytes)))
+              (jetpacs-devtools--insert-inert
+               (jetpacs-devtools--event-time e)
+               (if (eq (plist-get e :origin) 'client) " → " " ← ")
+               (format "%-24s" method)
+               (if bytes (format "%8d B" bytes) "       ? B")
+               (if-let* ((s (plist-get e :surface))) (concat "  " s) "")
+               (if-let* ((r (plist-get e :revision))) (format " r%s" r) "")
+               "
+")
+              (let ((cell (gethash method totals '(0 . 0))))
+                (puthash method (cons (1+ (car cell)) (+ (cdr cell) (or bytes 0)))
+                         totals))))
+          (insert "
+Totals per method:
+")
+          (let (rows)
+            (maphash (lambda (m cell) (push (list m (car cell) (cdr cell)) rows)) totals)
+            (dolist (row (cl-sort rows #'> :key #'caddr))
+              (jetpacs-devtools--insert-inert
+               (format "  %-24s x%-5d %10d B
+" (nth 0 row) (nth 1 row) (nth 2 row)))))))
+      (special-mode))
+    buf))
+
+(defun jetpacs-devtools-action-log-buffer ()
+  "Render the action log into *jetpacs-actions* and return the buffer.
+Oldest first: every dispatched action with its status and time, every
+`state.changed', and the pushes, patches, removes and results around
+them.  Payload members appear only while the recorder is on."
+  (jetpacs-devtools--prune-events)
+  (let ((buf (get-buffer-create "*jetpacs-actions*"))
+        (events (reverse (seq-remove (lambda (e) (eq (plist-get e :kind) 'frame))
+                                     jetpacs-devtools--events))))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format "Jetpacs actions and data — %s   recording: %s
+
+"
+                        (format-time-string "%F %T")
+                        (if jetpacs-devtools-recording "ON" "off")))
+        (if (null events)
+            (insert "  (nothing recorded)
+")
+          (dolist (e events)
+            (jetpacs-devtools--insert-inert
+             (jetpacs-devtools--event-time e)
+             (format " #%-4d %-7s" (plist-get e :seq) (plist-get e :kind))
+             (if-let* ((m (plist-get e :method))) (format " %-28s" m) (make-string 29 ?\s))
+             (if-let* ((s (plist-get e :surface))) (concat " " s) "")
+             (if-let* ((r (plist-get e :revision))) (format " r%s" r) "")
+             (if-let* ((n (plist-get e :count))) (format " ops=%s" n) "")
+             (if-let* ((b (plist-get e :bytes))) (format " %dB" b) "")
+             (if-let* ((st (plist-get e :status))) (concat " → " st) "")
+             (if-let* ((f (plist-get e :for-seq))) (format " (for #%d)" f) "")
+             (if-let* ((ms (plist-get e :ms))) (format " %.1fms" ms) "")
+             (if-let* ((err (plist-get e :error))) (format " error=%S" err) "")
+             (if-let* ((d (plist-get e :detail))) (format "
+      %S" d) "")
+             "
+"))))
+      (special-mode))
+    buf))
+
+;; --- The data inspector: the document is data too ------------------------------
+
+(defvar-local jetpacs-devtools--inspected-surface nil
+  "The surface whose data document a *jetpacs-data:* buffer shows.")
+
+(defun jetpacs-devtools--pp-bounded (datum)
+  "Pretty-print DATUM within `jetpacs-devtools-inspect-max', announcing a cut."
+  (let* ((text (pp-to-string datum))
+         (full (string-bytes text)))
+    (if (<= full jetpacs-devtools-inspect-max)
+        text
+      (concat (substring text 0 jetpacs-devtools-inspect-max)
+              (format "
+;; TRUNCATED at %d of %d octets (jetpacs-devtools-inspect-max).
+"
+                      jetpacs-devtools-inspect-max full)))))
+
+(defun jetpacs-devtools-capture-data (surface)
+  "The data document of SURFACE: the one last sent, else one built now.
+Returns (SOURCE . DOCUMENT) where SOURCE is `sent', `built' or nil when
+the root registers no data builder.  A build leaves the instrumentation
+alone, as `jetpacs-devtools-capture-spec' does."
+  (when-let* ((id (jetpacs-devtools--resolve-root surface)))
+    (if-let* ((sent (gethash id jetpacs-shell--sent-data)))
+        (cons 'sent sent)
+      (let* ((entry (alist-get id jetpacs-shell--roots nil nil #'equal))
+             (jetpacs-devtools-profile nil)
+             (jetpacs-devtools-recording nil)
+             (built (and (plist-get entry :data-builder)
+                         (ignore-errors (jetpacs-shell--build-data id entry)))))
+        (and built (cons 'built built))))))
+
+(defun jetpacs-devtools-inspect-data-buffer (surface)
+  "Pretty-print SURFACE's data document into a buffer; return it.
+Nil when nothing registers SURFACE.  The buffer is \"*jetpacs-data:
+SURFACE*\", opens with the datum, is left writable in `lisp-data-mode',
+and remembers its surface so `jetpacs-devtools-patch-from-buffer' can
+send the edited document back as a `surface.data' patch — json-render's
+state editor, over EBP's own patch."
+  (when-let* ((id (jetpacs-devtools--resolve-root surface)))
+    (let* ((capture (jetpacs-devtools-capture-data id))
+           (buf (get-buffer-create (format "*jetpacs-data: %s*" id))))
+      (with-current-buffer buf
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (jetpacs-devtools--pp-bounded (cdr capture)))
+          (unless (bolp) (insert "
+"))
+          (insert (format "
+;; %s — the data document %s.
+" id
+                          (pcase (car capture)
+                            ('sent "Emacs last SENT (what the Companion holds)")
+                            ('built "built now, never sent (no document on the Companion yet)")
+                            (_ "is absent: the root registers no :data-builder")))
+                  ";; Edit the form above, then M-x jetpacs-devtools-patch-from-buffer:
+"
+                  ";; the difference goes out as surface.data ops through
+"
+                  ";; jetpacs-shell-data-patch (a whole push when the Companion holds
+"
+                  ";; no document).  The materialized tree is in the spec inspector.
+"))
+        (lisp-data-mode)
+        (setq jetpacs-devtools--inspected-surface id)
+        (goto-char (point-min)))
+      buf)))
+
+(defun jetpacs-devtools--document-ops (old new &optional path)
+  "DataOps turning document OLD into NEW below pointer PATH (SPEC 13.8.4).
+Objects diff member by member (members NEW adds or changes are `set',
+members it drops are `remove'); arrays whose elements all carry an `id'
+diff by key through `jetpacs-data-array-ops', other arrays and scalars
+are `set' whole; a nil OLD sets NEW at PATH.  Nil when nothing differs."
+  (let ((path (or path "")))
+    (cond
+     ((and (jetpacs-data--object-p old) (jetpacs-data--object-p new))
+      (let ((old-names (jetpacs-data--member-names old))
+            (new-names (jetpacs-data--member-names new))
+            ops)
+        (dolist (name new-names)
+          (let ((child (concat path "/" (jetpacs-data-pointer-escape name)))
+                (value (cdr (jetpacs-data--object-member new name))))
+            (if (member name old-names)
+                (setq ops (nconc ops (jetpacs-devtools--document-ops
+                                      (cdr (jetpacs-data--object-member old name))
+                                      value child)))
+              (setq ops (nconc ops (list (jetpacs-data-set child value)))))))
+        (dolist (name old-names)
+          (unless (member name new-names)
+            (setq ops (nconc ops (list (jetpacs-data-remove
+                                        (concat path "/" (jetpacs-data-pointer-escape name))))))))
+        ops))
+     ((and (vectorp old) (vectorp new))
+      (cond
+       ((jetpacs-data--same-p old new) nil)
+       ((and (> (length new) 0)
+             (seq-every-p (lambda (e) (and (jetpacs-data--object-p e)
+                                           (car (jetpacs-data--object-member e "id"))))
+                          new))
+        (let ((diff (jetpacs-data-array-ops path old new :key "id")))
+          (if (eq diff :whole) (list (jetpacs-data-set path new)) diff)))
+       (t (list (jetpacs-data-set path new)))))
+     ((and old (jetpacs-data--same-p old new)) nil)
+     ((and (null old) (null new)) nil)
+     (t (list (jetpacs-data-set path new))))))
+
+(defun jetpacs-devtools-patch-from-buffer (&optional buffer)
+  "Patch the Companion with BUFFER's edited data document; return the ops.
+BUFFER defaults to the current one and must be a *jetpacs-data:* buffer.
+The patch is one `surface.data' request.  The first form is read (the
+Lisp reader evaluates nothing) and must be an object; the ops are the
+difference from the document the Companion holds (else a whole `set'),
+sent through `jetpacs-shell-data-patch', which re-pushes when the
+surface was never pushed with a document.  Nil, with a message, when
+nothing changed."
+  (interactive)
+  (with-current-buffer (or buffer (current-buffer))
+    (let ((surface jetpacs-devtools--inspected-surface))
+      (unless surface
+        (error "jetpacs-devtools: not a data inspection buffer"))
+      (let* ((new (save-excursion
+                    (goto-char (point-min))
+                    (read (current-buffer))))
+             (old (cdr (jetpacs-devtools-capture-data surface))))
+        (unless (jetpacs-data--object-p new)
+          (error "jetpacs-devtools: the document must be an object (a plist or hash table)"))
+        (let ((ops (jetpacs-devtools--document-ops old new)))
+          (if (null ops)
+              (progn (message "jetpacs-devtools: %s — no change to patch" surface) nil)
+            (jetpacs-shell-data-patch surface ops)
+            (message "jetpacs-devtools: %s — %d op%s sent" surface (length ops)
+                     (if (= 1 (length ops)) "" "s"))
+            ops))))))
+
+(defun jetpacs-devtools-inspect-data (surface &optional target)
+  "Show SURFACE's data document as Lisp, on the device and here.
+Like `jetpacs-devtools-inspect' for the document: TARGET is the surface
+to drill onto, nil for the device flow's own.  Returns the buffer, or
+nil when nothing registers SURFACE.  Never signals."
+  (interactive
+   (list (completing-read "Inspect data of surface: "
+                          (sort (mapcar #'car (jetpacs-shell-roots)) #'string<)
+                          nil t)))
+  (let ((buf (jetpacs-devtools-inspect-data-buffer surface)))
+    (cond
+     (buf (jetpacs-navigate-buffer buf target) buf)
+     (t (jetpacs-shell-notify (format "No live surface named %s"
+                                      (jetpacs-scalar-text (format "%s" surface)))
+                              target)
+        nil))))
+
+(defun jetpacs-devtools--action-inspect-data (args params)
+  "Handler for `jetpacs.devtools.inspect-data': ARGS `:surface', shown now.
+PARAMS names the devtools surface that asked, so the buffer opens there."
+  (let ((surface (plist-get args :surface))
+        (target (plist-get params :surface)))
+    (if (not (jetpacs-devtools--resolve-root surface))
+        'rejected
+      (jetpacs-flow-continue
+       (lambda ()
+         (condition-case err
+             (jetpacs-devtools-inspect-data surface target)
+           (error (message "jetpacs-devtools: inspect-data failed: %s"
+                           (jetpacs-error-label err))))))
+      'accepted)))
+
+(defun jetpacs-devtools--action-inspect-data-pick (_args params)
+  "Handler for `jetpacs.devtools.inspect-data-pick': choose, then inspect.
+PARAMS names the devtools surface that asked, so the buffer opens there."
+  (let ((target (plist-get params :surface)))
+    (jetpacs-flow-continue
+     (lambda ()
+       (let ((names (sort (mapcar #'car (jetpacs-shell-roots)) #'string<)))
+         (if (null names)
+             (jetpacs-shell-notify "No live surfaces to inspect" target)
+           (let ((choice (condition-case nil
+                             (completing-read "Inspect data of surface: " names nil t)
+                           (quit ""))))
+             (unless (string-empty-p choice)
+               (condition-case err
+                   (jetpacs-devtools-inspect-data choice target)
+                 (error (message "jetpacs-devtools: inspect-data failed: %s"
+                                 (jetpacs-error-label err))))))))))
+    'accepted))
 
 ;; --- Public surface ---------------------------------------------------------
 
@@ -308,7 +830,9 @@ lives under the same developer setting as the failure records."
   (clrhash jetpacs-devtools--pushes)
   (setq jetpacs-devtools--push-times nil
         jetpacs-devtools--storm-warned-at 0
-        jetpacs-devtools--records nil))
+        jetpacs-devtools--records nil
+        jetpacs-devtools--events nil
+        jetpacs-devtools--inbound-octets nil))
 
 (defun jetpacs-devtools-report-buffer ()
   "Render the report into *jetpacs-devtools* and return the buffer.
@@ -330,6 +854,15 @@ per SPEC 23.2."
                                        (<= (- now tm)
                                            jetpacs-devtools-storm-window))
                                      jetpacs-devtools--push-times)))
+        (jetpacs-devtools--prune-events)
+        (insert (format "Events kept: %d (%s)   wire log: %s\n\n"
+                        (length jetpacs-devtools--events)
+                        (mapconcat (lambda (kind)
+                                     (format "%s %d" kind
+                                             (length (jetpacs-devtools-events kind))))
+                                   '(push patch remove result action state frame)
+                                   ", ")
+                        (if jetpacs-devtools-stream-log "ON" "off")))
         (insert (format "Failures recorded: %d%s\n"
                         (length jetpacs-devtools--records)
                         (if jetpacs-devtools-recording ""
@@ -381,7 +914,10 @@ jetpacs-devtools-toggle-recording)")))
                               (plist-get (cdr row) :max-ms)
                               (plist-get (cdr row) :count))))))
         (insert "\nLast spec per surface (retained while recording is on): \
-(pp (jetpacs-devtools-last-spec SURFACE))\n"))
+(pp (jetpacs-devtools-last-spec SURFACE))\n"
+                "Views: *jetpacs-stream* (jetpacs-devtools-stream-log-buffer), \
+*jetpacs-actions* (jetpacs-devtools-action-log-buffer), \
+*jetpacs-data: SURFACE* (jetpacs-devtools-inspect-data).\n"))
       (special-mode))
     buf))
 
@@ -481,7 +1017,24 @@ read, changed, and returned."
 ;; The spec is DATA and the data is yours: edit the form above, then\n\
 ;;   (jetpacs-shell-push %S :spec EDITED)\n\
 ;; and the phone renders what you wrote.\n"
-                          id (format-time-string "%F %T") id)))
+                          id (format-time-string "%F %T") id))
+          ;; SPEC 13.8: the other half of what the Companion holds — the
+          ;; data document and the tree it materializes from both.
+          (when-let* ((capture (jetpacs-devtools-capture-data id)))
+            (insert (format "\n;; --- data document (%s) — edit it with \
+(jetpacs-devtools-inspect-data %S) ---\n"
+                            (if (eq (car capture) 'sent) "last sent" "built now, never sent")
+                            id))
+            (insert (jetpacs-devtools--pp-bounded (cdr capture)))
+            (unless (bolp) (insert "\n"))
+            (insert ";; --- materialized (:strip t): bindings resolved, templates \
+expanded, hidden nodes dropped — what the Companion presents ---\n")
+            (insert (condition-case err
+                        (jetpacs-devtools--pp-bounded
+                         (jetpacs-data-materialize spec (cdr capture) :strip t))
+                      (error (format ";; materialization failed: %s\n"
+                                     (jetpacs-error-label err)))))
+            (unless (bolp) (insert "\n"))))
         ;; Data, not a program: `lisp-data-mode' fontifies and indents it
         ;; without pretending the plist is a call form.  Left WRITABLE on
         ;; purpose — editing this buffer is half the point.
@@ -578,7 +1131,16 @@ nobody is looking at."
   (jetpacs-defaction "jetpacs.devtools.inspect-pick"
                      #'jetpacs-devtools--action-inspect-pick
                      :any-surface t
-                     :doc "Pick a live surface, then inspect its spec."))
+                     :doc "Pick a live surface, then inspect its spec.")
+  (jetpacs-defaction "jetpacs.devtools.inspect-data"
+                     #'jetpacs-devtools--action-inspect-data
+                     :any-surface t
+                     :args '((:name surface :type "text" :required t))
+                     :doc "Show a live surface's data document as Lisp, editable into a patch.")
+  (jetpacs-defaction "jetpacs.devtools.inspect-data-pick"
+                     #'jetpacs-devtools--action-inspect-data-pick
+                     :any-surface t
+                     :doc "Pick a live surface, then inspect its data document."))
 
 ;; The seam member is always installed; `jetpacs-devtools-recording'
 ;; gates the retention, so a live session pays one nil test per failure
@@ -596,6 +1158,22 @@ nobody is looking at."
                          'ebp-client-surface-update)
   (advice-add 'ebp-client-surface-update :around
               #'jetpacs-devtools--observe-push))
+;; The rest of the data path and the two device-event entry points. Every
+;; observer is value-transparent and `ignore-errors'-isolated.
+(unless (advice-member-p #'jetpacs-devtools--observe-patch 'ebp-client-surface-data)
+  (advice-add 'ebp-client-surface-data :around #'jetpacs-devtools--observe-patch))
+(unless (advice-member-p #'jetpacs-devtools--observe-remove 'ebp-client-surface-remove)
+  (advice-add 'ebp-client-surface-remove :around #'jetpacs-devtools--observe-remove))
+(unless (advice-member-p #'jetpacs-devtools--observe-dispatch 'jetpacs--dispatch)
+  (advice-add 'jetpacs--dispatch :around #'jetpacs-devtools--observe-dispatch))
+(unless (advice-member-p #'jetpacs-devtools--observe-state 'jetpacs--on-state-changed)
+  (advice-add 'jetpacs--on-state-changed :before #'jetpacs-devtools--observe-state))
+;; The wire frame log: jsonrpc.el 1.0.25 (Emacs 30.1) raises an event per
+;; frame; the inbound body size rides the strict receiver's advice.
+(when (boundp 'jsonrpc-event-hook)
+  (add-hook 'jsonrpc-event-hook #'jetpacs-devtools--observe-frame))
+(unless (advice-member-p #'jetpacs-devtools--observe-inbound-octets 'ebp--receive-strict)
+  (advice-add 'ebp--receive-strict :before #'jetpacs-devtools--observe-inbound-octets))
 
 (provide 'jetpacs-devtools)
 ;;; jetpacs-devtools.el ends here

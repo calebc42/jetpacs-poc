@@ -239,6 +239,12 @@ emacs -Q --batch -L emacs \
 emacs -Q --batch -L emacs -l test/jetpacs-widgets-test.el \
   -f ert-run-tests-batch-and-exit
 
+# The Elisp reference materializer replays ebp/goldens/data.golden (SPEC 13.8:
+# bindings, templates, conditional nodes) and the DataOp corpus; it was the
+# one known-answer suite this runner did not invoke (amendment #198 follow-up).
+emacs -Q --batch -L emacs -l test/jetpacs-data-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JC-0 floor exit gate (docs/SPEC-JC-0-floor.md section 7).
 emacs -Q --batch -L emacs -l test/jetpacs-floor-test.el \
   -f ert-run-tests-batch-and-exit
