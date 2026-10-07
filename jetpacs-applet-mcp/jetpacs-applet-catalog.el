@@ -769,14 +769,14 @@ the SKILL.md readable while CATALOG.md carries everything."
        "(jetpacs-button \"Save\" (jetpacs-action \"save\"))"
        "(jetpacs-defaction \"notes.save\" #'notes--on-save\n                   :doc \"Save the open note\"\n                   :args '((:name id :type \"text\" :required t)))\n\n(jetpacs-button \"Save\" (jetpacs-action \"notes.save\" :args (list :id id)))"
        "The validator refuses an emitted name without a provider and a name without a namespace dot; `:doc` and `:args` (a list of `(:name SYMBOL :type STRING :required BOOL)` plists) are what the catalog and the agent read.")
-      ("A handler takes `(ARGS PARAMS)`, schedules its effect and returns `accepted`, `stale` or `rejected`."
-       "(defun notes--on-save (args)\n  (notes--write-to-disk args)\n  t)"
-       "(defun notes--on-save (args params)\n  (jetpacs-flow-continue\n   (lambda () (notes--write-to-disk args)))\n  'accepted)"
-       "`accepted` means the effect is durable or owned by a durable work item; anything else is a protocol lie (SPEC 14.4). The return value is a symbol, not `t`.")
-      ("No blocking call and no prompt inside a dispatch; confirmation belongs on the descriptor."
+      ("A handler takes `(ARGS PARAMS)`, makes its effect durable, then returns `accepted`, `stale` or `rejected`; only presentation is deferred."
+       "(defun notes--on-save (args params)\n  (jetpacs-flow-continue\n   (lambda () (notes--write-to-disk args)))   ; accept now, write later\n  'accepted)"
+       "(defun notes--on-save (args params)\n  (notes--write-to-disk args)                 ; durable before the answer\n  (jetpacs-app-defer-sync \"/notes\" (notes--rows) :key \"id\" :params params)\n  'accepted)"
+       "`accepted` means the effect is durable or owned by a durable work item (SPEC 14.4); a timer is neither, so accept-then-schedule is a protocol lie. The deferred step is the re-push or patch, never the effect. The return value is a symbol, not `t`.")
+      ("No blocking call and no prompt inside a dispatch; confirmation belongs on the descriptor, remote work in a durable queue."
        "(defun notes--on-delete (args _params)\n  (when (y-or-n-p \"Delete?\")\n    (url-retrieve-synchronously (notes--url args)))\n  'accepted)"
-       "(jetpacs-button \"Delete\"\n                (jetpacs-action \"notes.delete\" :args (list :id id)\n                                :confirm \"Delete this note?\"))\n\n(defun notes--on-delete (args _params)\n  (jetpacs-flow-continue (lambda () (notes--delete args)))\n  'accepted)"
-       "A prompt inside a dispatch blocks the JSON-RPC reader; the validator marks `action.prompt-in-dispatch` an error and `action.blocking-call` a warning. `jetpacs-flow-continue` runs outside the dispatch with the flow identity kept.")
+       "(jetpacs-button \"Delete\"\n                (jetpacs-action \"notes.delete\" :args (list :id id)\n                                :confirm \"Delete this note?\"))\n\n(defun notes--on-delete (args params)\n  (notes--delete-locally args)                ; the durable part, now\n  (notes--enqueue-remote-delete args)         ; a persisted work item, drained later\n  (jetpacs-app-defer-sync \"/notes\" (notes--rows) :key \"id\" :params params)\n  'accepted)"
+       "A prompt inside a dispatch blocks the JSON-RPC reader; the validator marks `action.prompt-in-dispatch` an error and `action.blocking-call` a warning. A remote effect that cannot finish inside the handler is owned by a durable work item (a persisted queue the applet drains), which is what lets `accepted` stay true.")
       ("Validate with `jetpacs_validate_applet` and the shell gates; never guess a member the catalog does not list."
        "(jetpacs-button \"Go\" (jetpacs-action \"app.go\") :tooltip \"Go now\")"
        "(jetpacs-button \"Go\" (jetpacs-action \"app.go\") :icon \"arrow_forward\")"

@@ -364,8 +364,8 @@ These rules are always enforced. Each heading links to a file with Incorrect/Cor
 ### Actions and handlers → [actions.md](./rules/actions.md)
 
 - **Action names are dotted EBP identifiers, registered with `jetpacs-defaction` and emitted with `jetpacs-action`; args are plain data.**
-- **A handler takes `(ARGS PARAMS)`, schedules its effect and returns `accepted`, `stale` or `rejected`.**
-- **No blocking call and no prompt inside a dispatch; confirmation belongs on the descriptor.**
+- **A handler takes `(ARGS PARAMS)`, makes its effect durable, then returns `accepted`, `stale` or `rejected`; only presentation is deferred.**
+- **No blocking call and no prompt inside a dispatch; confirmation belongs on the descriptor, remote work in a durable queue.**
 - **Validate with `jetpacs_validate_applet` and the shell gates; never guess a member the catalog does not list.**
 
 ### Theme, colors and extensions → [theme.md](./rules/theme.md)

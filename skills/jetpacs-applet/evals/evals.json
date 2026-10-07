@@ -37,7 +37,7 @@
       "expectations": [
         "Registers the action with jetpacs-defaction \"notes.archive\" and supplies :doc and :args as a list of (:name SYMBOL :type STRING :required BOOL) plists",
         "The handler takes (args params) and returns the symbol accepted (or stale / rejected), never nil or a string",
-        "The durable effect is scheduled with jetpacs-flow-continue or an equivalent deferred step, not performed synchronously inside the dispatch",
+        "The disk move completes inside the handler before it returns accepted (accepted means durable, SPEC 14.4); only the list update is deferred, never the effect itself behind a timer",
         "No url-retrieve-synchronously, call-process, sleep-for or other blocking call appears in the handler body",
         "No y-or-n-p, read-string or other prompt appears in the handler; a confirmation, if wanted, is the descriptor's :confirm",
         "The list update uses jetpacs-app-defer-patch or jetpacs-app-defer-sync rather than a full re-push"
