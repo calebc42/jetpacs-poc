@@ -1104,8 +1104,13 @@ particular batch process happened to load."
     (json-parse-buffer :object-type 'hash-table :array-type 'list
                        :null-object :json-null :false-object :json-false)))
 
-(defun jetpacs-applet-tooling-describe-node (node-type)
-  "Describe EBP NODE-TYPE and its real Elisp builder."
+(declare-function jetpacs-applet-catalog-describe-node "jetpacs-applet-catalog")
+
+(cl-defun jetpacs-applet-tooling-describe-node (node-type)
+  "Describe EBP NODE-TYPE and its real Elisp builder.
+A node type the contract does not know is looked up in the installed
+renderer-extension manifests through the catalog export when that module
+is loaded, so `jetpacs.*' and `material3.*' nodes answer too."
   (unless (and (stringp node-type)
                (string-match-p jetpacs-applet-tooling--identifier-re node-type))
     (error "Jetpacs Applet Tooling: node type must be an EBP identifier"))
@@ -1113,7 +1118,11 @@ particular batch process happened to load."
          (schemas (gethash "node_schema" contract))
          (schema (and schemas (gethash node-type schemas))))
     (unless schema
-      (error "Jetpacs Applet Tooling: unknown EBP node type %s" node-type))
+      (let ((extension (and (fboundp 'jetpacs-applet-catalog-describe-node)
+                            (jetpacs-applet-catalog-describe-node node-type))))
+        (if extension
+            (cl-return-from jetpacs-applet-tooling-describe-node extension)
+          (error "Jetpacs Applet Tooling: unknown EBP node type %s" node-type))))
     (let* ((required (gethash "required" schema))
            (optional (gethash "optional" schema))
            (fields (append required optional))

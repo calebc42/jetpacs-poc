@@ -41,6 +41,14 @@ characters, start with a letter or digit, and otherwise use letters, digits,
 
 ## Screen builders are pure
 
+The whole vocabulary a builder may emit — every EBP core node and every
+installed extension node (`jetpacs.*`, `material3.*`, `jetpacs.design`) with
+its typed members, description, targets, events and real `jetpacs-*`
+constructor, the universal attributes and the action vocabulary — is the
+generated catalog: `catalog/CATALOG.md` beside this guide, the `jetpacs_catalog`
+MCP tool, or the `skills/jetpacs-applet/SKILL.md` skill. Never guess a member
+the catalog does not list.
+
 A screen builder reads Emacs state and returns a typed node tree. It must not
 write files, prompt, start processes, mutate registries, or push another
 surface. Jetpacs can call a builder during reconnect, capability changes,

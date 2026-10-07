@@ -26,6 +26,13 @@
                          (or load-file-name
                              (bound-and-true-p byte-compile-current-file))))
       nil 'nomessage)
+;; The catalog export rides the same path-load: one agent-facing document
+;; joining the contract, the extension manifests and the builders.
+(load (expand-file-name "jetpacs-applet-catalog.el"
+                        (file-name-directory
+                         (or load-file-name
+                             (bound-and-true-p byte-compile-current-file))))
+      nil 'nomessage)
 
 ;; The tooling library is path-loaded so this entrypoint remains runnable from
 ;; an unpackaged checkout.  Declarations give byte compilation the same
@@ -52,6 +59,7 @@
                   (filepath &optional include-private))
 (declare-function jetpacs-applet-tooling-validate-applet "jetpacs-applet-tooling" (path))
 (declare-function jetpacs-applet-tooling-workspace-root "jetpacs-applet-tooling" ())
+(declare-function jetpacs-applet-catalog-render "jetpacs-applet-catalog")
 
 ;;;; Protocol identity and JSON construction
 
@@ -168,6 +176,16 @@ builder; static tools are read-only and idempotent."
     (jetpacs-applet-mcp--schema
      `(("nodeType" . ,(jetpacs-applet-mcp--property "string" "EBP node type, such as button or pane_scaffold.")))
      '("nodeType")))
+   (jetpacs-applet-mcp--tool
+    "jetpacs_catalog" "Export the Jetpacs catalog"
+    "Render the agent-facing catalog: every EBP core node and every installed renderer-extension node (jetpacs.*, material3.*, jetpacs.design) with typed members, descriptions, targets, events and real Elisp builders, the universal attributes, the action vocabulary and, with appletPath, that applet's jetpacs-defaction registrations. Markdown by default, one line per node; JSON for tooling."
+    (jetpacs-applet-mcp--schema
+     `(("format" . ,(jetpacs-applet-mcp--property
+                      "string" "Rendering; defaults to markdown." '("markdown" "json")))
+       ("section" . ,(jetpacs-applet-mcp--property
+                       "string" "Markdown section; defaults to all." '("all" "nodes" "attributes" "actions")))
+       ("appletPath" . ,(jetpacs-applet-mcp--property
+                          "string" "Optional workspace-relative applet .el file or directory whose actions join the catalog.")))))
    (jetpacs-applet-mcp--tool
     "jetpacs_summarize_elisp" "Summarize an Elisp file"
     "Read a workspace Elisp file or NAMESPACE/path.el from an explicitly allowlisted package source and return its token-efficient static API outline without loading it."
@@ -327,6 +345,11 @@ builder; static tools are read-only and idempotent."
             (jetpacs-applet-tooling-describe-symbol
              (jetpacs-applet-mcp--required-string arguments "symbol")
              (jetpacs-applet-mcp--optional-bool arguments "includeSource")))
+           ("jetpacs_catalog"
+            (jetpacs-applet-catalog-render
+             (or (jetpacs-applet-mcp--optional-string arguments "format") "markdown")
+             (or (jetpacs-applet-mcp--optional-string arguments "section") "all")
+             (jetpacs-applet-mcp--optional-string arguments "appletPath")))
            ("jetpacs_describe_node"
             (jetpacs-applet-tooling-describe-node
              (jetpacs-applet-mcp--required-string arguments "nodeType")))
@@ -399,7 +422,17 @@ builder; static tools are read-only and idempotent."
      "uri" "jetpacs://applets/example" "name" "example-applet"
      "title" "Minimal Jetpacs applet"
      "description" "A generated lifecycle-complete reference applet."
-     "mimeType" "text/x-emacs-lisp"))))
+     "mimeType" "text/x-emacs-lisp")
+    (jetpacs-applet-mcp--object
+     "uri" "jetpacs://applets/catalog" "name" "applet-catalog"
+     "title" "Jetpacs catalog"
+     "description" "Every core and extension node with typed members, descriptions and builders, the universal attributes and the action vocabulary, one line per node."
+     "mimeType" "text/markdown")
+    (jetpacs-applet-mcp--object
+     "uri" "jetpacs://applets/catalog.json" "name" "applet-catalog-json"
+     "title" "Jetpacs catalog (JSON)"
+     "description" "The same catalog as a machine-readable JSON document."
+     "mimeType" "application/json"))))
 
 (defun jetpacs-applet-mcp--read-resource (params)
   "Read the resource named by PARAMS."
@@ -416,6 +449,12 @@ builder; static tools are read-only and idempotent."
             ("jetpacs://applets/determinism"
              (setq mime "text/markdown")
              (jetpacs-applet-mcp--determinism-guide))
+            ("jetpacs://applets/catalog"
+             (setq mime "text/markdown")
+             (jetpacs-applet-catalog-render "markdown" "all"))
+            ("jetpacs://applets/catalog.json"
+             (setq mime "application/json")
+             (jetpacs-applet-catalog-render "json"))
             ("jetpacs://applets/package-skins"
              (setq mime "text/markdown")
              (jetpacs-applet-mcp--package-skins-guide))
@@ -476,7 +515,7 @@ ARGUMENTS is a list of (NAME REQUIRED)."
             ("create_jetpacs_applet"
              (let ((id (jetpacs-applet-mcp--required-string args "id"))
                    (goal (jetpacs-applet-mcp--required-string args "goal")))
-               (format "Design a Jetpacs applet with id %S for this workflow:\n\n%s\n\nRead jetpacs://applets/implementation-guide, jetpacs://applets/guide, and jetpacs://applets/determinism first. Generate the reference scaffold, inspect the action model, then discover and describe only the Jetpacs and explicitly allowlisted package APIs needed for the workflow. Treat the package as the domain engine and the applet as its deterministic native skin. Keep one owner, pure screen builders, stable identities, documented named semantic actions, explicit accepted/stale/rejected results, and deferred presentation. Inspect action-provider reconciliation, generate the canonical manifest, validate the completed applet directory, and add offline ERT tests."
+               (format "Design a Jetpacs applet with id %S for this workflow:\n\n%s\n\nRead jetpacs://applets/implementation-guide, jetpacs://applets/guide, and jetpacs://applets/determinism first. Generate the reference scaffold, read jetpacs://applets/catalog (or call jetpacs_catalog) for the node vocabulary, inspect the action model, then discover and describe only the Jetpacs and explicitly allowlisted package APIs needed for the workflow. Treat the package as the domain engine and the applet as its deterministic native skin. Keep one owner, pure screen builders, stable identities, documented named semantic actions, explicit accepted/stale/rejected results, and deferred presentation. Inspect action-provider reconciliation, generate the canonical manifest, validate the completed applet directory, and add offline ERT tests."
                        id goal)))
             ("skin_emacs_package"
              (let ((id (jetpacs-applet-mcp--required-string args "id"))

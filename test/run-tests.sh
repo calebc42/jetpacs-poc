@@ -82,6 +82,10 @@ python3 "$EBP_KMP_DIR/tools/gen-vocabulary.py" \
   --check
 python3 tools/gen-jetpacs-vocabulary.py --check
 python3 "$EBP_COMPOSE_DIR/test/test_renderer_extension_generator.py"
+# The agent-facing catalog export is generated from the contract, the
+# renderer-extension manifests and the platform builders; the committed
+# renderings must equal a fresh one.
+sh tools/check-jetpacs-catalog.sh
 
 # Amendment #181: one deterministic 10,000-case corpus must agree across the
 # Python reference receiver, Kotlin receiver (the wire suite), and public

@@ -147,7 +147,7 @@
           (jetpacs-applet-mcp-test--json
            (jetpacs-applet-mcp-handle-line
             "{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"prompts/list\"}"))))
-    (should (= (length (gethash "resources" (gethash "result" resources))) 6))
+    (should (= (length (gethash "resources" (gethash "result" resources))) 8))
     (should (= (length (gethash "prompts" (gethash "result" prompts))) 3))))
 
 (ert-deftest jetpacs-applet-mcp-test-resources-and-prompts-are-readable ()
@@ -226,3 +226,33 @@
 
 (provide 'jetpacs-applet-mcp-test)
 ;;; jetpacs-applet-mcp-test.el ends here
+
+(ert-deftest jetpacs-applet-mcp-test-catalog-tool-and-resources ()
+  "The catalog is a read-only tool and two readable resources."
+  (jetpacs-applet-mcp-test--initialize)
+  (let* ((tools (jetpacs-applet-mcp-test--json
+                 (jetpacs-applet-mcp-handle-line
+                  "{\"jsonrpc\":\"2.0\",\"id\":40,\"method\":\"tools/list\"}")))
+         (catalog (seq-find (lambda (tool) (equal (gethash "name" tool) "jetpacs_catalog"))
+                            (gethash "tools" (gethash "result" tools)))))
+    (should catalog)
+    (should (eq t (gethash "readOnlyHint" (gethash "annotations" catalog)))))
+  (let* ((call (jetpacs-applet-mcp-test--json
+                (jetpacs-applet-mcp-handle-line
+                 "{\"jsonrpc\":\"2.0\",\"id\":41,\"method\":\"tools/call\",\"params\":{\"name\":\"jetpacs_catalog\",\"arguments\":{\"section\":\"nodes\"}}}")))
+         (text (gethash "text" (aref (gethash "content" (gethash "result" call)) 0))))
+    (should (string-match-p "^- material3.assist_chip: {" text))
+    (should-not (string-match-p "^## Rules" text)))
+  (let* ((markdown (jetpacs-applet-mcp-test--json
+                    (jetpacs-applet-mcp-handle-line
+                     "{\"jsonrpc\":\"2.0\",\"id\":42,\"method\":\"resources/read\",\"params\":{\"uri\":\"jetpacs://applets/catalog\"}}")))
+         (json (jetpacs-applet-mcp-test--json
+                (jetpacs-applet-mcp-handle-line
+                 "{\"jsonrpc\":\"2.0\",\"id\":43,\"method\":\"resources/read\",\"params\":{\"uri\":\"jetpacs://applets/catalog.json\"}}"))))
+    (should (string-prefix-p "# Jetpacs catalog"
+                             (gethash "text" (aref (gethash "contents" (gethash "result" markdown)) 0))))
+    (should (equal "application/json"
+                   (gethash "mimeType" (aref (gethash "contents" (gethash "result" json)) 0))))
+    (should (string-prefix-p "{\"catalog_format\":1,"
+                             (gethash "text" (aref (gethash "contents" (gethash "result" json)) 0))))))
+

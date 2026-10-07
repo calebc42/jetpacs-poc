@@ -10,6 +10,9 @@
   (setq jetpacs-applet-tooling-workspace-root root)
   (load (expand-file-name
          "jetpacs-applet-mcp/jetpacs-applet-tooling.el" root)
+        nil 'nomessage)
+  (load (expand-file-name
+         "jetpacs-applet-mcp/jetpacs-applet-catalog.el" root)
         nil 'nomessage))
 
 (ert-deftest jetpacs-applet-tooling-test-summary-is-static-and-public-by-default ()
@@ -482,3 +485,99 @@
 
 (provide 'jetpacs-applet-tooling-test)
 ;;; jetpacs-applet-tooling-test.el ends here
+
+;;; The catalog export (jetpacs-applet-catalog.el)
+
+(defvar jetpacs-applet-tooling-test--catalog nil
+  "The catalog data, built once per test process.")
+
+(defun jetpacs-applet-tooling-test--catalog ()
+  "Return the catalog data, building it on first use."
+  (or jetpacs-applet-tooling-test--catalog
+      (setq jetpacs-applet-tooling-test--catalog (jetpacs-applet-catalog-data))))
+
+(defun jetpacs-applet-tooling-test--node (nodes type)
+  "The entry of node TYPE in the vector NODES."
+  (seq-find (lambda (node) (equal (plist-get node :type) type)) nodes))
+
+(ert-deftest jetpacs-applet-tooling-test-catalog-joins-core-and-extension-nodes ()
+  "Every contract node and every manifest node appears with its real builder."
+  (let* ((data (jetpacs-applet-tooling-test--catalog))
+         (core (plist-get data :core_nodes))
+         (text (jetpacs-applet-tooling-test--node core "text"))
+         (material (seq-find (lambda (e) (equal (plist-get e :extension) "jetpacs.material3"))
+                             (plist-get data :extensions)))
+         (chip (jetpacs-applet-tooling-test--node (plist-get material :nodes)
+                                                   "material3.assist_chip"))
+         (components (seq-find (lambda (e) (equal (plist-get e :extension) "jetpacs.components"))
+                               (plist-get data :extensions)))
+         (tabs (jetpacs-applet-tooling-test--node (plist-get components :nodes) "jetpacs.tabs")))
+    (should (= (length core) 49))
+    (should (equal (plist-get (aref (plist-get text :builders) 0) :name) "jetpacs-text"))
+    (should (equal (plist-get (seq-find (lambda (m) (equal (plist-get m :name) "text"))
+                                        (plist-get text :members))
+                              :type)
+                   "string"))
+    ;; Format-2 members render in the type algebra; refs by definition name.
+    (should (equal (plist-get (seq-find (lambda (m) (equal (plist-get m :name) "variant"))
+                                        (plist-get chip :members))
+                              :type)
+                   "enum[flat|elevated|suggestion|elevated_suggestion]"))
+    (should (equal (plist-get (seq-find (lambda (m) (equal (plist-get m :name) "label"))
+                                        (plist-get chip :members))
+                              :type)
+                   "text"))
+    (should (equal (plist-get (aref (plist-get chip :builders) 0) :name)
+                   "jetpacs-material3-assist-chip"))
+    (should (member "app" (append (plist-get chip :targets) nil)))
+    (should (member "on_tap" (append (plist-get chip :events) nil)))
+    (should (plist-get chip :description))
+    (should (plist-get material :schema_sha256))
+    ;; The manifest's member descriptions travel.
+    (should (plist-get (seq-find (lambda (m) (equal (plist-get m :name) "variant"))
+                                 (plist-get tabs :members))
+                       :description))
+    (should (member "visible_when"
+                    (mapcar (lambda (a) (plist-get a :name))
+                            (plist-get data :universal_attributes))))))
+
+(ert-deftest jetpacs-applet-tooling-test-describe-node-covers-extension-nodes ()
+  "An extension node answers through the catalog; an unknown type still errors."
+  (let ((text (jetpacs-applet-tooling-describe-node "jetpacs.tabs")))
+    (should (string-match-p "Extension node: jetpacs.tabs" text))
+    (should (string-match-p "jetpacs.components" text))
+    (should (string-match-p "options: tab-options" text)))
+  (should (string-match-p "EBP node: button"
+                          (jetpacs-applet-tooling-describe-node "button")))
+  (should-error (jetpacs-applet-tooling-describe-node "no.such_node") :type 'error))
+
+(ert-deftest jetpacs-applet-tooling-test-catalog-renderings-are-deterministic-and-committed ()
+  "Two renderings agree byte for byte and the committed files are current."
+  (let ((first (jetpacs-applet-catalog-json (jetpacs-applet-tooling-test--catalog)))
+        (second (jetpacs-applet-catalog-json (jetpacs-applet-catalog-data))))
+    (should (equal first second))
+    (should (string-prefix-p "{\"catalog_format\":1," first)))
+  (let ((markdown (jetpacs-applet-catalog-markdown (jetpacs-applet-tooling-test--catalog))))
+    (should (string-match-p "^## Nodes (EBP core, 49)" markdown))
+    (should (string-match-p "^- material3.assist_chip: {" markdown))
+    (should (string-match-p "^## Rules" markdown))
+    (should (equal (length (split-string markdown "\n" t))
+                   (length (split-string (jetpacs-applet-catalog-markdown
+                                          (jetpacs-applet-tooling-test--catalog) "all")
+                                         "\n" t)))))
+  (should (string-match-p "\\`---\nname: jetpacs-applet\n"
+                          (jetpacs-applet-catalog-skill (jetpacs-applet-tooling-test--catalog))))
+  (should (jetpacs-applet-catalog-check)))
+
+(ert-deftest jetpacs-applet-tooling-test-catalog-applet-section-lists-defactions ()
+  "An applet path adds its statically found action registrations."
+  (let* ((data (jetpacs-applet-catalog-data "jetpacs-applet-mcp/examples/hello/hello.el"))
+         (applet (plist-get data :applet))
+         (actions (plist-get applet :actions)))
+    (should (equal (plist-get applet :path) "jetpacs-applet-mcp/examples/hello/hello.el"))
+    (should (> (length actions) 0))
+    (should (seq-every-p (lambda (a) (and (plist-get a :name) (plist-get a :handler)))
+                         actions))
+    (should (string-match-p "^## Applet `jetpacs-applet-mcp/examples/hello/hello.el`"
+                            (jetpacs-applet-catalog-markdown data)))))
+

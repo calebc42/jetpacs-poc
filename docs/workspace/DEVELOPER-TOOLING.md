@@ -124,10 +124,14 @@ commands live in each product's own README:
 
 ## Direction
 
-The local stdio interfaces are intentionally narrow. Plausible next steps are
-generated contract-to-builder coverage, structured validator findings, an
-applet test-harness generator after the packaging contract settles, and
-publication/versioning after a second checkout consumes the tools.
+The local stdio interfaces are intentionally narrow. Generated
+contract-to-builder coverage landed as the agent catalog export
+(`jetpacs-applet-mcp/jetpacs-applet-catalog.el`: the `jetpacs_catalog` tool,
+two resources, `catalog/CATALOG.md` and the `skills/jetpacs-applet` skill, all
+pinned by `tools/check-jetpacs-catalog.sh`). Plausible next steps are
+structured validator findings, an applet test-harness generator after the
+packaging contract settles, and publication/versioning after a second checkout
+consumes the tools.
 
 Streamable HTTP, remote access, autonomous file edits, and general Elisp
 evaluation are not defaults. Each expands the trust boundary and needs a
