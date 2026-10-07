@@ -42,8 +42,10 @@ object NodeSupport {
         ),
         // SPEC 22.4 (amendment #195): templates are expanded by the engine
         // and the renderer reports identity paths, so app surfaces may carry
-        // `template`; dialogs, notifications and widgets may not.
-        features = imageFeatures + editorFeatures + "action.open_surface" + "data.template",
+        // `template`; dialogs, notifications and widgets may not. Amendment
+        // #196: the engine applies the `insert` DataOp.
+        features = imageFeatures + editorFeatures + "action.open_surface" + "data.template" +
+            "data.insert",
         extensions = setOf(JETPACS_MATERIAL3_EXTENSION),
     )
 
