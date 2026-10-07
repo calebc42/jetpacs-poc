@@ -13,7 +13,14 @@ export JETPACS_WORKSPACE="$owner_root"
 # registries, and `last_profile' — what the Companion advertised the last
 # time a session reached READY (emacs/jetpacs-profile-snapshot.el). Static:
 # nothing is evaluated; absent files leave their key out.
+if [ -z "${JETPACS_REGISTRIES:-}" ]; then
+  JETPACS_REGISTRIES="{\"@jetpacs\":\"file://$owner_root/jetpacs-applet-mcp/registry/public/r/{name}.json\"}"
+  export JETPACS_REGISTRIES
+fi
+
 emacs -Q --batch \
+  -L "$owner_root/emacs" \
   -l "$owner_root/jetpacs-applet-mcp/jetpacs-applet-tooling.el" \
   -l "$owner_root/jetpacs-applet-mcp/jetpacs-applet-catalog.el" \
+  -l "$owner_root/emacs/jetpacs-registry.el" \
   --eval '(progn (princ (jetpacs-applet-catalog-info-json)) (kill-emacs 0))'

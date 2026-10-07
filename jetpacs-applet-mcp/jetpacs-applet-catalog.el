@@ -1113,6 +1113,16 @@ Signals an error for an unknown type.  The MCP tool's entry point."
                                                         (plist-get extension :nodes))))))
                          jetpacs-applet-catalog-manifests))
                 :applets (jetpacs-applet-catalog--packaged-apps))))
+    ;; The registries an applet may be added from, when the registry
+    ;; foundation is loaded (tools/jetpacs-info.sh loads it; the static MCP
+    ;; does once the registry tools are present).
+    (when (fboundp 'jetpacs-registry-namespaces)
+      (setq data (plist-put data :registries
+                            (vconcat
+                             (mapcar (lambda (entry)
+                                       (list :name (car entry)
+                                             :url (or (plist-get (cdr entry) :url) :json-null)))
+                                     (jetpacs-registry-namespaces))))))
     (when-let* ((file jetpacs-applet-catalog-last-profile-file)
                 (snapshot (and (file-exists-p file)
                                (ignore-errors

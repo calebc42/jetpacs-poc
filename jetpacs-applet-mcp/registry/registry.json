@@ -1,0 +1,8 @@
+{
+  "format": 1,
+  "name": "jetpacs",
+  "homepage": "https://github.com/calebc42/jetpacs-poc",
+  "items": [
+    {"path": "../examples/hello"}
+  ]
+}

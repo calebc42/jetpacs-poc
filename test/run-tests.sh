@@ -90,6 +90,9 @@ sh tools/check-jetpacs-examples.sh
 # renderer-extension manifests, the platform builders and examples.json; the
 # committed renderings must equal a fresh one.
 sh tools/check-jetpacs-catalog.sh
+# The applet registry's committed build (jetpacs-applet-mcp/registry/public/r)
+# must equal a fresh build of its source index.
+sh tools/check-jetpacs-registry.sh
 
 # Amendment #181: one deterministic 10,000-case corpus must agree across the
 # Python reference receiver, Kotlin receiver (the wire suite), and public

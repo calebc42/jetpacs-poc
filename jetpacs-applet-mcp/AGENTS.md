@@ -296,6 +296,7 @@ emacs -Q --batch \
   -l test/jetpacs-applet-tooling-test.el \
   -l test/jetpacs-applet-mcp-test.el \
   -l test/jetpacs-applet-source-discovery-test.el \
+  -l test/jetpacs-applet-registry-test.el \
   -f ert-run-tests-batch-and-exit
 ```
 

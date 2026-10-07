@@ -1,0 +1,2 @@
+{"format": 1, "name": "fixture", "homepage": "https://example.test/fixture",
+ "items": [{"path": "alpha"}], "include": ["more/registry.json"]}

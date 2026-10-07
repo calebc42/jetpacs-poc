@@ -1222,7 +1222,13 @@ target so a namespaced app checkout can be inspected recursively."
                                     canonical
                                     (jetpacs-applet-tooling-workspace-root))
                                    (jetpacs-applet-tooling--app-source-for-path
-                                    canonical)))
+                                    canonical)
+                                   ;; A reference root holds a registry's
+                                   ;; staged, fetched item for validation.
+                                   (seq-some
+                                    (lambda (entry)
+                                      (file-in-directory-p canonical (cdr entry)))
+                                    (jetpacs-applet-tooling-resolved-reference-roots))))
                               ((file-regular-p canonical))
                               ((<= (file-attribute-size
                                     (file-attributes canonical))
@@ -1257,6 +1263,18 @@ code and remain visible."
         (while (consp tail)
           (jetpacs-applet-tooling--walk-form (car tail) visitor (cons form ancestors))
           (setq tail (cdr tail))))))))
+
+(defun jetpacs-applet-tooling--literal-string-list (value)
+  "VALUE as a list of strings when it is a literal list of them, else nil.
+Accepts `(quote (\"a\" \"b\"))' and `(list \"a\" \"b\")'; a computed value
+is not structured data and stays visible only in the registration's form."
+  (let ((elements (pcase value
+                    (`(quote ,(and (pred proper-list-p) items)) items)
+                    (`(list . ,(and (pred proper-list-p) items)) items)
+                    (_ nil))))
+    (and elements
+         (seq-every-p #'stringp elements)
+         (copy-sequence elements))))
 
 (defun jetpacs-applet-tooling--literal-name (value &optional literals)
   "Return VALUE's statically provable string/symbol name, or nil.
@@ -1382,7 +1400,14 @@ wire action \"name\" and hide exactly the dynamic site the inventory must show."
                        (when (plist-member options :surfaces)
                          (list :surfaces
                                (jetpacs-applet-tooling--canonical-sexp-string
-                                (plist-get options :surfaces)))))
+                                (plist-get options :surfaces))))
+                       ;; A literal list of extension ids is structured data
+                       ;; (the registry's requires_extensions); anything
+                       ;; computed stays visible only in :form.
+                       (when-let* ((extensions
+                                    (jetpacs-applet-tooling--literal-string-list
+                                     (plist-get options :requires-extensions))))
+                         (list :requires-extensions extensions)))
                       apps)))
              ('jetpacs-chrome-define-root
               (push (list :surface (jetpacs-applet-tooling--literal-name (nth 1 node) literals)
@@ -2019,7 +2044,8 @@ tooling constant."
             (mapcar
              (lambda (record)
                (jetpacs-applet-tooling--manifest-registration
-                record '(:id :label :icon :surfaces :path :line :form)))
+                record '(:id :label :icon :surfaces :requires-extensions
+                         :path :line :form)))
              (jetpacs-applet-tooling--sort-records apps :id)))
            :roots
            (vconcat

@@ -1,0 +1,7 @@
+{
+  "version": "0.1.0",
+  "title": "Hello",
+  "description": "A minimal Tier-1 Jetpacs applet: one screen, one refresh action. The reference output shape of jetpacs_applet_template.",
+  "categories": ["example"],
+  "docs": "Install, then enable Hello on the Apps screen; tap Refresh to see the round trip."
+}

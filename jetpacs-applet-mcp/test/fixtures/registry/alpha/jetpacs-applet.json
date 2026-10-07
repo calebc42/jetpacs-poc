@@ -1,0 +1,2 @@
+{"version": "1.2.3", "title": "Alpha", "description": "Alpha depends on beta.",
+ "categories": ["fixture"], "registry_dependencies": ["beta"]}
