@@ -24,6 +24,7 @@ server, and an MCP feature should not become a hidden applet runtime dependency.
 | `jetpacs-applet-mcp.el` | MCP tool catalog, arguments, resources, prompts, JSON-RPC lifecycle, stdio |
 | `jetpacs-applet-catalog.el` | The agent-facing catalog export: contract nodes, renderer-extension manifest nodes in the format-2 type algebra, builders joined from the static index, universal attributes, the action vocabulary, an applet's registrations; rendered as `catalog/jetpacs-catalog.json`, `catalog/CATALOG.md` and `../skills/jetpacs-applet/SKILL.md`, pinned by `tools/check-jetpacs-catalog.sh` |
 | `jetpacs-applet-examples.el` | The catalog's examples, harvested with the platform loaded: the component catalog's canonical documents, the Material 3 catalog's samples (joined by builder) and the design proof library's tree; rendered as `catalog/examples.json`, pinned by `tools/check-jetpacs-examples.sh`. The static catalog joins it like any other input and falls back to a golden line per node |
+| `jetpacs-applet-registry.el` | The applet registry's publisher and batch side over `../emacs/jetpacs-registry.el`: source index with `include`, items derived from the applet manifest plus `jetpacs-applet.json`, `build`/`validate`/`check`, index listing and search, resolve reports with fetched Elisp validated from a staging reference root, the install command; driven by `../tools/jetpacs-registry.sh` and the `jetpacs_registry_*` tools; the committed build at `registry/public/r` is pinned by `../tools/check-jetpacs-registry.sh` |
 | `jetpacs-applet-mcp-runtime.el` | The explicit trust transition that loads exactly one workspace applet and the real Jetpacs runtime |
 | `APPLET-GUIDE.md` | Normative local workflow for applet lifecycle, builders, actions, state, packaging, Org use, and tests |
 | `PACKAGE-SKINS.md` | Package-agnostic architecture and workflow for adapting an existing Emacs package into a native Jetpacs skin |
@@ -46,11 +47,17 @@ Loading `jetpacs-applet-mcp.el` may read bounded source forms but must not:
 - macroexpand arbitrary applet forms;
 - write files;
 - start a shell or arbitrary process;
-- use the network; or
+- use the network, with one bounded exception: the `jetpacs_registry_*`
+  listing, search, view and resolve tools fetch item JSON from registries the
+  user configured (`jetpacs-registry-namespaces` / `JETPACS_REGISTRIES`), carry
+  `openWorldHint`, verify every file's sha256, read the Elisp with a throwaway
+  obarray, write nothing and load nothing; or
 - advertise a general evaluator disguised as a debugging tool.
 
 Static inspection is not a sandbox and is not a trust verdict. It is a way to
-extract bounded evidence without executing the inspected applet.
+extract bounded evidence without executing the inspected applet. A registry
+item is evidence of the same kind: fetched, pinned and read, never run — the
+App Store's consent gate on the device is the only thing that loads it.
 
 ### Trusted runtime mode is explicit
 
@@ -183,7 +190,10 @@ The server must preserve string and numeric JSON-RPC IDs, require the complete
 initialize lifecycle, ignore notifications without responding, and keep stdout
 protocol-only. Static mode must not list runtime tools. The render checker is
 not read-only because it invokes a trusted live builder, even though its sender
-gates do not transmit.
+gates do not transmit. The registry tools that fetch are the only ones with
+`openWorldHint` true; they stay read-only and idempotent, and
+`jetpacs_registry_install_command` returns text for the batch tool rather than
+installing anything.
 
 Resources hold stable guidance. Tools answer focused questions. Prompts encode
 repeatable create/review workflows. Keep those roles distinct.

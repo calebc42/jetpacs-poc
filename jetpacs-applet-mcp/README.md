@@ -228,12 +228,58 @@ JETPACS_TRUSTED_APPLET=glasspane/glasspane.el \
 The committed [`hello.el`](examples/hello/hello.el) is the same minimal shape
 returned by the scaffold tool.
 
+## Adding applets from a registry
+
+An applet registry is an index of installable applets with declared
+requirements — shadcn/ui's registry for Elisp (the shape is argued in
+`ebp/slop-docs/SHADCN-harvest.md` §5). This checkout publishes its own at
+[`registry/public/r`](registry/public/r) from the source index
+[`registry/registry.json`](registry/registry.json); `hello` is its first item.
+
+- **Item addresses.** A bare name (`hello`, the `@jetpacs` namespace),
+  `@namespace/item`, an `https://…/item.json` URL, a `*.json` path, or
+  `owner/repo/item[#ref]` on GitHub, which reads the built item at
+  `public/r/item.json` so every fetch has a sha pin. Registries are configured
+  in `jetpacs-registry-namespaces` or the `JETPACS_REGISTRIES` JSON object;
+  `${VAR}` expands in URL templates and headers, and a header whose variable
+  is empty is dropped.
+- **Tools.** `jetpacs_registry_namespaces`, `jetpacs_registry_list`,
+  `jetpacs_registry_search`, `jetpacs_registry_view` and
+  `jetpacs_registry_resolve` read from the configured registries (they are the
+  only open-world tools; still read-only, nothing is written or loaded).
+  `jetpacs_registry_validate` builds a workspace source index in memory.
+  `jetpacs_registry_install_command` returns the shell commands below.
+- **Batch tool.** `../tools/jetpacs-registry.sh build|validate|check` publish and
+  pin a registry; `resolve|dry-run|diff|install ADDRESS… [--dir DIR]
+  [--overwrite]` fetch, verify sha256, read with a throwaway obarray, check
+  requirements against the installed extensions, validate the fetched Elisp
+  statically from a staging root, classify every file as create, overwrite or
+  skip, and write plus lock. `install` refuses an overwrite without
+  `--overwrite`; nothing loads.
+- **Publishing an applet.** Put a `jetpacs-applet.json` beside its source
+  (`version`, `title`, `description`; optional `name`, `categories`,
+  `homepage`, `docs`, `registry_dependencies`, `main`), list the directory in a
+  source `registry.json`, run `build`. The item's files, their sha256s,
+  `requires_features` (requires minus provides), `requires_extensions` (from
+  `jetpacs-defapp`) and `package_requires` are derived from the applet
+  manifest; the static validator must pass.
+- **On the device.** `emacs/jetpacs-app-store-registry.el` lists every item of
+  the indexes in `jetpacs-app-store-registry-indexes` on the Apps screen behind
+  the same consent gate as a side-loaded bundle. A locally changed file is never
+  overwritten without the Preview screen's diff.
+
+Rules for agents: the registry must be explicit (ask, never default), dry-run
+then diff before install, and never `--overwrite` without the user's approval
+(`../skills/jetpacs-applet/rules/registry.md`).
+
 ## Tests
 
 ```sh
 emacs -Q --batch \
   -l test/jetpacs-applet-tooling-test.el \
   -l test/jetpacs-applet-mcp-test.el \
+  -l test/jetpacs-applet-source-discovery-test.el \
+  -l test/jetpacs-applet-registry-test.el \
   -f ert-run-tests-batch-and-exit
 
 emacs -Q --batch \
