@@ -38,7 +38,9 @@ the same canonical EBP bytes. Relevant inputs include:
 - current surface, navigation, and reconciled device state;
 - the negotiated target profile, capabilities, limits, and window class;
 - the surface data document a `:data-builder` returns (EBP §13.8), which the
-  tree's `jetpacs-ref` bindings resolve against; and
+  tree's `jetpacs-ref` bindings resolve against and whose arrays a
+  `jetpacs-template` expands over (EBP §13.8.5) — the items are builder
+  output like any node, built from the same explicit state; and
 - any locale, theme, or user option the builder deliberately observes.
 
 Time, randomness, network responses, file writes, prompts, process launches,

@@ -75,6 +75,30 @@ button's `args`, which cannot be bound. Grove's planning screen is the
 reference pilot: a picker tap sends one `surface.data` frame of under a
 kilobyte instead of the whole app stack.
 
+A list whose rows share one shape is a **template** (EBP §13.8.5): give the
+container `(jetpacs-template "/rows" ROW)` as its children, where ROW is one
+node built inside the macro's body. There a `(jetpacs-ref "title")` without a
+leading `/` resolves from the row's item, an absolute ref still reads the
+document, and the row binds its identity with
+`(jetpacs-with-attrs ROW :key (jetpacs-ref "id"))`; build the items as
+hash tables (string keys) or non-empty plists. The Companion expands the
+template once per element and injects the row's key as `item` into the
+`args` of every hook inside it, so one `on_tap` per row reads
+`(plist-get args :item)` and branches in the handler — a template row cannot
+vary its shape, its action names, or carry an `id`, an input, an editor, a
+`variant_host`, `capture_fields` or an authored `:item` arg; rich-text spans
+are not nodes and cannot bind, so bind a row of `jetpacs-text`s instead.
+Inserting, removing, folding or re-sorting rows is then one
+`jetpacs-data-set` of the array, re-expanded by the Companion with scroll
+position kept by key; compare the screen's remaining shape (a pager, an
+empty notice) before and after as above and refresh only when that changed.
+A Companion that granted `data.model` but does not advertise the
+`data.template` feature receives the expansion from Emacs with the items
+written in, and the shell then re-pushes instead of patching. Orgzly's
+outline (`orgzly-ui-note-row-template`, `orgzly--on-note-tap`) is the
+reference: 23 nodes and a 6 KB screen where 530 nodes and 34 KB of rows
+were.
+
 Use `jetpacs-chrome-screen` for an ordinary app screen, then compose typed
 builders such as `jetpacs-column`, `jetpacs-text`, `jetpacs-button`, and
 `jetpacs-lazy-column`. Query `jetpacs_describe_node` before using an unfamiliar

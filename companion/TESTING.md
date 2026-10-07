@@ -78,8 +78,15 @@ the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),
 `DataModelContractTest`, `SurfaceStoreDataTest` and `SurfaceDataEngineTest`
 (`surface.data` patches, floors, draft acknowledgement, the `data.model`
-gate). The Elisp side of the amendment is gated by
-`test/jetpacs-data-test.el`, which replays the same corpus. Production source must contain no
+gate), and the EBP §13.8.5 template suites: `SurfaceStoreTemplateTest`
+(expansion, re-expansion on patch with identity following the bound key,
+nested scopes, grant and namespace rejections, restore, a view root as an
+identity root) and the `item` injection case in `SurfaceDataEngineTest`.
+The renderer's `TemplateSourcePathTest` (Robolectric, material3) pins the
+identity-path grammar: a tap inside a templated lazy column in a scaffold
+body reports the path the engine keyed the item on. The Elisp side of the
+amendments is gated by `test/jetpacs-data-test.el`, which replays the same
+corpus (38 vectors). Production source must contain no
 `FileQueueStore`, `FileSurfaceBacking`, `FileReminderBacking`, or
 `FileTriggerBacking` caller.
 
@@ -241,7 +248,10 @@ wireless ADB. `SurfaceDataPatchRetentionInstrumentedTest` (EBP §13.8: a
 shows the bound value, through the Companion's real installation) passed there
 the same day, run with `am instrument` against the deployed debug Companion
 rather than through `connectedDebugAndroidTest`, which would have uninstalled
-it afterwards. Two checks needed phone-aware assertions: fixed tab widths agree
+it afterwards. The same class gained `aTemplatedListReExpandsAndKeepsItsScrollPosition`
+for amendment #195 (a template over `/rows` patched and re-expanded with a
+row inserted above the viewport), not yet run on a phone. Two checks needed
+phone-aware assertions: fixed tab widths agree
 only to within one pixel when the row width is not a multiple of the tab
 count, and the Harp save flow dismisses the soft keyboard before clicking
 Save, because the keyboard window otherwise swallows the click. Note that

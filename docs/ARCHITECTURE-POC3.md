@@ -182,6 +182,29 @@ Emacs over an adb port forward: a quick-pick tap sends one 866-byte
 scrolled list keeps its position to the pixel across the patch, a direct
 patch and a full re-push alike.
 
+Amendment #195 adds templates over bound arrays (EBP §13.8.5, feature
+`data.template`). A node's `template` — one Node, written with
+`(jetpacs-template "/rows" ROW)` where a container takes its children —
+is expanded by the engine once per element of the array its
+`bind.children` reaches; inside the template a `jetpacs-ref` without a
+leading `/` resolves from the item, the template node binds `key`
+(`jetpacs-with-attrs … :key (jetpacs-ref "id")`), and nothing inside may
+carry an `id`, input state, an editor, a `variant_host` or
+`capture_fields`. `Materializer.materializeWithItems` also records each
+expanded item root under its `IdentityPath` (key, else id, else JSON
+position, each with the type), the renderer carries that grammar as
+`RenderCtx.sourcePath` beside its own retained-presentation path and
+reports it on every `RendererActionRequest`, and the engine injects the
+innermost item's key as `args.item` at dispatch (EBP §14.3). Templates are
+admitted in app snapshots only; a Companion without the feature gets the
+expansion from Emacs, with `item` written into each row's descriptors by
+`jetpacs-data-materialize`. The shell remembers which surfaces were pushed
+with their document and re-pushes rather than patches the others. Orgzly's
+outline is the pilot (orgzly-native `30d5d98`): one row template over
+`/rows`, a 40-note page measured at 5,849 bytes of screen plus a 10,940-byte
+document against 34,180 bytes of literal rows, 23 nodes against 530, and a
+fold is one `surface.data` patch of `/rows`.
+
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,
 widget, and tile targets have their own narrower profiles. The optional
