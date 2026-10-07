@@ -82,9 +82,13 @@ python3 "$EBP_KMP_DIR/tools/gen-vocabulary.py" \
   --check
 python3 tools/gen-jetpacs-vocabulary.py --check
 python3 "$EBP_COMPOSE_DIR/test/test_renderer_extension_generator.py"
+# The catalog's examples are harvested from the component catalog and the
+# Material 3 catalog with the platform loaded; the committed examples.json
+# must equal a fresh harvest, and it feeds the static catalog export below.
+sh tools/check-jetpacs-examples.sh
 # The agent-facing catalog export is generated from the contract, the
-# renderer-extension manifests and the platform builders; the committed
-# renderings must equal a fresh one.
+# renderer-extension manifests, the platform builders and examples.json; the
+# committed renderings must equal a fresh one.
 sh tools/check-jetpacs-catalog.sh
 
 # Amendment #181: one deterministic 10,000-case corpus must agree across the

@@ -253,6 +253,6 @@
                              (gethash "text" (aref (gethash "contents" (gethash "result" markdown)) 0))))
     (should (equal "application/json"
                    (gethash "mimeType" (aref (gethash "contents" (gethash "result" json)) 0))))
-    (should (string-prefix-p "{\"catalog_format\":1,"
+    (should (string-prefix-p "{\"catalog_format\":2,"
                              (gethash "text" (aref (gethash "contents" (gethash "result" json)) 0))))))
 

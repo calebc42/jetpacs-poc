@@ -60,6 +60,7 @@
 (declare-function jetpacs-applet-tooling-validate-applet "jetpacs-applet-tooling" (path))
 (declare-function jetpacs-applet-tooling-workspace-root "jetpacs-applet-tooling" ())
 (declare-function jetpacs-applet-catalog-render "jetpacs-applet-catalog")
+(declare-function jetpacs-applet-catalog-node-examples "jetpacs-applet-catalog")
 
 ;;;; Protocol identity and JSON construction
 
@@ -172,9 +173,16 @@ builder; static tools are read-only and idempotent."
      '("symbol")))
    (jetpacs-applet-mcp--tool
     "jetpacs_describe_node" "Describe an EBP node"
-    "Describe one node type from contract.json together with its real jetpacs-* builder signature and documentation."
+    "Describe one node type from contract.json together with its real jetpacs-* builder signature and documentation. For usage examples, use jetpacs_node_examples."
     (jetpacs-applet-mcp--schema
      `(("nodeType" . ,(jetpacs-applet-mcp--property "string" "EBP node type, such as button or pane_scaffold.")))
+     '("nodeType")))
+   (jetpacs-applet-mcp--tool
+    "jetpacs_node_examples" "Show a node's examples"
+    "Real examples of one core or extension node type: nodes the catalog applets render (with their IR or authored Elisp) and the golden line whose t is the type. Use after jetpacs_describe_node, before writing the node."
+    (jetpacs-applet-mcp--schema
+     `(("nodeType" . ,(jetpacs-applet-mcp--property "string" "EBP node type, such as button, jetpacs.tabs or material3.assist_chip."))
+       ("limit" . ,(jetpacs-applet-mcp--property "integer" "At most this many examples; defaults to all (two).")))
      '("nodeType")))
    (jetpacs-applet-mcp--tool
     "jetpacs_catalog" "Export the Jetpacs catalog"
@@ -184,6 +192,8 @@ builder; static tools are read-only and idempotent."
                       "string" "Rendering; defaults to markdown." '("markdown" "json")))
        ("section" . ,(jetpacs-applet-mcp--property
                        "string" "Markdown section; defaults to all." '("all" "nodes" "attributes" "actions")))
+       ("examples" . ,(jetpacs-applet-mcp--property
+                        "string" "Markdown examples under each node: none (the default; use jetpacs_node_examples per node), brief (one JSON line each) or full (authored Elisp too). brief and full exceed the result cap for the whole catalog, so narrow the section." '("none" "brief" "full")))
        ("appletPath" . ,(jetpacs-applet-mcp--property
                           "string" "Optional workspace-relative applet .el file or directory whose actions join the catalog.")))))
    (jetpacs-applet-mcp--tool
@@ -349,10 +359,19 @@ builder; static tools are read-only and idempotent."
             (jetpacs-applet-catalog-render
              (or (jetpacs-applet-mcp--optional-string arguments "format") "markdown")
              (or (jetpacs-applet-mcp--optional-string arguments "section") "all")
-             (jetpacs-applet-mcp--optional-string arguments "appletPath")))
+             (jetpacs-applet-mcp--optional-string arguments "appletPath")
+             (pcase (jetpacs-applet-mcp--optional-string arguments "examples")
+               ((or 'nil "none") 'none)
+               ("brief" 'brief)
+               ("full" 'full)
+               (other (error "Jetpacs Applet MCP: unknown examples mode %S" other)))))
            ("jetpacs_describe_node"
             (jetpacs-applet-tooling-describe-node
              (jetpacs-applet-mcp--required-string arguments "nodeType")))
+           ("jetpacs_node_examples"
+            (jetpacs-applet-catalog-node-examples
+             (jetpacs-applet-mcp--required-string arguments "nodeType")
+             (jetpacs-applet-mcp--optional-int arguments "limit" nil)))
            ("jetpacs_summarize_elisp"
             (jetpacs-applet-tooling-summarize-elisp-file
              (jetpacs-applet-mcp--required-string arguments "path")

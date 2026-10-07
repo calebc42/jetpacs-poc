@@ -33,10 +33,12 @@
   "The agent-facing catalog export of the Jetpacs vocabulary."
   :group 'jetpacs-applet-tooling)
 
-(defconst jetpacs-applet-catalog-format 1
-  "The catalog JSON's own format number.")
+(defconst jetpacs-applet-catalog-format 2
+  "The catalog JSON's own format number.
+Format 2 adds `examples' to every node entry (harvested by
+jetpacs-applet-examples.el, with golden lines as the fallback).")
 
-(defconst jetpacs-applet-catalog-generator "jetpacs-applet-catalog/1"
+(defconst jetpacs-applet-catalog-generator "jetpacs-applet-catalog/2"
   "The generator name written into every rendering.")
 
 (defcustom jetpacs-applet-catalog-manifests
@@ -63,6 +65,20 @@ computed, so the catalog never re-derives it."
   "Workspace-relative path of the generated SKILL.md."
   :type 'string
   :group 'jetpacs-applet-catalog)
+
+(defcustom jetpacs-applet-catalog-examples-path "jetpacs-applet-mcp/catalog/examples.json"
+  "Workspace-relative path of the harvested examples (jetpacs-applet-examples.el).
+Absent, every node falls back to its golden line alone."
+  :type 'string
+  :group 'jetpacs-applet-catalog)
+
+(defcustom jetpacs-applet-catalog-core-golden "ebp/goldens/widgets.golden"
+  "Repositories-relative golden corpus the core nodes take their fallback from."
+  :type 'string
+  :group 'jetpacs-applet-catalog)
+
+(defconst jetpacs-applet-catalog-examples-per-node 2
+  "How many examples one node entry carries at most.")
 
 (defcustom jetpacs-applet-catalog-builder-roots '("emacs/" "jetpacs-components/lisp/")
   "Workspace-relative prefixes whose public definitions count as builders.
@@ -258,6 +274,145 @@ node without a conventional builder still shows what constructs it."
       (setq entry (plist-put entry :doc doc)))
     entry))
 
+;;;; Examples
+;;
+;; shadcn publishes demos as `registry:example' items and its MCP sends an
+;; agent from a search to them (ebp/slop-docs/SHADCN-harvest.md §3).  Here
+;; every node carries up to two: the harvested ones first (the component
+;; catalog's canonical document for the type, then the Material 3 samples of
+;; the node's first builder), and always one whose `t' IS the type — the
+;; first matching line of the corpus golden — so an agent sees the exact
+;; shape even when a sample shows the builder inside a larger node.
+
+(defvar jetpacs-applet-catalog--inputs nil
+  "Per-rendering memo of parsed inputs (examples.json, goldens), or nil.
+Bound by `jetpacs-applet-catalog-data' so one rendering reads each file once.")
+
+(defun jetpacs-applet-catalog--memo (key thunk)
+  "The value of THUNK, memoized under KEY while a rendering is in progress."
+  (if jetpacs-applet-catalog--inputs
+      (let ((cached (gethash key jetpacs-applet-catalog--inputs 'unread)))
+        (if (eq cached 'unread)
+            (puthash key (funcall thunk) jetpacs-applet-catalog--inputs)
+          cached))
+    (funcall thunk)))
+
+(defun jetpacs-applet-catalog--parse-json-arrays (text)
+  "Parse JSON TEXT with objects as hash tables and arrays as vectors.
+Node objects must round-trip through `json-serialize', which wants
+vectors for arrays; `jetpacs-applet-catalog--read-json' reads lists."
+  (json-parse-string text :object-type 'hash-table :array-type 'array
+                     :null-object :json-null :false-object :json-false))
+
+(defun jetpacs-applet-catalog--examples-index ()
+  "The harvested examples as a hash table, or nil when the file is absent."
+  (jetpacs-applet-catalog--memo
+   'examples
+   (lambda ()
+     (let ((file (expand-file-name jetpacs-applet-catalog-examples-path
+                                   (jetpacs-applet-tooling-workspace-root))))
+       (when (file-exists-p file)
+         (let ((index (jetpacs-applet-catalog--parse-json-arrays
+                       (with-temp-buffer (insert-file-contents file) (buffer-string)))))
+           (unless (eql (gethash "format" index) 1)
+             (error "Jetpacs Applet Catalog: unknown examples format %S"
+                    (gethash "format" index)))
+           index))))))
+
+(defun jetpacs-applet-catalog--golden-nodes (relative)
+  "The nodes of the golden corpus RELATIVE, one per `NN {json}' line.
+Lines that do not parse as an object are skipped; an absent file is empty."
+  (jetpacs-applet-catalog--memo
+   (cons 'golden relative)
+   (lambda ()
+     (let ((file (condition-case nil
+                     (jetpacs-applet-tooling-resolve-file relative)
+                   (error nil))))
+       (when (and file (file-exists-p file))
+         (delq nil
+               (mapcar (lambda (line)
+                         (when (string-match "\\`[0-9]+ \\({.*}\\)\\'" line)
+                           (ignore-errors
+                             (jetpacs-applet-catalog--parse-json-arrays (match-string 1 line)))))
+                       (split-string (with-temp-buffer (insert-file-contents file)
+                                                       (buffer-string))
+                                     "\n" t))))))))
+
+(defun jetpacs-applet-catalog--golden-path (manifest-path)
+  "The golden corpus beside the manifest at MANIFEST-PATH."
+  (concat (file-name-sans-extension manifest-path) ".golden"))
+
+(defun jetpacs-applet-catalog--example-type (example)
+  "The `t' of EXAMPLE's node, or nil."
+  (let ((node (gethash "node" example)))
+    (and (hash-table-p node) (gethash "t" node))))
+
+(defun jetpacs-applet-catalog--examples (type builders golden)
+  "Up to `jetpacs-applet-catalog-examples-per-node' examples of node TYPE.
+BUILDERS are the node's builder records; GOLDEN the corpus to fall back
+on.  Harvested examples come first; one whose node is literally a TYPE is
+guaranteed when the golden has such a line."
+  (let* ((index (jetpacs-applet-catalog--examples-index))
+         (by-type (and index (gethash type (gethash "by_type" index))))
+         (by-builder (and index (> (length builders) 0)
+                          (gethash (plist-get (aref builders 0) :name)
+                                   (gethash "by_builder" index))))
+         (harvested (seq-take (append by-type nil (append by-builder nil))
+                              jetpacs-applet-catalog-examples-per-node))
+         (exact (seq-find (lambda (node) (equal (gethash "t" node) type))
+                          (jetpacs-applet-catalog--golden-nodes golden)))
+         (result harvested))
+    (when (and exact
+               (not (seq-some (lambda (e) (equal (jetpacs-applet-catalog--example-type e) type))
+                              result)))
+      (let ((entry (make-hash-table :test #'equal)))
+        (puthash "source" "golden" entry)
+        (puthash "node" exact entry)
+        (setq result (seq-take (append result (list entry))
+                               jetpacs-applet-catalog-examples-per-node))
+        (unless (seq-some (lambda (e) (equal (jetpacs-applet-catalog--example-type e) type))
+                          result)
+          (setq result (append (butlast result) (list entry))))))
+    (vconcat result)))
+
+(defun jetpacs-applet-catalog--example-json (example)
+  "EXAMPLE's node as compact JSON text."
+  (let ((text (json-serialize (gethash "node" example)
+                              :false-object :json-false :null-object :json-null)))
+    (if (multibyte-string-p text) text (decode-coding-string text 'utf-8))))
+
+(defconst jetpacs-applet-catalog-brief-max-chars 1200
+  "In brief renderings, an example text longer than this is named, not shown.")
+
+(defun jetpacs-applet-catalog--examples-markdown (examples &optional full)
+  "Markdown lines for the vector EXAMPLES, indented under a node line.
+Each example is one `- example (SOURCE[, NAME]): JSON' line; with FULL,
+its `ir' or `elisp' text follows in a fenced block.  Brief renderings
+name instead of inline anything over `jetpacs-applet-catalog-brief-max-chars'."
+  (mapconcat
+   (lambda (example)
+     (let* ((source (gethash "source" example))
+            (name (gethash "name" example))
+            (ir (gethash "ir" example))
+            (elisp (gethash "elisp" example))
+            (json (jetpacs-applet-catalog--example-json example))
+            (fits (lambda (text)
+                    (or full (<= (length text) jetpacs-applet-catalog-brief-max-chars))))
+            (fence (lambda (text)
+                     (format "\n    ```elisp\n%s    ```\n\n"
+                             (replace-regexp-in-string "^" "    " (string-trim-right text) t t)))))
+       (concat
+        (format "  - example (%s%s): %s\n" source
+                (if name (format ", %s" name) "")
+                (if (funcall fits json)
+                    (format "`%s`" json)
+                  (format "a %d-character node; see `jetpacs_node_examples`" (length json))))
+        (cond
+         ((and ir (or full (not elisp)) (funcall fits ir)) (funcall fence ir))
+         ((and full elisp) (funcall fence elisp))
+         (t "")))))
+   examples ""))
+
 ;;;; Nodes
 
 (defun jetpacs-applet-catalog--core-node (contract index type)
@@ -286,11 +441,13 @@ node without a conventional builder still shows what constructs it."
                           (jetpacs-applet-catalog--first-sentence
                            (plist-get (car builders) :doc)))))
       (setq entry (plist-put entry :description doc)))
-    entry))
+    (plist-put entry :examples
+               (jetpacs-applet-catalog--examples type (plist-get entry :builders)
+                                                 jetpacs-applet-catalog-core-golden))))
 
-(defun jetpacs-applet-catalog--extension-node (manifest index type)
+(defun jetpacs-applet-catalog--extension-node (manifest index type &optional golden)
   "The catalog entry of extension node TYPE from the format-2 MANIFEST.
-Builders come from INDEX."
+Builders come from INDEX; GOLDEN is the manifest's corpus, for examples."
   (let* ((row (gethash type (gethash "node_schema" manifest)))
          (required (gethash "required" row))
          (optional (gethash "optional" row))
@@ -326,7 +483,8 @@ Builders come from INDEX."
                               (jetpacs-applet-catalog--first-sentence
                                (plist-get (car builders) :doc))))))
       (setq entry (plist-put entry :description doc)))
-    entry))
+    (plist-put entry :examples
+               (jetpacs-applet-catalog--examples type (plist-get entry :builders) golden))))
 
 (defun jetpacs-applet-catalog--extension (index manifest-path projection)
   "The catalog entry of the manifest at MANIFEST-PATH.
@@ -340,7 +498,9 @@ file, read for the schema digest."
                       :sha256 (jetpacs-applet-catalog--sha256
                                (jetpacs-applet-tooling-resolve-file manifest-path))
                       :nodes (vconcat (mapcar (lambda (type)
-                                                (jetpacs-applet-catalog--extension-node manifest index type))
+                                                (jetpacs-applet-catalog--extension-node
+                                                 manifest index type
+                                                 (jetpacs-applet-catalog--golden-path manifest-path)))
                                               (gethash "node_types" manifest)))
                       :definitions (vconcat
                                     (mapcar (lambda (name)
@@ -386,7 +546,8 @@ With APPLET-PATH, a workspace-relative applet file or directory, its
 `jetpacs-defaction' registrations join as `:applet'.  Deterministic: core
 nodes follow the contract's order, extensions follow
 `jetpacs-applet-catalog-manifests', and every map is sorted."
-  (let* ((contract (jetpacs-applet-tooling--contract))
+  (let* ((jetpacs-applet-catalog--inputs (make-hash-table :test #'equal))
+         (contract (jetpacs-applet-tooling--contract))
          (index (jetpacs-applet-catalog--builder-index))
          (data
           (list :catalog_format jetpacs-applet-catalog-format
@@ -426,11 +587,13 @@ decoded here so the text joins a multibyte buffer and encodes as UTF-8."
 
 ;;;; Markdown
 
-(defun jetpacs-applet-catalog--node-line (node)
+(defun jetpacs-applet-catalog--node-line (node &optional examples)
   "Render catalog NODE as json-render's one-line component form.
 `- type: { m: type, opt?: type } - desc [accepts children] [targets: …]
 \\[events: …] [elisp: name (args)]', then one indented line per documented
-member."
+member.  EXAMPLES nil omits the node's examples; `brief' shows them as one
+JSON line each (plus the IR of a component-catalog document); `full' adds
+every example's authored Elisp in a fenced block."
   (let* ((members (plist-get node :members))
          (signature
           (string-join
@@ -466,6 +629,10 @@ member."
                  (string-join (mapcar (lambda (b) (plist-get b :name))
                                       (cdr (append builders nil)))
                               ", "))
+       "")
+     (if (and examples (> (length (plist-get node :examples)) 0))
+         (jetpacs-applet-catalog--examples-markdown (plist-get node :examples)
+                                                    (eq examples 'full))
        ""))))
 
 (defun jetpacs-applet-catalog--header (data)
@@ -477,12 +644,21 @@ member."
             (plist-get contract :sha256)
             (length (plist-get data :extensions)))))
 
-(defun jetpacs-applet-catalog--nodes-markdown (data)
-  "The core and extension node sections of catalog DATA."
+(defun jetpacs-applet-catalog--nodes-markdown (data &optional examples)
+  "The core and extension node sections of catalog DATA.
+EXAMPLES is nil, `brief' or `full' as for `jetpacs-applet-catalog--node-line';
+`extensions' shows brief examples under extension nodes only, which keeps
+the SKILL.md readable while CATALOG.md carries everything."
   (concat
-   (format "## Nodes (EBP core, %d)\n\nEvery core node is built by its `jetpacs-*` constructor; member types are the contract's SPEC 17.1 tags.\n\n"
-           (length (plist-get data :core_nodes)))
-   (mapconcat #'jetpacs-applet-catalog--node-line (plist-get data :core_nodes) "")
+   (format "## Nodes (EBP core, %d)\n\nEvery core node is built by its `jetpacs-*` constructor; member types are the contract's SPEC 17.1 tags.%s\n\n"
+           (length (plist-get data :core_nodes))
+           (if (memq examples '(brief full))
+               " Each node lists up to two examples: a real node from the catalog applets, and one from the goldens whose `t` is the type."
+             " Examples per node are in `jetpacs-applet-mcp/catalog/CATALOG.md` and the `jetpacs_node_examples` MCP tool."))
+   (mapconcat (lambda (node)
+                (jetpacs-applet-catalog--node-line
+                 node (and (memq examples '(brief full)) examples)))
+              (plist-get data :core_nodes) "")
    (mapconcat
     (lambda (extension)
       (concat
@@ -494,7 +670,13 @@ member."
                (if-let* ((digest (plist-get extension :schema_sha256)))
                    (format ", schema sha256 %s" digest)
                  ""))
-       (mapconcat #'jetpacs-applet-catalog--node-line (plist-get extension :nodes) "")
+       (mapconcat (lambda (node)
+                    (jetpacs-applet-catalog--node-line
+                     node (pcase examples
+                            ('extensions 'brief)
+                            ((or 'brief 'full) examples)
+                            (_ nil))))
+                  (plist-get extension :nodes) "")
        (if (> (length (plist-get extension :definitions)) 0)
            (concat (format "\n### Definitions (%s)\n\n" (plist-get extension :extension))
                    (mapconcat (lambda (def)
@@ -553,23 +735,30 @@ member."
             (mapconcat (lambda (rule) (format "%d. %s\n" (cl-incf n) rule))
                        jetpacs-applet-catalog--rules ""))))
 
-(defun jetpacs-applet-catalog-markdown (data &optional section)
+(defun jetpacs-applet-catalog-markdown (data &optional section examples)
   "Render catalog DATA as Markdown; SECTION narrows it.
-SECTION is nil or \"all\", or one of \"nodes\", \"attributes\", \"actions\"."
-  (pcase (or section "all")
-    ("nodes" (concat (jetpacs-applet-catalog--header data)
-                     (jetpacs-applet-catalog--nodes-markdown data)))
-    ("attributes" (concat (jetpacs-applet-catalog--header data)
-                          (jetpacs-applet-catalog--attributes-markdown data)))
-    ("actions" (concat (jetpacs-applet-catalog--header data)
-                       "\n## Actions\n\n" (plist-get data :actions) "\n"))
-    ("all" (concat (jetpacs-applet-catalog--header data)
-                   (jetpacs-applet-catalog--nodes-markdown data)
+SECTION is nil or \"all\", or one of \"nodes\", \"attributes\", \"actions\".
+EXAMPLES is `brief' (the default: one JSON line per example), `full' (the
+committed CATALOG.md: authored Elisp in fenced blocks too) or `none'."
+  (let ((examples (pcase examples
+                    ((or 'nil 'brief) 'brief)
+                    ('full 'full)
+                    ('none nil)
+                    (_ (error "Jetpacs Applet Catalog: unknown examples mode %S" examples)))))
+    (pcase (or section "all")
+      ("nodes" (concat (jetpacs-applet-catalog--header data)
+                       (jetpacs-applet-catalog--nodes-markdown data examples)))
+      ("attributes" (concat (jetpacs-applet-catalog--header data)
+                            (jetpacs-applet-catalog--attributes-markdown data)))
+      ("actions" (concat (jetpacs-applet-catalog--header data)
+                         "\n## Actions\n\n" (plist-get data :actions) "\n"))
+      ("all" (concat (jetpacs-applet-catalog--header data)
+                     (jetpacs-applet-catalog--nodes-markdown data examples)
                    (jetpacs-applet-catalog--attributes-markdown data)
                    "\n## Actions\n\n" (plist-get data :actions) "\n"
-                   (jetpacs-applet-catalog--applet-markdown data)
-                   (jetpacs-applet-catalog--rules-markdown)))
-    (_ (error "Jetpacs Applet Catalog: unknown section %S" section))))
+                     (jetpacs-applet-catalog--applet-markdown data)
+                     (jetpacs-applet-catalog--rules-markdown)))
+      (_ (error "Jetpacs Applet Catalog: unknown section %S" section)))))
 
 ;;;; SKILL.md
 
@@ -609,7 +798,7 @@ sections and the compact catalog."
    "- **Actions are a durability boundary.** `accepted` means the effect is durable; handlers take `(ARGS PARAMS)` and return `accepted`, `stale` or `rejected`.\n"
    "- **Negotiated vocabulary.** Every node, builtin, feature and extension must be in the target profile; the shell gates refuse what is not.\n\n"
    "## Workflow\n\n"
-   "1. Read `jetpacs-applet-mcp/APPLET-GUIDE.md` (lifecycle, builders, data document, actions) and `jetpacs-applet-mcp/DETERMINISM.md` (the determinism envelope). With the `jetpacs-applets` MCP running, `jetpacs_applet_guide`, `jetpacs_describe_node`, `jetpacs_describe_actions` and `jetpacs_catalog` answer the same questions live.\n"
+   "1. Read `jetpacs-applet-mcp/APPLET-GUIDE.md` (lifecycle, builders, data document, actions) and `jetpacs-applet-mcp/DETERMINISM.md` (the determinism envelope). With the `jetpacs-applets` MCP running, `jetpacs_applet_guide`, `jetpacs_describe_node`, `jetpacs_node_examples`, `jetpacs_describe_actions` and `jetpacs_catalog` answer the same questions live; after choosing a node, look at its examples before writing it.\n"
    "2. Scaffold with `jetpacs_applet_template` (or copy `jetpacs-applet-mcp/examples/hello/hello.el`), register the app, its roots and actions.\n"
    "3. Build screens from the catalog below; bind values, template lists, make parts conditional instead of rebuilding.\n"
    "4. Validate statically (`jetpacs_validate_applet`), run the applet's ERT suite, byte-compile with warnings as errors into a temporary directory, then a narrow device flow.\n\n"
@@ -618,20 +807,22 @@ sections and the compact catalog."
    (mapconcat (lambda (row) (format "| `%s` | %s |\n" (car row) (cadr row)))
               jetpacs-applet-catalog--key-exports "")
    "\n"
-   (jetpacs-applet-catalog--nodes-markdown data)
+   (jetpacs-applet-catalog--nodes-markdown data 'extensions)
    (jetpacs-applet-catalog--attributes-markdown data)
    "\n## Actions\n\n" (plist-get data :actions) "\n"
    (jetpacs-applet-catalog--rules-markdown)))
 
 ;;;; Rendering entry points
 
-(defun jetpacs-applet-catalog-render (&optional format section applet-path)
+(defun jetpacs-applet-catalog-render (&optional format section applet-path examples)
   "Render the catalog in FORMAT (\"markdown\" or \"json\"), narrowed to SECTION.
-APPLET-PATH adds an applet's registrations.  The MCP tool's entry point."
+APPLET-PATH adds an applet's registrations; EXAMPLES is the Markdown
+examples mode, `none' by default so the whole catalog fits the MCP result
+cap — `jetpacs_node_examples' shows one node's.  The MCP tool's entry point."
   (let ((data (jetpacs-applet-catalog-data applet-path)))
     (pcase (or format "markdown")
       ("json" (jetpacs-applet-catalog-json data))
-      ("markdown" (jetpacs-applet-catalog-markdown data section))
+      ("markdown" (jetpacs-applet-catalog-markdown data section (or examples 'none)))
       (_ (error "Jetpacs Applet Catalog: unknown format %S" format)))))
 
 (defun jetpacs-applet-catalog-describe-node (node-type)
@@ -642,7 +833,9 @@ Returns nil when no installed manifest declares NODE-TYPE."
      (lambda (entry)
        (let ((manifest (jetpacs-applet-catalog--read-json (car entry))))
          (when (member node-type (gethash "node_types" manifest))
-           (let* ((node (jetpacs-applet-catalog--extension-node manifest index node-type))
+           (let* ((node (jetpacs-applet-catalog--extension-node
+                         manifest index node-type
+                         (jetpacs-applet-catalog--golden-path (car entry))))
                   (builders (plist-get node :builders)))
              (jetpacs-applet-tooling--cap
               (concat
@@ -672,8 +865,63 @@ Returns nil when no installed manifest declares NODE-TYPE."
                                                     (format "\n  %s" doc)
                                                   "")))
                                       builders "\n"))
-                 "\n\nBuilders: none found in the platform sources")))))))
+                 "\n\nBuilders: none found in the platform sources")
+               (jetpacs-applet-catalog--examples-text (plist-get node :examples))))))))
      jetpacs-applet-catalog-manifests)))
+
+(defun jetpacs-applet-catalog--examples-text (examples &optional limit)
+  "The plain-text examples block for the vector EXAMPLES, or an empty string.
+LIMIT caps how many are shown."
+  (let ((shown (seq-take (append examples nil) (or limit (length examples)))))
+    (if (null shown)
+        ""
+      (concat "\n\nExamples:\n"
+              (mapconcat
+               (lambda (example)
+                 (let ((name (gethash "name" example))
+                       (ir (gethash "ir" example))
+                       (elisp (gethash "elisp" example)))
+                   (concat
+                    (format "- %s%s: %s" (gethash "source" example)
+                            (if name (format " (%s)" name) "")
+                            (jetpacs-applet-catalog--example-json example))
+                    (cond (ir (format "\n  IR:\n%s" (replace-regexp-in-string
+                                                       "^" "    " (string-trim-right ir) t t)))
+                          (elisp (format "\n  Elisp:\n%s" (replace-regexp-in-string
+                                                            "^" "    " (string-trim-right elisp) t t)))
+                          (t "")))))
+               shown "\n")))))
+
+(defun jetpacs-applet-catalog-node-examples (node-type &optional limit)
+  "Describe NODE-TYPE's examples: the harvested nodes and the golden line.
+NODE-TYPE is a core or an installed extension node; LIMIT caps the count.
+Signals an error for an unknown type.  The MCP tool's entry point."
+  (unless (and (stringp node-type)
+               (string-match-p jetpacs-applet-tooling--identifier-re node-type))
+    (error "Jetpacs Applet Catalog: node type must be an EBP identifier"))
+  (let* ((jetpacs-applet-catalog--inputs (make-hash-table :test #'equal))
+         (contract (jetpacs-applet-tooling--contract))
+         (index (jetpacs-applet-catalog--builder-index))
+         (node
+          (if (member node-type (gethash "node_types" contract))
+              (jetpacs-applet-catalog--core-node contract index node-type)
+            (seq-some
+             (lambda (entry)
+               (let ((manifest (jetpacs-applet-catalog--read-json (car entry))))
+                 (when (member node-type (gethash "node_types" manifest))
+                   (jetpacs-applet-catalog--extension-node
+                    manifest index node-type
+                    (jetpacs-applet-catalog--golden-path (car entry))))))
+             jetpacs-applet-catalog-manifests))))
+    (unless node
+      (error "Jetpacs Applet Catalog: unknown node type %s" node-type))
+    (jetpacs-applet-tooling--cap
+     (concat (format "Node: %s (%d example%s)" node-type
+                     (length (plist-get node :examples))
+                     (if (= (length (plist-get node :examples)) 1) "" "s"))
+             (if (> (length (plist-get node :examples)) 0)
+                 (jetpacs-applet-catalog--examples-text (plist-get node :examples) limit)
+               "\n\nNo example is harvested or in a golden for this node.")))))
 
 ;;;; The committed renderings
 
@@ -682,7 +930,7 @@ Returns nil when no installed manifest declares NODE-TYPE."
   (let ((data (jetpacs-applet-catalog-data))
         (dir jetpacs-applet-catalog-output-directory))
     (list (cons (concat dir "/jetpacs-catalog.json") (jetpacs-applet-catalog-json data))
-          (cons (concat dir "/CATALOG.md") (jetpacs-applet-catalog-markdown data))
+          (cons (concat dir "/CATALOG.md") (jetpacs-applet-catalog-markdown data nil 'full))
           (cons jetpacs-applet-catalog-skill-path (jetpacs-applet-catalog-skill data)))))
 
 (defun jetpacs-applet-catalog--output-file (relative)

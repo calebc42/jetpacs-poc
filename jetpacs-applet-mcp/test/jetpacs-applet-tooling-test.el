@@ -551,12 +551,45 @@
                           (jetpacs-applet-tooling-describe-node "button")))
   (should-error (jetpacs-applet-tooling-describe-node "no.such_node") :type 'error))
 
+(ert-deftest jetpacs-applet-tooling-test-catalog-nodes-carry-examples ()
+  "Every extension node has an example whose node IS the type; core nodes too.
+Harvested examples (examples.json) come first; the golden line guarantees
+the exact shape; the MCP entry point renders both and refuses unknown types."
+  (let* ((data (jetpacs-applet-tooling-test--catalog))
+         (type-of (lambda (example) (gethash "t" (gethash "node" example))))
+         (exact-p (lambda (node)
+                    (seq-some (lambda (e) (equal (funcall type-of e) (plist-get node :type)))
+                              (plist-get node :examples)))))
+    (seq-doseq (extension (plist-get data :extensions))
+      (seq-doseq (node (plist-get extension :nodes))
+        (should (<= 1 (length (plist-get node :examples)) 2))
+        (should (funcall exact-p node))))
+    (should (seq-every-p exact-p (plist-get data :core_nodes)))
+    ;; The component catalog's canonical document leads for a node it covers.
+    (let* ((components (seq-find (lambda (e) (equal (plist-get e :extension) "jetpacs.components"))
+                                 (plist-get data :extensions)))
+           (action (jetpacs-applet-tooling-test--node (plist-get components :nodes)
+                                                       "jetpacs.action"))
+           (first (aref (plist-get action :examples) 0)))
+      (should (equal (gethash "source" first) "component-catalog"))
+      (should (string-match-p "jetpacs.action" (gethash "ir" first))))
+    ;; A Material 3 sample joins through the node's builder.
+    (let* ((core (plist-get data :core_nodes))
+           (button (jetpacs-applet-tooling-test--node core "button")))
+      (should (seq-some (lambda (e) (equal (gethash "source" e) "m3-catalog"))
+                        (plist-get button :examples)))))
+  (let ((text (jetpacs-applet-catalog-node-examples "jetpacs.list_item")))
+    (should (string-match-p "\\`Node: jetpacs.list_item (" text))
+    (should (string-match-p "\"t\":\"jetpacs.list_item\"" text)))
+  (should (string-match-p "Elisp:" (jetpacs-applet-catalog-node-examples "material3.assist_chip" 1)))
+  (should-error (jetpacs-applet-catalog-node-examples "no.such_node") :type 'error))
+
 (ert-deftest jetpacs-applet-tooling-test-catalog-renderings-are-deterministic-and-committed ()
   "Two renderings agree byte for byte and the committed files are current."
   (let ((first (jetpacs-applet-catalog-json (jetpacs-applet-tooling-test--catalog)))
         (second (jetpacs-applet-catalog-json (jetpacs-applet-catalog-data))))
     (should (equal first second))
-    (should (string-prefix-p "{\"catalog_format\":1," first)))
+    (should (string-prefix-p "{\"catalog_format\":2," first)))
   (let ((markdown (jetpacs-applet-catalog-markdown (jetpacs-applet-tooling-test--catalog))))
     (should (string-match-p "^## Nodes (EBP core, 49)" markdown))
     (should (string-match-p "^- material3.assist_chip: {" markdown))

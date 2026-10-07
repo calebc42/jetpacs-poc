@@ -23,6 +23,7 @@ server, and an MCP feature should not become a hidden applet runtime dependency.
 | `jetpacs-applet-tooling.el` | Path boundaries, native-reader indexing, API/node discovery, applet scans, canonical manifests, validation, deterministic scaffolding, bounded trusted-runtime checks |
 | `jetpacs-applet-mcp.el` | MCP tool catalog, arguments, resources, prompts, JSON-RPC lifecycle, stdio |
 | `jetpacs-applet-catalog.el` | The agent-facing catalog export: contract nodes, renderer-extension manifest nodes in the format-2 type algebra, builders joined from the static index, universal attributes, the action vocabulary, an applet's registrations; rendered as `catalog/jetpacs-catalog.json`, `catalog/CATALOG.md` and `../skills/jetpacs-applet/SKILL.md`, pinned by `tools/check-jetpacs-catalog.sh` |
+| `jetpacs-applet-examples.el` | The catalog's examples, harvested with the platform loaded: the component catalog's canonical documents, the Material 3 catalog's samples (joined by builder) and the design proof library's tree; rendered as `catalog/examples.json`, pinned by `tools/check-jetpacs-examples.sh`. The static catalog joins it like any other input and falls back to a golden line per node |
 | `jetpacs-applet-mcp-runtime.el` | The explicit trust transition that loads exactly one workspace applet and the real Jetpacs runtime |
 | `APPLET-GUIDE.md` | Normative local workflow for applet lifecycle, builders, actions, state, packaging, Org use, and tests |
 | `PACKAGE-SKINS.md` | Package-agnostic architecture and workflow for adapting an existing Emacs package into a native Jetpacs skin |
@@ -347,7 +348,12 @@ directory. When the contract, a renderer-extension manifest, a builder's
 signature or docstring, or the catalog module changed, run
 `../tools/gen-jetpacs-catalog.sh` and commit the three regenerated renderings;
 `../tools/check-jetpacs-catalog.sh` (also run by `test/run-tests.sh`) refuses
-drift. Do not leave compiled files in this source tree.
+drift. When a component-catalog default document, a Material 3 sample, the
+design proof library or the examples module changed, run
+`../tools/gen-jetpacs-examples.sh` first (it loads the platform and builds
+real nodes into `catalog/examples.json`), then the catalog generator;
+`../tools/check-jetpacs-examples.sh` pins the harvest. Do not leave compiled
+files in this source tree.
 
 For entrypoint or trust-boundary changes, perform real static and trusted MCP
 initialization handshakes using the commands in `README.md`. Confirm the static
