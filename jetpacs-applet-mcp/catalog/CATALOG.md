@@ -1134,12 +1134,34 @@ Native builtins (9; closed, profile-advertised vocabulary):
 
 Support rule: add ordinary applet behavior by registering an Emacs handler; change EBP/Companion only for a new descriptor field, builtin, node/member, method, capability, or platform integration. Negotiated surface profiles remain authoritative for whether one connected Companion supports a builtin.
 
-## Rules
+## Critical Rules
 
-1. Builders are pure readers of explicit state and return the plist/vector screen IR; effects belong in actions.
-2. Action names are dotted EBP identifiers registered with `jetpacs-defaction` and emitted with `jetpacs-action`; `args` are plain data.
-3. Bind values with `jetpacs-ref`, lists with `jetpacs-template`, visibility with `jetpacs-with-attrs :visible_when (vector (jetpacs-when …))`; identity (`key`, `id`) and dispatch stay authored.
-4. A `children` array holding a conditional node is keyed throughout; nothing beneath a conditional node carries an `id`, input state, an editor or a `variant_host`.
-5. An extension node needs its extension installed with `jetpacs-register-renderer-extension` and advertised by the target profile.
-6. Node `id`s are unique per document; sibling `key`s are unique per parent.
-7. Validate with the applet MCP's `jetpacs_validate_applet` and the shell gates; never guess a member the catalog does not list.
+These rules are always enforced. Each heading links to a file with Incorrect/Correct Elisp pairs.
+
+### IR and builders → [ir.md](../../skills/jetpacs-applet/rules/ir.md)
+
+- **Builders are pure readers of explicit state and return the screen IR; effects belong in actions.**
+- **Build nodes with the constructors, never as hand-written wire plists.**
+- **Children are passed as arguments to a container constructor; the IR is data, not text.**
+- **Node ids are unique per document and sibling keys per parent; identity is authored, never generated per render.**
+
+### Data document, templates and conditional nodes → [data.md](../../skills/jetpacs-applet/rules/data.md)
+
+- **Bind a value with `jetpacs-ref` and patch it; do not bake it into the node and re-push.**
+- **Expand a list with `jetpacs-template` over a bound array; key every row from the item.**
+- **Hide a node with `:visible_when` on a keyed child; keep siblings keyed and nothing stateful beneath it.**
+- **Patch with `jetpacs-app-defer-patch` or `-sync`; refresh only when the shape changed.**
+
+### Actions and handlers → [actions.md](../../skills/jetpacs-applet/rules/actions.md)
+
+- **Action names are dotted EBP identifiers, registered with `jetpacs-defaction` and emitted with `jetpacs-action`; args are plain data.**
+- **A handler takes `(ARGS PARAMS)`, schedules its effect and returns `accepted`, `stale` or `rejected`.**
+- **No blocking call and no prompt inside a dispatch; confirmation belongs on the descriptor.**
+- **Validate with `jetpacs_validate_applet` and the shell gates; never guess a member the catalog does not list.**
+
+### Theme, colors and extensions → [theme.md](../../skills/jetpacs-applet/rules/theme.md)
+
+- **Color with a theme role, never a hex literal.**
+- **Never author per-mode colors; the role adapts to dark mode.**
+- **Derived tokens are not EBP names; use a role, not a Material or design token.**
+- **An extension node needs its extension installed and advertised by the target profile; fall back when it is not.**

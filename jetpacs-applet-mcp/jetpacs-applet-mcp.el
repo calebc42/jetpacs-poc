@@ -61,6 +61,7 @@
 (declare-function jetpacs-applet-tooling-workspace-root "jetpacs-applet-tooling" ())
 (declare-function jetpacs-applet-catalog-render "jetpacs-applet-catalog")
 (declare-function jetpacs-applet-catalog-node-examples "jetpacs-applet-catalog")
+(declare-function jetpacs-applet-catalog-info-json "jetpacs-applet-catalog")
 
 ;;;; Protocol identity and JSON construction
 
@@ -177,6 +178,10 @@ builder; static tools are read-only and idempotent."
     (jetpacs-applet-mcp--schema
      `(("nodeType" . ,(jetpacs-applet-mcp--property "string" "EBP node type, such as button or pane_scaffold.")))
      '("nodeType")))
+   (jetpacs-applet-mcp--tool
+    "jetpacs_info" "Show the project context"
+    "The context an applet is authored against: the contract and its digest, the installed renderer extensions with their node types, the packaged applets and, once a Companion has connected from this Emacs, last_profile — what it advertised the last time a session reached READY. Read it first; author against last_profile when present."
+    (jetpacs-applet-mcp--schema nil))
    (jetpacs-applet-mcp--tool
     "jetpacs_node_examples" "Show a node's examples"
     "Real examples of one core or extension node type: nodes the catalog applets render (with their IR or authored Elisp) and the golden line whose t is the type. Use after jetpacs_describe_node, before writing the node."
@@ -368,6 +373,7 @@ builder; static tools are read-only and idempotent."
            ("jetpacs_describe_node"
             (jetpacs-applet-tooling-describe-node
              (jetpacs-applet-mcp--required-string arguments "nodeType")))
+           ("jetpacs_info" (jetpacs-applet-catalog-info-json))
            ("jetpacs_node_examples"
             (jetpacs-applet-catalog-node-examples
              (jetpacs-applet-mcp--required-string arguments "nodeType")

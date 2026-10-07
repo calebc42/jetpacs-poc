@@ -718,22 +718,118 @@ the SKILL.md readable while CATALOG.md carries everything."
                   (plist-get applet :actions) ""))
     ""))
 
-(defconst jetpacs-applet-catalog--rules
-  '("Builders are pure readers of explicit state and return the plist/vector screen IR; effects belong in actions."
-    "Action names are dotted EBP identifiers registered with `jetpacs-defaction` and emitted with `jetpacs-action`; `args` are plain data."
-    "Bind values with `jetpacs-ref`, lists with `jetpacs-template`, visibility with `jetpacs-with-attrs :visible_when (vector (jetpacs-when …))`; identity (`key`, `id`) and dispatch stay authored."
-    "A `children` array holding a conditional node is keyed throughout; nothing beneath a conditional node carries an `id`, input state, an editor or a `variant_host`."
-    "An extension node needs its extension installed with `jetpacs-register-renderer-extension` and advertised by the target profile."
-    "Node `id`s are unique per document; sibling `key`s are unique per parent."
-    "Validate with the applet MCP's `jetpacs_validate_applet` and the shell gates; never guess a member the catalog does not list.")
-  "The authoring rules every rendering repeats.")
+;;;; Rules
+;;
+;; shadcn's skill keeps its rules as one-liners that each link to a file of
+;; Incorrect/Correct code pairs (`skills/shadcn/rules/*.md'); an agent
+;; applies a pair far more reliably than a sentence.  The same rules as
+;; before, now each with the Elisp it forbids and the Elisp it wants.  The
+;; files are generated beside the skill and pinned by the drift check.
 
-(defun jetpacs-applet-catalog--rules-markdown ()
-  "The numbered rules section."
-  (concat "\n## Rules\n\n"
-          (let ((n 0))
-            (mapconcat (lambda (rule) (format "%d. %s\n" (cl-incf n) rule))
-                       jetpacs-applet-catalog--rules ""))))
+(defconst jetpacs-applet-catalog--rule-files
+  '(("ir" "IR and builders"
+     "A builder returns the plist/vector screen IR and nothing else: the same datum is inspected, gated and serialized. No parallel AST, no codegen, no effects on the way."
+     (("Builders are pure readers of explicit state and return the screen IR; effects belong in actions."
+       "(defun notes--view ()\n  (notes--reload-from-disk)          ; an effect inside a builder\n  (jetpacs-text (notes--title)))"
+       "(defun notes--view ()\n  (jetpacs-text (notes--title)))\n\n(jetpacs-defaction \"notes.reload\" #'notes--on-reload\n                   :doc \"Reload the notes from disk\")"
+       "A builder may run on any push, replay or cache check; an effect inside it runs that often too and is never acknowledged.")
+      ("Build nodes with the constructors, never as hand-written wire plists."
+       "(list :t \"button\" :label \"Go\" :on_tap (list :action \"app.go\"))"
+       "(jetpacs-button \"Go\" (jetpacs-action \"app.go\"))"
+       "The constructors check members, enum domains and identifiers against the contract; a literal plist skips every check and drifts with the next amendment.")
+      ("Children are passed as arguments to a container constructor; the IR is data, not text."
+       "(format \"{\\\"t\\\":\\\"column\\\",\\\"children\\\":[%s]}\" rows)"
+       "(jetpacs-column (jetpacs-text \"A\") (jetpacs-text \"B\") :spacing 8)"
+       "Serialization belongs to the shell. DETERMINISM.md forbids a parallel AST or a code generator; the builder's plist is the one IR.")
+      ("Node ids are unique per document and sibling keys per parent; identity is authored, never generated per render."
+       "(jetpacs-with-attrs row :id (format \"row-%d\" (random 1000)))"
+       "(jetpacs-with-attrs row :key (plist-get item :id))"
+       "A generated identity changes on every build, so the Companion sees a new node each time: focus, scroll and drafts are lost and diffs degrade to replacements (SPEC 16.1).")))
+    ("data" "Data document, templates and conditional nodes"
+     "Values live in the surface data document and nodes bind to them; a handler patches the document and the surface is re-pushed only when its shape changes."
+     (("Bind a value with `jetpacs-ref` and patch it; do not bake it into the node and re-push."
+       "(jetpacs-text (notes--title))\n;; later, on every change:\n(jetpacs-app-defer-refresh params)"
+       "(jetpacs-text (jetpacs-ref \"/title\"))\n;; later, in the handler:\n(jetpacs-app-defer-patch (list (jetpacs-data-set \"/title\" new-title)) params)"
+       "A patch is a few hundred bytes and keeps scroll and drafts; a re-push resends the whole tree (SPEC 13.8.3-13.8.4).")
+      ("Expand a list with `jetpacs-template` over a bound array; key every row from the item."
+       "(apply #'jetpacs-lazy-column\n       (mapcar (lambda (row) (jetpacs-text (plist-get row :title))) rows))"
+       "(jetpacs-lazy-column\n (jetpacs-template \"/rows\"\n   (jetpacs-with-attrs (jetpacs-text (jetpacs-ref \"title\"))\n                       :key (jetpacs-ref \"id\"))))"
+       "Inside the template a `jetpacs-ref` without a leading slash resolves from the item; the row must bind `:key` and may not author `:key` or `:id`. A Companion without `data.template` receives the expansion from Emacs (SPEC 13.8.5).")
+      ("Hide a node with `:visible_when` on a keyed child; keep siblings keyed and nothing stateful beneath it."
+       "(jetpacs-column\n (jetpacs-text \"Settings\")\n (jetpacs-with-attrs (jetpacs-text-input \"name\")\n                     :visible_when (vector (jetpacs-when \"/editing\" \"eq\" t))))"
+       "(jetpacs-column\n (jetpacs-with-attrs (jetpacs-text \"Settings\") :key \"title\")\n (jetpacs-with-attrs (jetpacs-text \"Unsaved changes\" :color \"error\")\n                     :key \"warning\"\n                     :visible_when (vector (jetpacs-when \"/dirty\" \"eq\" t))))"
+       "`visible_when` is a flat AND of bounded predicates evaluated before bindings; the children array holding it is keyed throughout, and an input, editor, `variant_host` or `id` beneath it would lose state when it flips (SPEC 13.8.6, feature `data.visible`).")
+      ("Patch with `jetpacs-app-defer-patch` or `-sync`; refresh only when the shape changed."
+       "(defun notes--on-toggle (args params)\n  (notes--toggle (plist-get args :id))\n  (jetpacs-app-defer-refresh params)\n  'accepted)"
+       "(defun notes--on-toggle (args params)\n  (notes--toggle (plist-get args :id))\n  (jetpacs-app-defer-sync \"/rows\" (notes--rows) params)\n  'accepted)"
+       "`jetpacs-app-defer-sync` diffs a keyed array into `insert`/`set`/`remove` ops; a refresh is for a new screen, not a changed value.")))
+    ("actions" "Actions and handlers"
+     "An action is a dotted identifier the Companion dispatches back; the handler schedules a durable effect and answers immediately."
+     (("Action names are dotted EBP identifiers, registered with `jetpacs-defaction` and emitted with `jetpacs-action`; args are plain data."
+       "(jetpacs-button \"Save\" (jetpacs-action \"save\"))"
+       "(jetpacs-defaction \"notes.save\" #'notes--on-save\n                   :doc \"Save the open note\"\n                   :args '(:id \"the note's id\"))\n\n(jetpacs-button \"Save\" (jetpacs-action \"notes.save\" :args (list :id id)))"
+       "The validator refuses an emitted name without a provider and a name without a namespace dot; `:doc` and `:args` are what the catalog and the agent read.")
+      ("A handler takes `(ARGS PARAMS)`, schedules its effect and returns `accepted`, `stale` or `rejected`."
+       "(defun notes--on-save (args)\n  (notes--write-to-disk args)\n  t)"
+       "(defun notes--on-save (args params)\n  (jetpacs-flow-continue\n   (lambda () (notes--write-to-disk args)))\n  'accepted)"
+       "`accepted` means the effect is durable or owned by a durable work item; anything else is a protocol lie (SPEC 14.4). The return value is a symbol, not `t`.")
+      ("No blocking call and no prompt inside a dispatch; confirmation belongs on the descriptor."
+       "(defun notes--on-delete (args _params)\n  (when (y-or-n-p \"Delete?\")\n    (url-retrieve-synchronously (notes--url args)))\n  'accepted)"
+       "(jetpacs-button \"Delete\"\n                (jetpacs-action \"notes.delete\" :args (list :id id)\n                                :confirm \"Delete this note?\"))\n\n(defun notes--on-delete (args _params)\n  (jetpacs-flow-continue (lambda () (notes--delete args)))\n  'accepted)"
+       "A prompt inside a dispatch blocks the JSON-RPC reader; the validator marks `action.prompt-in-dispatch` an error and `action.blocking-call` a warning. `jetpacs-flow-continue` runs outside the dispatch with the flow identity kept.")
+      ("Validate with `jetpacs_validate_applet` and the shell gates; never guess a member the catalog does not list."
+       "(jetpacs-button \"Go\" (jetpacs-action \"app.go\") :tooltip \"Go now\")"
+       "(jetpacs-button \"Go\" (jetpacs-action \"app.go\") :icon \"arrow_forward\")"
+       "A member outside the contract is `1201 content-invalid` on the wire; `jetpacs_describe_node` and `jetpacs_node_examples` show what exists.")))
+    ("theme" "Theme, colors and extensions"
+     "Colors are theme roles the Companion resolves for its own light or dark scheme; extension nodes travel only where the profile advertises them."
+     (("Color with a theme role, never a hex literal."
+       "(jetpacs-text \"Overdue\" :color \"#ff0000\")"
+       "(jetpacs-text \"Overdue\" :color \"error\")"
+       "The thirteen roles (`primary`, `on_primary`, `secondary`, `on_secondary`, `error`, `on_error`, `background`, `on_background`, `surface`, `on_surface`, `outline`, `success`, `warning`) follow the device's scheme and `theme.set`; a literal ignores both (SPEC 16.6, 18.4).")
+      ("Never author per-mode colors; the role adapts to dark mode."
+       "(jetpacs-text label :color (if (notes--dark-p) \"#ffffff\" \"#000000\"))"
+       "(jetpacs-text label :color \"on_background\")"
+       "Omitting `dark` in `theme.set` follows the system; the Companion derives a legible on-color when one is missing. Emacs never knows which mode is showing.")
+      ("Derived tokens are not EBP names; use a role, not a Material or design token."
+       "(jetpacs-text label :color \"on_primary_container\")"
+       "(jetpacs-text label :color \"on_primary\")"
+       "SPEC 18.4: derived tokens MUST NOT be accepted as `colors` members. Design tokens live in a `jetpacs.design_scope`, which is an extension node, not a color.")
+      ("An extension node needs its extension installed and advertised by the target profile; fall back when it is not."
+       "(jetpacs-design-profile-scope profile children)"
+       "(if (jetpacs-extension-advertised-p \"jetpacs.design\" :app)\n    (jetpacs-design-profile-scope profile children)\n  (jetpacs-column children))"
+       "A node travels only to a target whose profile lists both the node type and the extension (SPEC 16.2.1); `jetpacs-defapp :requires-extensions` declares the hard requirement and the Apps screen gates on it."))))
+  "The rule files: (NAME TITLE INTRO ((RULE INCORRECT CORRECT WHY) ...)).
+Each becomes `skills/jetpacs-applet/rules/NAME.md'; the one-line RULEs are
+the Critical Rules list every rendering repeats.")
+
+(defun jetpacs-applet-catalog--rule-file-markdown (entry)
+  "The Markdown of rule file ENTRY: a contents list, then one section per pair."
+  (pcase-let ((`(,_name ,title ,intro ,rules) entry))
+    (concat
+     (format "# %s\n\n%s\n\n## Contents\n\n" title intro)
+     (mapconcat (lambda (rule) (format "- %s\n" (car rule))) rules "")
+     "\n---\n"
+     (mapconcat
+      (lambda (rule)
+        (pcase-let ((`(,sentence ,incorrect ,correct ,why) rule))
+          (format "\n## %s\n\n**Incorrect:**\n\n```elisp\n%s\n```\n\n**Correct:**\n\n```elisp\n%s\n```\n\n%s\n"
+                  (string-remove-suffix "." sentence) incorrect correct why)))
+      rules ""))))
+
+(defun jetpacs-applet-catalog--rules-markdown (&optional link-prefix)
+  "The Critical Rules section: one-liners linking to the rule files.
+LINK-PREFIX is the relative directory of the rule files from the rendering."
+  (let ((prefix (or link-prefix "./rules/")))
+    (concat
+     "\n## Critical Rules\n\nThese rules are always enforced. Each heading links to a file with Incorrect/Correct Elisp pairs.\n"
+     (mapconcat
+      (lambda (entry)
+        (pcase-let ((`(,name ,title ,_intro ,rules) entry))
+          (concat
+           (format "\n### %s → [%s.md](%s%s.md)\n\n" title name prefix name)
+           (mapconcat (lambda (rule) (format "- **%s**\n" (car rule))) rules ""))))
+      jetpacs-applet-catalog--rule-files ""))))
 
 (defun jetpacs-applet-catalog-markdown (data &optional section examples)
   "Render catalog DATA as Markdown; SECTION narrows it.
@@ -757,7 +853,8 @@ committed CATALOG.md: authored Elisp in fenced blocks too) or `none'."
                    (jetpacs-applet-catalog--attributes-markdown data)
                    "\n## Actions\n\n" (plist-get data :actions) "\n"
                      (jetpacs-applet-catalog--applet-markdown data)
-                     (jetpacs-applet-catalog--rules-markdown)))
+                     (jetpacs-applet-catalog--rules-markdown
+                      "../../skills/jetpacs-applet/rules/")))
       (_ (error "Jetpacs Applet Catalog: unknown section %S" section)))))
 
 ;;;; SKILL.md
@@ -787,10 +884,14 @@ sections and the compact catalog."
    "---\n"
    "name: jetpacs-applet\n"
    "description: Author, extend or review a Jetpacs applet — an Emacs Lisp screen builder for the EBP Companion. Use when writing jetpacs-* Elisp, choosing EBP core or jetpacs.*/material3.* nodes, binding a surface data document, adding conditional nodes or templates, or wiring jetpacs-defaction handlers.\n"
+   "allowed-tools: Bash(sh tools/jetpacs-info.sh), Bash(sh tools/check-jetpacs-catalog.sh), Bash(sh tools/check-jetpacs-examples.sh)\n"
    "---\n\n"
    "<!-- Generated by " (plist-get data :generator)
    " from contract.json and the renderer-extension manifests; regenerate with tools/gen-jetpacs-catalog.sh. Claude Code discovers this file when it is linked into .claude/skills/. -->\n\n"
    "# Jetpacs applet authoring\n\n"
+   "## Current project context\n\n"
+   "```json\n!`sh tools/jetpacs-info.sh`\n```\n\n"
+   "The JSON above is the contract and its digest, the installed renderer extensions, the packaged applets and, once a Companion has connected from this Emacs, `last_profile`: what it advertised the last time a session reached READY. Author against `last_profile` when it is present — only its `node_types`, `builtins`, `features` and `extensions` travel to that device — and against the catalog below otherwise. Run `sh tools/jetpacs-info.sh` again after connecting a different device.\n\n"
    "## Key concepts\n\n"
    "- **One IR.** A builder returns the plist/vector screen IR (`:t` first, wire member names with underscores, children as vectors); the same datum is inspected, gated and serialized. No parallel AST, no codegen.\n"
    "- **Emacs owns state and policy.** The Companion renders, keeps drafts and delivery records, and dispatches named actions back; it evaluates nothing.\n"
@@ -928,10 +1029,102 @@ Signals an error for an unknown type.  The MCP tool's entry point."
 (defun jetpacs-applet-catalog-outputs ()
   "Alist of (WORKSPACE-RELATIVE-PATH . TEXT) for every committed rendering."
   (let ((data (jetpacs-applet-catalog-data))
-        (dir jetpacs-applet-catalog-output-directory))
-    (list (cons (concat dir "/jetpacs-catalog.json") (jetpacs-applet-catalog-json data))
-          (cons (concat dir "/CATALOG.md") (jetpacs-applet-catalog-markdown data nil 'full))
-          (cons jetpacs-applet-catalog-skill-path (jetpacs-applet-catalog-skill data)))))
+        (dir jetpacs-applet-catalog-output-directory)
+        (rules-dir (concat (file-name-directory jetpacs-applet-catalog-skill-path) "rules/")))
+    (append
+     (list (cons (concat dir "/jetpacs-catalog.json") (jetpacs-applet-catalog-json data))
+           (cons (concat dir "/CATALOG.md") (jetpacs-applet-catalog-markdown data nil 'full))
+           (cons jetpacs-applet-catalog-skill-path (jetpacs-applet-catalog-skill data)))
+     (mapcar (lambda (entry)
+               (cons (concat rules-dir (car entry) ".md")
+                     (jetpacs-applet-catalog--rule-file-markdown entry)))
+             jetpacs-applet-catalog--rule-files))))
+
+;;;; Project context (`tools/jetpacs-info.sh', `jetpacs_info')
+;;
+;; shadcn's skill opens with the project's live configuration, injected at
+;; load time by `shadcn info --json'.  The Jetpacs equivalent is static —
+;; the contract, the installed manifests, the packaged applets — plus one
+;; runtime fact written down by jetpacs-profile-snapshot.el: what the last
+;; connected Companion advertised.
+
+(defcustom jetpacs-applet-catalog-packaged-apps-path
+  "emacs/apps/packaged-apps/jetpacs-packaged-apps.el"
+  "Workspace-relative manifest of the applets the Companion build packages."
+  :type 'string
+  :group 'jetpacs-applet-catalog)
+
+(defcustom jetpacs-applet-catalog-last-profile-file
+  (expand-file-name "jetpacs/last-profile.json" user-emacs-directory)
+  "Where jetpacs-profile-snapshot.el writes the last negotiated profile."
+  :type 'file
+  :group 'jetpacs-applet-catalog)
+
+(defun jetpacs-applet-catalog--packaged-apps ()
+  "The packaged-apps manifest as a vector of plists, read, never loaded."
+  (let* ((file (condition-case nil
+                   (jetpacs-applet-tooling-resolve-file jetpacs-applet-catalog-packaged-apps-path)
+                 (error nil)))
+         (form (and file (file-exists-p file)
+                    (seq-some (lambda (record)
+                                (let ((form (plist-get record :form)))
+                                  (and (eq (car-safe form) 'setq)
+                                       (eq (nth 1 form) 'jetpacs-app-store-packaged-apps)
+                                       (nth 2 form))))
+                              (jetpacs-applet-tooling--read-file file))))
+         (apps (and (eq (car-safe form) 'quote) (nth 1 form))))
+    (vconcat
+     (mapcar (lambda (app)
+               (list :id (plist-get app :app-id)
+                     :label (plist-get app :label)
+                     :file (plist-get app :name)
+                     :feature (symbol-name (plist-get app :feature))
+                     :summary (plist-get app :summary)))
+             (seq-filter (lambda (app) (and (consp app) (plist-get app :app-id))) apps)))))
+
+(defun jetpacs-applet-catalog-info-data ()
+  "The project context as a JSON-ready plist.
+`last_profile' is present only when a snapshot exists and parses."
+  (let* ((jetpacs-applet-catalog--inputs (make-hash-table :test #'equal))
+         (contract (jetpacs-applet-tooling--contract))
+         (index (jetpacs-applet-catalog--builder-index))
+         (data
+          (list :contract (list :format (gethash "contract_format" contract)
+                                :spec_version (gethash "spec_version" contract)
+                                :sha256 (jetpacs-applet-catalog--sha256
+                                         (jetpacs-applet-tooling--contract-file)))
+                :catalog (list :format jetpacs-applet-catalog-format
+                               :generator jetpacs-applet-catalog-generator
+                               :path (concat jetpacs-applet-catalog-output-directory
+                                             "/jetpacs-catalog.json")
+                               :skill jetpacs-applet-catalog-skill-path)
+                :extensions
+                (vconcat
+                 (mapcar (lambda (entry)
+                           (let ((extension (jetpacs-applet-catalog--extension
+                                             index (car entry) (cdr entry))))
+                             (list :id (plist-get extension :extension)
+                                   :manifest (plist-get extension :manifest)
+                                   :sha256 (plist-get extension :sha256)
+                                   :schema_sha256 (or (plist-get extension :schema_sha256)
+                                                      :json-null)
+                                   :node_types (vconcat
+                                                (mapcar (lambda (n) (plist-get n :type))
+                                                        (plist-get extension :nodes))))))
+                         jetpacs-applet-catalog-manifests))
+                :applets (jetpacs-applet-catalog--packaged-apps))))
+    (when-let* ((file jetpacs-applet-catalog-last-profile-file)
+                (snapshot (and (file-exists-p file)
+                               (ignore-errors
+                                 (jetpacs-applet-catalog--parse-json-arrays
+                                  (with-temp-buffer (insert-file-contents file)
+                                                    (buffer-string)))))))
+      (setq data (plist-put data :last_profile snapshot)))
+    data))
+
+(defun jetpacs-applet-catalog-info-json ()
+  "The project context as one line of JSON plus a newline."
+  (jetpacs-applet-catalog-json (jetpacs-applet-catalog-info-data)))
 
 (defun jetpacs-applet-catalog--output-file (relative)
   "The absolute path of the committed rendering RELATIVE."

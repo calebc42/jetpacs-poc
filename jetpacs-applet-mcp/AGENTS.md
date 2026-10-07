@@ -346,9 +346,14 @@ emacs -Q --batch -L . -L ../../ebp.el/lisp -L ../emacs \
 Afterward, confirm the expected five `.elc` files exist only in that temporary
 directory. When the contract, a renderer-extension manifest, a builder's
 signature or docstring, or the catalog module changed, run
-`../tools/gen-jetpacs-catalog.sh` and commit the three regenerated renderings;
+`../tools/gen-jetpacs-catalog.sh` and commit the regenerated renderings
+(`catalog/jetpacs-catalog.json`, `catalog/CATALOG.md`,
+`../skills/jetpacs-applet/SKILL.md` and `../skills/jetpacs-applet/rules/*.md`);
 `../tools/check-jetpacs-catalog.sh` (also run by `test/run-tests.sh`) refuses
-drift. When a component-catalog default document, a Material 3 sample, the
+drift. The skill's `## Current project context` block runs
+`../tools/jetpacs-info.sh` when Claude Code loads it (the `jetpacs_info` tool
+answers the same); `emacs/jetpacs-profile-snapshot.el` writes the
+`last_profile` it reports. When a component-catalog default document, a Material 3 sample, the
 design proof library or the examples module changed, run
 `../tools/gen-jetpacs-examples.sh` first (it loads the platform and builds
 real nodes into `catalog/examples.json`), then the catalog generator;

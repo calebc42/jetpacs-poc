@@ -1,0 +1,74 @@
+{
+  "skill_name": "jetpacs-applet",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Write a Jetpacs applet screen that lists my reading queue. Each row shows the book title and author and opens the book when tapped. The queue changes often, so updates should be cheap.",
+      "expected_output": "A pure builder returning a lazy_column whose rows are a jetpacs-template over a bound array, each row keyed from the item, titles and authors bound with jetpacs-ref, taps emitting a dotted action with the item's id; updates patch the data document rather than re-pushing the surface.",
+      "files": [],
+      "expectations": [
+        "Rows are produced by jetpacs-template over a pointer into the surface data document, not by mapcar over a Lisp list of rows",
+        "The template's row node binds :key with (jetpacs-ref \"id\") or another stable item member, never a positional or generated key",
+        "Row members are bound with jetpacs-ref relative to the item (no leading slash) rather than baked in as literal strings",
+        "The tap action is a dotted, namespaced name emitted with jetpacs-action and registered with jetpacs-defaction",
+        "Queue changes are delivered with jetpacs-app-defer-patch (jetpacs-data-set / -insert / -remove or -sync), with jetpacs-app-defer-refresh reserved for a shape change",
+        "The builder has no side effects: no network, no file writes, no refresh calls inside it"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Add a settings section to my Jetpacs applet with three Material 3 assist chips (Sync now, Export, Reset) and a warning row that only appears when /settings/dirty is true.",
+      "expected_output": "material3.assist_chip nodes built with jetpacs-material3-assist-chip (checked against the catalog's members), a keyed children array with the warning node carrying :visible_when via jetpacs-with-attrs and jetpacs-when, no stateful node beneath the conditional node, and a note that material3.* nodes travel only when the profile advertises the jetpacs.material3 extension.",
+      "files": [],
+      "expectations": [
+        "Uses jetpacs-material3-assist-chip (or the material3.assist_chip node through its builder) with only members the catalog lists: label, on_tap, icon, enabled, variant",
+        "The warning row is hidden with :visible_when through jetpacs-with-attrs and a jetpacs-when predicate on /settings/dirty, not by rebuilding the surface in Emacs",
+        "Every sibling in the children array that holds the conditional node carries a :key",
+        "Nothing beneath the conditional node is a text_input, editor, variant_host or carries an :id",
+        "Mentions or checks that jetpacs.material3 must be advertised by the target profile (jetpacs-extension-advertised-p or the shell gates), with a fallback or omission otherwise",
+        "Colors, if any, are theme roles such as error or on_surface, never hex literals"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "My applet needs a 'notes.archive' action that moves a note to the archive on disk and then updates the list. Wire the handler.",
+      "expected_output": "A jetpacs-defaction registration with :doc and :args, a handler of (ARGS PARAMS) that schedules the disk write through jetpacs-flow-continue and returns 'accepted, and the list update delivered as a data patch; no blocking call and no prompt inside the dispatch.",
+      "files": [],
+      "expectations": [
+        "Registers the action with jetpacs-defaction \"notes.archive\" and supplies :doc and :args",
+        "The handler takes (args params) and returns the symbol accepted (or stale / rejected), never nil or a string",
+        "The durable effect is scheduled with jetpacs-flow-continue or an equivalent deferred step, not performed synchronously inside the dispatch",
+        "No url-retrieve-synchronously, call-process, sleep-for or other blocking call appears in the handler body",
+        "No y-or-n-p, read-string or other prompt appears in the handler; a confirmation, if wanted, is the descriptor's :confirm",
+        "The list update uses jetpacs-app-defer-patch or jetpacs-app-defer-sync rather than a full re-push"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "Build a Jetpacs components page with tabs for Inbox, Today and Later that stay pinned while the list scrolls.",
+      "expected_output": "A jetpacs.tabs node with options, value and on_change, placed as a child of a lazy_column with pinned t (the manifest requires that parent), a bounded variant string if any, and the extension requirement declared with :requires-extensions on the app.",
+      "files": [],
+      "expectations": [
+        "Uses the jetpacs.tabs node through its builder with the members the catalog lists: id, options, value, on_change, and optionally enabled, variant, scrollable, pinned",
+        "pinned is set only when the tabs node is a direct child of a lazy_column, as the manifest's true_requires_parent rule says",
+        "The tabs value is a controlled selection emitted back through a dotted action on on_change, with Emacs owning the selected value",
+        "The app declares :requires-extensions (\"jetpacs.components\") in jetpacs-defapp or otherwise gates on the extension being advertised",
+        "Does not invent a tab variant outside a bounded string or members the catalog does not list"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Add a login applet from the registry to my Jetpacs setup.",
+      "expected_output": "The agent asks which registry to use rather than guessing, resolves and dry-runs the item before any write, shows the diff for files that would be overwritten, and refuses to overwrite without explicit approval; the install never loads code outside the App Store's consent gate.",
+      "files": [],
+      "expectations": [
+        "Asks which registry (or address) the applet should come from instead of defaulting to one",
+        "Runs the dry-run (jetpacs_registry_resolve or tools/jetpacs-registry.sh dry-run) before any file is written",
+        "Shows or offers the diff for every file classified as overwrite",
+        "Does not pass --overwrite or otherwise replace existing files without the user's explicit approval",
+        "Checks the item's requires_extensions against the installed manifests or the last negotiated profile and reports anything missing",
+        "Does not evaluate or load the fetched Elisp itself; installation is the App Store's consent-gated action"
+      ]
+    }
+  ]
+}

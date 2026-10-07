@@ -129,6 +129,7 @@ remain in the private Emacs/Termux home on Android.")
 (require 'jetpacs-dialog)
 (require 'jetpacs-transient)
 (require 'jetpacs-devtools)   ; the push profiler + failure flight recorder
+(require 'jetpacs-profile-snapshot) ; last negotiated profile, for authoring tools
 ;; …the mode skins (additive: they register for their major modes)…
 (require 'jetpacs-repl)      ; the Elisp REPL this home screen IS
 (require 'jetpacs-comint)

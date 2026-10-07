@@ -584,6 +584,36 @@ the exact shape; the MCP entry point renders both and refuses unknown types."
   (should (string-match-p "Elisp:" (jetpacs-applet-catalog-node-examples "material3.assist_chip" 1)))
   (should-error (jetpacs-applet-catalog-node-examples "no.such_node") :type 'error))
 
+(ert-deftest jetpacs-applet-tooling-test-info-joins-static-context-and-last-profile ()
+  "The project context lists the contract, extensions and packaged applets;
+`last_profile' appears only when a readable snapshot exists."
+  (let* ((dir (make-temp-file "jetpacs-info" t))
+         (file (expand-file-name "last-profile.json" dir)))
+    (unwind-protect
+        (let ((jetpacs-applet-catalog-last-profile-file file))
+          (let ((data (jetpacs-applet-catalog-info-data)))
+            (should (= (plist-get (plist-get data :contract) :format) 12))
+            (should (equal (mapcar (lambda (e) (plist-get e :id))
+                                   (append (plist-get data :extensions) nil))
+                           '("jetpacs.material3" "jetpacs.components" "jetpacs.design")))
+            (should (seq-find (lambda (a) (equal (plist-get a :id) "grove"))
+                              (plist-get data :applets)))
+            (should-not (plist-member data :last_profile)))
+          (with-temp-file file
+            (insert "{\"at\":\"2026-10-07T00:00:00Z\",\"granted\":[\"theme\"],\"profiles\":{\"app\":{\"node_types\":[\"text\"]}}}\n"))
+          (let* ((data (jetpacs-applet-catalog-info-data))
+                 (profile (plist-get data :last_profile))
+                 (json (json-parse-string (jetpacs-applet-catalog-info-json)
+                                          :object-type 'hash-table :array-type 'array)))
+            (should (hash-table-p profile))
+            (should (equal (append (gethash "granted" profile) nil) '("theme")))
+            (should (equal (append (gethash "node_types"
+                                            (gethash "app" (gethash "profiles"
+                                                                    (gethash "last_profile" json))))
+                                   nil)
+                           '("text")))))
+      (delete-directory dir t))))
+
 (ert-deftest jetpacs-applet-tooling-test-catalog-renderings-are-deterministic-and-committed ()
   "Two renderings agree byte for byte and the committed files are current."
   (let ((first (jetpacs-applet-catalog-json (jetpacs-applet-tooling-test--catalog)))
@@ -593,7 +623,9 @@ the exact shape; the MCP entry point renders both and refuses unknown types."
   (let ((markdown (jetpacs-applet-catalog-markdown (jetpacs-applet-tooling-test--catalog))))
     (should (string-match-p "^## Nodes (EBP core, 49)" markdown))
     (should (string-match-p "^- material3.assist_chip: {" markdown))
-    (should (string-match-p "^## Rules" markdown))
+    (should (string-match-p "^## Critical Rules" markdown))
+    (should (string-match-p "^\\*\\*Incorrect:\\*\\*" (jetpacs-applet-catalog--rule-file-markdown
+                                                     (car jetpacs-applet-catalog--rule-files))))
     (should (equal (length (split-string markdown "\n" t))
                    (length (split-string (jetpacs-applet-catalog-markdown
                                           (jetpacs-applet-tooling-test--catalog) "all")
