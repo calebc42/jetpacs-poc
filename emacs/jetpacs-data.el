@@ -438,20 +438,255 @@ without the `data.template' feature needs."
   (jetpacs-pointer-tokens path "remove")
   (list :op "remove" :path path))
 
+(defun jetpacs-data-insert (path value)
+  "An `insert' DataOp: add VALUE to an array before PATH's final index.
+SPEC 13.8.4 (amendment #196): later elements shift; an index equal to the
+length appends.  Send it only to a target advertising `data.insert'."
+  (when (string-empty-p path)
+    (signal 'jetpacs-data-error (list "insert" "insert requires an array element pointer")))
+  (jetpacs-pointer-tokens path "insert")
+  (list :op "insert" :path path :value value))
+
 (defun jetpacs-data-check-op (op)
   "Signal unless OP is a well-formed DataOp plist; return OP."
   (let ((kind (plist-get op :op)))
-    (unless (member kind '("set" "remove"))
-      (signal 'jetpacs-data-error (list "op" "must be set or remove")))
+    (unless (member kind '("set" "remove" "insert"))
+      (signal 'jetpacs-data-error (list "op" "must be set, remove or insert")))
     (let ((tokens (jetpacs-pointer-tokens (plist-get op :path) kind)))
-      (when (and (equal kind "set") (not (plist-member op :value)))
-        (signal 'jetpacs-data-error (list "set" "set requires value")))
+      (when (and (member kind '("set" "insert")) (not (plist-member op :value)))
+        (signal 'jetpacs-data-error (list kind (format "%s requires value" kind))))
+      (when (and (equal kind "insert") (null tokens))
+        (signal 'jetpacs-data-error (list "path" "insert requires an array element pointer")))
       (when (and (null tokens)
                  (not (and (equal kind "set")
                            (jetpacs-data--object-p (plist-get op :value)))))
         (signal 'jetpacs-data-error
                 (list "path" "the empty pointer is admitted only for a set whose value is an object"))))
     op))
+
+(defconst jetpacs-data-insert-feature
+  (plist-get (plist-get jetpacs-data-contract :ops) :insert_feature)
+  "The SPEC 22.4 feature a target advertises when it admits `insert'.")
+
+;;;; Applying DataOps (SPEC 13.8.4)
+
+(defun jetpacs-data--object-member (object name)
+  "Return (FOUND . VALUE) for member NAME of OBJECT (plist or hash table)."
+  (if (hash-table-p object)
+      (let ((v (gethash name object jetpacs-data--absent)))
+        (if (eq v jetpacs-data--absent) (cons nil nil) (cons t v)))
+    (let ((cell (plist-member object (intern (concat ":" name)))))
+      (if cell (cons t (cadr cell)) (cons nil nil)))))
+
+(defun jetpacs-data--object-put (object name value)
+  "A copy of OBJECT with member NAME set to VALUE."
+  (if (hash-table-p object)
+      (let ((copy (copy-hash-table object))) (puthash name value copy) copy)
+    (let ((key (intern (concat ":" name))))
+      (if (plist-member object key)
+          (plist-put (copy-sequence object) key value)
+        (append object (list key value))))))
+
+(defun jetpacs-data--object-delete (object name)
+  "A copy of OBJECT without member NAME."
+  (if (hash-table-p object)
+      (let ((copy (copy-hash-table object))) (remhash name copy) copy)
+    (let ((key (intern (concat ":" name))) (p object) out)
+      (while p
+        (let ((k (pop p)) (v (pop p)))
+          (unless (eq k key) (push k out) (push v out))))
+      (nreverse out))))
+
+(defun jetpacs-data--index (token what limit)
+  "TOKEN as an array index no greater than LIMIT, or signal at WHAT."
+  (unless (string-match-p "\\`\\(0\\|[1-9][0-9]*\\)\\'" token)
+    (signal 'jetpacs-data-error
+            (list what "array index must be a decimal without leading zeros")))
+  (let ((index (string-to-number token)))
+    (when (> index limit)
+      (signal 'jetpacs-data-error (list what "array index exceeds the length")))
+    index))
+
+(defun jetpacs-data--apply-in (container tokens kind value what)
+  "Apply KIND with VALUE at TOKENS beneath CONTAINER; return the new container."
+  (let ((token (car tokens)) (last (null (cdr tokens))))
+    (cond
+     ((vectorp container)
+      (let ((length (length container)))
+        (if (not last)
+            (let ((index (jetpacs-data--index token what length)))
+              (when (= index length)
+                (signal 'jetpacs-data-error (list what "parent container does not exist")))
+              (let ((copy (copy-sequence container)))
+                (aset copy index (jetpacs-data--apply-in
+                                  (aref container index) (cdr tokens) kind value what))
+                copy))
+          (let ((index (jetpacs-data--index token what length)))
+            (pcase kind
+              ("set" (if (= index length) (vconcat container (vector value))
+                       (let ((copy (copy-sequence container))) (aset copy index value) copy)))
+              ("insert" (vconcat (substring container 0 index) (vector value)
+                                 (substring container index)))
+              (_ (when (= index length)
+                   (signal 'jetpacs-data-error (list what "nothing to remove at the pointer")))
+                 (vconcat (substring container 0 index) (substring container (1+ index)))))))))
+     ((jetpacs-data--object-p container)
+      (let ((hit (jetpacs-data--object-member container token)))
+        (cond
+         ((not last)
+          (unless (car hit)
+            (signal 'jetpacs-data-error (list what "parent container does not exist")))
+          (jetpacs-data--object-put
+           container token (jetpacs-data--apply-in (cdr hit) (cdr tokens) kind value what)))
+         ((equal kind "insert")
+          (signal 'jetpacs-data-error (list what "insert requires an array parent")))
+         ((equal kind "set") (jetpacs-data--object-put container token value))
+         (t (unless (car hit)
+              (signal 'jetpacs-data-error (list what "nothing to remove at the pointer")))
+            (jetpacs-data--object-delete container token)))))
+     ((null container)
+      ;; The empty plist is the empty object.
+      (cond ((not last) (signal 'jetpacs-data-error (list what "parent container does not exist")))
+            ((equal kind "set") (list (intern (concat ":" token)) value))
+            ((equal kind "insert")
+             (signal 'jetpacs-data-error (list what "insert requires an array parent")))
+            (t (signal 'jetpacs-data-error (list what "nothing to remove at the pointer")))))
+     (t (signal 'jetpacs-data-error (list what "parent container does not exist"))))))
+
+(defun jetpacs-data-apply-ops (document ops &optional prefix)
+  "Return DOCUMENT with OPS applied in order (SPEC 13.8.4); DOCUMENT is unchanged.
+The Elisp reference applier — set, remove and insert — replayed against
+ebp/goldens/data-ops.golden.  Signals `jetpacs-data-error' with (PATH
+REASON) at `PREFIX[i].path', `PREFIX[i].op' or `PREFIX[i]', PREFIX
+defaulting to \"ops\", as the Companion reports them."
+  (let ((i -1) (prefix (or prefix "ops")))
+    (seq-doseq (op ops)
+      (let* ((opath (format "%s[%d]" prefix (cl-incf i)))
+             (kind (plist-get op :op))
+             (allowed (pcase kind
+                        ((or "set" "insert") '(:op :path :value))
+                        ("remove" '(:op :path))
+                        (_ (signal 'jetpacs-data-error
+                                   (list (concat opath ".op") "must be set, remove or insert")))))
+             (p op))
+        (while p
+          (let ((k (pop p)))
+            (pop p)
+            (unless (memq k allowed)
+              (signal 'jetpacs-data-error
+                      (list (format "%s.%s" opath (substring (symbol-name k) 1))
+                            "unknown DataOp member")))))
+        (when (and (memq :value allowed) (not (plist-member op :value)))
+          (signal 'jetpacs-data-error (list opath (format "%s requires value" kind))))
+        (let* ((what (concat opath ".path"))
+               (tokens (jetpacs-pointer-tokens (plist-get op :path) what))
+               (value (plist-get op :value)))
+          (setq document
+                (if tokens
+                    (jetpacs-data--apply-in document tokens kind value what)
+                  (if (and (equal kind "set") (jetpacs-data--object-p value))
+                      value
+                    (signal 'jetpacs-data-error
+                            (list what "the empty pointer is admitted only for a set whose value is an object"))))))))
+    document))
+
+;;;; Keyed array diffs
+
+(defun jetpacs-data-pointer-escape (token)
+  "TOKEN escaped as one RFC 6901 reference token."
+  (replace-regexp-in-string "/" "~1" (replace-regexp-in-string "~" "~0" token t t) t t))
+
+(defun jetpacs-data--member-names (object)
+  "The member names of OBJECT (plist or hash table), in order."
+  (if (hash-table-p object) (hash-table-keys object)
+    (let ((p object) out)
+      (while p (push (substring (symbol-name (pop p)) 1) out) (pop p))
+      (nreverse out))))
+
+(defun jetpacs-data--same-p (a b)
+  "Non-nil when A and B are the same JSON value."
+  (equal (jetpacs-node->canonical-json (vector a))
+         (jetpacs-node->canonical-json (vector b))))
+
+(defun jetpacs-data--lcs (old-keys new-keys)
+  "Index pairs (I . J) of a longest common subsequence of two key vectors."
+  (let* ((n (length old-keys)) (m (length new-keys))
+         (table (make-vector (1+ n) nil)))
+    (dotimes (i (1+ n)) (aset table i (make-vector (1+ m) 0)))
+    (cl-loop for i from (1- n) downto 0 do
+             (cl-loop for j from (1- m) downto 0 do
+                      (aset (aref table i) j
+                            (if (equal (aref old-keys i) (aref new-keys j))
+                                (1+ (aref (aref table (1+ i)) (1+ j)))
+                              (max (aref (aref table (1+ i)) j)
+                                   (aref (aref table i) (1+ j)))))))
+    (let ((i 0) (j 0) pairs)
+      (while (and (< i n) (< j m))
+        (cond ((equal (aref old-keys i) (aref new-keys j))
+               (push (cons i j) pairs) (cl-incf i) (cl-incf j))
+              ((>= (aref (aref table (1+ i)) j) (aref (aref table i) (1+ j))) (cl-incf i))
+              (t (cl-incf j))))
+      (nreverse pairs))))
+
+(defconst jetpacs-data-diff-max-elements 1000
+  "Arrays longer than this are patched whole rather than diffed.")
+
+(cl-defun jetpacs-data-array-ops (path old new &key (key "id") no-insert)
+  "Return DataOps turning array OLD at PATH into NEW, or `:whole'.
+Elements are identified by their member KEY (a string; elements are hash
+tables or plists).  The ops remove every element NEW lacks (highest index
+first), insert every element OLD lacks at its final index (SPEC 13.8.4,
+amendment #196), then `set' or `remove' each changed member of the
+elements both keep.  A reordered element is removed and re-inserted.
+Returns nil when nothing changed, and `:whole' — meaning \"send `set'
+PATH NEW instead\" — when an element has no or a duplicate key, either
+array exceeds `jetpacs-data-diff-max-elements', or NO-INSERT is non-nil
+and an element must enter anywhere but the end."
+  (let* ((old (vconcat old)) (new (vconcat new))
+         (keyof (lambda (e) (and (jetpacs-data--object-p e)
+                                 (car (jetpacs-data--object-member e key))
+                                 (cdr (jetpacs-data--object-member e key)))))
+         (old-keys (vconcat (mapcar keyof old)))
+         (new-keys (vconcat (mapcar keyof new))))
+    (if (or (> (length old) jetpacs-data-diff-max-elements)
+            (> (length new) jetpacs-data-diff-max-elements)
+            (seq-contains-p old-keys nil) (seq-contains-p new-keys nil)
+            (/= (length old-keys) (length (seq-uniq old-keys)))
+            (/= (length new-keys) (length (seq-uniq new-keys))))
+        :whole
+      (catch 'whole
+        (let* ((pairs (jetpacs-data--lcs old-keys new-keys))
+               (kept-old (mapcar #'car pairs)) (kept-new (mapcar #'cdr pairs))
+               (length (length old)) ops)
+          (cl-loop for i from (1- (length old)) downto 0
+                   unless (memq i kept-old)
+                   do (push (jetpacs-data-remove (format "%s/%d" path i)) ops)
+                   (cl-decf length))
+          (dotimes (j (length new))
+            (unless (memq j kept-new)
+              (let ((at (format "%s/%d" path j)))
+                (push (cond ((not no-insert) (jetpacs-data-insert at (aref new j)))
+                            ((= j length) (jetpacs-data-set at (aref new j)))
+                            (t (throw 'whole :whole)))
+                      ops)
+                (cl-incf length))))
+          (pcase-dolist (`(,i . ,j) pairs)
+            (let ((before (aref old i)) (after (aref new j))
+                  (at (format "%s/%d" path j)))
+              (unless (jetpacs-data--same-p before after)
+                (dolist (name (jetpacs-data--member-names after))
+                  (let ((was (jetpacs-data--object-member before name))
+                        (now (cdr (jetpacs-data--object-member after name))))
+                    (unless (and (car was) (jetpacs-data--same-p (cdr was) now))
+                      (push (jetpacs-data-set
+                             (concat at "/" (jetpacs-data-pointer-escape name)) now)
+                            ops))))
+                (dolist (name (jetpacs-data--member-names before))
+                  (unless (car (jetpacs-data--object-member after name))
+                    (push (jetpacs-data-remove
+                           (concat at "/" (jetpacs-data-pointer-escape name)))
+                          ops))))))
+          (nreverse ops))))))
 
 (provide 'jetpacs-data)
 ;;; jetpacs-data.el ends here

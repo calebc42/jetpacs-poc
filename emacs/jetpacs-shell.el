@@ -1225,6 +1225,13 @@ A `surface.data' patch only means something against a snapshot the
 Companion holds WITH its bindings; a surface pushed expanded — no grant,
 or a template the target cannot expand — is re-pushed whole instead.")
 
+(defvar jetpacs-shell--sent-data (make-hash-table :test #'equal)
+  "The data document Emacs last sent each surface (SPEC 13.8).
+Set by every push that carries one and advanced by every patch sent, so
+`jetpacs-shell-data-sync' diffs against what the Companion holds rather
+than against a recomputed \"before\".  A refused or failed patch heals
+by a whole push, which resets it.")
+
 (cl-defun jetpacs-shell-data-patch (surface-or-owner ops &key callback)
   "Patch SURFACE-OR-OWNER's data document with OPS (SPEC 13.8.4).
 OPS is a list from `jetpacs-data-set' and `jetpacs-data-remove'.  With
@@ -1242,6 +1249,15 @@ stood in."
              (jetpacs-granted-p "data.model" client)
              (gethash surface jetpacs-shell--documented))
         (let ((revision nil))
+          ;; Advance the copy the next diff starts from.  Ops that do not
+          ;; apply here will not apply on the Companion either; its error
+          ;; re-pushes whole, which resets the copy.
+          (condition-case nil
+              (puthash surface
+                       (jetpacs-data-apply-ops
+                        (gethash surface jetpacs-shell--sent-data) ops)
+                       jetpacs-shell--sent-data)
+            (jetpacs-data-error (remhash surface jetpacs-shell--sent-data)))
           (setq revision
                 (ebp-client-surface-data
                  client surface ops
@@ -1257,6 +1273,40 @@ stood in."
           revision)
       (jetpacs-shell-push surface)
       nil)))
+
+(cl-defun jetpacs-shell-data-sync (surface-or-owner path new &key (key "id") callback)
+  "Bring the array at PATH in SURFACE-OR-OWNER's document to NEW, minimally.
+The ops come from `jetpacs-data-array-ops' over the array Emacs last
+sent (elements identified by member KEY), with `insert' only when the
+target advertises `data.insert' (SPEC 22.4).  Whichever is smaller on
+the wire — those ops or one `set' of PATH — goes out through
+`jetpacs-shell-data-patch', so a surface that was not pushed with its
+document still re-pushes whole.  Nothing is sent when nothing changed.
+CALLBACK is passed through.  Returns the claimed revision or nil."
+  (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
+         (sent (gethash surface jetpacs-shell--sent-data))
+         (whole (list (jetpacs-data-set path new)))
+         (old (and sent
+                   (let ((hit (jetpacs-data-resolve
+                               sent (jetpacs-pointer-tokens path path) path)))
+                     (and (car hit) (vectorp (cdr hit)) (cdr hit)))))
+         (diff (if old
+                   (jetpacs-data-array-ops
+                    path old new :key key
+                    :no-insert (not (jetpacs-feature-advertised-p
+                                     jetpacs-data-insert-feature
+                                     (jetpacs-shell--surface-target surface))))
+                 :whole))
+         (ops (cond
+               ((eq diff :whole) whole)
+               ((null diff) nil)
+               ((or (> (length diff) jetpacs-max-data-ops)
+                    (>= (jetpacs-node-wire-bytes (vconcat diff))
+                        (jetpacs-node-wire-bytes (vconcat whole))))
+                whole)
+               (t diff))))
+    (when ops
+      (jetpacs-shell-data-patch surface ops :callback callback))))
 
 (defun jetpacs-shell--gate-ids
     (spec stale-spec &optional spec-analysis stale-analysis)
@@ -1466,7 +1516,9 @@ MUSTs are loud, never sanitized.  On any failure a queued
                              (jetpacs-shell--prepare-data
                               spec data data-granted templates-ok)))
                   (setq spec resolved data document)
-                  (puthash surface (and document t) jetpacs-shell--documented))
+                  (puthash surface (and document t) jetpacs-shell--documented)
+                  (if document (puthash surface document jetpacs-shell--sent-data)
+                    (remhash surface jetpacs-shell--sent-data)))
                 ;; GATE 2 first half: stale_spec discipline (SPEC 13.5).
                 (when stale-spec
                   (unless (eq (not (plist-member spec :views))

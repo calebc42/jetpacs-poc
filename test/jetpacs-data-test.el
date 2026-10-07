@@ -283,5 +283,146 @@ no bindings."
     ;; The analysis gates see the template as the node it is.
     (should (member "text" (plist-get (jetpacs-shell--analyze-spec spec) :types)))))
 
+(defun jetpacs-data-test--op-vectors ()
+  (with-temp-buffer
+    (insert-file-contents
+     (expand-file-name "goldens/data-ops.golden" jetpacs-data-test--ebp-spec-dir))
+    (cl-loop for line in (split-string (buffer-string) "\n" t)
+             collect (cons (substring line 0 2)
+                           (json-parse-string
+                            (substring line 3)
+                            :object-type 'plist :array-type 'array
+                            :null-object nil :false-object :json-false)))))
+
+(ert-deftest jetpacs-data-test-every-op-vector-reproduces ()
+  "SPEC 24.5 (amendment #196): the DataOp corpus through the Elisp applier."
+  (let ((vectors (jetpacs-data-test--op-vectors)))
+    (should (>= (length vectors) 20))
+    (pcase-dolist (`(,index . ,vector) vectors)
+      (let* ((expect (plist-get vector :expect))
+             (outcome (condition-case err
+                          (cons 'ok (jetpacs-data-apply-ops
+                                     (plist-get vector :data) (plist-get vector :ops)))
+                        (jetpacs-data-error (cons 'reject (nth 1 err))))))
+        (if (plist-member expect :data)
+            (progn
+              (should (equal (list index 'ok) (list index (car outcome))))
+              (should (equal (list index (jetpacs-node->canonical-json (plist-get expect :data)))
+                             (list index (jetpacs-node->canonical-json (cdr outcome))))))
+          (should (equal (list index 'reject (plist-get expect :reject))
+                         (list index (car outcome) (cdr outcome)))))))))
+
+(defun jetpacs-data-test--row (id &optional title icon)
+  (let ((row (make-hash-table :test #'equal)))
+    (puthash "id" id row)
+    (puthash "title" (or title (concat "Title " id)) row)
+    (when icon (puthash "icon" icon row))
+    row))
+
+(defun jetpacs-data-test--mutate (rows)
+  "A random edit of ROWS: removals, insertions, a move and member edits."
+  (let ((out (append rows nil)) (fresh 0))
+    (dotimes (_ (random 4))
+      (when out (setq out (delq (nth (random (length out)) out) out))))
+    (dotimes (_ (random 4))
+      (setq out (let ((at (random (1+ (length out)))))
+                  (append (seq-take out at)
+                          (list (jetpacs-data-test--row (format "n%d-%d" (random 100000) (cl-incf fresh))))
+                          (seq-drop out at)))))
+    (when (and (> (length out) 1) (zerop (random 3)))
+      (let ((moved (nth (random (length out)) out)))
+        (setq out (delq moved out))
+        (setq out (append (list moved) out))))
+    (setq out (mapcar (lambda (row)
+                        (if (zerop (random 4))
+                            (let ((copy (copy-hash-table row)))
+                              (pcase (random 3)
+                                (0 (puthash "title" (format "Edited %d" (random 1000)) copy))
+                                (1 (puthash "icon" "chevron_right" copy))
+                                (_ (remhash "icon" copy)))
+                              copy)
+                          row))
+                      out))
+    (vconcat out)))
+
+(ert-deftest jetpacs-data-test-array-diffs-round-trip ()
+  "Applying `jetpacs-data-array-ops' to OLD yields NEW, for 500 random edits."
+  (let ((state (copy-sequence "jetpacs-196")))
+    (random state)
+    (dotimes (trial 500)
+      (let* ((old (vconcat (cl-loop for i below (random 12)
+                                    collect (jetpacs-data-test--row
+                                             (format "r%d" i) nil
+                                             (and (zerop (random 2)) "expand_more")))))
+             (new (jetpacs-data-test--mutate old))
+             (ops (jetpacs-data-array-ops "/rows" old new))
+             (applied (jetpacs-data-apply-ops (list :rows old) ops)))
+        (should-not (eq ops :whole))
+        (should (equal (list trial (jetpacs-node->canonical-json (list :rows new)))
+                       (list trial (jetpacs-node->canonical-json applied))))))))
+
+(ert-deftest jetpacs-data-test-array-diffs-are-small-and-honour-no-insert ()
+  "A fold is one member set and the removals; NO-INSERT refuses a mid insert."
+  (let* ((a (jetpacs-data-test--row "a" nil "expand_more"))
+         (b (jetpacs-data-test--row "b")) (c (jetpacs-data-test--row "c"))
+         (d (jetpacs-data-test--row "d"))
+         (folded (let ((x (copy-hash-table a))) (puthash "icon" "chevron_right" x) x)))
+    (should (equal (jetpacs-data-array-ops "/rows" (vector a b c d) (vector folded d))
+                   (list (jetpacs-data-remove "/rows/2") (jetpacs-data-remove "/rows/1")
+                         (jetpacs-data-set "/rows/0/icon" "chevron_right"))))
+    (should (equal (jetpacs-data-array-ops "/rows" (vector folded d) (vector a b c d))
+                   (list (jetpacs-data-insert "/rows/1" b) (jetpacs-data-insert "/rows/2" c)
+                         (jetpacs-data-set "/rows/0/icon" "expand_more"))))
+    (should (eq (jetpacs-data-array-ops "/rows" (vector a d) (vector a b d) :no-insert t) :whole))
+    (should (equal (jetpacs-data-array-ops "/rows" (vector a b) (vector a b c) :no-insert t)
+                   (list (jetpacs-data-set "/rows/2" c))))
+    (should-not (jetpacs-data-array-ops "/rows" (vector a b) (vector a b)))
+    (should (eq (jetpacs-data-array-ops "/rows" (vector a a) (vector a)) :whole))
+    (should (equal (jetpacs-data-insert "/r/0" 1) '(:op "insert" :path "/r/0" :value 1)))
+    (should-error (jetpacs-data-insert "" 1) :type 'jetpacs-data-error)
+    (should (jetpacs-data-check-op '(:op "insert" :path "/r/0" :value 1)))))
+
+(ert-deftest jetpacs-data-test-the-shell-syncs-the-smaller-patch ()
+  "SPEC 13.8.4/22.4: the shell diffs against the document it last sent,
+sends the diff when smaller, a whole set otherwise or without
+`data.insert', and advances its copy by what it sent."
+  (skip-unless (require 'jetpacs-shell nil t))
+  (let* ((rows (vconcat (cl-loop for i below 30
+                                 collect (jetpacs-data-test--row (format "r%d" i)
+                                                                 (make-string 40 ?x)))))
+         (fewer (vconcat (seq-take rows 3) (seq-drop rows 5)))
+         (jetpacs-shell--sent-data (make-hash-table :test #'equal))
+         (jetpacs-shell--documented (make-hash-table :test #'equal))
+         (insert-ok t) sent)
+    (puthash "app:t" (list :rows rows) jetpacs-shell--sent-data)
+    (puthash "app:t" t jetpacs-shell--documented)
+    (cl-letf (((symbol-function 'jetpacs-feature-advertised-p) (lambda (&rest _) insert-ok))
+              ((symbol-function 'jetpacs-client) (lambda () 'client))
+              ((symbol-function 'jetpacs-connected-p) (lambda () t))
+              ((symbol-function 'jetpacs-granted-p) (lambda (&rest _) t))
+              ((symbol-function 'ebp-client-surface-data)
+               (lambda (_client _surface ops &rest _) (setq sent ops) 7))
+              ((symbol-function 'jetpacs-shell-push) (lambda (&rest _) (error "No push"))))
+      ;; Two rows leave: two removes, far smaller than the array.
+      (should (eql 7 (jetpacs-shell-data-sync "app:t" "/rows" fewer)))
+      (should (equal (append sent nil)
+                     (list (jetpacs-data-remove "/rows/4") (jetpacs-data-remove "/rows/3"))))
+      (should (equal (jetpacs-node->canonical-json (gethash "app:t" jetpacs-shell--sent-data))
+                     (jetpacs-node->canonical-json (list :rows fewer))))
+      ;; Unchanged: nothing goes out.
+      (setq sent nil)
+      (should-not (jetpacs-shell-data-sync "app:t" "/rows" fewer))
+      (should-not sent)
+      ;; A mid-array entry without the feature is a whole set.
+      (setq insert-ok nil)
+      (jetpacs-shell-data-sync "app:t" "/rows" rows)
+      (should (equal (append sent nil) (list (jetpacs-data-set "/rows" rows))))
+      ;; Replacing everything costs more as a diff than as a set.
+      (setq insert-ok t)
+      (let ((others (vconcat (cl-loop for i below 30
+                                      collect (jetpacs-data-test--row (format "o%d" i))))))
+        (jetpacs-shell-data-sync "app:t" "/rows" others)
+        (should (equal (append sent nil) (list (jetpacs-data-set "/rows" others))))))))
+
 (provide 'jetpacs-data-test)
 ;;; jetpacs-data-test.el ends here

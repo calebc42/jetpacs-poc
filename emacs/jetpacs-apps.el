@@ -112,6 +112,22 @@ patch is presentation failure after the handler's effect."
      (lambda ()
        (ignore-errors (jetpacs-shell-data-patch surface ops))))))
 
+;; A list a handler changed — rows folded, inserted, re-sorted — is patched
+;; by its difference from what the Companion holds rather than resent.
+(cl-defun jetpacs-app-defer-sync (path new &key (key "id") params)
+  "Defer bringing the array at PATH to NEW on PARAMS' or the flow's app surface.
+The minimal-patch twin of `jetpacs-app-defer-patch': the shell diffs NEW
+against the array it last sent, keyed by member KEY, and sends `insert',
+`remove' and member `set' ops — or one `set' of PATH when that is
+smaller (`jetpacs-shell-data-sync').  The surface resolves exactly as
+`jetpacs-app-defer-refresh' resolves it, and the call is deferred and
+isolated the same way."
+  (let ((surface (or (plist-get params :surface)
+                     (jetpacs-flow-surface))))
+    (jetpacs-flow-continue
+     (lambda ()
+       (ignore-errors (jetpacs-shell-data-sync surface path new :key key))))))
+
 ;;;; Registry
 
 (defun jetpacs-apps--check-destination-list (dests)
