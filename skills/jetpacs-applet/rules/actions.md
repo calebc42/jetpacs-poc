@@ -24,12 +24,12 @@ An action is a dotted identifier the Companion dispatches back; the handler sche
 ```elisp
 (jetpacs-defaction "notes.save" #'notes--on-save
                    :doc "Save the open note"
-                   :args '(:id "the note's id"))
+                   :args '((:name id :type "text" :required t)))
 
 (jetpacs-button "Save" (jetpacs-action "notes.save" :args (list :id id)))
 ```
 
-The validator refuses an emitted name without a provider and a name without a namespace dot; `:doc` and `:args` are what the catalog and the agent read.
+The validator refuses an emitted name without a provider and a name without a namespace dot; `:doc` and `:args` (a list of `(:name SYMBOL :type STRING :required BOOL)` plists) are what the catalog and the agent read.
 
 ## A handler takes `(ARGS PARAMS)`, schedules its effect and returns `accepted`, `stale` or `rejected`
 

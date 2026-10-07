@@ -767,8 +767,8 @@ the SKILL.md readable while CATALOG.md carries everything."
      "An action is a dotted identifier the Companion dispatches back; the handler schedules a durable effect and answers immediately."
      (("Action names are dotted EBP identifiers, registered with `jetpacs-defaction` and emitted with `jetpacs-action`; args are plain data."
        "(jetpacs-button \"Save\" (jetpacs-action \"save\"))"
-       "(jetpacs-defaction \"notes.save\" #'notes--on-save\n                   :doc \"Save the open note\"\n                   :args '(:id \"the note's id\"))\n\n(jetpacs-button \"Save\" (jetpacs-action \"notes.save\" :args (list :id id)))"
-       "The validator refuses an emitted name without a provider and a name without a namespace dot; `:doc` and `:args` are what the catalog and the agent read.")
+       "(jetpacs-defaction \"notes.save\" #'notes--on-save\n                   :doc \"Save the open note\"\n                   :args '((:name id :type \"text\" :required t)))\n\n(jetpacs-button \"Save\" (jetpacs-action \"notes.save\" :args (list :id id)))"
+       "The validator refuses an emitted name without a provider and a name without a namespace dot; `:doc` and `:args` (a list of `(:name SYMBOL :type STRING :required BOOL)` plists) are what the catalog and the agent read.")
       ("A handler takes `(ARGS PARAMS)`, schedules its effect and returns `accepted`, `stale` or `rejected`."
        "(defun notes--on-save (args)\n  (notes--write-to-disk args)\n  t)"
        "(defun notes--on-save (args params)\n  (jetpacs-flow-continue\n   (lambda () (notes--write-to-disk args)))\n  'accepted)"
@@ -798,7 +798,25 @@ the SKILL.md readable while CATALOG.md carries everything."
       ("An extension node needs its extension installed and advertised by the target profile; fall back when it is not."
        "(jetpacs-design-profile-scope profile children)"
        "(if (jetpacs-extension-advertised-p \"jetpacs.design\" :app)\n    (jetpacs-design-profile-scope profile children)\n  (jetpacs-column children))"
-       "A node travels only to a target whose profile lists both the node type and the extension (SPEC 16.2.1); `jetpacs-defapp :requires-extensions` declares the hard requirement and the Apps screen gates on it."))))
+       "A node travels only to a target whose profile lists both the node type and the extension (SPEC 16.2.1); `jetpacs-defapp :requires-extensions` declares the hard requirement and the Apps screen gates on it.")))
+    ("registry" "Adding applets from a registry"
+     "An applet registry is an index of installable applets with declared requirements; the tools fetch, verify and preview, and only the App Store's consent gate runs code."
+     (("Registry must be explicit: ask which registry when the user does not say; never default to one."
+       ";; \"Add a login applet\"\n(jetpacs_registry_install_command :items [\"login\"])   ; silently @jetpacs"
+       ";; \"Add a login applet\"\n;; -> ask: from which registry? (jetpacs_registry_namespaces lists them)\n(jetpacs_registry_search :query \"login\" :registry \"@acme\")"
+       "A bare name resolves in the default namespace; the user, not the agent, decides where code comes from.")
+      ("Resolve and dry-run before any install; read the diff of every file that would be overwritten."
+       "sh tools/jetpacs-registry.sh install @acme/login --overwrite"
+       "sh tools/jetpacs-registry.sh dry-run @acme/login\nsh tools/jetpacs-registry.sh diff @acme/login\nsh tools/jetpacs-registry.sh install @acme/login"
+       "`dry-run` classifies every file as create, overwrite or skip and checks requirements; `diff` shows what an overwrite would change. Install refuses an overwrite it was not told about.")
+      ("Never pass --overwrite, or confirm an overwrite on the device, without the user's explicit approval."
+       ";; the user said \"update the login applet\"\nsh tools/jetpacs-registry.sh install @acme/login --overwrite"
+       ";; show the diff, then ask: replace your local changes to login.el?\n;; only on a yes:\nsh tools/jetpacs-registry.sh install @acme/login --overwrite"
+       "A local change is the user's work; the registry's copy is not automatically better. The Apps screen enforces the same rule: an overwrite needs a Preview first.")
+      ("Never fetch or load registry Elisp yourself; the tools verify sha256 and read with a throwaway obarray, and only the App Store's consent gate loads."
+       "(load (url-retrieve-synchronously \"https://acme.test/r/login.json\"))"
+       "(jetpacs_registry_view :items [\"@acme/login\"])   ; sha-verified, for reading\n;; then the dry-run / install commands above"
+       "Installing is running code. The registry path keeps every step static until the user's consent on the device; a manual fetch skips the sha pin, the safe read and the gate."))))
   "The rule files: (NAME TITLE INTRO ((RULE INCORRECT CORRECT WHY) ...)).
 Each becomes `skills/jetpacs-applet/rules/NAME.md'; the one-line RULEs are
 the Critical Rules list every rendering repeats.")

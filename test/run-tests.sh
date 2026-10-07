@@ -310,6 +310,9 @@ emacs -Q --batch -L emacs -l test/jetpacs-profile-snapshot-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-registry-test.el \
   -f ert-run-tests-batch-and-exit
 
+emacs -Q --batch -L emacs -l test/jetpacs-app-store-registry-test.el \
+  -f ert-run-tests-batch-and-exit
+
 emacs -Q --batch -L emacs -l test/jetpacs-home-test.el \
   -f ert-run-tests-batch-and-exit
 

@@ -147,6 +147,7 @@ remain in the private Emacs/Termux home on Android.")
 (require 'jetpacs-sql)
 (require 'jetpacs-apps)
 (require 'jetpacs-app-store)
+(require 'jetpacs-app-store-registry) ; applet registries as an Apps source
 (require 'jetpacs-hypertext)
 ;; …and the apps.
 (require 'jetpacs-theme)

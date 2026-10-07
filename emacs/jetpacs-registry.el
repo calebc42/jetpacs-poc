@@ -718,26 +718,34 @@ for an overwrite, `:existing'.  Nothing is written."
     (nreverse plan)))
 
 (defun jetpacs-registry-diff-string (plan-entry)
-  "A unified diff from PLAN-ENTRY's existing content to its new content."
-  (let ((old (generate-new-buffer " *registry old*"))
-        (new (generate-new-buffer " *registry new*"))
-        (name (file-name-nondirectory (plist-get plan-entry :path))))
+  "A unified diff from PLAN-ENTRY's existing content to its new content.
+Headers read `--- a/NAME' and `+++ b/NAME'; the diff command line and the
+trailer `diff' prints are left out."
+  (let* ((name (file-name-nondirectory (plist-get plan-entry :path)))
+         (dir (make-temp-file "jetpacs-registry-diff" t))
+         (old (expand-file-name (concat "a/" name) dir))
+         (new (expand-file-name (concat "b/" name) dir)))
     (unwind-protect
         (progn
-          (with-current-buffer old (insert (or (plist-get plan-entry :existing) "")))
-          (with-current-buffer new (insert (plist-get plan-entry :content)))
-          (let ((buffer (diff-no-select old new "-u" t)))
+          (make-directory (file-name-directory old) t)
+          (make-directory (file-name-directory new) t)
+          (with-temp-file old (insert (or (plist-get plan-entry :existing) "")))
+          (with-temp-file new (insert (plist-get plan-entry :content)))
+          (let* ((default-directory (file-name-as-directory dir))
+                 (buffer (diff-no-select (concat "a/" name) (concat "b/" name) "-u" t)))
             (unwind-protect
                 (with-current-buffer buffer
-                  (let ((text (buffer-substring-no-properties (point-min) (point-max))))
-                    (replace-regexp-in-string
-                     (regexp-quote (buffer-name old)) (concat "a/" name)
-                     (replace-regexp-in-string
-                      (regexp-quote (buffer-name new)) (concat "b/" name) text t t)
-                     t t)))
+                  (goto-char (point-min))
+                  (let ((start (if (re-search-forward "^--- " nil t)
+                                   (match-beginning 0)
+                                 (point-min)))
+                        (end (progn (goto-char (point-max))
+                                    (if (re-search-backward "^Diff finished" nil t)
+                                        (match-beginning 0)
+                                      (point-max)))))
+                    (string-trim-right (buffer-substring-no-properties start end))))
               (kill-buffer buffer))))
-      (kill-buffer old)
-      (kill-buffer new))))
+      (delete-directory dir t))))
 
 (cl-defun jetpacs-registry-install-files (plan &key allow-overwrite)
   "Write the files of PLAN (from `jetpacs-registry-dry-run'); return the paths.

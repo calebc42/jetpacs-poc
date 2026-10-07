@@ -90,6 +90,28 @@ outside the foundation layer and fills this variable through the generic
 ;; direct foundation-only test loads deliberately see an empty catalog.
 (require 'jetpacs-packaged-apps nil t)
 
+;; Sources beyond the staging dirs and the APK (the applet registry,
+;; jetpacs-app-store-registry.el) plug in here.  A source's entries carry
+;; `:source' and a `:name' (the bundle file name every wire action names);
+;; the registry's install is its own, asynchronous, and reports itself.
+(defvar jetpacs-app-store-sources nil
+  "Functions returning extra scan entries (plists with `:name' and `:source').
+A staged copy of the same name outranks them; a packaged one outranks both.")
+
+(defvar jetpacs-app-store-install-functions nil
+  "Functions called with an entry at install time, until one returns non-nil.
+A non-nil return means the source took the install — including reporting
+its outcome; the built-in adoption path then does nothing.")
+
+(defvar jetpacs-app-store-uninstall-functions nil
+  "Functions called with a bundle NAME after its adopted file is removed.")
+
+(defvar jetpacs-app-store-refresh-functions nil
+  "Functions called, without arguments, when the Apps screen is refreshed.")
+
+(defvar jetpacs-app-store-row-trailing-functions nil
+  "Functions called with an available entry; each returns extra trailing nodes.")
+
 (defvar jetpacs-app-store--edit nil
   "The bundle the Edit screen shows:
 \(:name NAME :path TRUENAME :seed S :mtime T :coding C).  C is the
@@ -187,6 +209,18 @@ same-name staged copy so the APK distribution remains authoritative."
                                 (jetpacs-app-store--summary path)))
                entries))
        best)
+      ;; Registered sources (the applet registry) add entries a staged
+      ;; same-name copy outranks; packaged entries below outrank both.
+      (dolist (source jetpacs-app-store-sources)
+        (dolist (entry (ignore-errors (funcall source)))
+          (let ((name (plist-get entry :name)))
+            (when (and (stringp name)
+                       (not (string-search "/" name))
+                       (not (seq-find (lambda (e) (equal (plist-get e :name) name))
+                                      entries)))
+              (push (plist-put (copy-sequence entry) :installed
+                               (and (member name jetpacs-app-store-installed) t))
+                    entries)))))
       ;; APK-packaged source is always available and wins a same-name staged
       ;; copy.  `:installed' includes a live untracked registration so Apps
       ;; tells the truth when a user explicitly required the app elsewhere;
@@ -331,6 +365,7 @@ boot."
   (let ((dest (expand-file-name name (jetpacs-app-store--adopt-dir))))
     (ignore-errors (delete-file dest))
     (ignore-errors (delete-file (concat dest "c"))))
+  (run-hook-with-args 'jetpacs-app-store-uninstall-functions name)
   (ignore-errors (unload-feature (intern (file-name-base name)) t)))
 
 ;;;; The view
@@ -369,25 +404,34 @@ boot."
              (jetpacs-action "apps.uninstall" :args `(:bundle ,name)
                              :when-offline "drop")
              :content-description (format "Uninstall %s" name))))
-       (jetpacs-icon-button
-        "download"
-        (jetpacs-action
-         "apps.install" :args `(:bundle ,name)
-         :when-offline "drop"
-         ;; §14.1 object form (amendment #168): installing is running
-         ;; code; the gate says so, wearing an authored face.
-         :confirm (list :title (if packaged "Enable app?" "Install app?")
-                        :icon "download"
-                        :text (if packaged
-                                  (format "%s is included with Jetpacs. Enabling it runs the app with your Emacs's full permissions."
-                                          label)
-                                (format "Installing runs %s with your Emacs's full permissions."
-                                        name))
-                        :confirm-label (if packaged "Enable" "Install")
-                        :dismiss-label "Cancel"))
-        :content-description (format "%s %s"
-                                     (if packaged "Enable" "Install") label)))
+       (append
+        (jetpacs-app-store--row-extras entry)
+        (list
+         (jetpacs-icon-button
+          "download"
+          (jetpacs-action
+           "apps.install" :args `(:bundle ,name)
+           :when-offline "drop"
+           ;; §14.1 object form (amendment #168): installing is running
+           ;; code; the gate says so, wearing an authored face.
+           :confirm (list :title (if packaged "Enable app?" "Install app?")
+                          :icon "download"
+                          :text (if packaged
+                                    (format "%s is included with Jetpacs. Enabling it runs the app with your Emacs's full permissions."
+                                            label)
+                                  (format "Installing runs %s with your Emacs's full permissions."
+                                          name))
+                          :confirm-label (if packaged "Enable" "Install")
+                          :dismiss-label "Cancel"))
+          :content-description (format "%s %s"
+                                       (if packaged "Enable" "Install") label)))))
      :key (jetpacs-wire-id "as" name))))
+
+(defun jetpacs-app-store--row-extras (entry)
+  "Extra trailing nodes the registered sources add for available ENTRY."
+  (apply #'append
+         (mapcar (lambda (fn) (ignore-errors (funcall fn entry)))
+                 jetpacs-app-store-row-trailing-functions)))
 
 (defun jetpacs-app-store--view ()
   "The combined Apps view (owner decision 2026-08-06 pass 2):
@@ -465,6 +509,7 @@ behind the consent gate)."
 ;;;; Actions
 
 (defun jetpacs-app-store--action-refresh (_args _params)
+  (run-hooks 'jetpacs-app-store-refresh-functions)
   (jetpacs-app-store--refresh)
   'accepted)
 
@@ -596,16 +641,18 @@ install action's decision to make, not a save's."
                 (past (if packaged "Enabled" "Installed"))
                 (label (or (plist-get entry :label)
                            (plist-get entry :name))))
-           (condition-case err
-               (progn
-                 (if packaged
-                     (jetpacs-app-store--enable-packaged entry)
-                   (jetpacs-app-store--install entry))
-                 (jetpacs-toast (format "%s %s" past label)))
-             (error
-              (jetpacs-toast
-               (format "%s failed: %s" verb
-                       (error-message-string err))))))
+           (unless (run-hook-with-args-until-success
+                    'jetpacs-app-store-install-functions entry)
+             (condition-case err
+                 (progn
+                   (if packaged
+                       (jetpacs-app-store--enable-packaged entry)
+                     (jetpacs-app-store--install entry))
+                   (jetpacs-toast (format "%s %s" past label)))
+               (error
+                (jetpacs-toast
+                 (format "%s failed: %s" verb
+                         (error-message-string err)))))))
          (ignore-errors (jetpacs-shell-push jetpacs-app-store-surface))))
       'accepted))))
 

@@ -374,3 +374,10 @@ These rules are always enforced. Each heading links to a file with Incorrect/Cor
 - **Never author per-mode colors; the role adapts to dark mode.**
 - **Derived tokens are not EBP names; use a role, not a Material or design token.**
 - **An extension node needs its extension installed and advertised by the target profile; fall back when it is not.**
+
+### Adding applets from a registry → [registry.md](./rules/registry.md)
+
+- **Registry must be explicit: ask which registry when the user does not say; never default to one.**
+- **Resolve and dry-run before any install; read the diff of every file that would be overwritten.**
+- **Never pass --overwrite, or confirm an overwrite on the device, without the user's explicit approval.**
+- **Never fetch or load registry Elisp yourself; the tools verify sha256 and read with a throwaway obarray, and only the App Store's consent gate loads.**

@@ -35,7 +35,7 @@
       "expected_output": "A jetpacs-defaction registration with :doc and :args, a handler of (ARGS PARAMS) that schedules the disk write through jetpacs-flow-continue and returns 'accepted, and the list update delivered as a data patch; no blocking call and no prompt inside the dispatch.",
       "files": [],
       "expectations": [
-        "Registers the action with jetpacs-defaction \"notes.archive\" and supplies :doc and :args",
+        "Registers the action with jetpacs-defaction \"notes.archive\" and supplies :doc and :args as a list of (:name SYMBOL :type STRING :required BOOL) plists",
         "The handler takes (args params) and returns the symbol accepted (or stale / rejected), never nil or a string",
         "The durable effect is scheduled with jetpacs-flow-continue or an equivalent deferred step, not performed synchronously inside the dispatch",
         "No url-retrieve-synchronously, call-process, sleep-for or other blocking call appears in the handler body",
