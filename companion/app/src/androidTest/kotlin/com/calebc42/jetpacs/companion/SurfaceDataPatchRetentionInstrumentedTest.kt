@@ -130,6 +130,83 @@ class SurfaceDataPatchRetentionInstrumentedTest {
         )
     }
 
+    /** SPEC 13.8.5: the same list as a template over `/rows`. */
+    private fun templated(): JsonObject = buildJsonObject {
+        put("t", "column")
+        put("children", buildJsonArray {
+            add(buildJsonObject {
+                put("t", "text")
+                put("key", "status")
+                put("style", "title")
+                put("bind", buildJsonObject { put("text", "/planning/status") })
+            })
+            add(buildJsonObject {
+                put("t", "lazy_column")
+                put("key", "rows")
+                put("weight", 1)
+                put("bind", buildJsonObject { put("children", "/rows") })
+                put("template", buildJsonObject {
+                    put("t", "text")
+                    put("height", 72)
+                    put("bind", buildJsonObject { put("key", "id"); put("text", "title") })
+                })
+            })
+        })
+    }
+
+    @Test
+    fun aTemplatedListReExpandsAndKeepsItsScrollPosition() {
+        val spec = templated()
+        var data = buildJsonObject {
+            put("planning", buildJsonObject { put("status", "40 rows") })
+            put("rows", buildJsonArray {
+                (0 until 40).forEach { index ->
+                    add(buildJsonObject { put("id", "row-$index"); put("title", "Row $index") })
+                }
+            })
+        }
+        var shown by mutableStateOf(materialize(spec, data))
+        compose.setContent {
+            MaterialTheme {
+                RenderNode(
+                    shown,
+                    "app:template-retention-test",
+                    host,
+                    configuration = CompanionRenderer.installation(true).composeConfiguration,
+                )
+            }
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Row 30"))
+        val before = compose.onNodeWithText("Row 30").assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot.top
+
+        // One element patched, one row inserted at the top: the expansion is
+        // rebuilt, and identity follows the bound key, not the index.
+        compose.runOnIdle {
+            data = JsonPointer.set(
+                data, listOf("rows", "31", "title"),
+                JsonPrimitive("Row 31, patched"), "params.ops[0].path",
+            )
+            val rows = data.getValue("rows") as kotlinx.serialization.json.JsonArray
+            data = JsonPointer.set(
+                data, listOf("rows"),
+                kotlinx.serialization.json.JsonArray(
+                    listOf(buildJsonObject { put("id", "row-new"); put("title", "Row new") }) + rows),
+                "params.ops[1].path",
+            )
+            shown = materialize(spec, data)
+        }
+        compose.waitForIdle()
+
+        compose.onNodeWithText("Row 31, patched").assertIsDisplayed()
+        val after = compose.onNodeWithText("Row 30").assertIsDisplayed()
+            .fetchSemanticsNode().boundsInRoot.top
+        assertEquals(
+            "a templated lazy column must keep its scroll position across re-expansion",
+            before, after, 1f,
+        )
+    }
+
     @Test
     fun aPaddedLazyColumnDoesNotCreepAcrossRepeatedPatches() {
         // Grove's planning canvas on the S21 Ultra: `content_padding` 12 and

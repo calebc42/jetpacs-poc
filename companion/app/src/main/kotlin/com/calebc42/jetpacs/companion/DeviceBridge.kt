@@ -610,6 +610,8 @@ class DeviceBridge(
         val onOutcome: (RendererActionOutcome) -> Unit,
         /** Identity only; keeps the internal deadline type out of UI state. */
         val secretAttemptToken: Any? = null,
+        /** SPEC 13.8.5/14.3: the source node's identity path, for the `item` injection. */
+        val sourcePath: String? = null,
         // §14.1: the object form's optional face — a bare-string confirm
         // leaves all four null and the host draws what it always drew.
         val title: String? = null, val icon: String? = null,
@@ -627,6 +629,7 @@ class DeviceBridge(
             p.secret, p.sourceId,
             p.secretAttemptToken as? SecretActionAttempt,
             p.onOutcome,
+            p.sourcePath,
         ) else p.onOutcome(RendererActionOutcome.NotAdmitted(
             com.calebc42.ebp.wire.UnsafeAdmissionReason.Cancelled))
     }
@@ -669,7 +672,8 @@ class DeviceBridge(
                                 value: JsonElement?, injected: JsonObject?,
                                 fields: JsonObject?, secret: RendererVolatileSecret?,
                                 sourceId: String?, secretAttempt: SecretActionAttempt?,
-                                onOutcome: (RendererActionOutcome) -> Unit): Boolean {
+                                onOutcome: (RendererActionOutcome) -> Unit,
+                                sourcePath: String? = null): Boolean {
         // §14.1: `confirm` is a bare string, or the object form
         // {text, title?, icon?, confirm_label?, dismiss_label?}.
         val obj = descriptor.objOrNull("confirm")
@@ -690,6 +694,7 @@ class DeviceBridge(
         _pendingConfirm.value = PendingConfirm(
             prompt, surface, descriptor, value, injected, fields, secret,
             sourceId, onOutcome, secretAttempt,
+            sourcePath = sourcePath,
             title = obj?.stringOr("title")?.takeIf { it.isNotEmpty() },
             icon = obj?.stringOr("icon")?.takeIf { it.isNotEmpty() },
             confirmLabel = obj?.stringOr("confirm_label")?.takeIf { it.isNotEmpty() },
@@ -701,7 +706,8 @@ class DeviceBridge(
                          injected: JsonObject?, fields: JsonObject?,
                          secret: RendererVolatileSecret?, sourceId: String?,
                          secretAttempt: SecretActionAttempt?,
-                         onOutcome: (RendererActionOutcome) -> Unit) {
+                         onOutcome: (RendererActionOutcome) -> Unit,
+                         sourcePath: String? = null) {
         dispatchExecutor.execute {
             if (secret != null) {
                 if (secretAttempt?.isPending() != true) return@execute
@@ -801,7 +807,7 @@ class DeviceBridge(
                             // engine so a pre-READY occurrence is recorded in
                             // syncingDirty and READY ordering stays intact.
                             activeEngine?.dispatchAction(
-                                surface, descriptor, value, injected, sourceId,
+                                surface, descriptor, value, injected, sourceId, sourcePath,
                             ) { outcome -> completeOutcome(onOutcome, outcome) }
                                 ?: deliverOutcome(onOutcome,
                                     rendererNotReadyOutcome())
@@ -822,8 +828,10 @@ class DeviceBridge(
                         fields, sourceId,
                     ) { outcome -> completeOutcome(onOutcome, outcome) }
                         ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
+                // SPEC 13.8.5/14.3: the engine injects `item` from the
+                // source node's identity path when it sits in a template.
                 else activeEngine?.dispatchAction(
-                    surface, descriptor, value, injected, sourceId,
+                    surface, descriptor, value, injected, sourceId, sourcePath,
                 ) { outcome -> completeOutcome(onOutcome, outcome) }
                     ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
             } finally {
@@ -929,10 +937,12 @@ class DeviceBridge(
         if (parkIfConfirmed(
                 surface, request.descriptor, request.value, request.injected,
                 request.fields, secret, request.sourceId, secretAttempt, oneShot,
+                request.sourcePath,
             )) return ActionHandoff.HandedOff
         dispatch(
             surface, request.descriptor, request.value, request.injected,
             request.fields, secret, request.sourceId, secretAttempt, oneShot,
+            request.sourcePath,
         )
         return ActionHandoff.HandedOff
     }

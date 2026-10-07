@@ -391,7 +391,7 @@ internal fun RenderSectionHeader(node: JsonObject, ctx: RenderCtx, m: Modifier) 
             style = MaterialTheme.typography.titleSmall,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.weight(1f))
-        p[SectionHeaderMembers.Trailing]?.let { RenderNode(it, ctx.child(it, 0)) }
+        p[SectionHeaderMembers.Trailing]?.let { RenderNode(it, ctx.child(it, 0, "trailing")) }
     }
 }
 

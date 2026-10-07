@@ -12,6 +12,7 @@
 // philosophy, kept because the clamps are pure and JVM-testable).
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.wire.IdentityPath
 import com.calebc42.ebp.renderer.model.*
 import com.calebc42.ebp.renderer.model.vocabulary.BooleanMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeArrayMember
@@ -116,6 +117,8 @@ internal data class LazyRenderItem(
     val contentType: String,
     val path: String,
     val node: JsonObject?,
+    /** The engine-grammar identity (SPEC 13.8.5), see [RenderCtx.sourcePath]. */
+    val sourcePath: String = "",
 )
 
 /**
@@ -234,6 +237,7 @@ internal fun lazyRenderItem(
     keys: List<String>,
     parentPath: String,
     index: Int,
+    parentSourcePath: String = "",
 ): LazyRenderItem {
     val child = children.getOrNull(index) as? JsonObject
     return LazyRenderItem(
@@ -241,6 +245,8 @@ internal fun lazyRenderItem(
         contentType = child?.stringOrNull("t").orEmpty(),
         path = identityPath(parentPath, child, index),
         node = child,
+        sourcePath = child?.let { IdentityPath.child(parentSourcePath, it, "children[$index]") }
+            ?: parentSourcePath,
     )
 }
 
@@ -250,10 +256,11 @@ internal fun lazyRenderChunk(
     projection: LazyColumnProjection,
     parentPath: String,
     chunkIndex: Int,
+    parentSourcePath: String = "",
 ): LazyRenderChunk {
     val range = projection.chunks[chunkIndex]
     val items = (range.first until range.endExclusive).map { index ->
-        lazyRenderItem(children, projection.childKeys, parentPath, index)
+        lazyRenderItem(children, projection.childKeys, parentPath, index, parentSourcePath)
     }
     return LazyRenderChunk(
         key = range.key,

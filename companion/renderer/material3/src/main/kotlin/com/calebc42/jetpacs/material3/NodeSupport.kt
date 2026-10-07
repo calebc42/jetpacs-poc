@@ -40,7 +40,10 @@ object NodeSupport {
             "trigger.fire",
             "variant.switch",
         ),
-        features = imageFeatures + editorFeatures + "action.open_surface",
+        // SPEC 22.4 (amendment #195): templates are expanded by the engine
+        // and the renderer reports identity paths, so app surfaces may carry
+        // `template`; dialogs, notifications and widgets may not.
+        features = imageFeatures + editorFeatures + "action.open_surface" + "data.template",
         extensions = setOf(JETPACS_MATERIAL3_EXTENSION),
     )
 

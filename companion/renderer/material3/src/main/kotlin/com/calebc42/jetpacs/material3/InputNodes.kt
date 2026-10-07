@@ -1570,7 +1570,7 @@ internal fun RenderNavigationRail(node: JsonObject, ctx: RenderCtx, m: Modifier)
         else -> Arrangement.Top
     }
     val headerSlot: (@Composable () -> Unit)? =
-        header?.let { { RenderNode(it, ctx.child(it, 0)) } }
+        header?.let { { RenderNode(it, ctx.child(it, 0, "header")) } }
     val railState = if (wide) rememberWideNavigationRailState(
         initialValue = if (expanded) WideNavigationRailValue.Expanded
             else WideNavigationRailValue.Collapsed) else null

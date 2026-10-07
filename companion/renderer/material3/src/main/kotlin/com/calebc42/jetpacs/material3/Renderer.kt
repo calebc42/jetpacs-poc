@@ -107,6 +107,7 @@ import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.calebc42.jetpacs.material3.MaterialRendererHost
+import com.calebc42.ebp.wire.IdentityPath
 import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.renderer.compose.ComposeExtensionRenderContext
 import com.calebc42.ebp.renderer.compose.ComposeNodeComponent
@@ -246,6 +247,15 @@ data class RenderCtx(
     val bridge: MaterialRendererHost,
     val dialog: DialogContext? = null,
     val path: String = "",
+    /**
+     * SPEC 13.8.5/14.3 (amendment #195): this node's identity in the ENGINE's
+     * grammar ([IdentityPath]: key, else id, else the JSON position under
+     * the parent node, each with the type), reported as `sourcePath` on
+     * every dispatch so the engine can name the template item a hook fired
+     * in. [path] keeps the renderer's own retained-presentation identity,
+     * whose unkeyed segments are slot indices the engine cannot rebuild.
+     */
+    val sourcePath: String = "",
     /** T3/LD-2: what each of this surface's stateful nodes should display,
      * and the generation that value belongs to. */
     val displays: Map<Pair<String, String>, InputDisplay> = emptyMap(),
@@ -254,10 +264,15 @@ data class RenderCtx(
     /** Nearest admitted downstream design scope; roots always start unscoped. */
     val designScope: String? = null,
 ) {
-    fun child(node: JsonObject?, index: Int): RenderCtx =
-        copy(path = identityPath(path, node, index))
+    /** [position] is the child's JSON route under this node: `children[i]`, a slot name, `items[i].content`. */
+    fun child(node: JsonObject?, index: Int, position: String = "children[$index]"): RenderCtx =
+        copy(
+            path = identityPath(path, node, index),
+            sourcePath = node?.let { IdentityPath.child(sourcePath, it, position) } ?: sourcePath,
+        )
 
-    fun atPath(path: String): RenderCtx = copy(path = path)
+    fun atPath(path: String, sourcePath: String = this.sourcePath): RenderCtx =
+        copy(path = path, sourcePath = sourcePath)
 
     /** Select [scope] only for the recursively rendered authored subtree. */
     fun inDesignScope(scope: String): RenderCtx = copy(designScope = scope)
@@ -347,6 +362,7 @@ data class RenderCtx(
                     fields = capturedFields.takeIf { volatile == null },
                     secret = volatile,
                     sourceId = sourceId,
+                    sourcePath = sourcePath.ifEmpty { null },
                 ),
                 onOutcome,
             )
@@ -355,6 +371,7 @@ data class RenderCtx(
             RendererActionRequest(
                 RendererActionContext.Surface(surface), descriptor,
                 value = value, secret = secret, sourceId = sourceId,
+                sourcePath = sourcePath.ifEmpty { null },
             ),
             onOutcome,
         )
@@ -367,6 +384,7 @@ data class RenderCtx(
             bridge.dispatch(RendererActionRequest(
                 RendererActionContext.Surface(surface), it,
                 value = value, injected = injected,
+                sourcePath = sourcePath.ifEmpty { null },
             ))
         }
     }
@@ -569,6 +587,8 @@ fun RenderNode(node: JsonObject, ctx: RenderCtx, modifier: Modifier = Modifier) 
     // the old slot after variant reactivation. Root calls resolve their path
     // here; every nested caller already carries its parent-resolved path.
     val resolvedPath = ctx.path.ifEmpty { identityPath("", node, 0) }
+    // A root is a document root in the engine's grammar too (position "").
+    val resolvedSource = ctx.sourcePath.ifEmpty { IdentityPath.child("", node, "") }
     key(resolvedPath) {
         val retained = LocalRetainedSaveableScope.current
         val providerPath = retained?.providerPath(node)
@@ -577,10 +597,10 @@ fun RenderNode(node: JsonObject, ctx: RenderCtx, modifier: Modifier = Modifier) 
             // The host can therefore retire a removed/type-changed inactive
             // owner without clearing saveable state from surviving siblings.
             retained.holder.SaveableStateProvider(providerPath) {
-                RenderNodeContent(node, ctx.atPath(resolvedPath), modifier)
+                RenderNodeContent(node, ctx.atPath(resolvedPath, resolvedSource), modifier)
             }
         } else {
-            RenderNodeContent(node, ctx.atPath(resolvedPath), modifier)
+            RenderNodeContent(node, ctx.atPath(resolvedPath, resolvedSource), modifier)
         }
     }
 }
@@ -659,7 +679,7 @@ private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
  */
 @Composable
 internal fun RenderLazyItem(item: LazyRenderItem, ctx: RenderCtx) {
-    item.node?.let { RenderNode(it, ctx.atPath(item.path)) }
+    item.node?.let { RenderNode(it, ctx.atPath(item.path, item.sourcePath)) }
 }
 
 /**
@@ -1573,7 +1593,7 @@ fun RenderScaffold(
                     val snackContent = chrome?.snackbarContent
                         ?: androidx.compose.material3.SnackbarDefaults.contentColor
                     if (custom != null)
-                        RenderNode(custom, ctx.child(custom, 0))
+                        RenderNode(custom, ctx.child(custom, 0, "snackbar_content"))
                     else if (cap > 0)
                         androidx.compose.material3.Snackbar(
                             shape = snackShape,
@@ -1607,7 +1627,7 @@ fun RenderScaffold(
                 val topBar = p[ScaffoldMembers.TopBar]
                 if (topBarStyle.isNotEmpty()) {
                     val title: @Composable () -> Unit = {
-                        topBar?.let { RenderNode(it, ctx.child(it, 0)) }
+                        topBar?.let { RenderNode(it, ctx.child(it, 0, "top_bar")) }
                     }
                     val nav: @Composable () -> Unit = {
                         // A PERMANENT drawer stands open; its hamburger
@@ -1672,7 +1692,7 @@ fun RenderScaffold(
                                 val n = if (expanded)
                                     p[ScaffoldMembers.TopBarExpanded] ?: topBar
                                 else topBar
-                                n?.let { RenderNode(it, ctx.child(it, 0)) }
+                                n?.let { RenderNode(it, ctx.child(it, 0, if (it === topBar) "top_bar" else "top_bar_expanded")) }
                             },
                             navigationIcon = nav,
                             titleHorizontalAlignment = titleAlign,
@@ -1724,7 +1744,7 @@ fun RenderScaffold(
                                     IconMap.get("menu"), contentDescription = "Menu")
                             }
                         }
-                        topBar?.let { RenderNode(it, ctx.child(it, 0)) }
+                        topBar?.let { RenderNode(it, ctx.child(it, 0, "top_bar")) }
                     }
                 }
             },
@@ -1738,7 +1758,7 @@ fun RenderScaffold(
                         alignment = Alignment.BottomEnd)
                 else Modifier
                 Box(fabMod) {
-                    p[ScaffoldMembers.Fab]?.let { RenderNode(it, ctx.child(it, 2)) }
+                    p[ScaffoldMembers.Fab]?.let { RenderNode(it, ctx.child(it, 2, "fab")) }
                 }
             },
             bottomBar = {
@@ -1755,7 +1775,7 @@ fun RenderScaffold(
                             androidx.compose.material3.Surface(
                                 tonalElevation = 3.dp, shadowElevation = 4.dp,
                                 modifier = Modifier.fillMaxWidth()) {
-                                RenderNode(it, ctx.child(it, 3))
+                                RenderNode(it, ctx.child(it, 3, "floating_toolbar"))
                             }
                         }
                         bottomBar?.let {
@@ -1768,14 +1788,14 @@ fun RenderScaffold(
                             if (bottomBarBehavior != null)
                                 androidx.compose.material3.BottomAppBar(
                                     scrollBehavior = bottomBarBehavior) {
-                                    RenderNode(it, ctx.child(it, 4))
+                                    RenderNode(it, ctx.child(it, 4, "bottom_bar"))
                                 }
                             else androidx.compose.material3.Surface(
                                 color = MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier.fillMaxWidth()) {
                                 Box(Modifier.navigationBarsPadding()
                                         .padding(horizontal = 8.dp, vertical = 6.dp)) {
-                                    RenderNode(it, ctx.child(it, 4))
+                                    RenderNode(it, ctx.child(it, 4, "bottom_bar"))
                                 }
                             }
                         }
@@ -1835,14 +1855,14 @@ fun RenderScaffold(
                     modifier = bodyModifier) {
                     CompositionLocalProvider(
                         LocalBodyScrollSignal provides scrollSignal) {
-                        body?.let { RenderNode(it, ctx.child(it, 1)) }
+                        body?.let { RenderNode(it, ctx.child(it, 1, "body")) }
                     }
                 }
             } else {
                 Box(bodyModifier) {
                     CompositionLocalProvider(
                         LocalBodyScrollSignal provides scrollSignal) {
-                        body?.let { RenderNode(it, ctx.child(it, 1)) }
+                        body?.let { RenderNode(it, ctx.child(it, 1, "body")) }
                     }
                 }
             }
@@ -1861,16 +1881,16 @@ fun RenderScaffold(
                 Box(Modifier.padding(inner).fillMaxSize()) {
                     val pill = Modifier.align(align).padding(16.dp)
                     val content: @Composable RowScope.() -> Unit = {
-                        RenderNode(toolbar, ctx.child(toolbar, 3))
+                        RenderNode(toolbar, ctx.child(toolbar, 3, "floating_toolbar"))
                     }
                     val vContent: @Composable ColumnScope.() -> Unit = {
-                        RenderNode(toolbar, ctx.child(toolbar, 3))
+                        RenderNode(toolbar, ctx.child(toolbar, 3, "floating_toolbar"))
                     }
                     if (toolbarOrientation == "vertical") {
                         if (fab != null) VerticalFloatingToolbar(
                             expanded = expanded, modifier = pill,
                             scrollBehavior = toolbarBehavior,
-                            floatingActionButton = { RenderNode(fab, ctx.child(fab, 6)) },
+                            floatingActionButton = { RenderNode(fab, ctx.child(fab, 6, "floating_toolbar_fab")) },
                             content = vContent)
                         else VerticalFloatingToolbar(
                             expanded = expanded, modifier = pill,
@@ -1879,7 +1899,7 @@ fun RenderScaffold(
                         if (fab != null) HorizontalFloatingToolbar(
                             expanded = expanded, modifier = pill,
                             scrollBehavior = toolbarBehavior,
-                            floatingActionButton = { RenderNode(fab, ctx.child(fab, 6)) },
+                            floatingActionButton = { RenderNode(fab, ctx.child(fab, 6, "floating_toolbar_fab")) },
                             content = content)
                         else HorizontalFloatingToolbar(
                             expanded = expanded, modifier = pill,
@@ -1966,7 +1986,7 @@ fun RenderScaffold(
                     // is holding — and a sheet is exactly where a text field
                     // or an editor tends to live.
                     Box(modifier = Modifier.imePadding()) {
-                        RenderNode(persistentSheet, ctx.child(persistentSheet, 7))
+                        RenderNode(persistentSheet, ctx.child(persistentSheet, 7, "sheet"))
                     }
                 },
                 sheetPeekHeight = peek,
@@ -1975,7 +1995,7 @@ fun RenderScaffold(
     val railed: @Composable () -> Unit = if (rail != null) {
         {
             Row(Modifier.fillMaxSize()) {
-                RenderNode(rail, ctx.child(rail, 0))
+                RenderNode(rail, ctx.child(rail, 0, "rail"))
                 Box(Modifier.weight(1f)) { scaffold() }
             }
         }
@@ -1999,7 +2019,7 @@ fun RenderScaffold(
                     drawerContent = {
                         androidx.compose.material3.DismissibleDrawerSheet(
                             drawerState = state) {
-                            RenderNode(drawer, ctx.child(drawer, 5))
+                            RenderNode(drawer, ctx.child(drawer, 5, "drawer"))
                         }
                     }) { sheetWrap { railed() } }
             "permanent" ->
@@ -2014,7 +2034,7 @@ fun RenderScaffold(
                             drawerContainerColor = chrome?.drawerContainer
                                 ?: androidx.compose.material3.DrawerDefaults
                                     .standardContainerColor) {
-                            RenderNode(drawer, ctx.child(drawer, 5))
+                            RenderNode(drawer, ctx.child(drawer, 5, "drawer"))
                         }
                     }) { sheetWrap { railed() } }
             else ->
@@ -2030,7 +2050,7 @@ fun RenderScaffold(
                             drawerContainerColor = chrome?.drawerContainer
                                 ?: androidx.compose.material3.DrawerDefaults
                                     .modalContainerColor) {
-                            RenderNode(drawer, ctx.child(drawer, 5))
+                            RenderNode(drawer, ctx.child(drawer, 5, "drawer"))
                         }
                     }) { sheetWrap { railed() } }
         }
@@ -2062,7 +2082,7 @@ fun RenderScaffold(
                 // OUTSIDE the Scaffold that carries `imePadding`, so without
                 // this the keyboard covers its content.
                 Box(modifier = Modifier.imePadding()) {
-                    RenderNode(sheet, ctx.child(sheet, 7))
+                    RenderNode(sheet, ctx.child(sheet, 7, "sheet"))
                 }
             }
         }

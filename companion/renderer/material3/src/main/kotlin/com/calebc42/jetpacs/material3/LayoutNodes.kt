@@ -19,6 +19,7 @@
 //   org-specific promote/demote does not.
 package com.calebc42.jetpacs.material3
 
+import com.calebc42.ebp.wire.IdentityPath
 import com.calebc42.ebp.renderer.model.vocabulary.BooleanOrAuto
 import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
 import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
@@ -376,6 +377,13 @@ internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val branchPaths = remember(hostPath, variants) {
         variants.map { retainedVariantPath(hostPath, node, it) }
     }
+    // SPEC 13.8.5: the engine positions an alternative at `variants[i].content`.
+    val hostSourcePath = ctx.sourcePath.ifEmpty { IdentityPath.child("", node, "") }
+    val branchSourcePaths = remember(hostSourcePath, variants) {
+        variants.mapIndexed { index, variant ->
+            IdentityPath.child(hostSourcePath, variant.content, "variants[$index].content")
+        }
+    }
     val inventories = remember(branchPaths, variants) {
         variants.mapIndexed { index, variant ->
             retainedIdentityInventory(branchPaths[index], variant.content)
@@ -462,7 +470,7 @@ internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                             ) {
                                 RenderNode(
                                     variant.content,
-                                    ctx.atPath(branchPaths[index]),
+                                    ctx.atPath(branchPaths[index], branchSourcePaths[index]),
                                 )
                             }
                         }
@@ -1241,7 +1249,7 @@ internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                         }
                         RenderLazyChunk(
                             lazyRenderChunk(
-                                children, projection, ctx.path, pinnedIndex),
+                                children, projection, ctx.path, pinnedIndex, ctx.sourcePath),
                             ctx,
                             itemSpacing,
                         ) { key, offset ->
@@ -1271,7 +1279,7 @@ internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     // Stable chunk/row keys retain state; placement animation would
                     // keep stale work alive after replacement and is intentionally off.
                     RenderLazyChunk(
-                        lazyRenderChunk(children, projection, ctx.path, chunkIndex),
+                        lazyRenderChunk(children, projection, ctx.path, chunkIndex, ctx.sourcePath),
                         ctx,
                         itemSpacing,
                     ) { key, offset ->
@@ -1488,7 +1496,7 @@ internal fun RenderCollapsible(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     contentDescription = if (expanded) "Collapse" else "Expand",
                     modifier = Modifier.padding(4.dp)
                         .graphicsLayer { rotationZ = chevron })
-                header?.let { RenderNode(it, ctx.child(it, 0)) }
+                header?.let { RenderNode(it, ctx.child(it, 0, "header")) }
             }
         }
         val swipeStart = p[CollapsibleMembers.SwipeStart]
@@ -1637,7 +1645,9 @@ internal fun RenderTabs(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                                     modifier = Modifier.semantics {
                                         contentDescription = item.stringOr("label")
                                     }) {
-                                    RenderNode(shown, ctx.child(shown, i))
+                                    RenderNode(shown, ctx.child(shown, i,
+                                        if (shown === contentNode) "items[$i].content"
+                                        else "items[$i].selected_content"))
                                 }
                             } else if (leading)
                                 LeadingIconTab(
@@ -1792,7 +1802,9 @@ internal fun RenderTabSelector(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                             contentDescription = item.stringOr("label")
                         },
                     ) {
-                        RenderNode(shown, ctx.child(shown, i))
+                        RenderNode(shown, ctx.child(shown, i,
+                            if (shown === contentNode) "items[$i].content"
+                            else "items[$i].selected_content"))
                     }
                 } else if (leading) {
                     LeadingIconTab(
@@ -2182,7 +2194,7 @@ internal fun RenderReorderableList(node: JsonObject, ctx: RenderCtx, m: Modifier
                         }
                         .padding(12.dp))
                 Box(Modifier.weight(1f)) {
-                    RenderNode(item, ctx.child(item, authored))
+                    RenderNode(item, ctx.child(item, authored, "items[$authored]"))
                 }
             }
             if (pos < order.size - 1)
@@ -2218,13 +2230,13 @@ internal fun RenderPaneScaffold(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         if (supporting) rememberSupportingPaneScaffoldNavigator<Any>()
         else rememberListDetailPaneScaffoldNavigator<Any>()
     val listPane: @Composable ThreePaneScaffoldPaneScope.() -> Unit = {
-        AnimatedPane { RenderNode(list, ctx.child(list, 0)) }
+        AnimatedPane { RenderNode(list, ctx.child(list, 0, "list")) }
     }
     val detailPane: @Composable ThreePaneScaffoldPaneScope.() -> Unit = {
-        AnimatedPane { RenderNode(detail, ctx.child(detail, 1)) }
+        AnimatedPane { RenderNode(detail, ctx.child(detail, 1, "detail")) }
     }
     val extraPane: (@Composable ThreePaneScaffoldPaneScope.() -> Unit)? =
-        extra?.let { { AnimatedPane { RenderNode(it, ctx.child(it, 2)) } } }
+        extra?.let { { AnimatedPane { RenderNode(it, ctx.child(it, 2, "extra")) } } }
     if (supporting) SupportingPaneScaffold(
         directive = navigator.scaffoldDirective,
         scaffoldState = navigator.scaffoldState,
@@ -2487,7 +2499,7 @@ internal fun RenderLazyGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             },
         ) { i ->
             Box(Modifier.animateItem()) {
-                RenderLazyItem(lazyRenderItem(children, keys, ctx.path, i), ctx)
+                RenderLazyItem(lazyRenderItem(children, keys, ctx.path, i, ctx.sourcePath), ctx)
             }
         }
     }
