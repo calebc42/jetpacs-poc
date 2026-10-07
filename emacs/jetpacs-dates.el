@@ -9,6 +9,15 @@
 ;; ISO YYYY-MM-DD interchange form, day arithmetic is anchored at noon
 ;; to avoid DST boundary flips, and short month labels are deliberately
 ;; English so the same companion document is stable across host locales.
+;;
+;; SPEC 20.1.2 (#197): the Companion reports its locale advice — a BCP 47
+;; tag, the clock cycle `h12'/`h23' and an IANA time zone — and Emacs
+;; formats for it.  The helpers below take that advice as explicit
+;; arguments so they stay pure; `jetpacs-device-time-zone' and
+;; `jetpacs-device-hour-cycle' in jetpacs-surfaces.el read the live
+;; client.  Nothing here consults the host locale: without advice the
+;; clock is 24-hour and the zone is Emacs's own, which is what every
+;; existing label already showed.
 
 ;;; Code:
 
@@ -54,6 +63,40 @@ one month is the last day of February."
 (defun jetpacs-dates-format (date fmt)
   "Render ISO DATE through `format-time-string' format FMT."
   (format-time-string fmt (jetpacs-dates-encode date)))
+
+(defun jetpacs-dates-today (&optional zone now)
+  "The civil date \"YYYY-MM-DD\" in ZONE, the device's day (SPEC 20.1.2).
+ZONE is an IANA time-zone identifier from the Companion's locale
+advice, or nil for Emacs's own zone.  NOW defaults to the current time.
+A desktop Emacs and a phone in another zone disagree about today for
+several hours a day; a builder that shows the device its own today
+passes the advice through this function."
+  (format-time-string "%Y-%m-%d" now (jetpacs-dates--zone zone)))
+
+(defun jetpacs-dates-format-clock (time &optional hour-cycle)
+  "Render TIME, an \"HH:MM\" string, for HOUR-CYCLE (SPEC 20.1.2).
+HOUR-CYCLE is \"h12\" or \"h23\" from the Companion's locale advice;
+nil and every other value mean 24-hour, so a label is unchanged until
+the device says otherwise.  Under \"h12\" midnight is 12:MM AM and
+noon 12:MM PM.  A TIME that is not HH:MM is returned as given."
+  (if (and (equal hour-cycle "h12")
+           (stringp time)
+           (string-match "\\`\\([0-9][0-9]?\\):\\([0-5][0-9]\\)\\'" time))
+      (let* ((hour (string-to-number (match-string 1 time)))
+             (minute (match-string 2 time)))
+        (if (> hour 23)
+            time
+          (format "%d:%s %s"
+                  (let ((h (% hour 12))) (if (zerop h) 12 h))
+                  minute
+                  (if (< hour 12) "AM" "PM"))))
+    time))
+
+(defun jetpacs-dates--zone (zone)
+  "The ZONE argument `format-time-string' accepts for IANA ZONE, or nil.
+A non-empty string is passed as a TZ rule; anything else selects the
+local zone, so unknown advice degrades to today's behavior."
+  (and (stringp zone) (not (string-empty-p zone)) zone))
 
 (provide 'jetpacs-dates)
 ;;; jetpacs-dates.el ends here

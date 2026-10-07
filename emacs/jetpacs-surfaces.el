@@ -209,6 +209,25 @@ layout on the size class is platform behavior, not sample machinery."
                  (if (eq axis :width) :width_class :height_class))
       (if (eq axis :width) "compact" "medium")))
 
+(defun jetpacs-locale ()
+  "The client's SPEC 20.1.2 locale plist, or nil before any report.
+Keys: :tag :hour_cycle :time_zone — from the welcome mirror and every
+`locale.changed' since.  Presentation advice: a builder reads it as
+reconciled device state and formats for it; it never dispatches."
+  (and (jetpacs-connected-p)
+       (ebp-client-locale (jetpacs-client))))
+
+(defun jetpacs-device-time-zone ()
+  "The device's IANA time zone from the locale advice, or nil.
+Pass it to `jetpacs-dates-today' so the device sees its own civil day."
+  (plist-get (jetpacs-locale) :time_zone))
+
+(defun jetpacs-device-hour-cycle ()
+  "The device's clock cycle, \"h12\" or \"h23\", or nil before any report.
+Pass it to `jetpacs-dates-format-clock' so time labels follow the
+device's setting rather than Emacs's."
+  (plist-get (jetpacs-locale) :hour_cycle))
+
 (defun jetpacs-connected-p ()
   "Non-nil when the attached client is past the SPEC 10.3 barrier."
   (and jetpacs--client (eq (ebp-client-state jetpacs--client) 'ready)))

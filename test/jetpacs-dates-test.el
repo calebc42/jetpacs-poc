@@ -51,5 +51,33 @@
   (should-not (jetpacs-dates-month-abbrev 13))
   (should-not (jetpacs-dates-month-abbrev "3")))
 
+
+(ert-deftest jetpacs-dates-device-advice ()
+  "SPEC 20.1.2 (#197): today follows the advised zone and clocks follow
+the advised cycle; without advice both are unchanged."
+  ;; 2026-10-06 23:30 UTC is already the 7th in Tokyo and still the 6th
+  ;; in Denver; nil keeps Emacs's own zone, whatever it is.
+  (let ((now (encode-time '(0 30 23 6 10 2026 nil nil t))))
+    (should (equal (jetpacs-dates-today "Asia/Tokyo" now) "2026-10-07"))
+    (should (equal (jetpacs-dates-today "America/Denver" now) "2026-10-06"))
+    (should (equal (jetpacs-dates-today "UTC" now) "2026-10-06"))
+    (should (string-match-p "\\`[0-9]\\{4\\}-[0-9][0-9]-[0-9][0-9]\\'"
+                            (jetpacs-dates-today nil now)))
+    (should (string-match-p "\\`[0-9]\\{4\\}-[0-9][0-9]-[0-9][0-9]\\'"
+                            (jetpacs-dates-today "" now))))
+  ;; h12 renders AM/PM with 12 for midnight and noon; h23, nil and junk
+  ;; leave the label alone; malformed times pass through.
+  (should (equal (jetpacs-dates-format-clock "00:05" "h12") "12:05 AM"))
+  (should (equal (jetpacs-dates-format-clock "09:30" "h12") "9:30 AM"))
+  (should (equal (jetpacs-dates-format-clock "12:00" "h12") "12:00 PM"))
+  (should (equal (jetpacs-dates-format-clock "15:07" "h12") "3:07 PM"))
+  (should (equal (jetpacs-dates-format-clock "23:59" "h12") "11:59 PM"))
+  (should (equal (jetpacs-dates-format-clock "15:07" "h23") "15:07"))
+  (should (equal (jetpacs-dates-format-clock "15:07" nil) "15:07"))
+  (should (equal (jetpacs-dates-format-clock "15:07" "h99") "15:07"))
+  (should (equal (jetpacs-dates-format-clock "25:00" "h12") "25:00"))
+  (should (equal (jetpacs-dates-format-clock "noon" "h12") "noon"))
+  (should (equal (jetpacs-dates-format-clock nil "h12") nil)))
+
 (provide 'jetpacs-dates-test)
 ;;; jetpacs-dates-test.el ends here

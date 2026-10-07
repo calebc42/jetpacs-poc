@@ -464,6 +464,19 @@ class DeviceBridge(
 
     fun start() {
         if (!running.compareAndSet(false, true)) return
+        // SPEC 20.1.2 (#197): the platform says when the locale, the clock
+        // cycle or the time zone changed; every live session hears it once.
+        runCatching {
+            appContext.registerReceiver(
+                localeReceiver,
+                android.content.IntentFilter().apply {
+                    addAction(android.content.Intent.ACTION_LOCALE_CHANGED)
+                    addAction(android.content.Intent.ACTION_TIMEZONE_CHANGED)
+                    addAction(android.content.Intent.ACTION_TIME_CHANGED)
+                },
+                android.content.Context.RECEIVER_NOT_EXPORTED,
+            )
+        }
         listenerThread = thread(name = "ebp-bridge", isDaemon = true) {
         // Deliver the cached theme before any session so a reconnecting device
         // renders in the mirrored palette immediately (§18.4 persistence).
@@ -571,6 +584,7 @@ class DeviceBridge(
     /** Stop the listener and current transport; the FGS owns restart policy. */
     fun stop() {
         if (!running.compareAndSet(true, false)) return
+        runCatching { appContext.unregisterReceiver(localeReceiver) }
         listenerServer?.runCatching { close() }
         current?.runCatching { close() }
         listenerThread?.interrupt()
@@ -1598,6 +1612,24 @@ class DeviceBridge(
     // sessions that begin before (or after) a recomposition.
     private var lastWindow: Pair<Int, Int>? = null
 
+    /** SPEC 20.1.2 (#197): report the device's current locale advice to the
+     * live session. The engine stores it for the welcome mirror and emits
+     * `locale.changed` only when something changed, so calling this on every
+     * platform broadcast is cheap and never chatty. The engine call marshals
+     * through the dispatch executor like every other UI-originated call. */
+    fun localeChanged() {
+        val advice = runCatching { AppCapabilities.deviceLocale(appContext) }.getOrNull() ?: return
+        dispatchExecutor.execute {
+            engine?.localeChanged(advice.tag, advice.hourCycle, advice.timeZone)
+        }
+    }
+
+    private val localeReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
+            localeChanged()
+        }
+    }
+
     /** SPEC 20.1.1: the Activity reports window geometry here on first
      * composition and every configuration change. The caller is the COMPOSE
      * UI thread and windowChanged may emit a notification — a socket write —
@@ -1641,6 +1673,9 @@ class DeviceBridge(
         // SPEC 20.1.1: seed the new session with the last-known geometry so
         // the welcome can mirror it before the Activity recomposes.
         lastWindow?.let { (w, h) -> engine.windowChanged(w, h) }
+        // SPEC 20.1.2: seed the locale advice too, so the welcome mirrors it.
+        runCatching { AppCapabilities.deviceLocale(appContext) }.getOrNull()
+            ?.let { engine.localeChanged(it.tag, it.hourCycle, it.timeZone) }
         // SPEC 18.2.1: the event-driven snackbar routes to whichever
         // scaffold host is on screen.
         engine.snackbarListener = { message, action, duration, respond ->
