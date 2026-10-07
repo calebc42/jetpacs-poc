@@ -205,6 +205,17 @@ outline is the pilot (orgzly-native `30d5d98`): one row template over
 document against 34,180 bytes of literal rows, 23 nodes against 530, and a
 fold is one `surface.data` patch of `/rows`.
 
+Amendment #196 adds an `insert` DataOp (EBP §13.8.4, feature `data.insert`)
+so a list can be patched element by element. The shell keeps the document
+it last sent each surface — set by a push, advanced by every patch,
+reset by the whole push a refused patch triggers — and
+`jetpacs-shell-data-sync` (handler twin `jetpacs-app-defer-sync`) diffs an
+array against it by a key member (`jetpacs-data-array-ops`: removals,
+inserts over the longest common subsequence of keys, member sets) and sends
+whichever is smaller, the diff or one `set` of the array. Orgzly's fold went
+from an 11 KB set of `/rows` to 204 bytes (1.1 KB when rows flow in from the
+next page).
+
 The normal app profile composes core Foundation rendering, Jetpacs Material
 3, and `jetpacs.components`. Dialogs receive core plus Material; notification,
 widget, and tile targets have their own narrower profiles. The optional

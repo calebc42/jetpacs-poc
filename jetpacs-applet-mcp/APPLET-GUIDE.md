@@ -99,6 +99,14 @@ outline (`orgzly-ui-note-row-template`, `orgzly--on-note-tap`) is the
 reference: 23 nodes and a 6 KB screen where 530 nodes and 34 KB of rows
 were.
 
+To patch such a list, prefer `(jetpacs-app-defer-sync "/rows" NEW-ROWS :key
+"id")` over a `jetpacs-data-set` of the whole array: the shell diffs NEW-ROWS
+against the rows it last sent and sends only the rows that left or entered
+and the members that changed (EBP §13.8.4 `insert`, where the Companion
+advertises `data.insert`), or the whole array when that is smaller. Every
+row needs a unique key member. Orgzly's fold costs 204 bytes this way
+instead of 11 KB.
+
 Use `jetpacs-chrome-screen` for an ordinary app screen, then compose typed
 builders such as `jetpacs-column`, `jetpacs-text`, `jetpacs-button`, and
 `jetpacs-lazy-column`. Query `jetpacs_describe_node` before using an unfamiliar

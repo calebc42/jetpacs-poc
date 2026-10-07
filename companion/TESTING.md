@@ -78,7 +78,8 @@ the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),
 `DataModelContractTest`, `SurfaceStoreDataTest` and `SurfaceDataEngineTest`
 (`surface.data` patches, floors, draft acknowledgement, the `data.model`
-gate), and the EBP §13.8.5 template suites: `SurfaceStoreTemplateTest`
+gate), `DataOpsGoldenReplayTest` (every `ebp/goldens/data-ops.golden`
+vector, including the §13.8.4 `insert` op), and the EBP §13.8.5 template suites: `SurfaceStoreTemplateTest`
 (expansion, re-expansion on patch with identity following the bound key,
 nested scopes, grant and namespace rejections, restore, a view root as an
 identity root) and the `item` injection case in `SurfaceDataEngineTest`.
