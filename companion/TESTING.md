@@ -18,6 +18,7 @@ references when the explicit update task is used.
 ./gradlew :renderer:material3:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:compose-testing:testDebugUnitTest
 ./gradlew :renderer:material3:testDebugUnitTest --tests '*MaterialWidgetsGoldenReplayTest*'
+./gradlew :renderer:material3:testDebugUnitTest --tests 'com.calebc42.jetpacs.material3.PatchRecompositionTest'
 ```
 
 The two headless gates run under Robolectric (`@Config(sdk = [34])`, native
@@ -32,6 +33,15 @@ unadvertised type degrades to its children. Image nodes read
 `LocalMaterialImageSource`, which the controller stubs so no socket opens.
 Use the controllers for new renderer tests instead of hand-rolled inert
 hosts.
+
+`PatchRecompositionTest` counts node renders through `LocalNodeRenderObserver`
+(the controller's `onNodeRender` parameter) and pins that a `surface.data`
+patch, a templated-row insert, and a whole-document update with one changed
+node run only the root and the changed identity path. material3 compares Json
+parameters by reference since `feat(material3): skip by reference and count
+node renders across a patch`; sharing comes from `Materializer.share`, so the
+count fails if the store stops handing back the previous revision's
+instances for untouched subtrees.
 
 The model suite pins registry-derived profiles, semantic name/default/state
 projection, and the no-Material dependency boundary for EBP, wire, core,

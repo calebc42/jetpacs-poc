@@ -152,6 +152,10 @@ class BodyScrollSignal {
 val LocalBodyScrollSignal =
     androidx.compose.runtime.compositionLocalOf<BodyScrollSignal?> { null }
 
+/** Diagnostic seam: called with a node's retained-presentation identity path each time its body runs. Null in production. */
+val LocalNodeRenderObserver =
+    androidx.compose.runtime.staticCompositionLocalOf<((String) -> Unit)?> { null }
+
 /** SPEC 18.1: a dialog's local state — its captured field values — and the
  * id needed to complete the outstanding request. Stateful dialog nodes are
  * local and never emit state.changed. */
@@ -610,6 +614,7 @@ fun RenderNode(node: JsonObject, ctx: RenderCtx, modifier: Modifier = Modifier) 
 @Composable
 private fun RenderNodeContent(node: JsonObject, ctx: RenderCtx,
                               modifier: Modifier = Modifier) {
+    LocalNodeRenderObserver.current?.invoke(ctx.path)
     val type = node.stringOr("t")
     // SPEC 17.1/16.2: a type not advertised for THIS target (a dialog advertises
     // fewer than the app profile) is unsupported — degrade to its children as a

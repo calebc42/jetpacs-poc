@@ -13,6 +13,7 @@ import com.calebc42.jetpacs.material3.EbpTheme
 import com.calebc42.jetpacs.material3.IconMap
 import com.calebc42.jetpacs.material3.ImageLoader
 import com.calebc42.jetpacs.material3.LocalMaterialImageSource
+import com.calebc42.jetpacs.material3.LocalNodeRenderObserver
 import com.calebc42.jetpacs.material3.NodeSupport
 import com.calebc42.jetpacs.material3.RenderDialogRoot
 import com.calebc42.jetpacs.material3.RenderNode
@@ -34,6 +35,9 @@ class MaterialTestController(
     private val surface: String = "app:test",
     private val theme: JsonObject? = null,
     private val imageSource: suspend (String, ImageLoader.Limits) -> Bitmap? = { _, _ -> null },
+    /** Called with a node's identity path each time its body runs
+     * ([LocalNodeRenderObserver]); a test counts recompositions with it. */
+    private val onNodeRender: ((String) -> Unit)? = null,
 ) {
     private sealed interface Mounted {
         data class Surface(val spec: JsonObject) : Mounted
@@ -81,6 +85,7 @@ class MaterialTestController(
             CompositionLocalProvider(
                 LocalComposeIconResolver provides ComposeIconResolver(IconMap::get),
                 LocalMaterialImageSource provides imageSource,
+                LocalNodeRenderObserver provides onNodeRender,
             ) {
                 when (val target = mounted.value) {
                     is Mounted.Surface ->
