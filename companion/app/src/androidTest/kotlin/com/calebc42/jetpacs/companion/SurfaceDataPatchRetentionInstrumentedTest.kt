@@ -17,12 +17,15 @@ import com.calebc42.ebp.wire.Materializer
 import com.calebc42.jetpacs.material3.NodeSupport
 import com.calebc42.jetpacs.material3.RenderNode
 import com.calebc42.jetpacs.material3.testing.RecordingMaterialHost
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -77,8 +80,21 @@ class SurfaceDataPatchRetentionInstrumentedTest {
         })
     }
 
-    private fun materialize(spec: JsonObject, data: JsonObject): JsonObject =
-        Materializer.materialize(spec, data, "spec", NodeSupport.NODE_VOCABULARY)
+    /**
+     * Re-materializes [spec] against [data]; with [previous] the shown tree,
+     * every untouched subtree comes back as [previous]'s instance
+     * (`Materializer.share`), which is what `SurfaceStore.patch` publishes.
+     */
+    private fun materialize(spec: JsonObject, data: JsonObject, previous: JsonObject? = null): JsonObject =
+        Materializer.materialize(spec, data, "spec", NodeSupport.NODE_VOCABULARY, previous)
+
+    /** The row keyed [key] inside the lazy column keyed `rows`, found through the children arrays. */
+    private fun row(tree: JsonObject, key: String): JsonObject {
+        fun JsonObject.child(k: String): JsonObject = (getValue("children") as JsonArray)
+            .map { it as JsonObject }
+            .single { it["key"]?.jsonPrimitive?.content == k }
+        return tree.child("rows").child(key)
+    }
 
     @Test
     fun aDataPatchKeepsTheScrollPositionAndShowsTheValue() {
@@ -115,7 +131,10 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                 data, listOf("planning", "row31"),
                 JsonPrimitive("Row 31, patched"), "params.ops[1].path",
             )
-            shown = materialize(spec, data)
+            val next = materialize(spec, data, shown)
+            assertSame("an untouched row must keep its instance across the patch",
+                row(shown, "row-30"), row(next, "row-30"))
+            shown = next
         }
         compose.waitForIdle()
 
@@ -194,7 +213,10 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                     listOf(buildJsonObject { put("id", "row-new"); put("title", "Row new") }) + rows),
                 "params.ops[1].path",
             )
-            shown = materialize(spec, data)
+            val next = materialize(spec, data, shown)
+            assertSame("a pre-existing, unpatched row must keep its instance across the insert",
+                row(shown, "row-30"), row(next, "row-30"))
+            shown = next
         }
         compose.waitForIdle()
 
@@ -242,7 +264,10 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                     data, listOf("planning", "row31"),
                     JsonPrimitive("Row 31, patch $round"), "params.ops[0].path",
                 )
-                shown = materialize(spec, data)
+                val next = materialize(spec, data, shown)
+                assertSame("an untouched row must keep its instance in round $round",
+                    row(shown, "row-30"), row(next, "row-30"))
+                shown = next
             }
             compose.waitForIdle()
             compose.onNodeWithText("Row 31, patch $round").assertIsDisplayed()

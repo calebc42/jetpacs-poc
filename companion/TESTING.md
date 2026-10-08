@@ -261,7 +261,17 @@ the same day, run with `am instrument` against the deployed debug Companion
 rather than through `connectedDebugAndroidTest`, which would have uninstalled
 it afterwards. The same class gained `aTemplatedListReExpandsAndKeepsItsScrollPosition`
 for amendment #195 (a template over `/rows` patched and re-expanded with a
-row inserted above the viewport), not yet run on a phone. Two checks needed
+row inserted above the viewport), not yet run on a phone then. On
+2026-10-07 `SurfaceDataPatchRetentionInstrumentedTest` (all three methods,
+`aTemplatedListReExpandsAndKeepsItsScrollPosition` on a phone for the first
+time) passed on the Galaxy S21 Ultra, again through `am instrument` against
+the debug Companion installed with `:app:installDebug`; each
+re-materialization now passes the previously shown tree as `previous`
+(`Materializer.share`) and asserts `assertSame` on an untouched row before
+it is shown. The whole `:renderer:material3:connectedDebugAndroidTest`
+module (16 tests: the three material3 classes above plus
+`ChromeStylesSeamTest`) passed there the same day as a regression of
+comparing Json parameters by reference. Two checks needed
 phone-aware assertions: fixed tab widths agree
 only to within one pixel when the row width is not a multiple of the tab
 count, and the Harp save flow dismisses the soft keyboard before clicking
