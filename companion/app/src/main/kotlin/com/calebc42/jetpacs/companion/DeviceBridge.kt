@@ -448,6 +448,13 @@ class DeviceBridge(
     internal fun hasReadySession(): Boolean = readyConnection.connected()
 
     private fun persistReadyConnectionChange(disconnectedAtEpochMs: Long?) {
+        // Queued on the process actor, which runs it in order behind
+        // whatever is already there, rather than blocking the accept or
+        // reader thread until it has: a new connection used to wait for
+        // the old one's disconnect stamp to reach Room before it could be
+        // read (PLAN-responsiveness C7a). The blocking path remains the
+        // fallback for an actor that refuses the submission.
+        if (stores.submit { onReadyConnectionChanged(disconnectedAtEpochMs) }) return
         try {
             kotlinx.coroutines.runBlocking {
                 stores.commandActor.execute {
@@ -525,6 +532,10 @@ class DeviceBridge(
                     server.bind(InetSocketAddress("127.0.0.1", 8765))
                     while (running.get()) {
                         val socket = server.accept()
+                        // Request/response frames are small and the peer
+                        // answers each one; Nagle would hold a reply behind
+                        // an unacknowledged segment (PLAN-responsiveness C7a).
+                        socket.runCatching { tcpNoDelay = true }
                         val generation = acceptedConnectionGeneration.incrementAndGet()
                         if (readyConnection.supersede(generation)) {
                             persistReadyConnectionChange(
