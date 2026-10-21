@@ -24,9 +24,10 @@ kotlin {
         // real Material renderer without a device (companion/TESTING.md).
         androidResources { enable = true }
         withHostTestBuilder {}.configure { isIncludeAndroidResources = true }
-        withDeviceTestBuilder {
-            sourceSetTreeName = "test"
-        }.configure {
+        // The device tests keep their own source-set tree: commonTest holds
+        // the plain JVM tests that read this checkout's files, which belong
+        // on jvmTest and testAndroidHostTest, never on a phone.
+        withDeviceTestBuilder {}.configure {
             instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         }
     }

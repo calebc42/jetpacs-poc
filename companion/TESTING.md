@@ -424,7 +424,12 @@ Jetpacs theme providers on the JVM and fails if a Google Compose UI jar or a
 `jvmstubs` jar reaches the test classpath; `DesignFontsTest` renders a
 `jetpacs.design` text in IBM Plex Serif and reads its text layout to prove the
 bundled font files load through the host's `JetpacsJvmFonts.loader`, and that
-the platform serif stands in without one. None needs a display.
+the platform serif stands in without one; `MaterialRendererTest` composes
+Material `RenderNode` on the JVM through `MaterialTestHost` and proves the D3
+seams: a PNG decoded by Skia and shown, the placeholder for an undecodable
+payload, a drawn canvas `text` op, the exact authored slider value, a
+connected toggle button and a checkable menu item's state. None needs a
+display.
 `:desktop:run` opens the window and needs one; under WSLg Skiko falls back
 from OpenGL to software rendering. The tasks read the wire golden from the
 `ebp` checkout under `JETPACS_REPOSITORIES_ROOT`.

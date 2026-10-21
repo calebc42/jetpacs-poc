@@ -2,67 +2,62 @@
 @file:OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 package com.calebc42.jetpacs.material3
 
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ElevatedToggleButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.ExposedDropdownMenuBoxScope
 import androidx.compose.material3.FilledTonalToggleButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedToggleButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ProvideTextStyle
+import androidx.compose.material3.RangeSliderState
+import androidx.compose.material3.SliderState
+import androidx.compose.material3.Text
+import androidx.compose.material3.ToggleButtonDefaults
+import androidx.compose.material3.ToggleButtonShapes
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.DragInteraction
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Text
-import androidx.compose.material3.ToggleButton
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.dp
-import com.calebc42.ebp.renderer.model.*
-import com.calebc42.ebp.renderer.model.vocabulary.NodeProperties
-import com.calebc42.ebp.renderer.model.vocabulary.generated.SliderMembers
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
+import androidx.compose.material3.SliderColors
+import androidx.compose.material3.VerticalSlider
 
-// D1 placeholders on JetBrains' Material line (docs/PLAN-desktop-d1-renderers.md).
+// JetBrains' Material line, as the desktop links it.
 
-/** The variant with JetBrains' default shapes; D3 ports the shape sets. */
 @Composable
-internal actual fun ToggleButtonVariant(
-    variant: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier, enabled: Boolean, minHeight: Dp?, square: Boolean,
-    checkedShapeName: String, shapeRole: String, contentPadding: PaddingValues,
+internal actual fun TonalToggle(
+    checked: Boolean, onCheckedChange: (Boolean) -> Unit, modifier: Modifier,
+    enabled: Boolean, shapes: ToggleButtonShapes, contentPadding: PaddingValues,
     content: @Composable () -> Unit,
 ) {
-    when (variant) {
-        "elevated" -> ElevatedToggleButton(
-            checked = checked, onCheckedChange = onCheckedChange,
-            modifier = modifier, enabled = enabled) { content() }
-        "tonal" -> FilledTonalToggleButton(
-            checked = checked, onCheckedChange = onCheckedChange,
-            modifier = modifier, enabled = enabled) { content() }
-        "outlined" -> OutlinedToggleButton(
-            checked = checked, onCheckedChange = onCheckedChange,
-            modifier = modifier, enabled = enabled) { content() }
-        else -> ToggleButton(
-            checked = checked, onCheckedChange = onCheckedChange,
-            modifier = modifier, enabled = enabled) { content() }
-    }
+    FilledTonalToggleButton(checked, onCheckedChange, modifier,
+        enabled = enabled, shapes = shapes, contentPadding = contentPadding) { content() }
 }
 
-/** A plain item; the checked icon takes the leading slot while checked. */
+/** The checked container is the square token on this line; the resting one is round. */
+@Composable
+internal actual fun toggleShape(square: Boolean): Shape =
+    if (square) ToggleButtonDefaults.checkedShape else ToggleButtonDefaults.shape
+
+/** No checkable item on this line: a plain item carries the label, the
+ * supporting text beneath it, the checked icon in the leading slot while
+ * checked, and the toggle state in its semantics. */
 @Composable
 internal actual fun CheckableMenuItem(
     label: String, checked: Boolean, onCheckedChange: () -> Unit,
@@ -71,8 +66,18 @@ internal actual fun CheckableMenuItem(
     trailingContent: (@Composable () -> Unit)?, enabled: Boolean,
 ) {
     DropdownMenuItem(
-        text = { Text(label) },
+        text = {
+            Column {
+                Text(label)
+                if (supportingText != null) {
+                    ProvideTextStyle(MaterialTheme.typography.bodySmall) { supportingText() }
+                }
+            }
+        },
         onClick = onCheckedChange,
+        modifier = Modifier.semantics {
+            toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+        },
         leadingIcon = if (checked) {
             { Icon(IconMap.get(checkedIconName), null, Modifier.size(18.dp)) }
         } else leadingIcon,
@@ -80,83 +85,75 @@ internal actual fun CheckableMenuItem(
         enabled = enabled)
 }
 
+internal actual fun sliderState(
+    value: Float, steps: Int, range: ClosedFloatingPointRange<Float>,
+): SliderState = SliderState(value, steps, range)
+
+internal actual fun rangeSliderState(
+    start: Float, end: Float, steps: Int, range: ClosedFloatingPointRange<Float>,
+): RangeSliderState = RangeSliderState(start, end, steps, range)
+
+@Composable
+internal actual fun StateSlider(
+    state: SliderState, onValueChangeFinished: () -> Unit, enabled: Boolean,
+    colors: SliderColors, interactionSource: MutableInteractionSource,
+    thumb: @Composable (SliderState) -> Unit, track: @Composable (SliderState) -> Unit,
+    modifier: Modifier,
+) {
+    Slider(state = state, modifier = modifier, enabled = enabled,
+        onValueChangeFinished = onValueChangeFinished, colors = colors,
+        interactionSource = interactionSource, thumb = thumb, track = track)
+}
+
+/** This line's VerticalSlider takes no finish callback and keeps the state's
+ * own private, so the commit is derived from the thumb's interactions: a drag
+ * that stops or cancels, or a press that lifts, is the release. */
+@Composable
+internal actual fun StateVerticalSlider(
+    state: SliderState, onValueChangeFinished: () -> Unit, enabled: Boolean,
+    colors: SliderColors, interactionSource: MutableInteractionSource,
+    thumb: @Composable (SliderState) -> Unit, track: @Composable (SliderState) -> Unit,
+    modifier: Modifier,
+) {
+    val finished by rememberUpdatedState(onValueChangeFinished)
+    LaunchedEffect(interactionSource) {
+        interactionSource.interactions.collect { interaction ->
+            when (interaction) {
+                is DragInteraction.Stop, is DragInteraction.Cancel, is PressInteraction.Release ->
+                    finished()
+                else -> Unit
+            }
+        }
+    }
+    VerticalSlider(state = state, modifier = modifier, enabled = enabled, colors = colors,
+        interactionSource = interactionSource, thumb = thumb, track = track)
+}
+
+@Composable
+internal actual fun StateRangeSlider(
+    state: RangeSliderState, onValueChangeFinished: () -> Unit, enabled: Boolean,
+    colors: SliderColors, startThumbInteractionSource: MutableInteractionSource,
+    endThumbInteractionSource: MutableInteractionSource,
+    startThumb: @Composable (RangeSliderState) -> Unit,
+    endThumb: @Composable (RangeSliderState) -> Unit,
+    track: @Composable (RangeSliderState) -> Unit,
+    modifier: Modifier,
+) {
+    RangeSlider(state = state, modifier = modifier, enabled = enabled,
+        onValueChangeFinished = onValueChangeFinished, colors = colors,
+        startThumbInteractionSource = startThumbInteractionSource,
+        endThumbInteractionSource = endThumbInteractionSource,
+        startThumb = startThumb, endThumb = endThumb, track = track)
+}
+
+internal actual val RangeSliderState.activeStart: Float get() = startValue
+internal actual val RangeSliderState.activeEnd: Float get() = endValue
+internal actual val RangeSliderState.range: ClosedFloatingPointRange<Float> get() = trackRange
+
 @Composable
 internal actual fun ExposedDropdownMenuBoxScope.OptionsMenu(
     expanded: Boolean, onDismissRequest: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     ExposedDropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest, content = content)
-}
-
-/**
- * A plain slider or range slider: value, bounds, authored `values` steps and
- * the commit semantics of §17.4 (state first, then on_change, once, on
- * release). Labels, track icons, tints, the centred track and the vertical
- * rail wait for D3.
- */
-@Composable
-internal actual fun RenderSlider(node: JsonObject, ctx: RenderCtx, m: Modifier) {
-    val p = NodeProperties(node, SliderMembers)
-    val id = p[SliderMembers.Id].orEmpty()
-    val enabled = p.getOr(SliderMembers.Enabled, true)
-    val onChange = p[SliderMembers.OnChange]
-    val values = p.raw(SliderMembers.Values) as? JsonArray
-    val min = p.getOr(SliderMembers.Min, 0.0).toFloat()
-    val max = p.getOr(SliderMembers.Max, 1.0).toFloat()
-    fun publish(v: JsonElement) {
-        ctx.state(id, v)
-        if (onChange != null) ctx.action(onChange, v)
-    }
-    // With authored `values`, publish the EXACT authored number the thumb
-    // settles nearest to, never toolkit step arithmetic.
-    fun nearestAuthored(x: Float): JsonElement? =
-        values?.minByOrNull { v ->
-            val n = v.numOrNull()?.toFloat() ?: return@minByOrNull Float.MAX_VALUE
-            kotlin.math.abs(n - x)
-        }
-    val lo = if (values != null && values.isNotEmpty())
-        values.first().numOrNull()?.toFloat() ?: min else min
-    val hi = if (values != null && values.isNotEmpty())
-        values.last().numOrNull()?.toFloat() ?: max else max
-    val steps = if (values != null) (values.size - 2).coerceAtLeast(0) else 0
-    if (p.has(SliderMembers.ValueEnd)) {
-        var range by remember(ctx.surface, id, ctx.epochOf(id)) {
-            val draft = (ctx.storeValue(id) as? JsonArray)?.takeIf { it.size == 2 }
-            val start = draft?.get(0)?.numOrNull()?.toFloat()
-                ?: p.getOr(SliderMembers.Value, lo.toDouble()).toFloat()
-            val end = draft?.get(1)?.numOrNull()?.toFloat()
-                ?: p.getOr(SliderMembers.ValueEnd, hi.toDouble()).toFloat()
-            mutableStateOf(start..end)
-        }
-        RangeSlider(
-            value = range,
-            onValueChange = { range = it },
-            modifier = m.fillMaxWidth(),
-            enabled = enabled,
-            valueRange = lo..hi,
-            steps = steps,
-            onValueChangeFinished = {
-                val a = nearestAuthored(range.start)
-                    ?: JsonPrimitive(range.start.toDouble())
-                val b = nearestAuthored(range.endInclusive)
-                    ?: JsonPrimitive(range.endInclusive.toDouble())
-                publish(JsonArray(listOf(a, b)))
-            })
-    } else {
-        var pos by remember(ctx.surface, id, ctx.epochOf(id)) {
-            mutableFloatStateOf(
-                ctx.storeValue(id)?.numOrNull()?.toFloat()
-                    ?: p.getOr(SliderMembers.Value, lo.toDouble()).toFloat())
-        }
-        Slider(
-            value = pos,
-            onValueChange = { pos = it },
-            modifier = m.fillMaxWidth(),
-            enabled = enabled,
-            valueRange = lo..hi,
-            steps = steps,
-            onValueChangeFinished = {
-                publish(nearestAuthored(pos) ?: JsonPrimitive(pos.toDouble()))
-            })
-    }
 }

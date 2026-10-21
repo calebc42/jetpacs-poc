@@ -1,7 +1,8 @@
 # Desktop Companion plan
 
 Status: active. D0, the toolchain spike, D1, the multiplatform renderer
-modules, and D2, the fonts, are done (2026-10-21). Every later item is open.
+modules, D2, the fonts, and D3, the Material seams, are done (2026-10-21).
+Every later item is open.
 
 The outcome is a Compose for Desktop Companion host at `companion/desktop`.
 It renders the same accepted EBP surfaces as `:app` against a desktop or
@@ -169,13 +170,25 @@ existing gates must pass after every item.
    entry points and reads its text layout: the family is the three bundled
    Plex Serif resources at weights 400, 500 and 600, and without the loader
    it is the platform serif.
-4. **D3 — Material platform seams.** Image decoding produces `ImageBitmap`
-   through an expect/actual, visualization text draws with Compose text
-   measurement, dynamic color becomes a provider that is empty on desktop,
-   and calendar math uses `java.time` or `kotlinx-datetime`. The SSRF, size
-   and format guards in `ImageLoader.kt` stay in common code. Evidence: the
-   Material renderer tests run on `jvmTest` and the Android screenshot suite
-   is unchanged.
+4. **D3 — Material platform seams (done 2026-10-21).** The image loader
+   and cache are common code typed on `ImageBitmap`; only the decode is a
+   seam, BitmapFactory on Android and Skia on the desktop under the same
+   limits. The canvas `text` op measures with a `TextMeasurer` on the
+   desktop while Android keeps its native canvas. The renderer uses one
+   Gregorian calendar by name and formats dates with `Locale.ROOT`, which
+   fixed two Android defects: the picker read ISO years through the
+   locale's ICU calendar, and date strings carried the locale's digits.
+   Dynamic color stays Android's alone. The Material-line seams narrowed to
+   the calls that differ: the tonal toggle button, the toggle shapes, the
+   slider states, their finish callback and a range's active ends, and the
+   checkable menu item; the toggle and slider bodies are common again, which
+   also fixed the desktop discrete slider that could skip an authored value.
+   Evidence: the 19 plain Material tests run on `jvmTest` beside
+   `testAndroidHostTest`, `CalendarsTest` pins the calendar under Thai,
+   Japanese, Arabic and Persian locales, and `MaterialRendererTest` on the
+   desktop decodes and shows a PNG, keeps the placeholder for an undecodable
+   payload, draws canvas text, publishes the exact authored slider value,
+   composes a connected toggle, and announces a checkable item's state.
 
 ### Core lane
 
@@ -215,6 +228,25 @@ existing gates must pass after every item.
    `:desktop:packageDistributionForCurrentOS` produces an installable artifact
    and the golden corpus passes on `jvmTest`.
 
+### Distributions lane
+
+10. **D9 — Four distributions.** The wish is one matrix: a standalone
+    Android Companion on the user's own init (today's app, whose onboarding
+    stages a managed Elisp kit into the user's Emacs), a standalone desktop
+    Companion on the user's own init (D5 plus the `emacs-unix` socket of
+    D6), a bundled desktop build that carries an Emacs per operating system
+    and runs it as a headless child daemon on a Jetpacs-managed init, and a
+    bundled Android build that embeds Emacs for Android in the Jetpacs APK
+    on a managed init. The two bundled builds need the same first step: an
+    amendment to SPEC §5.8, which today says a desktop Companion must not
+    launch or signal an Emacs process, written for the wake mechanism but
+    without a carve-out for a Companion-owned child. After it come the
+    daemon lifecycle (start, stop, crash recovery), init isolation, and
+    per-platform packaging in D8's distributions. Planned, not scheduled:
+    it needs its own plan document once D5 and D6 land. Evidence: the
+    amendment with its contract and goldens aligned, then one bundled
+    build pairing with its own daemon on a clean machine.
+
 ## Routing table
 
 | Change | Owning seam | Minimum evidence |
@@ -228,6 +260,7 @@ existing gates must pass after every item.
 | D6 `emacs-unix` | `companion/desktop` transport adapter | Pairing and push against `ebp-unix.el` |
 | D7 capability report | `companion/desktop` | Emacs-side negotiation test |
 | D8 packaging | `companion/desktop`, testing modules, `companion/TESTING.md` | Installable artifact and JVM golden corpus |
+| D9 distributions | `../ebp/SPEC.md` §5.8 first, then `companion/desktop`, `companion/app` | Amendment aligned; a bundled build pairs with its own daemon |
 
 ## Completion gates
 
@@ -252,14 +285,11 @@ The desktop host is conforming only while all applicable gates hold:
 - Porting Glance widgets, Quick Settings tiles, SMS, call state, Bluetooth,
   alarms or the foreground service.
 - A browser or Node-hosted Companion.
-- Running Emacs inside the desktop Companion process.
+- Running Emacs inside the desktop Companion process; a bundled Emacs is a
+  child process, and D9's amendment comes before it.
 
 ## Open questions
 
-- `VisualizationNodes.kt` and `Renderer.kt` use `java.util.Calendar` for the
-  month grid and the clock while the date picker used `android.icu`; for a
-  Buddhist- or Japanese-calendar locale the two disagree. D3 should settle
-  one calendar for the renderer.
 - Compose Preview Screenshot Testing does not configure the KMP Android
   plugin, so the screenshot suites live in `renderer/jetpacs-screenshots`
   and `renderer/material3-screenshots`. If the plugin learns KMP, they can

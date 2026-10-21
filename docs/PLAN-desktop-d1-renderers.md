@@ -103,6 +103,12 @@ The Android app and `MaterialTestController` keep compiling unchanged
 because `ImageLoader`, `ImageCache` and `LocalMaterialImageSource` keep their
 names in `androidMain`.
 
+D3 (jetpacs-poc, 2026-10-21) closed the image, canvas-text and calendar seams:
+the loader and cache are common code on `ImageBitmap` with only the decode
+platform-specific, the canvas text measures with a `TextMeasurer` on the
+desktop, and the calendar functions are common Gregorian code. The dynamic
+color and trace seams stay, as does `PlexFonts` under D2's loader.
+
 ## Build shape
 
 Every module becomes `kotlin { jvmToolchain(21); jvm(); android { namespace;
@@ -184,7 +190,12 @@ the task names they recorded.
   `CheckableMenuItem`, the dropdown's `OptionsMenu`, and `RenderSlider` as
   a whole. Their Android actuals are the original code verbatim; their JVM
   actuals are placeholders on JetBrains' API that D3 replaces, and the
-  seams fold back when the two lines converge.
+  seams fold back when the two lines converge. D3 then returned the toggle
+  and slider bodies to common code and narrowed the seams to the calls
+  that differ: `TonalToggle`, `toggleShape`, `sliderState`,
+  `rangeSliderState`, the three `State*Slider` forwarders with a range's
+  `activeStart`, `activeEnd` and `range`, `CheckableMenuItem`, and
+  `OptionsMenu`.
 - The app's debug runtime classpath differs from the baseline in one line:
   the test-manifest library no longer reaches the app through
   `:renderer:compose`. The release classpath is identical.
