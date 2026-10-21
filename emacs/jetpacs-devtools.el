@@ -197,6 +197,72 @@ storm check always has enough history to reach its threshold.")
 (defvar jetpacs-devtools--storm-warned-at 0
   "Last storm warning time, rate-limiting to one per window.")
 
+(defvar jetpacs-devtools--taps (make-hash-table :test 'equal)
+  "Surface -> plist (:last-ms N :max-ms N :count N :prep-ms N :at TIME).
+The tap→push tally: how long the device waited between its action's
+dispatch and the push or patch that answered it, and (`:prep-ms') how
+much of that was `jetpacs-shell-push' / `jetpacs-shell-data-patch'
+itself — builders, gates and the size measurement — before the send.
+Metadata; rides `jetpacs-devtools-profile' like the push tally.")
+
+(defvar jetpacs-devtools--push-entered-at nil
+  "Float time at which the outermost push or patch entry began, or nil.
+Bound by `jetpacs-devtools--time-push' around `jetpacs-shell-push',
+`jetpacs-shell-data-patch' and `jetpacs-shell-data-sync'; the send
+observers read it to stamp the event's `:prep-ms'.")
+
+(defun jetpacs-devtools--time-push (orig &rest args)
+  "Around a push or patch entry: remember when the outermost one began.
+ORIG runs with ARGS unchanged; a nested entry (sync → patch) keeps the
+outer time, so `:prep-ms' always measures from the first entry."
+  (let ((jetpacs-devtools--push-entered-at
+         (or jetpacs-devtools--push-entered-at (float-time))))
+    (apply orig args)))
+
+(defvar jetpacs-devtools--events)       ; the ring, defined below
+
+(defun jetpacs-devtools--tap-ms (surface now)
+  "Milliseconds from the device action this send answers to NOW, or nil.
+The action is the newest `action' event for SURFACE (a surfaceless
+event — a reminder, shortcut or dialog — counts for any surface) that
+no push or patch of SURFACE has answered yet.  A send with no such
+action — a timer refresh, a reconnect drain — carries no tap time."
+  (let ((answered nil) (found nil))
+    (cl-loop for e in jetpacs-devtools--events
+             for kind = (plist-get e :kind)
+             for s = (plist-get e :surface)
+             until found
+             do (cond
+                 ((and (memq kind '(push patch)) (equal s surface))
+                  (setq answered t))
+                 ((and (eq kind 'action) (not answered)
+                       (or (null s) (equal s surface)))
+                  (setq found (* 1000 (- now (plist-get e :at)))))))
+    found))
+
+(defun jetpacs-devtools--note-tap (surface tap-ms prep-ms)
+  "Tally TAP-MS and PREP-MS for SURFACE when the profiler is on."
+  (when (and jetpacs-devtools-profile (or tap-ms prep-ms))
+    (ignore-errors
+      (let ((rec (gethash surface jetpacs-devtools--taps)))
+        (puthash surface
+                 (list :last-ms tap-ms
+                       :max-ms (max (or tap-ms 0.0)
+                                    (or (plist-get rec :max-ms) 0.0))
+                       :count (1+ (or (plist-get rec :count) 0))
+                       :prep-ms prep-ms
+                       :at (current-time))
+                 jetpacs-devtools--taps)))))
+
+(defun jetpacs-devtools--send-timing (surface)
+  "The (TAP-MS . PREP-MS) a send to SURFACE carries, tallied; either may be nil."
+  (let* ((now (float-time))
+         (tap (ignore-errors (jetpacs-devtools--tap-ms surface now)))
+         (prep (and jetpacs-devtools--push-entered-at
+                    (* 1000 (- now jetpacs-devtools--push-entered-at)))))
+    (jetpacs-devtools--note-tap surface tap prep)
+    (cons tap prep)))
+
 (defvar jetpacs-devtools--records nil
   "Failure records, newest first, bounded by limit and TTL.
 Each is a plist (:at FLOAT :surface S :screen ID-or-nil :phase SYM
@@ -328,12 +394,14 @@ Records a `push' event for CLIENT's SURFACE and SPEC and wraps the
 path is untouched."
   (let* ((bytes (and jetpacs-devtools-profile
                      (ignore-errors (jetpacs-node-wire-bytes spec))))
+         (timing (ignore-errors (jetpacs-devtools--send-timing surface)))
          (seq (ignore-errors
                 (jetpacs-devtools--push-event
                  'push :surface surface :method "surface.update" :bytes bytes
                  :count (and jetpacs-devtools-profile
                              (ignore-errors
-                               (jetpacs-devtools--node-count spec)))))))
+                               (jetpacs-devtools--node-count spec)))
+                 :tap-ms (car timing) :prep-ms (cdr timing)))))
     (jetpacs-devtools--note-push surface spec bytes)
     (apply orig client surface spec
            (jetpacs-devtools--wrap-callback keys seq "surface.update"))))
@@ -345,8 +413,10 @@ path is untouched."
 Each is a plist (:seq N :at FLOAT :kind KIND …) where KIND is `push',
 `patch', `remove', `result', `action', `state' or `frame', with the
 metadata members that kind carries: :surface :method :origin :revision
-:bytes :count :ms :status :error :for-seq, and :detail — the one payload
-member, present only while `jetpacs-devtools-recording' is on.")
+:bytes :count :ms :status :error :for-seq, a push's or patch's :tap-ms
+\(from the answered action's dispatch to the send) and :prep-ms (inside
+the push or patch entry), and :detail — the one payload member, present
+only while `jetpacs-devtools-recording' is on.")
 
 (defvar jetpacs-devtools--event-seq 0
   "The sequence number the next event takes.")
@@ -435,15 +505,17 @@ event was recorded."
 CLIENT, SURFACE, OPS and KEYS pass through.  The ops count is metadata;
 the ops themselves are payload and ride the recorder; their byte size
 rides the profiler like a push's."
-  (let ((seq (ignore-errors
-               (jetpacs-devtools--push-event
-                'patch :surface surface :method "surface.data"
-                :count (length ops)
-                :bytes (and jetpacs-devtools-profile
-                            (ignore-errors
-                              (jetpacs-node-wire-bytes
-                               (if (listp ops) (vconcat ops) ops))))
-                :detail (and jetpacs-devtools-recording ops)))))
+  (let* ((timing (ignore-errors (jetpacs-devtools--send-timing surface)))
+         (seq (ignore-errors
+                (jetpacs-devtools--push-event
+                 'patch :surface surface :method "surface.data"
+                 :count (length ops)
+                 :bytes (and jetpacs-devtools-profile
+                             (ignore-errors
+                               (jetpacs-node-wire-bytes
+                                (if (listp ops) (vconcat ops) ops))))
+                 :tap-ms (car timing) :prep-ms (cdr timing)
+                 :detail (and jetpacs-devtools-recording ops)))))
     (apply orig client surface ops
            (jetpacs-devtools--wrap-callback keys seq "surface.data"))))
 
@@ -618,6 +690,8 @@ them.  Payload members appear only while the recorder is on."
              (if-let* ((st (plist-get e :status))) (concat " → " st) "")
              (if-let* ((f (plist-get e :for-seq))) (format " (for #%d)" f) "")
              (if-let* ((ms (plist-get e :ms))) (format " %.1fms" ms) "")
+             (if-let* ((tap (plist-get e :tap-ms))) (format " tap→send %.1fms" tap) "")
+             (if-let* ((prep (plist-get e :prep-ms))) (format " prep %.1fms" prep) "")
              (if-let* ((err (plist-get e :error))) (format " error=%S" err) "")
              (if-let* ((d (plist-get e :detail))) (format "
       %S" d) "")
@@ -828,6 +902,7 @@ lives under the same developer setting as the failure records."
   (clrhash jetpacs-devtools--builds)
   (clrhash jetpacs-devtools--specs)
   (clrhash jetpacs-devtools--pushes)
+  (clrhash jetpacs-devtools--taps)
   (setq jetpacs-devtools--push-times nil
         jetpacs-devtools--storm-warned-at 0
         jetpacs-devtools--records nil
@@ -912,6 +987,25 @@ jetpacs-devtools-toggle-recording)")))
                               (car row)
                               (plist-get (cdr row) :last-ms)
                               (plist-get (cdr row) :max-ms)
+                              (plist-get (cdr row) :count))))))
+        (insert "\nTap → send (ms; the device's wait from its action's dispatch \
+to the answering push or patch; prep = time inside the push/patch entry):\n")
+        (let (rows)
+          (maphash (lambda (s rec) (push (cons s rec) rows))
+                   jetpacs-devtools--taps)
+          (if (null rows)
+              (insert "  (none observed)\n")
+            (dolist (row (cl-sort rows #'> :key (lambda (r)
+                                                  (or (plist-get (cdr r)
+                                                                 :last-ms)
+                                                      0.0))))
+              (insert (format "  %-28s last %7s ms  max %7.1f ms  prep %7s ms  x%d\n"
+                              (car row)
+                              (if-let* ((ms (plist-get (cdr row) :last-ms)))
+                                  (format "%.1f" ms) "—")
+                              (plist-get (cdr row) :max-ms)
+                              (if-let* ((ms (plist-get (cdr row) :prep-ms)))
+                                  (format "%.1f" ms) "—")
                               (plist-get (cdr row) :count))))))
         (insert "\nLast spec per surface (retained while recording is on): \
 (pp (jetpacs-devtools-last-spec SURFACE))\n"
@@ -1158,6 +1252,12 @@ nobody is looking at."
                          'ebp-client-surface-update)
   (advice-add 'ebp-client-surface-update :around
               #'jetpacs-devtools--observe-push))
+;; The push and patch entries: where the send's `:prep-ms' starts. The
+;; shell is already loaded (required above), so the advice binds now.
+(dolist (entry '(jetpacs-shell-push jetpacs-shell-data-patch
+                 jetpacs-shell-data-sync))
+  (unless (advice-member-p #'jetpacs-devtools--time-push entry)
+    (advice-add entry :around #'jetpacs-devtools--time-push)))
 ;; The rest of the data path and the two device-event entry points. Every
 ;; observer is value-transparent and `ignore-errors'-isolated.
 (unless (advice-member-p #'jetpacs-devtools--observe-patch 'ebp-client-surface-data)

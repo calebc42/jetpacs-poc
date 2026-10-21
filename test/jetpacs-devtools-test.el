@@ -452,6 +452,82 @@ never a deferred continuation with nothing to build."
     (should-not (jetpacs-devtools-inspect-buffer "app:nope"))
     (should-not (jetpacs-devtools-capture-spec nil))))
 
+(ert-deftest jetpacs-devtools-tap-to-send-stamps-the-answering-push ()
+  "A push or patch that answers a device action carries the device's wait.
+`:tap-ms' spans the action's dispatch to the send; `:prep-ms' the push
+entry to the send; a send with no unanswered action carries neither."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools-profile t))
+    (clrhash jetpacs-devtools--taps)
+    (jetpacs-devtools--observe-dispatch
+     (lambda (&rest _) 'accepted) 'client
+     '(:action "x.toggle" :surface "app:x" :revision_seen 1 :event_id "e1")
+     #'ignore)
+    ;; The deferred push, entered through the shell's timed entry.
+    (jetpacs-devtools--time-push
+     (lambda ()
+       (jetpacs-devtools--observe-push
+        (lambda (_c _s _spec &rest _keys) 7)
+        'client "app:x" (jetpacs-text "hello") :callback #'ignore)))
+    (let ((push (car (jetpacs-devtools-events 'push))))
+      (should (numberp (plist-get push :tap-ms)))
+      (should (>= (plist-get push :tap-ms) 0))
+      (should (numberp (plist-get push :prep-ms)))
+      (should (>= (plist-get push :tap-ms) (plist-get push :prep-ms))))
+    (let ((rec (gethash "app:x" jetpacs-devtools--taps)))
+      (should (= 1 (plist-get rec :count)))
+      (should (numberp (plist-get rec :last-ms)))
+      (should (numberp (plist-get rec :prep-ms))))
+    ;; The action is answered: a second push of the same surface, with no
+    ;; new action and outside any push entry, carries no tap or prep time.
+    (jetpacs-devtools--observe-push
+     (lambda (_c _s _spec &rest _keys) 8)
+     'client "app:x" (jetpacs-text "again") :callback #'ignore)
+    (let ((push (car (jetpacs-devtools-events 'push))))
+      (should-not (plist-member push :tap-ms))
+      (should-not (plist-member push :prep-ms)))
+    (should (= 1 (plist-get (gethash "app:x" jetpacs-devtools--taps) :count)))
+    ;; Another surface's action does not answer this one; a surfaceless
+    ;; action (a shortcut, a reminder) answers any surface.
+    (jetpacs-devtools--observe-dispatch
+     (lambda (&rest _) 'accepted) 'client
+     '(:action "y.open" :surface "app:y" :event_id "e2") #'ignore)
+    (jetpacs-devtools--observe-patch
+     (lambda (_c _s _ops &rest _keys) 9)
+     'client "app:x" (list (jetpacs-data-set "/n" 1)) :callback #'ignore)
+    (should-not (plist-member (car (jetpacs-devtools-events 'patch)) :tap-ms))
+    (jetpacs-devtools--observe-dispatch
+     (lambda (&rest _) 'accepted) 'client
+     '(:action "shortcut.fire" :event_id "e3") #'ignore)
+    (jetpacs-devtools--observe-patch
+     (lambda (_c _s _ops &rest _keys) 10)
+     'client "app:x" (list (jetpacs-data-set "/n" 2)) :callback #'ignore)
+    (should (numberp (plist-get (car (jetpacs-devtools-events 'patch)) :tap-ms)))
+    (should (= 2 (plist-get (gethash "app:x" jetpacs-devtools--taps) :count)))
+    ;; The report and the action log show the figures.
+    (with-current-buffer (jetpacs-devtools-report-buffer)
+      (should (string-match-p "Tap → send"
+                              (buffer-substring-no-properties (point-min) (point-max))))
+      (should (string-match-p "app:x +last +[0-9.]+ ms"
+                              (buffer-substring-no-properties (point-min) (point-max)))))
+    (with-current-buffer (jetpacs-devtools-action-log-buffer)
+      (should (string-match-p "tap→send [0-9.]+ms"
+                              (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest jetpacs-devtools-tap-tally-rides-the-profiler ()
+  "Events always carry the stamps; the per-surface tally rides the profiler."
+  (let ((jetpacs-devtools--events nil) (jetpacs-devtools--event-seq 0)
+        (jetpacs-devtools-profile nil))
+    (clrhash jetpacs-devtools--taps)
+    (jetpacs-devtools--observe-dispatch
+     (lambda (&rest _) 'accepted) 'client
+     '(:action "x.toggle" :surface "app:x" :event_id "e1") #'ignore)
+    (jetpacs-devtools--observe-push
+     (lambda (_c _s _spec &rest _keys) 7)
+     'client "app:x" (jetpacs-text "hello") :callback #'ignore)
+    (should (numberp (plist-get (car (jetpacs-devtools-events 'push)) :tap-ms)))
+    (should-not (gethash "app:x" jetpacs-devtools--taps))))
+
 (provide 'jetpacs-devtools-test)
 ;;; jetpacs-devtools-test.el ends here
 
