@@ -126,17 +126,18 @@ internal fun RenderChart(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     if (!yMin.isFinite() || !yMax.isFinite()) { yMin = 0.0; yMax = 1.0 }
     if (yMax == yMin) yMax += 1.0
 
-    // C6: kotlinx JsonObject has structural equals (org.json's JSONObject had
-    // none), so remember(node) would now key by value — the toString() keys
-    // below are kept verbatim rather than changed inside a mechanical port.
-    var started by remember(node.toString()) { mutableStateOf(false) }
+    // C4a: keyed on the node's identity. The engine shares an untouched
+    // chart's instance across revisions, so the grow animation restarts only
+    // when the chart really changed — and the node is no longer serialized
+    // to a string on every recomposition to find that out.
+    var started by remember(ref(node)) { mutableStateOf(false) }
     LaunchedEffect(Unit) { started = true }
     val progress by animateFloatAsState(
         targetValue = if (started) 1f else 0f, animationSpec = tween(600), label = "chart-grow")
 
     var mod = m.fillMaxWidth().height(heightDp.dp)
     if (onPointTap != null) {
-        mod = mod.pointerInput(node.toString()) {
+        mod = mod.pointerInput(ref(node)) {
             detectTapGestures { off ->
                 val s0 = series.firstOrNull() ?: return@detectTapGestures
                 if (s0.points.isEmpty()) return@detectTapGestures

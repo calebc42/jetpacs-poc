@@ -106,20 +106,63 @@ internal fun lazyChildKeys(children: JsonArray): List<String> {
 }
 
 /**
- * Stable projection of one lazy child. The wrapper deliberately carries only
- * the requested row: constructing it inside the LazyLayout item lambda keeps
- * off-screen nodes virtualized, while structural equality lets Compose skip
- * an unchanged visible row across complete EBP snapshot replacements.
+ * A `remember`/`key` argument that compares by reference (PLAN-responsiveness
+ * C4a). kotlinx's `JsonObject` and `JsonArray` equality deep-walks the value
+ * even for the same instance, so a JSON node used as a Compose key costs a
+ * full walk on every recomposition. The engine hands the renderer the
+ * previous revision's instance for every untouched subtree
+ * (`Materializer.share`), so identity is the cheaper and the right test:
+ * the same instance is the same authored value; a new instance is a new
+ * revision of it.
  */
 @Immutable
-internal data class LazyRenderItem(
+internal class Ref<T : Any>(val value: T) {
+    override fun equals(other: Any?): Boolean = other is Ref<*> && other.value === value
+    override fun hashCode(): Int = System.identityHashCode(value)
+    override fun toString(): String = "Ref@${Integer.toHexString(hashCode())}"
+}
+
+internal fun <T : Any> ref(value: T): Ref<T> = Ref(value)
+
+/**
+ * Stable projection of one lazy child. The wrapper deliberately carries only
+ * the requested row: constructing it inside the LazyLayout item lambda keeps
+ * off-screen nodes virtualized, while its equality lets Compose skip an
+ * unchanged visible row across complete EBP snapshot replacements. The node
+ * compares by reference (C4a): the engine shares every untouched row's
+ * instance across revisions, so a structural compare per visible row per
+ * recomposition bought nothing but the walk.
+ */
+@Immutable
+internal class LazyRenderItem(
     val key: String,
     val contentType: String,
     val path: String,
     val node: JsonObject?,
     /** The engine-grammar identity (SPEC 13.8.5), see [RenderCtx.sourcePath]. */
     val sourcePath: String = "",
-)
+) {
+    override fun equals(other: Any?): Boolean =
+        other is LazyRenderItem &&
+            other.node === node &&
+            other.key == key &&
+            other.path == path &&
+            other.sourcePath == sourcePath &&
+            other.contentType == contentType
+
+    override fun hashCode(): Int {
+        var h = key.hashCode()
+        h = 31 * h + contentType.hashCode()
+        h = 31 * h + path.hashCode()
+        h = 31 * h + sourcePath.hashCode()
+        h = 31 * h + System.identityHashCode(node)
+        return h
+    }
+
+    override fun toString(): String =
+        "LazyRenderItem(key=$key, contentType=$contentType, path=$path, sourcePath=$sourcePath, " +
+            "node@${Integer.toHexString(System.identityHashCode(node))})"
+}
 
 /**
  * A bounded group of adjacent lightweight presentation rows inside a lazy

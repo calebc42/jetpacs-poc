@@ -45,7 +45,11 @@ instances for untouched subtrees. The same suite pins the per-surface
 display state (PLAN-responsiveness C3): a draft published for one surface
 runs that surface's stateful node and nothing of another surface composed
 beside it (`aDraftOnOneSurfaceRunsNoNodeOfAnother`, mounted through the
-controller's multi-surface `start`).
+controller's multi-surface `start`). `LazyRenderItemIdentityTest` pins the
+C4a contract: a lazy row's projection, and the `Ref` wrapper every
+JSON-keyed `remember` in the renderer uses, compare the JSON by reference —
+the same instance is the same authored value, an equal copy is a new
+revision.
 
 The model suite pins registry-derived profiles, semantic name/default/state
 projection, and the no-Material dependency boundary for EBP, wire, core,

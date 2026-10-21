@@ -36,9 +36,11 @@ import org.robolectric.annotation.GraphicsMode
  * comes from `Materializer.share`, which `SurfaceStore.patch` and `update`
  * run against the previous record. Without the sharing every child of an
  * eager container runs: scenario 1 measured all four paths instead of two.
- * Rows of a lazy column are the exception, because `RenderLazyItem` still
- * compares its `@Immutable` [LazyRenderItem] structurally; there the
- * `assertSame` checks are the witness of the sharing.
+ * Rows of a lazy column skip the same way since C4a: [LazyRenderItem]
+ * compares its node by reference, so an untouched row skips because the
+ * store handed back its instance, and a row that is not recomposed keeps
+ * its state — the insert-at-head case below is the witness, with the
+ * `assertSame` checks saying where the instances came from.
  *
  * A templated lazy column here uses a non-batchable row root (`card`).
  * Batchable rows (`text`, `row`, …) are grouped into presentation chunks

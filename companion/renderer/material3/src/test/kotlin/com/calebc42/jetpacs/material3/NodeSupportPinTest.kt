@@ -169,7 +169,11 @@ class NodeSupportPinTest {
     }
 
     @Test
-    fun lazyItemProjectionIsStructurallyStableAndTyped() {
+    fun lazyItemProjectionIsStableAcrossSharedTreesAndTyped() {
+        // PLAN-responsiveness C4a: a row projected twice from the SAME tree
+        // is equal; one projected from an equal but fresh tree is a new
+        // revision of the row (the engine shares untouched subtrees across
+        // revisions, so a fresh instance means the row changed).
         fun children() = Json.parseToJsonElement("""[
             {"t":"text","key":"a","text":"same"},
             {"t":"button","id":"action","label":"Go"}
@@ -178,11 +182,19 @@ class NodeSupportPinTest {
         val freshChildren = children()
         val first = lazyRenderItem(
             firstChildren, lazyChildKeys(firstChildren), "/root", 0)
+        val again = lazyRenderItem(
+            firstChildren, lazyChildKeys(firstChildren), "/root", 0)
         val fresh = lazyRenderItem(
             freshChildren, lazyChildKeys(freshChildren), "/root", 0)
 
+        assertEquals(first, again)
+        assertEquals(first.hashCode(), again.hashCode())
         assertNotSame(first.node, fresh.node)
-        assertEquals(first, fresh)
+        assertEquals(first.node, fresh.node)
+        assertNotEquals(first, fresh)
+        // The projection's own fields are value-stable across the fresh tree.
+        assertEquals(first.key, fresh.key)
+        assertEquals(first.path, fresh.path)
         assertEquals(typedIdentitySegment("k", "a", "text"), first.key)
         assertEquals("text", first.contentType)
         assertEquals("/root/${typedIdentitySegment("k", "a", "text")}", first.path)
@@ -265,7 +277,10 @@ class NodeSupportPinTest {
     }
 
     @Test
-    fun lazyChunkProjectionIsStructurallyStableAcrossFreshJsonTrees() {
+    fun lazyChunkProjectionIsStableAcrossSharedTreesNotFreshOnes() {
+        // C4a: the chunk, like its rows, is the instances it was built from;
+        // the projection (keys, chunk ranges) stays value-stable across a
+        // fresh tree, so the LazyColumn's keyed items keep their identity.
         fun children() = Json.parseToJsonElement("""[
             {"t":"row","key":"org-row-heading"},
             {"t":"rich_text","key":"org-row-body","spans":[{"text":"same"}]}
@@ -274,13 +289,18 @@ class NodeSupportPinTest {
         val freshChildren = children()
         val firstProjection = lazyColumnProjection(firstChildren)
         val freshProjection = lazyColumnProjection(freshChildren)
+        assertEquals(firstProjection, freshProjection)
         val first = lazyRenderChunk(firstChildren, firstProjection, "/root", 0)
+        val again = lazyRenderChunk(firstChildren, firstProjection, "/root", 0)
         val fresh = lazyRenderChunk(freshChildren, freshProjection, "/root", 0)
 
         val firstItems = first.items
         val freshItems = fresh.items
+        assertEquals(first, again)
         assertNotSame(firstItems[0].node, freshItems[0].node)
-        assertEquals(first, fresh)
+        assertNotEquals(first, fresh)
+        assertEquals(first.key, fresh.key)
+        assertEquals(firstItems.map { it.path }, freshItems.map { it.path })
         assertEquals("presentation_chunk", first.contentType)
         assertEquals(listOf(
             "/root/${typedIdentitySegment("k", "org-row-heading", "row")}",

@@ -363,7 +363,7 @@ internal val LocalRetainedSaveableScope =
 @Composable
 internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, VariantHostMembers)
-    val variants = remember(node) { retainedVariants(node) }
+    val variants = remember(ref(node)) { retainedVariants(node) }
     if (variants.isEmpty()) return
     val selections by ctx.bridge.variantSelections.collectAsState()
     val selected = selectedRetainedVariantIndex(
@@ -374,7 +374,7 @@ internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val activeSlots = retainedVariantActiveSlots(variants.size, selected)
 
     val hostPath = retainedVariantHostPath(ctx.path, node)
-    val branchPaths = remember(hostPath, variants) {
+    val branchPaths = remember(hostPath, ref(variants)) {
         variants.map { retainedVariantPath(hostPath, node, it) }
     }
     // SPEC 13.8.5: the engine positions an alternative at `variants[i].content`.
@@ -1177,7 +1177,7 @@ internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // scroll_here row always starts a chunk, so scrolling to the chunk retains
     // the contract's exact child-at-top behavior.
     val pinnedNodeMembers = ctx.configuration.admittedPinnedNodeMembers(ctx.inDialog)
-    val projection = remember(children, pinnedNodeMembers) {
+    val projection = remember(ref(children), pinnedNodeMembers) {
         lazyColumnProjection(children, pinnedNodeMembers = pinnedNodeMembers)
     }
     val scrollTargetToken = remember(projection) {
@@ -1187,13 +1187,13 @@ internal fun RenderLazyColumn(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // New map for every authored child ordering: stale offsets from an old
     // intra-chunk order, content height, or spacing must not be used to
     // reconcile the keyed viewport before the replacement is measured.
-    val itemOffsets = remember(ctx.path, children, itemSpacing) {
+    val itemOffsets = remember(ctx.path, ref(children), itemSpacing) {
         mutableStateMapOf<String, Int>()
     }
     val stickyHeaderMeasurements = remember(ctx.path, projection.chunks) {
         mutableStateMapOf<Int, LazyStickyHeaderMeasurement>()
     }
-    val itemOffsetGeneration = remember(ctx.path, children, itemSpacing) { Any() }
+    val itemOffsetGeneration = remember(ctx.path, ref(children), itemSpacing) { Any() }
     val retainedScope = LocalRetainedSaveableScope.current
     val viewportProviderPath = retainedScope?.providerPath(node)
     val listState = rememberRetainedLazyColumnState(
@@ -2086,7 +2086,7 @@ internal fun RenderReorderableList(node: JsonObject, ctx: RenderCtx, m: Modifier
     // and order are saveable so variant deactivation preserves a user reorder;
     // explicit reconciliation adopts a changed authored list even when that
     // update arrived while this branch was inactive (restore beats inputs).
-    val itemsRevision = remember(itemsJson) { reorderableItemsRevision(itemsJson) }
+    val itemsRevision = remember(ref(itemsJson)) { reorderableItemsRevision(itemsJson) }
     var savedItemsRevision by rememberSaveable(ctx.path) {
         mutableStateOf(itemsRevision)
     }
@@ -2103,7 +2103,7 @@ internal fun RenderReorderableList(node: JsonObject, ctx: RenderCtx, m: Modifier
         savedItemsRevision = reconciledOrder.authoredRevision
         order = ArrayList(reconciledOrder.order)
     }
-    val authoredPresentationKeys = remember(itemsJson) { lazyChildKeys(itemsJson) }
+    val authoredPresentationKeys = remember(ref(itemsJson)) { lazyChildKeys(itemsJson) }
     val displayKeys = remember(authoredPresentationKeys, order) {
         reorderableDisplayKeys(authoredPresentationKeys, order)
     }
@@ -2315,7 +2315,7 @@ internal fun RenderAppBarStrip(
 internal fun RenderCarousel(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, CarouselMembers)
     val children = (p.raw(CarouselMembers.Children) as? JsonArray) ?: return
-    val keys = remember(children) { lazyChildKeys(children) }
+    val keys = remember(ref(children)) { lazyChildKeys(children) }
     var savedAnchor by rememberSaveable(
         ctx.path,
         stateSaver = KeyedViewportAnchorSaver,
@@ -2467,7 +2467,7 @@ internal fun RenderButtonGroup(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 internal fun RenderLazyGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, LazyGridMembers)
     val children = (p.raw(LazyGridMembers.Children) as? JsonArray) ?: return
-    val keys = remember(children) { lazyChildKeys(children) }
+    val keys = remember(ref(children)) { lazyChildKeys(children) }
     val minItem = p.raw(LazyGridMembers.MinItemWidth)?.numOrNull()?.let { safeDp(it) }
     val cells = if (minItem != null) GridCells.Adaptive(minItem.dp)
         else GridCells.Fixed((p[LazyGridMembers.Columns]?.toDouble() ?: 2.0).toInt().coerceAtLeast(1))

@@ -144,11 +144,15 @@ its own evidence, as above.
    draft anywhere and only the stateful nodes that read the state run.
    Evidence: `PatchRecompositionTest.aDraftOnOneSurfaceRunsNoNodeOfAnother`
    (B's input runs; nothing of A, not even B's root).
-4. **C4a — identity keys in composition.** `LazyRenderItem` compares its node
-   by reference; `remember(children)` and `remember(node)` sites in
-   `LayoutNodes.kt`, `CoreComposeRenderer.kt`, `VisualizationNodes.kt` key on
-   identity or revision. Evidence: the insert-at-head case keeps later rows'
-   state; the scroll-retention instrumented test.
+4. **C4a — identity keys in composition — done 2026-10-21.** `Ref` wraps a
+   JSON value as a by-reference `remember`/`key` argument; `LazyRenderItem`
+   compares its node by reference; the `remember(children)`, `remember(node)`
+   and `remember(itemsJson)` sites in `LayoutNodes.kt`, the chart's keys in
+   `VisualizationNodes.kt` and the core text input in ebp-compose key on
+   identity. Evidence: `LazyRenderItemIdentityTest` (same instance equal,
+   equal copy not); the insert-at-head case unchanged (no pre-existing row
+   runs, so each keeps its state); the scroll-retention instrumented tests
+   on the phone.
 5. **C2b–d — the rest of the actor split** (C6a, the reducer's stale check
    first, is done 2026-10-21 in ebp-kmp), then **E3** (Org render memoization) and **A2a** (a value-only
    glasspane handler: the todo-filter chips or the agenda mode, after
@@ -349,8 +353,14 @@ step that can ship on its own.
   in `LayoutNodes.kt`; `remember(node)` in `CoreComposeRenderer.kt`;
   `remember(node.toString())` in `VisualizationNodes.kt`, which serializes the
   chart node on every recomposition; `LazyRenderItem` in `Attributes.kt`
-  compares its node structurally per visible row. Steps: (a) an identity key
-  wrapper and reference compare in `LazyRenderItem`; (b) keep `itemOffsets`
+  compares its node structurally per visible row. Steps: (a) **done
+  2026-10-21** — `Ref`, a by-reference `remember`/`key` wrapper in
+  `Attributes.kt`; `LazyRenderItem` compares its node by reference; every
+  JSON-keyed `remember` in `LayoutNodes.kt` (variant host, lazy projection,
+  item offsets, reorderable, carousel, grid) and the chart's `started` and
+  `pointerInput` keys in `VisualizationNodes.kt` key on identity, the
+  chart no longer serialized per recomposition; ebp-compose's core text
+  input likewise; (b) keep `itemOffsets`
   across revisions, invalidating only rows whose key vanished or whose
   instance changed, so the retained scroll effect no longer restarts with
   `scrollToItem(chunk, 0)`; (c) chunk keys for batchable rows that do not
