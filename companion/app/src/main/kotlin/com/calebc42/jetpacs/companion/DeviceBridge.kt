@@ -1077,6 +1077,18 @@ class DeviceBridge(
     // both the surface root and re-added retained owners to start fresh.
     private val retainedPresentationTracker =
         RetainedPresentationIncarnationTracker()
+    // C2c: one serial presentation thread; see SurfacePresenter.
+    private val presenter = SurfacePresenter(
+        onFailure = { surface, failure ->
+            android.util.Log.e("EbpBridge", "presentation of $surface failed", failure)
+        },
+        onTiming = { surface, waitNanos, runNanos ->
+            android.util.Log.d(
+                STAGE_LOG_TAG,
+                "present $surface wait=${waitNanos / 1000}us run=${runNanos / 1000}us",
+            )
+        },
+    )
     private val _surfacePresentationIncarnations =
         MutableStateFlow<Map<String, Any>>(emptyMap())
     val surfacePresentationIncarnations: StateFlow<Map<String, Any>>
@@ -1090,12 +1102,12 @@ class DeviceBridge(
     /** Project from the complete stored spec, not resolveView(current): a
      * local view switch must not retire presentation identities that remain
      * authored in another view of the same accepted surface. */
-    private fun publishPresentationIncarnations(surface: String) {
-        val projection = retainedPresentationTracker.accept(
-            surface,
-            store.revisionOf(surface),
-            store.spec(surface),
-        )
+    private fun publishPresentationIncarnations(
+        surface: String,
+        revision: Long? = store.revisionOf(surface),
+        spec: JsonObject? = store.spec(surface),
+    ) {
+        val projection = retainedPresentationTracker.accept(surface, revision, spec)
         _surfacePresentationIncarnations.value = projection.surfaceRoots
         _retainedPresentationIncarnations.value = projection.saveableOwners
     }
@@ -1756,28 +1768,41 @@ class DeviceBridge(
             engine.pairingIdentity?.let { id ->
                 cacheScope.launch { ImageCache.setIdentity(id) }
             }
-            // T3/LD-2: publish display generations before the spec, so the
-            // recomposition this push triggers already sees the new epoch.
-            _inputDisplays.value = store.inputDisplays()
-            _variantSelections.value = store.variantSelections()
-            if (surface.startsWith("app:")) {
-                // Lead the spec with its presentation identity just like the
-                // stateful display generations above.
-                publishPresentationIncarnations(surface)
-            }
-            when {
-                // SPEC 18.5: a notification:* surface is a system notification;
-                // its removal (tombstone -> null spec) cancels it.
-                surface.startsWith("notification:") -> {
-                    val spec = store.spec(surface)
-                    if (spec != null) Notifications.postSurface(appContext, surface, spec)
-                    else Notifications.cancelSurface(appContext, surface)
+            // PLAN-responsiveness C2c: the store is read HERE, under the
+            // engine monitor that guards it; everything that only needs the
+            // immutable snapshot — the incarnation walk, the publish into
+            // Compose, a notification post — runs on the presenter's thread
+            // in engine order, after this listener, the monitor and the
+            // actor command have all returned. The `listener` stage is now
+            // the reads and the hand-off; the presentation logs as `present`.
+            val displays = store.inputDisplays()
+            val selections = store.variantSelections()
+            val revision = store.revisionOf(surface)
+            val spec = store.spec(surface)
+            val view = if (surface.startsWith("app:")) resolveView(surface) else null
+            presenter.present(surface, timed = engine.stageObserver != null) {
+                // T3/LD-2: publish display generations before the spec, so the
+                // recomposition this push triggers already sees the new epoch.
+                _inputDisplays.value = displays
+                _variantSelections.value = selections
+                if (surface.startsWith("app:")) {
+                    // Lead the spec with its presentation identity just like the
+                    // stateful display generations above.
+                    publishPresentationIncarnations(surface, revision, spec)
                 }
-                surface.startsWith("widget:") -> onWidgetSurfaceChanged(surface)
-                surface.startsWith("tile:") ->
-                    TileSlots.refresh(appContext, surface)
-                surface.startsWith("app:") ->
-                    onSurfaceChanged(surface, resolveView(surface))
+                when {
+                    // SPEC 18.5: a notification:* surface is a system notification;
+                    // its removal (tombstone -> null spec) cancels it.
+                    surface.startsWith("notification:") -> {
+                        if (spec != null) Notifications.postSurface(appContext, surface, spec)
+                        else Notifications.cancelSurface(appContext, surface)
+                    }
+                    surface.startsWith("widget:") -> onWidgetSurfaceChanged(surface)
+                    surface.startsWith("tile:") ->
+                        TileSlots.refresh(appContext, surface)
+                    surface.startsWith("app:") ->
+                        onSurfaceChanged(surface, view)
+                }
             }
         }
         engine.variantListener = { surface, id, value ->

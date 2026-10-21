@@ -103,7 +103,11 @@ frame (decode, apply, materialize, admit, commit, reply, listener, in
 microseconds) under the `JetpacsStages` logcat tag once
 `adb shell setprop log.tag.JetpacsStages DEBUG` is set and the connection
 re-established; nothing is timed otherwise
-(`SurfaceDataEngineTest.aStageObserverSeesEveryStageOfAnUpdateAndAPatchAndNothingOtherwise`).
+(`SurfaceDataEngineTest.aStageObserverSeesEveryStageOfAnUpdateAndAPatchAndNothingOtherwise`);
+since PLAN-responsiveness C2c the `listener` stage is the store reads and the
+hand-off to `SurfacePresenter`, whose serial thread logs each presentation as
+`present <surface> wait=… run=…` under the same tag (`SurfacePresenterTest`:
+returns at once, runs in order on one thread, a failure stops nothing).
 The connection's inbound half is `FrameReader`: it decodes frames on the
 reader thread and the process actor runs one engine command per complete
 frame, so a partial frame holds neither the actor nor the engine monitor

@@ -153,8 +153,9 @@ its own evidence, as above.
    equal copy not); the insert-at-head case unchanged (no pre-existing row
    runs, so each keeps its state); the scroll-retention instrumented tests
    on the phone.
-5. **C2c–d — the rest of the actor split** (C2b, the action lane, and C6a,
-   the reducer's stale check first, are done 2026-10-21 in ebp-kmp), then **E3** (Org render memoization) and **A2a** (a value-only
+5. **C2d — draft persistence debounce** (C2b, the action lane, C2c, the
+   presentation off the monitor, and C6a, the reducer's stale check first,
+   are done 2026-10-21), then **E3** (Org render memoization) and **A2a** (a value-only
    glasspane handler: the todo-filter chips or the agenda mode, after
    confirming it moves values only), then **E2b** (reserve revisions in
    blocks), **C5** (cold start), **C8** (release build, baseline profile,
@@ -183,7 +184,9 @@ Companion: there is no startup, navigation or frame-time gate on a device;
 timing on the engine thread: `adb shell setprop log.tag.JetpacsStages DEBUG`,
 reconnect, and every inbound `surface.update` and `surface.data` frame logs
 decode, apply, materialize, admit, commit, reply and listener in
-microseconds. C8 adds a macrobenchmark that walks catalog →
+microseconds (since C2c `listener` is the store reads and the hand-off;
+the presentation itself logs as `present <surface> wait=… run=…` from its
+own thread). C8 adds a macrobenchmark that walks catalog →
 surface → drill → Back → one patch and records startup, first frame of a
 surface, Back latency and patch-to-frame.
 
@@ -336,9 +339,17 @@ step that can ship on its own.
   dispatch executor rides it, and the "command actor overloaded" toast is
   gone from that path (`EbpCommandActorTest`: an action ahead of queued
   work, a 200-action burst on a saturated process lane, close drains both
-  lanes); (c) hold the monitor
-  only for the state mutation, running `inputDisplays`, incarnation
-  projection and `publish` after `feed` returns; (d) debounce draft
+  lanes); (c) **done 2026-10-21** — the surface listener reads the store
+  under the monitor (`inputDisplays`, `variantSelections`, the revision, the
+  spec, the resolved view) and hands the presentation — the incarnation
+  walk, the publish into Compose, a notification post — to
+  `SurfacePresenter`, one serial thread in engine order, so the monitor and
+  the actor return before it runs; on the phone the `listener` stage fell
+  from 2–6 ms to 0.3–0.5 ms and the presentation runs 2–4 ms after a
+  0.05–1 ms wait (`present` lines under `JetpacsStages`); the §3.1 order is
+  unchanged — the screen still draws after the commit, because a failed
+  persist rolls the in-memory record back and an early publish would show
+  what then disappears (`SurfacePresenterTest`); (d) debounce draft
   persistence in `SurfaceStore.putDraft` within the 500 ms SPEC 14.6 ceiling.
   Evidence per step: `CompanionEngineTest` ordering cases green; a new case
   that a UI action is answered while a multi-chunk frame is mid-feed.
