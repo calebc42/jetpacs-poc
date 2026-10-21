@@ -114,6 +114,52 @@ file rows; see the apps lane — bound through `jetpacs-ref` and patched with
 `jetpacs-app-defer-patch` or `-sync`, each measured with M1 against the
 refresh it replaces.
 
+## Next slice
+
+The first slice is in `main`. Do these in order; each is one commit with
+its own evidence, as above.
+
+1. **Measure the first slice on a device.** Baseline workload from the
+   measurement section. Emacs: `jetpacs-devtools-profile` on, read the
+   "Tap → send" rows of `jetpacs-devtools-report` and the tap→send and prep
+   figures in `jetpacs-devtools-action-log-buffer` for a harp tag filter
+   (one patch) against a `harp.page` tap (a re-push), a chrome drill, and a
+   Back. Companion: `adb shell setprop log.tag.JetpacsStages DEBUG`, reconnect,
+   and record decode/apply/materialize/admit/commit/reply/listener for a
+   `surface.update` and a `surface.data` frame. Write the numbers into the
+   measurement section with device, APK type and Emacs build. They decide
+   the order of 2–4.
+2. **C2a — one actor command per complete frame.** Read until a frame is
+   complete (64 KiB buffer) and submit one command per frame, parsing
+   outside the engine monitor (`DeviceBridge` reader loop,
+   `CompanionEngine.feed`). Evidence: `CompanionEngineTest` ordering cases;
+   a new case that a UI action is answered while a multi-chunk frame is
+   mid-feed.
+3. **C3 — input displays per surface.** Drop `displays` from `RenderCtx`;
+   per-surface state read by the stateful nodes; `RenderCtx` compared on
+   surface, path, `sourcePath`, design scope. Evidence: a
+   `PatchRecompositionTest` case that a draft on surface B runs no node of
+   surface A.
+4. **C4a — identity keys in composition.** `LazyRenderItem` compares its node
+   by reference; `remember(children)` and `remember(node)` sites in
+   `LayoutNodes.kt`, `CoreComposeRenderer.kt`, `VisualizationNodes.kt` key on
+   identity or revision. Evidence: the insert-at-head case keeps later rows'
+   state; the scroll-retention instrumented test.
+5. **C2b–d, C6a — the rest of the actor split and the reducer's stale check
+   first**, then **E3** (Org render memoization) and **A2a** (a value-only
+   glasspane handler: the todo-filter chips or the agenda mode, after
+   confirming it moves values only), then **E2b** (reserve revisions in
+   blocks), **C5** (cold start), **C8** (release build, baseline profile,
+   macrobenchmark).
+
+Known environment notes from the first slice: three Jetpacs ERT cases
+(`jetpacs-clip-golden`, `jetpacs-hypertext-table-cell-cap`,
+`jetpacs-integration-w10-ceiling-is-real-not-stubbed`), three ebp.el wire
+cases that expect an unwritable directory, and harp's checkdoc step fail
+on upstream `main` when run as root on a from-source Emacs 30.1; none is
+touched by the slice. `jetpacs-entry-test.el` and `jetpacs-teardown-test.el`
+need the `jetpacs-authoring` checkout beside the others.
+
 ## Measurement first
 
 Emacs: set `jetpacs-devtools-profile`. `jetpacs-devtools-report` gives the
