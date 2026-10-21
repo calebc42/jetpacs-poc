@@ -2192,5 +2192,46 @@ ship from the cache, the replaced screen is built."
             (should (= 2 (hash-table-count views)))
             (should (gethash "hub" views))))))))
 
+(ert-deftest jetpacs-chrome-class-flip-repushes-at-the-next-tick ()
+  "A size-class flip re-pushes every chrome surface through a zero-delay
+timer, not the shell's 0.5 s idle debounce; ticks inside one class cost
+nothing; two flips in one tick coalesce; each surface pushes in isolation."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (jetpacs-chrome-test--define "filesapp" "hub")
+        (jetpacs-chrome-test--define "notesapp" "home")
+        (let ((deferred '()) (debounced 0) (classes '("compact" . "compact")))
+          (cl-letf (((symbol-function 'run-at-time)
+                     (lambda (delay _r fn &rest _)
+                       (should (eql delay 0))
+                       (push fn deferred)
+                       'timer-object))
+                    ((symbol-function 'timerp)
+                     (lambda (x) (eq x 'timer-object)))
+                    ((symbol-function 'jetpacs-shell--schedule-repush)
+                     (lambda (&rest _) (cl-incf debounced)))
+                    ((symbol-function 'jetpacs-window-class)
+                     (lambda (axis) (if (eq axis :width) (car classes) (cdr classes)))))
+            (setq jetpacs-chrome--window-classes '("compact" . "compact")
+                  jetpacs-chrome--flip-timer nil)
+            ;; A geometry tick inside the class: nothing scheduled.
+            (jetpacs-chrome--on-window-changed client nil)
+            (should (null deferred))
+            ;; A flip: one zero-delay timer, no debounce.
+            (setq classes '("expanded" . "compact"))
+            (jetpacs-chrome--on-window-changed client nil)
+            (should (= 1 (length deferred)))
+            (should (= 0 debounced))
+            ;; A second flip before the tick coalesces into the same timer.
+            (setq classes '("expanded" . "medium"))
+            (jetpacs-chrome--on-window-changed client nil)
+            (should (= 1 (length deferred)))
+            ;; The tick pushes every chrome surface.
+            (funcall (car deferred))
+            (should (equal (sort (mapcar #'car recs) #'string<)
+                           '("app:filesapp" "app:notesapp")))
+            (should (null jetpacs-chrome--flip-timer))))))))
+
 (provide 'jetpacs-chrome-test)
 ;;; jetpacs-chrome-test.el ends here

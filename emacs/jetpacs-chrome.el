@@ -664,18 +664,43 @@ data form can swap, because only data can be re-authored into a rail."
 (defvar jetpacs-chrome--window-classes nil
   "The (WIDTH-CLASS . HEIGHT-CLASS) chrome last authored for.")
 
+(defvar jetpacs-chrome--flip-timer nil
+  "The zero-delay timer re-pushing every chrome surface after a class flip.")
+
+(defun jetpacs-chrome--repush-after-flip ()
+  "Re-push every chrome surface at the next tick.
+A size-class flip is a gesture the device is showing right now — a
+rotation, a fold, a split — so the re-render must not wait for the
+shell's registry debounce (`jetpacs-shell--schedule-repush', 0.5 s of
+Emacs idleness).  One timer coalesces flips that land in the same tick;
+each surface pushes in isolation, as the READY drain does, so one gate
+failure cannot drop another surface's re-render."
+  (unless (timerp jetpacs-chrome--flip-timer)
+    (setq jetpacs-chrome--flip-timer
+          (run-at-time
+           0 nil
+           (lambda ()
+             (setq jetpacs-chrome--flip-timer nil)
+             (when (jetpacs-connected-p)
+               (maphash
+                (lambda (surface _stack)
+                  (when (jetpacs-shell--surface-capability-granted-p surface)
+                    (condition-case err
+                        (jetpacs-shell-push surface)
+                      (error (message "jetpacs-chrome: class-flip repush of %s \
+failed: %s" surface (jetpacs-error-label err))))))
+                jetpacs-chrome--stacks)))))))
+
 (defun jetpacs-chrome--on-window-changed (_client _window)
   "Re-push every chrome surface when the size CLASS flips (SPEC 20.1.1).
 Geometry ticks inside one class cost nothing; a flip re-pushes each
-chrome surface (debounced by the shell) so the dock swaps forms and
-every screen re-authors for the new class."
+chrome surface at the next tick (`jetpacs-chrome--repush-after-flip')
+so the dock swaps forms and every screen re-authors for the new class."
   (let ((classes (cons (jetpacs-window-class :width)
                        (jetpacs-window-class :height))))
     (unless (equal classes jetpacs-chrome--window-classes)
       (setq jetpacs-chrome--window-classes classes)
-      (maphash (lambda (surface _stack)
-                 (jetpacs-shell--schedule-repush surface))
-               jetpacs-chrome--stacks))))
+      (jetpacs-chrome--repush-after-flip))))
 
 (defun jetpacs-chrome--on-ready (client)
   "Seed the class memo and attach the window hook.
