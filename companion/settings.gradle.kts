@@ -19,6 +19,8 @@ rootProject.name = "jetpacs-companion"
 include(":ebp-kmp")
 include(":wire")
 include(":app")
+// Compose for Desktop host; see docs/PLAN-desktop-companion.md.
+include(":desktop")
 include(":core:model")
 include(":core:database")
 include(":core:ebp-store")

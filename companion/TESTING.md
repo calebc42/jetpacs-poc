@@ -406,6 +406,24 @@ from the user's observations rather than inferred from instrumentation.
 AndroidX Test 1.7/3.7 release line because Compose UI Test 1.12's older
 transitive Espresso cannot initialize on Android 17/API 37.
 
+## Desktop host
+
+The Compose for Desktop host lives in `desktop/`
+([`../docs/PLAN-desktop-companion.md`](../docs/PLAN-desktop-companion.md)).
+It has only the D0 toolchain spike today.
+
+```sh
+./gradlew :desktop:test
+./gradlew :desktop:run
+```
+
+`:desktop:test` renders the spike headless at 1280 by 800, asserts every
+proving region, pushes a `JetpacsNavKey` through Navigation 3, and writes
+`desktop/build/spike/spike.png`. It needs no display. `:desktop:run` opens
+the window and needs one; under WSLg Skiko falls back from OpenGL to software
+rendering. Both tasks read the wire golden from the `ebp` checkout under
+`JETPACS_REPOSITORIES_ROOT`.
+
 ## Broad gate
 
 ```sh

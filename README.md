@@ -105,6 +105,7 @@ See [the local migration record](docs/LOCAL-REPOSITORY-LAYOUT.md).
 | `docs/REPOSITORY-BOUNDARIES.md` | Canonical repository graph, physical paths, and extraction manifest |
 | `docs/PLAN-poc3-rebuild.md` | Cross-platform execution phases and exit gates |
 | `docs/PLAN-responsiveness.md` | Responsiveness and navigation work order, first slice, measurement, and gates |
+| `docs/PLAN-desktop-companion.md` | Desktop (JVM) Companion work order, dependency facts, and gates |
 | `docs/PLATFORM-RENTAL-REGISTER.md` | Built-ins/libraries that POC 3 must rent instead of reimplementing |
 | `docs/REWRITE-PLAN.md` | Rung ladder, gates, port manifest |
 | `docs/ARCHITECTURE-POC3.md` | Local references, module boundaries, Room/Nav/track-changes plan |

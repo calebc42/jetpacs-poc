@@ -31,6 +31,7 @@ specification or extension manifest, then run the documented generator.
 | [`PLAN-poc3-rebuild.md`](PLAN-poc3-rebuild.md) | Current implementation status, change ordering, and completion gates |
 | [`PLAN-room3-rebuild.md`](PLAN-room3-rebuild.md) | Implemented Room schema, transaction boundaries, and non-durable state |
 | [`PLAN-responsiveness.md`](PLAN-responsiveness.md) | Ordered responsiveness and navigation work across the Companion, the Emacs platform and the apps, with its first slice, measurement and completion gates |
+| [`PLAN-desktop-companion.md`](PLAN-desktop-companion.md) | Ordered work to build the Compose for Desktop Companion host: module inventory, dependency facts, change order, routing and completion gates |
 | [`EBP3-RENDERER-MIGRATION.md`](EBP3-RENDERER-MIGRATION.md) | EBP 3 renderer-extension ownership, profiles, and projection generation |
 | [`material3/README.md`](material3/README.md) | Optional Jetpacs Material 3 authoring, native rendering, and catalog |
 | [`CHROME-VOCABULARY.md`](CHROME-VOCABULARY.md) | App chrome terminology, placement rules, composition, and back behavior |
