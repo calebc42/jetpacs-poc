@@ -257,6 +257,40 @@ What the numbers say:
    bottleneck is the engine's patch path), with C2c's §3.1 question settled
    on the way.
 
+### Numbers, 2026-10-21 — after C2a
+
+Same device, APK type, Emacs build, wireless forward, workload and taps as
+above, twenty minutes later, on jetpacs-poc `7fb691d0` with ebp-kmp
+`a65f3f0` (`FrameReader`, one actor command per complete frame, the parse on
+the reader thread). The `decode` stage is now the reader's measurement of
+the frame's final slice: terminator scan, UTF-8 and JSON parse.
+
+Emacs (ms): tag chip patches ×4, tap→send 0.3–0.4, send→reply 68.7–102.8;
+Next/Previous ×3, tap→send 31.3–57.3, send→reply 78.0–95.0; drills ×3,
+tap→send 27.8–31.1, send→reply 70.9–88.6; an entry form push (`harp.form`,
+17,613 B) tap→send 27.6, send→reply 60.3.
+
+Companion, `JetpacsStages` (ms; min–max):
+
+| Frame | decode | apply | materialize | admit | commit | reply | listener | total |
+|---|---|---|---|---|---|---|---|---|
+| `surface.update` 18.9 KB, 6 frames | 8.5–10.5 | 0.2–1.8 | 11.1–15.6 | 11.6–15.3 | 14.9–29.8 | 0.2–0.4 | 2.4–5.7 | 53.9–77.2 |
+| `surface.update` 17.6 KB form, 1 frame | 5.7 | 0.2 | 6.7 | 10.2 | 10.4 | 0.3 | 3.0 | 36.5 |
+| `surface.data` 1.8–3.5 KB, 4 frames | 0.7–1.2 | 1.6–3.9 | 11.6–22.5 | 12.0–16.9 | 18.7–33.6 | 0.2–0.4 | 4.4–5.3 | 56.9–83.7 |
+
+Reading: single-frame latency is unchanged by C2a, as the morning's numbers
+predicted — decode, apply, materialize and admit sit inside the earlier
+ranges or within a few ms of them, and the only stage that moved, commit
+(Room, +4 to +12 ms on both frame kinds), is one the reader never touches;
+treat that as run-to-run variance on a freshly installed, not yet
+dex-optimised build, not an effect. What C2a changed is structural and is
+pinned by `FrameReaderTest`, not by these numbers: a partial frame now holds
+neither the actor nor the engine monitor, so a tap during a snapshot's
+arrival is answered at once. The reconnect drain right after the install,
+with the screen off, ran 62–212 ms per frame with commit at 21–115 ms —
+the phone throttled, not the reader; a drain on an unlocked phone is still
+unmeasured.
+
 ## Implemented baseline
 
 | Area | Current implementation evidence |
