@@ -2,12 +2,16 @@
 package com.calebc42.jetpacs.material3
 
 import androidx.activity.ComponentActivity
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithText
+import com.calebc42.ebp.wire.InputDisplay
 import com.calebc42.ebp.wire.SurfaceStore
 import com.calebc42.jetpacs.material3.testing.MaterialTestController
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
@@ -141,6 +145,50 @@ class PatchRecompositionTest {
         controller.update(third)
         controller.waitForIdle()
         assertEquals(subtree(rootPath, children(third)[0], 0) + rootPath, ran.toSet())
+    }
+
+    @Test
+    fun aDraftOnOneSurfaceRunsNoNodeOfAnother() {
+        // C3: the per-surface display state. A draft published for surface B
+        // runs B's stateful node and nothing of surface A — not even A's
+        // root, which used to carry the whole store's display map in its
+        // context and so recomposed its entire tree on any draft anywhere.
+        val a = json(
+            """{"t":"column","key":"ra","children":[
+                {"t":"text","key":"ta","text":"A"},
+                {"t":"text_input","id":"ia","label":"A"}]}""",
+        )
+        val b = json(
+            """{"t":"column","key":"rb","children":[
+                {"t":"text","key":"tb","text":"B"},
+                {"t":"text_input","id":"ib","label":"B"}]}""",
+        )
+        val controller = controller()
+        controller.start(mapOf("app:a" to a, "app:b" to b))
+        assertEquals(subtree("", a, 0) + subtree("", b, 0), ran.toSet())
+
+        ran.clear()
+        controller.host.inputDisplays.value = mapOf(
+            ("app:b" to "ib") to InputDisplay(1L, JsonPrimitive("typed")),
+        )
+        controller.waitForIdle()
+        // B's field re-seeds from the new generation: the recomposition
+        // happened, in the field's own scope below the observer, which is
+        // why no identity path is recorded for it. Before C3 every path of
+        // A and B ran here, the root's context having changed.
+        compose.onNodeWithText("typed").assertIsDisplayed()
+        assertEquals("nothing ran above a field's own scope: $ran", emptyList<String>(), ran)
+
+        // A's own draft seeds A's field and still runs nothing of B — or of
+        // A above the field.
+        controller.host.inputDisplays.value = mapOf(
+            ("app:b" to "ib") to InputDisplay(1L, JsonPrimitive("typed")),
+            ("app:a" to "ia") to InputDisplay(1L, JsonPrimitive("mine")),
+        )
+        controller.waitForIdle()
+        compose.onNodeWithText("mine").assertIsDisplayed()
+        compose.onNodeWithText("typed").assertIsDisplayed()
+        assertEquals(emptyList<String>(), ran)
     }
 
     @Test

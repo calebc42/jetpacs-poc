@@ -2,6 +2,7 @@
 package com.calebc42.jetpacs.material3.testing
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,8 @@ class MaterialTestController(
 ) {
     private sealed interface Mounted {
         data class Surface(val spec: JsonObject) : Mounted
+        /** Several surfaces in one composition, each its own [RenderNode] root. */
+        data class Surfaces(val specs: Map<String, JsonObject>) : Mounted
         data class Dialog(val dialogId: String, val spec: JsonObject, val epoch: Long) : Mounted
     }
 
@@ -53,6 +56,11 @@ class MaterialTestController(
 
     /** Compose [spec] as the surface document and wait for idle. Call once per test. */
     fun start(spec: JsonObject) = mount(Mounted.Surface(spec))
+
+    /** Compose every entry of [specs] (surface id to document) as its own root in one
+     * composition and wait for idle, for a test that watches one surface while another
+     * changes. Call once per test; [update] does not apply. */
+    fun start(specs: Map<String, JsonObject>) = mount(Mounted.Surfaces(specs))
 
     /** Compose [spec] as dialog [dialogId]'s document and wait for idle. Call once per test. */
     fun startDialog(dialogId: String, spec: JsonObject, epoch: Long = 0L) =
@@ -90,6 +98,12 @@ class MaterialTestController(
                 when (val target = mounted.value) {
                     is Mounted.Surface ->
                         RenderNode(target.spec, surface, host, configuration = configuration)
+                    is Mounted.Surfaces ->
+                        Column {
+                            for ((id, spec) in target.specs) {
+                                RenderNode(spec, id, host, configuration = configuration)
+                            }
+                        }
                     is Mounted.Dialog ->
                         RenderDialogRoot(target.dialogId, target.spec, host, target.epoch, configuration)
                     null -> Unit

@@ -137,11 +137,13 @@ its own evidence, as above.
    two behind the engine's own decoder, for tests). Evidence:
    `CompanionEngineTest` ordering cases unchanged plus the parsed-frame and
    fault cases; `FrameReaderTest.aUiActionIsAnsweredWhileAMultiChunkFrameIsMidFeed`.
-3. **C3 — input displays per surface.** Drop `displays` from `RenderCtx`;
-   per-surface state read by the stateful nodes; `RenderCtx` compared on
-   surface, path, `sourcePath`, design scope. Evidence: a
-   `PatchRecompositionTest` case that a draft on surface B runs no node of
-   surface A.
+3. **C3 — input displays per surface — done 2026-10-21.** `RenderCtx.displays`
+   is one snapshot `State<Map<id, InputDisplay>>` per root, derived from the
+   host's whole-store flow filtered to the surface and compared structurally;
+   `epochOf` and `storeValue` read it, so the contexts stay equal across a
+   draft anywhere and only the stateful nodes that read the state run.
+   Evidence: `PatchRecompositionTest.aDraftOnOneSurfaceRunsNoNodeOfAnother`
+   (B's input runs; nothing of A, not even B's root).
 4. **C4a — identity keys in composition.** `LazyRenderItem` compares its node
    by reference; `remember(children)` and `remember(node)` sites in
    `LayoutNodes.kt`, `CoreComposeRenderer.kt`, `VisualizationNodes.kt` key on
@@ -335,11 +337,12 @@ step that can ship on its own.
   snapshot; the root `RenderNode` bakes it into `RenderCtx`, a data class
   copied into every child, so any change anywhere makes every visible node's
   context unequal and the whole tree recomposes with a map compare per node.
-  Steps: (a) a per-surface `StateFlow` (or `derivedStateOf` filtered by
-  `ctx.surface`) read by the stateful nodes through a `CompositionLocal`;
-  (b) drop `displays` from `RenderCtx` and compare it on surface, path,
-  `sourcePath` and design scope only. Evidence: `PatchRecompositionTest` case —
-  a draft on surface B runs no node of surface A.
+  Steps — **done 2026-10-21**: (a) a `derivedStateOf` per root filtered to
+  `ctx.surface` with structural equality, carried in `RenderCtx.displays` and
+  read by the stateful nodes through `epochOf`/`storeValue`; (b) the context
+  therefore compares by value on surface, paths and design scope and by
+  identity on the rest, the state being created once per root. Evidence:
+  `PatchRecompositionTest.aDraftOnOneSurfaceRunsNoNodeOfAnother`.
 - **C4.** Identity keys for JSON values in composition. kotlinx `JsonObject`
   equality deep-walks even the same instance. Sites: `remember(node)` for the
   variant host, `remember(children)` for lazy keys and `remember(itemsJson)`

@@ -85,7 +85,10 @@ import com.calebc42.ebp.renderer.compose.LocalComposeChromeStyles
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.structuralEqualityPolicy
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
@@ -244,6 +247,12 @@ fun captureValue(id: String, fields: Map<String, JsonElement?>, defaults: JsonOb
  * Everything a node render needs beside the node itself: the surface, the
  * engine seam (neutral action/state/editor hosts on the ebp-dispatch executor),
  * the optional dialog rebinding, and the §16.1 identity path.
+ *
+ * Equality is what Compose skips on: the surface, the paths and the design
+ * scope by value, the host, dialog, configuration and [displays] by
+ * identity. The display state is created once per root
+ * (PLAN-responsiveness C3), so a draft published anywhere leaves every
+ * context equal and only the stateful nodes that read the state run.
  */
 @Stable
 data class RenderCtx(
@@ -260,9 +269,13 @@ data class RenderCtx(
      * whose unkeyed segments are slot indices the engine cannot rebuild.
      */
     val sourcePath: String = "",
-    /** T3/LD-2: what each of this surface's stateful nodes should display,
-     * and the generation that value belongs to. */
-    val displays: Map<Pair<String, String>, InputDisplay> = emptyMap(),
+    /** T3/LD-2: what each of THIS surface's stateful nodes should display,
+     * and the generation that value belongs to, keyed by node id. A snapshot
+     * state so that only the nodes reading it recompose when it changes;
+     * the root derives it from the host's whole-store flow, filtered to the
+     * surface and compared structurally, so another surface's draft never
+     * invalidates this one (PLAN-responsiveness C3). */
+    val displays: State<Map<String, InputDisplay>> = NoInputDisplays,
     /** The app-selected target profile and downstream renderer installation. */
     val configuration: ComposeRendererConfiguration = NodeSupport.COMPOSE_CONFIGURATION,
     /** Nearest admitted downstream design scope; roots always start unscoped. */
@@ -290,7 +303,7 @@ data class RenderCtx(
      * silently defeated wherever state is saved and restored (a recycled
      * `lazy_column` row, a `HorizontalPager` page, process death).
      */
-    fun epochOf(id: String): Long = displays[surface to id]?.epoch ?: 0L
+    fun epochOf(id: String): Long = displays.value[id]?.epoch ?: 0L
 
     /**
      * T3/LD-2: the value the STORE says this node holds — the draft when the
@@ -306,7 +319,7 @@ data class RenderCtx(
      * which is the LD-2 divergence by a route no epoch can detect, because
      * nothing in the store changed.
      */
-    fun storeValue(id: String): JsonElement? = displays[surface to id]?.value
+    fun storeValue(id: String): JsonElement? = displays.value[id]?.value
 
     fun action(descriptor: JsonObject?, value: JsonElement? = null) {
         dispatchAction(descriptor, value)
@@ -464,12 +477,34 @@ fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererHost,
                    NodeSupport.COMPOSE_CONFIGURATION) {
     // T3/LD-2: collected once at the root and carried down the tree, so a
     // stateful widget reads its generation and its seed without each one
-    // subscribing.
-    val displays by bridge.inputDisplays.collectAsState()
+    // subscribing. C3: carried as ONE snapshot state per root, filtered to
+    // this surface and compared structurally, so the contexts below stay
+    // equal across a draft anywhere and only the stateful nodes that read
+    // the state run — and none of them when the draft is another surface's.
+    val all = bridge.inputDisplays.collectAsState()
+    val displays = remember(surface) {
+        derivedStateOf(structuralEqualityPolicy()) { surfaceInputDisplays(all.value, surface) }
+    }
     ProvideRevealSwipeCoordinator {
         RenderNode(node, RenderCtx(surface, bridge, dialog, displays = displays,
             configuration = configuration))
     }
+}
+
+/** The host's whole-store display map narrowed to [surface], keyed by node id. */
+internal fun surfaceInputDisplays(
+    all: Map<Pair<String, String>, InputDisplay>,
+    surface: String,
+): Map<String, InputDisplay> {
+    if (all.isEmpty()) return emptyMap()
+    val out = HashMap<String, InputDisplay>()
+    for ((key, display) in all) if (key.first == surface) out[key.second] = display
+    return out
+}
+
+/** A context with no store opinion — a dialog, or a test root. */
+private object NoInputDisplays : State<Map<String, InputDisplay>> {
+    override val value: Map<String, InputDisplay> get() = emptyMap()
 }
 
 /** Root of a dialog's node tree: owns the local field map (SPEC 18.1). */

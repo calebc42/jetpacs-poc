@@ -41,7 +41,11 @@ node run only the root and the changed identity path. material3 compares Json
 parameters by reference since `feat(material3): skip by reference and count
 node renders across a patch`; sharing comes from `Materializer.share`, so the
 count fails if the store stops handing back the previous revision's
-instances for untouched subtrees.
+instances for untouched subtrees. The same suite pins the per-surface
+display state (PLAN-responsiveness C3): a draft published for one surface
+runs that surface's stateful node and nothing of another surface composed
+beside it (`aDraftOnOneSurfaceRunsNoNodeOfAnother`, mounted through the
+controller's multi-surface `start`).
 
 The model suite pins registry-derived profiles, semantic name/default/state
 projection, and the no-Material dependency boundary for EBP, wire, core,
