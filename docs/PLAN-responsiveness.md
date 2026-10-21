@@ -115,7 +115,10 @@ commits remain and are counted by the ebp-wire witnesses).
 
 Companion: there is no startup, navigation or frame-time gate on a device;
 `companion/TESTING.md` samples only JVM projection work. M2 adds per-stage
-timing on the engine thread. C8 adds a macrobenchmark that walks catalog →
+timing on the engine thread: `adb shell setprop log.tag.JetpacsStages DEBUG`,
+reconnect, and every inbound `surface.update` and `surface.data` frame logs
+decode, apply, materialize, admit, commit, reply and listener in
+microseconds. C8 adds a macrobenchmark that walks catalog →
 surface → drill → Back → one patch and records startup, first frame of a
 surface, Back latency and patch-to-frame.
 

@@ -89,7 +89,14 @@ reference store and pins row-level persistence: an accepted update, patch,
 removal or view switch writes one `surface_records` row and leaves every
 other row and its accepted-at stamp untouched, a draft-clearing snapshot
 commits the record and the reconciled drafts together, and the whole-catalog
-replace skips rows whose content is already on disk. The engine half of
+replace skips rows whose content is already on disk. On a device, the engine
+reports per-stage timing of every inbound `surface.update` and `surface.data`
+frame (decode, apply, materialize, admit, commit, reply, listener, in
+microseconds) under the `JetpacsStages` logcat tag once
+`adb shell setprop log.tag.JetpacsStages DEBUG` is set and the connection
+re-established; nothing is timed otherwise
+(`SurfaceDataEngineTest.aStageObserverSeesEveryStageOfAnUpdateAndAPatchAndNothingOtherwise`).
+The engine half of
 the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),
 `DataModelContractTest`, `SurfaceStoreDataTest` and `SurfaceDataEngineTest`

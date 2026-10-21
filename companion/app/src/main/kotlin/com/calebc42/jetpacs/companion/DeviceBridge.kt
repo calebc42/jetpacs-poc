@@ -285,6 +285,11 @@ class DeviceBridge(
 
     private companion object {
         const val CONTEXTLESS_PLATFORM = "contextless:platform"
+
+        /** Per-stage timing of every inbound surface frame (PLAN-responsiveness
+         * M2), read once per connection: `adb shell setprop
+         * log.tag.JetpacsStages DEBUG`, then reconnect. Off, nothing is timed. */
+        const val STAGE_LOG_TAG = "JetpacsStages"
     }
 
     internal val context: android.content.Context get() = appContext
@@ -1688,6 +1693,26 @@ class DeviceBridge(
                     message, action, duration) { outcome ->
                     dispatchExecutor.execute { respond(outcome) }
                 }
+        }
+        // The stage timer: decode, apply, materialize, admit, commit, reply
+        // and listener per surface frame, in microseconds, on the engine
+        // thread. Installed only while the logcat tag is enabled, so the
+        // measured path pays nothing otherwise.
+        if (android.util.Log.isLoggable(STAGE_LOG_TAG, android.util.Log.DEBUG)) {
+            engine.stageObserver = { method, surface, stages ->
+                android.util.Log.d(
+                    STAGE_LOG_TAG,
+                    buildString {
+                        append(method).append(' ').append(surface)
+                        var total = 0L
+                        for ((stage, nanos) in stages) {
+                            total += nanos
+                            append(' ').append(stage).append('=').append(nanos / 1000).append("us")
+                        }
+                        append(" total=").append(total / 1000).append("us")
+                    },
+                )
+            }
         }
         engine.surfaceListener = { surface ->
             // SPEC 17.2/9.1: bind the image cache to THIS session's
