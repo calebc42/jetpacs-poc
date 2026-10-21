@@ -1,8 +1,8 @@
 # D1: multiplatform renderer modules
 
-Status: active. This is the execution map for item D1 of
-[`PLAN-desktop-companion.md`](PLAN-desktop-companion.md). Nothing below has
-landed yet; each step records its commit when it does.
+Status: implemented. This is the execution map for item D1 of
+[`PLAN-desktop-companion.md`](PLAN-desktop-companion.md). Every step landed
+on 2026-10-21; each records its commit below.
 
 The outcome is that `:renderer:model`, `:renderer:compose`,
 `:renderer:jetpacs` and `:renderer:material3` build as Kotlin Multiplatform
@@ -123,37 +123,37 @@ host-test resources for Robolectric. Jetpacs adds `-Xexpect-actual-classes`.
 E is `ebp-compose`, C is `jetpacs-components`, P is `companion`, R is this
 repository. Every commit leaves all three builds green.
 
-1. **S0 — Baseline.** Record both repositories' status, the `:app` debug and
+1. **S0 — Baseline (done).** Record both repositories' status, the `:app` debug and
    release runtime classpaths, each module's host-test count, both screenshot
    validations (57 pass; 11 pass plus the four `MaterialCatalogProjectionTabs`
    previews whose references are intentionally absent) and the font count in
    the debug APK.
-2. **S1 — E: `:renderer:model`.** Moves; `tools/gen-node-members.py` output
+2. **S1 — E: `:renderer:model` (ebp-compose `daceb66`).** Moves; `tools/gen-node-members.py` output
    path; `RendererBoundaryTest` scans every `src/*Main` directory, requires
    that some exist, and guards `commonMain` against `android.`,
    `org.jetbrains.skia`, `java.awt` and `javax.swing`; README task names.
-3. **S2 — E: `:renderer:compose`.** Moves; README.
-4. **S3 — R: substitution rule and path follow-ups.** The rule;
+3. **S2 — E: `:renderer:compose` (ebp-compose `bdc9185`).** Moves; README.
+4. **S3 — R: substitution rule and path follow-ups (`4817c99b`).** The rule;
    `jetpacs-platform-tools` workbench path; `docs/workspace/DESIGN-RUNTIME.md`;
    `companion/TESTING.md` model and compose tasks; the `AGENTS.md` broad gate
    becomes `./gradlew testDebugUnitTest testAndroidHostTest jvmTest
    :desktop:test assembleDebug`, because the current one silently skips KMP
    host tests.
-5. **S4 — R: jetpacs screenshots extracted** while jetpacs is still an
+5. **S4 — R: jetpacs screenshots extracted (`421a787a`)** while jetpacs is still an
    Android library. Opt-in annotation; new module; both settings files;
    TESTING.md.
-6. **S5 — R: `:renderer:jetpacs`.** Moves with resources; `PlexFonts`;
+6. **S5 — R: `:renderer:jetpacs` (`ce5cbab7`).** Moves with resources; `PlexFonts`;
    `tools/check-projections.sh` paths; `JetpacsRendererBoundaryTest` walks
    the new source sets and fails on zero files; README; TESTING.md.
-7. **S6 — R: material3 screenshots extracted.** New module; TESTING.md;
+7. **S6 — R: material3 screenshots extracted (`002d0474`).** New module; TESTING.md;
    `docs/material3/README.md`.
-8. **S7 — R: `:renderer:material3`.** Moves; the five seams; the
+8. **S7 — R: `:renderer:material3` (`1bfcff86`).** Moves; the five seams; the
    `LocalLifecycleOwner` and `ExposedDropdownMenuAnchorType` swaps; paths in
    `tools/check-material3-projections.sh`, `NodeSupportPinTest`,
    `MaterialTypedReadsTest`, `VariantHostRenderTest`,
    `test/jetpacs-icon-lint-test.el`, the two lookup-table generators;
    `docs/material3/README.md`; TESTING.md.
-9. **S8 — R: desktop links the renderers.** `companion/desktop` depends on
+9. **S8 — R: desktop links the renderers (this commit).** `companion/desktop` depends on
    `:renderer:material3` and `:renderer:jetpacs`; `SpikeRenderTest` composes
    `EbpTheme` and `ProvideJetpacsTheme` around a text and asserts a pushed
    primary color reaches the Material scheme, and guards the test classpath
@@ -164,6 +164,33 @@ repository. Every commit leaves all three builds green.
 Historical verification logs in `LOCAL-REPOSITORY-LAYOUT.md`,
 `COMPONENTS-AUTOMATIONS-CONSOLIDATION.md` and `material3/MIGRATION.md` keep
 the task names they recorded.
+
+## What the run found
+
+- The first device run of a suite with the phone's screen off lost tests
+  to a Samsung window-manager null-task crash on activity launch; waking
+  the phone and returning to the launcher first clears it. With the phone
+  attached over two ADB transports, AGP installs on both and the concurrent
+  runs crash each other's instrumentation; pin `ANDROID_SERIAL`.
+- Robolectric host tests and the `androidDeviceTest` manifest both work
+  under the KMP Android plugin; neither fallback below was needed.
+- The signature-drift risk materialised in `InputNodes.kt`: JetBrains'
+  Material 1.13.0-alpha02 lacks `TonalToggleButton`, the square and round
+  toggle shapes and the expressive checkable `DropdownMenuItem`, orders
+  `ToggleButton`'s parameters differently, names the slider state
+  constructors' range differently and exposes the dropdown popup as an
+  extension rather than a scope member. Four seams in
+  `MaterialLineSeams.kt` cover those regions: `ToggleButtonVariant`,
+  `CheckableMenuItem`, the dropdown's `OptionsMenu`, and `RenderSlider` as
+  a whole. Their Android actuals are the original code verbatim; their JVM
+  actuals are placeholders on JetBrains' API that D3 replaces, and the
+  seams fold back when the two lines converge.
+- The app's debug runtime classpath differs from the baseline in one line:
+  the test-manifest library no longer reaches the app through
+  `:renderer:compose`. The release classpath is identical.
+- `docs/material3/lookup-tables/MODIFIERS-REFERENCE.org` is stale against
+  the October contract and `Attributes.kt`; that drift predates D1 and is
+  left for its own change.
 
 ## Risks
 

@@ -34,6 +34,10 @@ dependencies {
     implementation(projects.core.navigation)
     implementation(projects.wire)
     implementation(projects.ebpKmp)
+    // D1: the multiplatform renderers, linked here against JetBrains' Compose
+    // through the root build's substitution rule.
+    implementation(projects.renderer.material3)
+    implementation(projects.renderer.jetpacs)
     testImplementation(compose.desktop.uiTestJUnit4)
     testImplementation(libs.junit)
 }

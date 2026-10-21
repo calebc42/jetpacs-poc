@@ -410,7 +410,7 @@ transitive Espresso cannot initialize on Android 17/API 37.
 
 The Compose for Desktop host lives in `desktop/`
 ([`../docs/PLAN-desktop-companion.md`](../docs/PLAN-desktop-companion.md)).
-It has only the D0 toolchain spike today.
+It holds the D0 toolchain spike and links the multiplatform renderers (D1).
 
 ```sh
 ./gradlew :desktop:test
@@ -419,10 +419,20 @@ It has only the D0 toolchain spike today.
 
 `:desktop:test` renders the spike headless at 1280 by 800, asserts every
 proving region, pushes a `JetpacsNavKey` through Navigation 3, and writes
-`desktop/build/spike/spike.png`. It needs no display. `:desktop:run` opens
-the window and needs one; under WSLg Skiko falls back from OpenGL to software
-rendering. Both tasks read the wire golden from the `ebp` checkout under
-`JETPACS_REPOSITORIES_ROOT`.
+`desktop/build/spike/spike.png`; `RendererLinkTest` composes the Material and
+Jetpacs theme providers on the JVM and fails if a Google Compose UI jar or a
+`jvmstubs` jar reaches the test classpath. Neither needs a display.
+`:desktop:run` opens the window and needs one; under WSLg Skiko falls back
+from OpenGL to software rendering. The tasks read the wire golden from the
+`ebp` checkout under `JETPACS_REPOSITORIES_ROOT`.
+
+The multiplatform renderer modules (`:renderer:model`, `:renderer:compose`,
+`:renderer:jetpacs`, `:renderer:material3`) have no `testDebugUnitTest`:
+their host tests run as `testAndroidHostTest`, their JVM compile as
+`compileKotlinJvm`, and their instrumented suites as
+`connectedAndroidDeviceTest`. Pin `ANDROID_SERIAL` when the phone is attached
+over two ADB transports, and wake it first; a Samsung window-manager crash on
+activity launch otherwise fails whole suites.
 
 ## Broad gate
 

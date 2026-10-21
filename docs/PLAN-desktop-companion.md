@@ -1,7 +1,7 @@
 # Desktop Companion plan
 
-Status: active. D0, the toolchain spike, is done (2026-10-21). Every later
-item is open.
+Status: active. D0, the toolchain spike, and D1, the multiplatform renderer
+modules, are done (2026-10-21). Every later item is open.
 
 The outcome is a Compose for Desktop Companion host at `companion/desktop`.
 It renders the same accepted EBP surfaces as `:app` against a desktop or
@@ -34,11 +34,13 @@ The inventory below was taken on 2026-10-21.
 | `:renderer:glance` | Android widgets | Not ported |
 | `companion/app` | `DeviceBridge.kt`, `CompanionRenderer.kt`, `SurfacePresenter.kt`, `Pairing.kt` and `RoomStoreBackings.kt` have no Android imports; 21 of 34 files are Android platform integration | A desktop composition root (D5) |
 
-The material3 seams are `BitmapFactory` decoding in `ImageLoader.kt` and
-`ImageCache.kt`, `android.graphics.Paint` text in `VisualizationNodes.kt`,
-dynamic color through `Build` and `LocalContext` in `ThemeModel.kt`, and
-`android.icu` calendars in `InputNodes.kt`. Its `repeatOnLifecycle` use is
-already multiplatform.
+The material3 seams were `BitmapFactory` decoding in `ImageLoader.kt`,
+`ImageCache.kt` and `ContentNodes.kt`, `android.graphics.Paint` text in
+`VisualizationNodes.kt`, dynamic color through `Build` and `LocalContext` in
+`ThemeModel.kt`, `android.icu` calendars in `InputNodes.kt`, `android.os.Trace`
+in `LayoutNodes.kt`, and the Android-only `LocalLifecycleOwner` alias in
+`Renderer.kt`. D1 closed them; see
+[`PLAN-desktop-d1-renderers.md`](PLAN-desktop-d1-renderers.md).
 
 The EBP specification already defines this host:
 
@@ -65,10 +67,12 @@ The EBP specification already defines this host:
   the user can read, with the reduced protection shown at pairing) is a
   fallback used only when no keychain service is reachable, and it is never
   silent.
-- **Material line.** Shared renderer modules keep Google `androidx` Material 3,
-  adaptive and Navigation 3 UI on the Android target. Only the JVM target
-  takes the JetBrains builds. The shipping Android app keeps the versions it
-  was validated against.
+- **Material line.** Shared renderer modules declare Google's `androidx`
+  Compose, Material 3 and adaptive coordinates in common code, which Android
+  resolves as before and a standalone JVM target compiles against Google's
+  published stubs. Only the Companion build substitutes JetBrains' desktop
+  builds, and only on JVM classpaths. The shipping Android app keeps the
+  versions it was validated against.
 - **Scope.** The desktop host advertises only capabilities it implements. It
   ports no widgets, Quick Settings tiles, SMS, call, Bluetooth, alarms,
   foreground service, shortcuts or Intents.
@@ -91,10 +95,11 @@ by the D0 build. The pins live in `companion/gradle/libs.versions.toml`.
 
 Further facts:
 
-- The JetBrains Material 1.13.0-alpha02 desktop jar contains `ButtonGroup`,
-  `FloatingToolbar`, `LoadingIndicator`, `WideNavigationRail`, `ToggleButton`,
-  `FloatingActionButtonMenu`, carousel, tooltip and pull-to-refresh. It has
-  no `ContainedLoadingIndicator`, which the Material renderer uses.
+- The JetBrains Material 1.13.0-alpha02 desktop jar contains every Material
+  composable the renderer uses, `ContainedLoadingIndicator` and the toggle
+  button variants included. Its one naming difference is that Google's
+  `MenuAnchorType` alias does not exist; the renderer names
+  `ExposedDropdownMenuAnchorType`, which both lines have.
 - JetBrains desktop artifacts require kotlin-stdlib 2.2.20. The Companion
   builds with Kotlin 2.3.21, AGP 9.2.1 and Gradle 9.5.1.
 - JetBrains `navigation3-ui` 1.1.2 requires Google `navigation3-runtime`
@@ -143,8 +148,8 @@ existing gates must pass after every item.
 
 ### Renderer lane
 
-2. **D1 — Multiplatform renderer modules** (execution map:
-   [`PLAN-desktop-d1-renderers.md`](PLAN-desktop-d1-renderers.md)). `:renderer:model`,
+2. **D1 — Multiplatform renderer modules (done 2026-10-21;** execution map:
+   [`PLAN-desktop-d1-renderers.md`](PLAN-desktop-d1-renderers.md)**).** `:renderer:model`,
    `:renderer:compose`, `:renderer:jetpacs` and `:renderer:material3` move from
    the Android library plugin to `kotlin.multiplatform` plus
    `android.kmp.library` with `jvm()`, the shape of
@@ -243,6 +248,15 @@ The desktop host is conforming only while all applicable gates hold:
 - Running Emacs inside the desktop Companion process.
 
 ## Open questions
+
+- `VisualizationNodes.kt` and `Renderer.kt` use `java.util.Calendar` for the
+  month grid and the clock while the date picker used `android.icu`; for a
+  Buddhist- or Japanese-calendar locale the two disagree. D3 should settle
+  one calendar for the renderer.
+- Compose Preview Screenshot Testing does not configure the KMP Android
+  plugin, so the screenshot suites live in `renderer/jetpacs-screenshots`
+  and `renderer/material3-screenshots`. If the plugin learns KMP, they can
+  fold back.
 
 - Under WSLg, Skiko cannot create an OpenGL context and falls back to
   software rendering. The window works, but frame cost there is not
