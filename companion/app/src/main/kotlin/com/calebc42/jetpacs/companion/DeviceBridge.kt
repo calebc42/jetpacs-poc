@@ -958,6 +958,24 @@ class DeviceBridge(
                 request.fields, secret, request.sourceId, secretAttempt, oneShot,
                 request.sourcePath,
             )) return ActionHandoff.HandedOff
+        // SPEC 14.2 `surface.open` is receiver-local host-shell navigation
+        // and moves no EBP state, so it is taken here, on the caller's
+        // thread, instead of queueing behind every inbound chunk on the
+        // process actor (PLAN-responsiveness C1). The descriptor came from
+        // an accepted snapshot; an absent target is a safe no-op where the
+        // host shell opens it.
+        localSurfaceOpenTarget(request.context, request.descriptor, secret)?.let { target ->
+            val outcome = runCatching { onOpenSurface(target) }.fold(
+                onSuccess = { RendererActionOutcome.LocallyCompleted },
+                onFailure = {
+                    RendererActionOutcome.NotAdmitted(
+                        com.calebc42.ebp.wire.UnsafeAdmissionReason.Unknown,
+                    )
+                },
+            )
+            deliverOutcome(oneShot, outcome)
+            return ActionHandoff.HandedOff
+        }
         dispatch(
             surface, request.descriptor, request.value, request.injected,
             request.fields, secret, request.sourceId, secretAttempt, oneShot,
@@ -1937,4 +1955,23 @@ class DeviceBridge(
             socket.runCatching { close() }
         }
     }
+}
+
+/**
+ * The surface a renderer action opens locally, or null when it is not such
+ * an action: a `surface.open` builtin (SPEC 14.2) dispatched from a surface
+ * context with no volatile secret attached. The receiver-local host shell
+ * takes it on the caller's thread; everything else rides the process actor.
+ */
+internal fun localSurfaceOpenTarget(
+    context: RendererActionContext,
+    descriptor: JsonObject,
+    secret: RendererVolatileSecret?,
+): String? {
+    if (secret != null || context !is RendererActionContext.Surface) return null
+    fun member(name: String): String? =
+        (descriptor[name] as? kotlinx.serialization.json.JsonPrimitive)
+            ?.takeIf { it.isString }?.content
+    if (member("builtin") != "surface.open") return null
+    return member("surface")?.takeIf { it.isNotEmpty() }
 }
