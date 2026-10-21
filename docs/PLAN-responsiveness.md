@@ -1,10 +1,17 @@
 # Responsiveness and navigation plan
 
 Status: active. Item C0 (one Room row per accepted surface mutation) landed in
-ebp-kmp `dcc2aad` and jetpacs-poc `c1e19e0`. Every other item below is ordered,
-unstarted work, cut into steps that each ship alone with their own evidence.
-The first slice is the section after the diagnosis; do it in order before
-anything from the later lanes.
+ebp-kmp `dcc2aad` and jetpacs-poc `c1e19e0`. The first slice has landed:
+M1 (jetpacs-poc `e1e1bd1`), M2 (ebp-kmp `716a75b`, jetpacs-poc `3de748a`),
+E2a (ebp.el `78957cc`), C1 (ebp-kmp `a028324`, jetpacs-poc `95c070b`), E1
+(jetpacs-poc `daeed8b`), E5 (jetpacs-poc `24f65cf`), C7a (jetpacs-poc
+`12b5bb3`) and the harp pilot A1a (harp-native `651b2bb`). The glasspane
+pilot A2a was not taken: `glasspane-areas--on-filter` rebuilds the drill's
+chip rows, notes, project cards, file and archive rows, so it is a shape
+change, not a value move; the apps lane names a replacement. Every other
+item below is ordered, unstarted work, cut into steps that each ship alone
+with their own evidence. Record the before/after numbers for the first slice
+on a device before starting the later lanes.
 
 The companion command matrix lives in `companion/TESTING.md` and is not
 repeated here. The Emacs gate is targeted ERT, warning-as-error byte
@@ -98,10 +105,14 @@ device, the APK type and the Emacs build, in the style of
    `runBlocking` on the accept thread. Evidence: `WireConformanceTest` and the
    bridge tests green; reconnect timing on device.
 
-Then pilot the apps lane with one handler each before converting more:
-**A1a** harp `harp--on-filter` and **A2a** glasspane
-`glasspane-areas--on-filter`, bound through `jetpacs-ref` and patched with
-`jetpacs-app-defer-sync`, measured with M1 against the refresh they replace.
+Then pilot the apps lane with one handler per app before converting more:
+**A1a** harp `harp--on-filter` (landed: the journal and document pages are a
+row template over `/rows`, the filter is one `surface.data` patch on the
+first page) and **A2a** a value-only glasspane handler — not
+`glasspane-areas--on-filter`, whose drill rebuilds chips, notes, cards and
+file rows; see the apps lane — bound through `jetpacs-ref` and patched with
+`jetpacs-app-defer-patch` or `-sync`, each measured with M1 against the
+refresh it replaces.
 
 ## Measurement first
 
@@ -283,11 +294,15 @@ shape of the tree changed. Convert value-only handlers, keyed by what moves:
 - **A1.** harp-native: `harp--on-filter`, `harp--on-page` and the other
   handlers whose change is confined to bound values; `harp--on-form` and
   `harp--on-open` keep the refresh. Start with `harp--on-filter` (first slice).
-- **A2.** glasspane: `glasspane-areas--on-filter`,
-  `glasspane-areas--on-todo-filter`, `glasspane-agenda--on-area-filter`,
-  `glasspane-agenda--on-set-mode`, list toggles and the inline TODO chip, as a
-  keyed row template with `jetpacs-app-defer-sync` of the row array. Start with
-  `glasspane-areas--on-filter` (first slice).
+- **A2.** glasspane: `glasspane-areas--on-todo-filter`,
+  `glasspane-agenda--on-area-filter`, `glasspane-agenda--on-set-mode`, list
+  toggles and the inline TODO chip, as a keyed row template with
+  `jetpacs-app-defer-sync` of the row array. `glasspane-areas--on-filter` is
+  not a candidate as the drill stands: the selection rebuilds the chip rows,
+  the declaration notes, the project cards, the file rows and the archive
+  rows at once, so a filter is a shape change until those parts are bound;
+  take the todo-filter chips or the agenda mode first, after checking that
+  the handler moves values only.
 - **A3.** grove-native: keep the planning pilot; extend to the reminders list.
 - **A4.** jetpacs-poc surfaces where values move but shape does not: the
   launcher and apps hub, `jetpacs-tablist` views, Org toolbar toggles.
