@@ -143,7 +143,8 @@ existing gates must pass after every item.
 
 ### Renderer lane
 
-2. **D1 — Multiplatform renderer modules.** `:renderer:model`,
+2. **D1 — Multiplatform renderer modules** (execution map:
+   [`PLAN-desktop-d1-renderers.md`](PLAN-desktop-d1-renderers.md)). `:renderer:model`,
    `:renderer:compose`, `:renderer:jetpacs` and `:renderer:material3` move from
    the Android library plugin to `kotlin.multiplatform` plus
    `android.kmp.library` with `jvm()`, the shape of
