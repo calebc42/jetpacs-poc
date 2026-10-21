@@ -1,50 +1,67 @@
+// :renderer:jetpacs is Kotlin Multiplatform with an Android and a JVM target
+// (jetpacs-poc docs/PLAN-desktop-d1-renderers.md). commonMain keeps Google's
+// Compose coordinates: Android resolves them as before, and a standalone JVM
+// target compiles against their published stubs. Only a build that hosts the
+// desktop (jetpacs-poc/companion) substitutes JetBrains' desktop builds on its
+// JVM classpaths, so Compose must not run on this module's own `jvmTest`. The
+// screenshot suite lives in ../jetpacs-screenshots.
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.kotlin.compose)
 }
 
-android {
-    namespace = "com.calebc42.jetpacs.renderer.jetpacs"
-    compileSdk = 37
-    defaultConfig {
-        minSdk = 34
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-    buildFeatures { compose = true }
-    testOptions {
-        unitTests.isIncludeAndroidResources = true
-    }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-}
-
 kotlin {
+    jvmToolchain(21)
+
+    jvm()
+
+    android {
+        namespace = "com.calebc42.jetpacs.renderer.jetpacs"
+        compileSdk = 37
+        minSdk = 34
+        // The IBM Plex families under androidMain/res.
+        androidResources { enable = true }
+        // The golden replay composes the renderer under Robolectric.
+        withHostTestBuilder {}.configure { isIncludeAndroidResources = true }
+        withDeviceTestBuilder {
+            sourceSetTreeName = "test"
+        }.configure {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
+    }
+
     compilerOptions {
         freeCompilerArgs.addAll(
             "-opt-in=androidx.compose.foundation.style.ExperimentalFoundationStyleApi",
             "-opt-in=com.calebc42.jetpacs.renderer.jetpacs.InternalJetpacsRendererApi",
+            // PlexFonts is an expect object with per-platform font sources.
+            "-Xexpect-actual-classes",
         )
     }
-}
 
-dependencies {
-    api(projects.renderer.compose)
-    api(platform(libs.androidx.compose.bom))
-    api(libs.androidx.compose.foundation)
-    api(libs.androidx.compose.ui)
-    implementation(libs.kotlinx.serialization.json)
-
-    testImplementation(libs.junit)
-    testImplementation(projects.renderer.composeTesting)
-    testImplementation(libs.robolectric)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.activity.compose)
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.test.espresso.core)
-    androidTestImplementation(libs.androidx.test.core)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.ext.junit)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    sourceSets {
+        commonMain.dependencies {
+            api(projects.renderer.compose)
+            api(project.dependencies.platform(libs.androidx.compose.bom))
+            api(libs.androidx.compose.foundation)
+            api(libs.androidx.compose.ui)
+            implementation(libs.kotlinx.serialization.json)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(libs.junit)
+            implementation(projects.renderer.composeTesting)
+            implementation(libs.robolectric)
+        }
+        getByName("androidDeviceTest").dependencies {
+            implementation(project.dependencies.platform(libs.androidx.compose.bom))
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.compose.ui.test.junit4)
+            implementation(libs.androidx.compose.ui.test.manifest)
+            implementation(libs.androidx.test.espresso.core)
+            implementation(libs.androidx.test.core)
+            implementation(libs.androidx.test.runner)
+            implementation(libs.androidx.test.ext.junit)
+        }
+    }
 }

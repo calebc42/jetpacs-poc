@@ -13,18 +13,18 @@ test -r "$generator" || {
 
 python3 "$generator" \
   "$owner_root/renderer-extensions/jetpacs-components.json" \
-  --kotlin-output "$owner_root/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsVocabulary.kt" \
+  --kotlin-output "$owner_root/renderer/jetpacs/src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsVocabulary.kt" \
   --kotlin-package com.calebc42.jetpacs.renderer.jetpacs \
   --elisp-output "$owner_root/lisp/jetpacs-components/jetpacs-components-vocabulary.el" \
-  --members-output "$owner_root/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsMembers.kt" \
-  --enums-output "$owner_root/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsEnums.kt" \
+  --members-output "$owner_root/renderer/jetpacs/src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsMembers.kt" \
+  --enums-output "$owner_root/renderer/jetpacs/src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsComponentsEnums.kt" \
   --check
 
 python3 "$generator" \
   "$owner_root/renderer-extensions/jetpacs-design.json" \
-  --kotlin-output "$owner_root/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsDesignVocabulary.kt" \
+  --kotlin-output "$owner_root/renderer/jetpacs/src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsDesignVocabulary.kt" \
   --kotlin-package com.calebc42.jetpacs.renderer.jetpacs \
   --elisp-output "$owner_root/lisp/jetpacs-components/jetpacs-design-vocabulary.el" \
-  --members-output "$owner_root/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsDesignMembers.kt" \
-  --enums-output "$owner_root/renderer/jetpacs/src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsDesignEnums.kt" \
+  --members-output "$owner_root/renderer/jetpacs/src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsDesignMembers.kt" \
+  --enums-output "$owner_root/renderer/jetpacs/src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/JetpacsDesignEnums.kt" \
   --check

@@ -22,8 +22,12 @@ class JetpacsRendererBoundaryTest {
     @Test
     fun mainSourcesAndDependenciesRemainMaterialFree() {
         val module = moduleDirectory()
-        val sources = File(module, "src/main").walkTopDown()
-            .filter(File::isFile)
+        // Every production source set: commonMain, androidMain and jvmMain.
+        val sets = listOf("commonMain", "androidMain", "jvmMain")
+            .map { File(module, "src/$it") }
+            .filter(File::isDirectory)
+        assertTrue("no production source set under $module/src", sets.isNotEmpty())
+        val sources = sets.flatMap { it.walkTopDown().filter(File::isFile).toList() }
             .joinToString("\n") { it.readText() }
         val build = File(module, "build.gradle.kts").readText()
 
@@ -42,7 +46,7 @@ class JetpacsRendererBoundaryTest {
         // turns a compiled design value into a Style. An earlier form of this
         // test filtered by filename, so any new file escaped it by being
         // named something else; these assertions read every main source.
-        val sources = File(moduleDirectory(), "src/main/kotlin").walkTopDown()
+        val sources = File(moduleDirectory(), "src/commonMain/kotlin").walkTopDown()
             .filter { it.isFile && it.extension == "kt" }
             .toList()
         fun named(name: String) = sources.single { it.name == name }.readText()
@@ -82,7 +86,7 @@ class JetpacsRendererBoundaryTest {
     fun maskedFieldsUseTheSharedExplicitOffsetMappingPath() {
         val source = File(
             moduleDirectory(),
-            "src/main/kotlin/com/calebc42/jetpacs/renderer/jetpacs/" +
+            "src/commonMain/kotlin/com/calebc42/jetpacs/renderer/jetpacs/" +
                 "JetpacsTextInputRenderer.kt",
         ).readText()
 

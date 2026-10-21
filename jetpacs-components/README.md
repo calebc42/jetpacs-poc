@@ -80,7 +80,7 @@ part of the EBP protocol specification.
 ```sh
 test/run-tests.sh
 tools/check-projections.sh
-./gradlew :renderer:jetpacs:testDebugUnitTest --console=plain
+./gradlew :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm --console=plain
 ```
 
 ### Design-scoped rich text

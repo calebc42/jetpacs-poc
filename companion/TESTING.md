@@ -11,8 +11,8 @@ references when the explicit update task is used.
 ./gradlew :wire:jvmTest --tests '*SemanticsTest'
 ./gradlew :renderer:compose:testAndroidHostTest :renderer:compose:compileKotlinJvm
 ./gradlew :renderer:compose:compileAndroidDeviceTest
-./gradlew :renderer:jetpacs:testDebugUnitTest
-./gradlew :renderer:jetpacs:compileDebugAndroidTestKotlin
+./gradlew :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm
+./gradlew :renderer:jetpacs:compileAndroidDeviceTest
 ./gradlew :renderer:jetpacs-screenshots:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:material3:compileDebugAndroidTestKotlin
 ./gradlew :renderer:material3:compileDebugScreenshotTestKotlin
@@ -244,7 +244,7 @@ With one authorized device connected:
 ./gradlew :renderer:compose:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EditingControllersInstrumentedTest
 
-./gradlew :renderer:jetpacs:connectedDebugAndroidTest \
+./gradlew :renderer:jetpacs:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsSemanticsTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
@@ -431,8 +431,8 @@ rendering. Both tasks read the wire golden from the `ebp` checkout under
   :renderer:model:jvmTest :renderer:model:testAndroidHostTest \
   :renderer:compose:testAndroidHostTest :renderer:compose:compileKotlinJvm \
   :renderer:compose:compileAndroidDeviceTest \
-  :renderer:jetpacs:testDebugUnitTest \
-  :renderer:jetpacs:compileDebugAndroidTestKotlin \
+  :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm \
+  :renderer:jetpacs:compileAndroidDeviceTest \
   :renderer:material3:testDebugUnitTest \
   :renderer:material3:compileDebugAndroidTestKotlin \
   :renderer:compose-testing:testDebugUnitTest \

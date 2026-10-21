@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import com.calebc42.ebp.renderer.compose.ComposeChromeStyles
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -318,23 +317,4 @@ private fun DesignValue.fontFamily(): FontFamily = when (
     DesignFontFamily.PlexSans -> PlexFonts.sans
     DesignFontFamily.PlexSerif -> PlexFonts.serif
     DesignFontFamily.PlexMono -> PlexFonts.mono
-}
-
-private object PlexFonts {
-    val sans = FontFamily(
-        Font(R.font.ibm_plex_sans_regular, FontWeight.Normal),
-        Font(R.font.ibm_plex_sans_medium, FontWeight.Medium),
-        Font(R.font.ibm_plex_sans_semibold, FontWeight.SemiBold),
-    )
-    val serif = FontFamily(
-        Font(R.font.ibm_plex_serif_regular, FontWeight.Normal),
-        Font(R.font.ibm_plex_serif_medium, FontWeight.Medium),
-        Font(R.font.ibm_plex_serif_semibold, FontWeight.SemiBold),
-    )
-    val mono = FontFamily(
-        Font(R.font.ibm_plex_mono_regular, FontWeight.Normal),
-        Font(R.font.ibm_plex_mono_medium, FontWeight.Medium),
-        Font(R.font.ibm_plex_mono_semibold, FontWeight.SemiBold),
-        Font(R.font.ibm_plex_mono_bold, FontWeight.Bold),
-    )
 }
