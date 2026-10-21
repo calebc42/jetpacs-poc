@@ -1886,14 +1886,17 @@ class DeviceBridge(
             // of the thread and killed the process — which is what a retrying
             // `jetpacs-start' produced every time, since its second dial
             // superseded the first mid-setup.
-            val input = socket.getInputStream()
-            val buffer = ByteArray(8192)
-            while (engine.state != SessionState.CLOSED) {
-                val n = input.read(buffer)
-                if (n < 0) break
-                kotlinx.coroutines.runBlocking {
-                    stores.commandActor.execute { engine.feed(buffer, 0, n) }
-                }
+            // PLAN-responsiveness C2a: frames are decoded here, on the
+            // reader thread, and the process actor runs one command per
+            // complete frame. The engine monitor never holds a partial
+            // frame, so a UI action dispatched while a large snapshot is
+            // still arriving is answered at once instead of waiting behind
+            // every queued 8 KiB chunk of it.
+            val reader = FrameReader(
+                socket.getInputStream(),
+                timing = engine.stageObserver != null,
+            )
+            fun noteSessionState() {
                 if (engine === variantEngineRoute.current()) {
                     _editorConnectionPhase.value = editorConnectionPhaseOf(engine.state)
                 }
@@ -1910,6 +1913,20 @@ class DeviceBridge(
                     persistReadyConnectionChange(null)
                 }
             }
+            reader.run(
+                open = { engine.state != SessionState.CLOSED },
+                onFrame = { message, decodeNanos ->
+                    kotlinx.coroutines.runBlocking {
+                        stores.commandActor.execute { engine.feedFrame(message, decodeNanos) }
+                    }
+                    noteSessionState()
+                },
+                onFault = { fault ->
+                    kotlinx.coroutines.runBlocking {
+                        stores.commandActor.execute { engine.feedFailure(fault) }
+                    }
+                },
+            )
         } catch (_: Exception) {
             // transport loss: SPEC 10.1, any state may close
         } finally {

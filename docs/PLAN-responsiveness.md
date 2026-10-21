@@ -130,12 +130,13 @@ its own evidence, as above.
    `surface.update` and a `surface.data` frame. Write the numbers into the
    measurement section with device, APK type and Emacs build. They decide
    the order of 2–4.
-2. **C2a — one actor command per complete frame.** Read until a frame is
-   complete (64 KiB buffer) and submit one command per frame, parsing
-   outside the engine monitor (`DeviceBridge` reader loop,
-   `CompanionEngine.feed`). Evidence: `CompanionEngineTest` ordering cases;
-   a new case that a UI action is answered while a multi-chunk frame is
-   mid-feed.
+2. **C2a — one actor command per complete frame — done 2026-10-21.**
+   `FrameReader` reads 64 KiB slices and decodes on the connection thread;
+   the actor runs `CompanionEngine.feedFrame` once per complete frame and
+   `feedFailure` once per decoder fault (the byte-level `feed` is the same
+   two behind the engine's own decoder, for tests). Evidence:
+   `CompanionEngineTest` ordering cases unchanged plus the parsed-frame and
+   fault cases; `FrameReaderTest.aUiActionIsAnsweredWhileAMultiChunkFrameIsMidFeed`.
 3. **C3 — input displays per surface.** Drop `displays` from `RenderCtx`;
    per-surface state read by the stateful nodes; `RenderCtx` compared on
    surface, path, `sourcePath`, design scope. Evidence: a
@@ -286,8 +287,9 @@ step that can ship on its own.
   `dispatchSurfaceAction` are both synchronized, Room runs inside a nested
   `runBlocking`, and the listener's full walks run under the same monitor. A
   tap during a large snapshot waits behind every queued chunk, and 64 pending
-  commands show the overload toast. Steps: (a) read until a frame is complete
-  and submit one command per frame, parsing outside the monitor; (b) a separate
+  commands show the overload toast. Steps: (a) **done** — `FrameReader` reads
+  until a frame is complete and the actor runs one command per frame, the
+  parse on the reader thread outside the monitor; (b) a separate
   UI-action lane whose capacity never produces the toast; (c) hold the monitor
   only for the state mutation, running `inputDisplays`, incarnation
   projection and `publish` after `feed` returns; (d) debounce draft
@@ -430,7 +432,7 @@ beside the one for the refresh it replaced.
 | M1 | `emacs/jetpacs-devtools.el`, `emacs/jetpacs-shell.el` | `test/jetpacs-devtools-test.el` |
 | M2 | ebp-kmp `wire/.../CompanionEngine.kt` | `CompanionEngineTest` |
 | C1 | ebp-kmp `SurfaceStore.switchView`, `CompanionEngine.executeBuiltin`; `companion/app/.../DeviceBridge.kt` | Robolectric view-before-persist test |
-| C2 | `DeviceBridge.kt` reader loop and `dispatchExecutor`; `CompanionEngine.feed`; ebp-kmp `EbpCommandActor.kt` | `CompanionEngineTest` |
+| C2 | `FrameReader.kt`, `DeviceBridge.kt` reader loop and `dispatchExecutor`; `CompanionEngine.feedFrame`; ebp-kmp `EbpCommandActor.kt` | `CompanionEngineTest`, `FrameReaderTest` |
 | C3 | `DeviceBridge.inputDisplays`; material3 `Renderer.kt`, `InputNodes.kt` | `PatchRecompositionTest` |
 | C4 | material3 `LayoutNodes.kt`, `Attributes.kt`, `VisualizationNodes.kt`; ebp-compose `CoreComposeRenderer.kt` | `PatchRecompositionTest`, scroll-retention instrumented test |
 | C5 | `JetpacsProcessContainer.kt`, `CompanionStores.kt`, `AppCapabilities.kt` | macrobenchmark startup |

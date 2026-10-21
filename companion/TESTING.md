@@ -96,6 +96,12 @@ microseconds) under the `JetpacsStages` logcat tag once
 `adb shell setprop log.tag.JetpacsStages DEBUG` is set and the connection
 re-established; nothing is timed otherwise
 (`SurfaceDataEngineTest.aStageObserverSeesEveryStageOfAnUpdateAndAPatchAndNothingOtherwise`).
+The connection's inbound half is `FrameReader`: it decodes frames on the
+reader thread and the process actor runs one engine command per complete
+frame, so a partial frame holds neither the actor nor the engine monitor
+(`FrameReaderTest.aUiActionIsAnsweredWhileAMultiChunkFrameIsMidFeed`; the
+engine's parsed-frame and decoder-fault entry points are pinned by
+`CompanionEngineTest`).
 The engine half of
 the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),
