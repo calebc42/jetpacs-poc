@@ -1,7 +1,7 @@
 # Desktop Companion plan
 
-Status: active. D0, the toolchain spike, and D1, the multiplatform renderer
-modules, are done (2026-10-21). Every later item is open.
+Status: active. D0, the toolchain spike, D1, the multiplatform renderer
+modules, and D2, the fonts, are done (2026-10-21). Every later item is open.
 
 The outcome is a Compose for Desktop Companion host at `companion/desktop`.
 It renders the same accepted EBP surfaces as `:app` against a desktop or
@@ -158,10 +158,17 @@ existing gates must pass after every item.
    `jvmMain`. Owners: ebp-compose for the first two, jetpacs-components for
    the third, this repository for Material. Evidence: each module's unit
    tests pass on both targets and `:app` assembles unchanged.
-3. **D2 — Font seam.** The IBM Plex families in
-   `JetpacsDesignStyleAdapter.kt` load through Compose resources or an
-   expect/actual instead of `R.font`. Evidence: a JVM render of a
-   `jetpacs.design` fixture uses the Plex families.
+3. **D2 — Font seam (done 2026-10-21).** The jetpacs module's JVM jar
+   carries the IBM Plex files from its Android res directory, and the JVM
+   `PlexFonts` builds the same families as Android through a loader the host
+   installs (`JetpacsJvmFonts.loader`), because turning a classpath resource
+   into a font is desktop-only API that the standalone build, which compiles
+   against Google's stubs, cannot name. `companion/desktop` installs the one
+   platform call in `DesktopFonts`. Evidence: `DesignFontsTest` renders a
+   `jetpacs.design` text naming `plex-serif` through the public renderer
+   entry points and reads its text layout: the family is the three bundled
+   Plex Serif resources at weights 400, 500 and 600, and without the loader
+   it is the platform serif.
 4. **D3 — Material platform seams.** Image decoding produces `ImageBitmap`
    through an expect/actual, visualization text draws with Compose text
    measurement, dynamic color becomes a provider that is empty on desktop,

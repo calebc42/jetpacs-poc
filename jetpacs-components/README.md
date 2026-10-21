@@ -83,6 +83,23 @@ tools/check-projections.sh
 ./gradlew :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm --console=plain
 ```
 
+### Fonts on the JVM
+
+The design model names the IBM Plex families. Android loads them from this
+module's font resources. The JVM jar carries the same files on the classpath
+(`font/ibm_plex_*.ttf`, with the OFL beside them), but turning a resource into
+a font is desktop-only Compose API that this module cannot name, so a JVM host
+installs the one platform call once, before its first composition:
+
+```kotlin
+JetpacsJvmFonts.loader = JetpacsJvmFonts.Loader { resource, weight, style ->
+    androidx.compose.ui.text.platform.Font(resource, weight, style)
+}
+```
+
+Without a loader the Plex families fall back to the platform's default sans,
+serif and monospace families.
+
 ### Design-scoped rich text
 
 Canonical `rich_text` now renders with Foundation `BasicText` within a

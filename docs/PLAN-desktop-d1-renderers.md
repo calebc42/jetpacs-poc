@@ -97,7 +97,7 @@ Maven metadata and the JetBrains desktop jars.
 | `parseIsoDateUtc`, `isoDateFromUtcMillis`, `utcCalendarDayOfWeek`, `utcYear` | `InputNodes.kt` `android.icu` | `GregorianCalendar` in UTC, same lenient semantics |
 | `expect fun DrawScope.drawCanvasText(...)` | `VisualizationNodes.kt` `android.graphics.Paint` | no-op (D3) |
 | `beginTraceSection`, `endTraceSection` | `LayoutNodes.kt` `android.os.Trace` | no-op |
-| `expect object PlexFonts { sans; serif; mono }` | `JetpacsDesignStyleAdapter.kt` `R.font` | the default sans, serif and monospace families (D2) |
+| `expect object PlexFonts { sans; serif; mono }` | `JetpacsDesignStyleAdapter.kt` `R.font` | the default sans, serif and monospace families; D2 then ships the files in the JVM jar and builds the families through the host's `JetpacsJvmFonts.loader` |
 
 The Android app and `MaterialTestController` keep compiling unchanged
 because `ImageLoader`, `ImageCache` and `LocalMaterialImageSource` keep their

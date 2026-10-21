@@ -41,6 +41,13 @@ kotlin {
     }
 
     sourceSets {
+        // The JVM jar carries the IBM Plex files the design model names, read
+        // from the Android res directory so the files exist once. A JVM host
+        // turns them into fonts through JetpacsJvmFonts (D2 of jetpacs-poc
+        // docs/PLAN-desktop-companion.md).
+        jvmMain {
+            resources.srcDir("src/androidMain/res")
+        }
         commonMain.dependencies {
             api(projects.renderer.compose)
             api(project.dependencies.platform(libs.androidx.compose.bom))

@@ -7,12 +7,15 @@ import androidx.compose.ui.window.application
 import androidx.compose.ui.window.rememberWindowState
 
 /** D0 entry point: one window hosting the throwaway [SpikeApp] screen. */
-fun main() = application {
-    Window(
-        onCloseRequest = ::exitApplication,
-        title = "Jetpacs desktop spike",
-        state = rememberWindowState(width = 1280.dp, height = 800.dp),
-    ) {
-        SpikeApp()
+fun main() {
+    DesktopFonts.install()
+    application {
+        Window(
+            onCloseRequest = ::exitApplication,
+            title = "Jetpacs desktop spike",
+            state = rememberWindowState(width = 1280.dp, height = 800.dp),
+        ) {
+            SpikeApp()
+        }
     }
 }

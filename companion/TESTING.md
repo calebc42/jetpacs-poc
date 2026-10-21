@@ -421,7 +421,10 @@ It holds the D0 toolchain spike and links the multiplatform renderers (D1).
 proving region, pushes a `JetpacsNavKey` through Navigation 3, and writes
 `desktop/build/spike/spike.png`; `RendererLinkTest` composes the Material and
 Jetpacs theme providers on the JVM and fails if a Google Compose UI jar or a
-`jvmstubs` jar reaches the test classpath. Neither needs a display.
+`jvmstubs` jar reaches the test classpath; `DesignFontsTest` renders a
+`jetpacs.design` text in IBM Plex Serif and reads its text layout to prove the
+bundled font files load through the host's `JetpacsJvmFonts.loader`, and that
+the platform serif stands in without one. None needs a display.
 `:desktop:run` opens the window and needs one; under WSLg Skiko falls back
 from OpenGL to software rendering. The tasks read the wire golden from the
 `ebp` checkout under `JETPACS_REPOSITORIES_ROOT`.

@@ -47,6 +47,8 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.runtime.serialization.NavBackStackSerializer
 import androidx.navigation3.ui.NavDisplay
 import com.calebc42.jetpacs.core.navigation.JetpacsNavKey
+import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignRenderer
+import com.calebc42.jetpacs.renderer.jetpacs.ProvideJetpacsTheme
 
 private const val SPIKE_PAIRING = "spike"
 
@@ -76,6 +78,16 @@ fun SpikeApp(wireProof: String = remember { decodeHelloGolden() }) {
                         )
                         Text(windowSize, Modifier.testTag("window-size"))
                         Text(wireProof, Modifier.testTag("wire-proof"))
+                        // D2: a design-scoped text in IBM Plex Serif through
+                        // the Jetpacs renderer and the host's font loader.
+                        val designContext = remember { InertDesignContext() }
+                        Box(Modifier.testTag("plex-serif")) {
+                            ProvideJetpacsTheme(null) {
+                                JetpacsDesignRenderer.render(
+                                    plexSerifScope("IBM Plex Serif, loaded by the desktop host"),
+                                    designContext, Modifier)
+                            }
+                        }
                         ExpressiveRow()
                         Box(Modifier.weight(1f)) { SpikeNavigation() }
                     }
