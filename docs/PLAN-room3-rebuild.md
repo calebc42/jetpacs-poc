@@ -32,7 +32,7 @@ The exact entity list and schema JSON are authoritative. The current groups are:
 |---|---|
 | Pairing | `pairing_partitions`, `pairing_runtime`: ACTIVE/revoking identity fence, key aliases, queue/effective-clock and READY-disconnect runtime |
 | Revocation | `pairing_revocations`, `revocation_artifacts`: journaled cleanup that survives deletion of pairing-owned rows |
-| Surfaces | `surface_records`, `surface_drafts`: revisions, present/tombstone state, spec/stale spec, current view, first-seen order, and retained input drafts |
+| Surfaces | `surface_records`, `surface_drafts`: revisions, present/tombstone state, spec/stale spec, current view, first-seen order, and retained input drafts. One row per surface, and one row per accepted mutation: `SurfaceStore` hands the `IncrementalSurfaceBacking` the record an update, `surface.data` patch, removal or `view.switch` changed, and the Room backing writes that row alone (no other row is read, compared or re-encoded); the whole-catalog replace is only the restore-time repair. A tree with nothing bound stores once — `authored_spec_json` is null and loads as the spec, the pre-#194 shape |
 | Outbox | `queue_events`, `issued_event_ids`: encrypted complete payloads, stable ordering/identity, expiry, dedupe, capacity, pending-local state, and safe EventId reuse floors |
 | Reminders | `reminders`, `reminder_receipts`: normalized pairing/owner schedules and fired-tuple idempotency |
 | Triggers | `trigger_registrations`, `trigger_runtime`: normalized registrations and durable throttle/one-shot/repeat/boot progress |

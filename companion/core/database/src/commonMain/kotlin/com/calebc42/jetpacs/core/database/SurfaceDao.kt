@@ -54,6 +54,19 @@ interface SurfaceDao {
     )
     suspend fun getRecords(pairingId: String): List<SurfaceRecordEntity>
 
+    /** The immutable ordinal alone: a row write needs to know whether the
+     * surface exists and which ordinal it was given, not its JSON blobs. */
+    @Query(
+        """
+        SELECT first_seen_ordinal FROM surface_records
+        WHERE pairing_id = :pairingId AND surface_id = :surfaceId
+        """
+    )
+    suspend fun getFirstSeenOrdinal(
+        pairingId: String,
+        surfaceId: String,
+    ): Long?
+
     @Update
     suspend fun updateRecordRow(record: SurfaceRecordEntity): Int
 

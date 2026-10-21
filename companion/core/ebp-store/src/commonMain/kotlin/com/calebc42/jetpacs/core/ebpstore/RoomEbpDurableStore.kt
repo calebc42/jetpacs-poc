@@ -659,11 +659,14 @@ private class RoomWriteScope(
         checkOpen()
         requireActivePairing()
         val entity = record.toEntity(pairingId, json)
-        val existing = database.surfaceDao().getRecord(pairingId.value, record.surfaceId)
-        if (existing == null) {
+        // The ordinal column alone decides insert versus update; reading the
+        // whole row would load the previous revision's JSON blobs for nothing.
+        val existingOrdinal =
+            database.surfaceDao().getFirstSeenOrdinal(pairingId.value, record.surfaceId)
+        if (existingOrdinal == null) {
             database.surfaceDao().insertRecordRow(entity)
         } else {
-            require(existing.firstSeenOrdinal == record.firstSeenOrdinal) {
+            require(existingOrdinal == record.firstSeenOrdinal) {
                 "A surface first-seen ordinal is immutable"
             }
             check(database.surfaceDao().updateRecordRow(entity) == 1) {

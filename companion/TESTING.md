@@ -83,7 +83,13 @@ Run the JVM persistence and production compilation gates with:
 
 The Room suite includes reopen, revocation, reminder/effect, and fault-injected
 queue-plus-trigger rollback coverage, and the surface record's authored tree
-and data document round trip (`RoomEbpDurableStoreTest`). The engine half of
+and data document round trip (`RoomEbpDurableStoreTest`). The app's
+`RoomSurfaceBackingTest` drives the surface backing through the memory
+reference store and pins row-level persistence: an accepted update, patch,
+removal or view switch writes one `surface_records` row and leaves every
+other row and its accepted-at stamp untouched, a draft-clearing snapshot
+commits the record and the reconciled drafts together, and the whole-catalog
+replace skips rows whose content is already on disk. The engine half of
 the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),
 `DataModelContractTest`, `SurfaceStoreDataTest` and `SurfaceDataEngineTest`
