@@ -290,6 +290,11 @@ class DeviceBridge(
          * M2), read once per connection: `adb shell setprop
          * log.tag.JetpacsStages DEBUG`, then reconnect. Off, nothing is timed. */
         const val STAGE_LOG_TAG = "JetpacsStages"
+
+        /** PLAN-responsiveness C2d: how long typed drafts coalesce before one
+         * durable write — inside SPEC 14.6's 500 ms ceiling. The engine still
+         * flushes before any event (SPEC 15.1). */
+        const val DRAFT_FLUSH_WINDOW_MS = 400L
     }
 
     internal val context: android.content.Context get() = appContext
@@ -475,6 +480,15 @@ class DeviceBridge(
     @Volatile private var listenerThread: Thread? = null
 
     fun start() {
+        // C2d: a keystroke marks the drafts dirty; the flush runs on the
+        // actor (the store's guard) once the window closes, on the action
+        // lane so it is never refused.
+        store.draftFlushScheduler = { flush ->
+            cacheScope.launch {
+                kotlinx.coroutines.delay(DRAFT_FLUSH_WINDOW_MS)
+                stores.submitAction { flush() }
+            }
+        }
         if (!running.compareAndSet(false, true)) return
         // SPEC 20.1.2 (#197): the platform says when the locale, the clock
         // cycle or the time zone changed; every live session hears it once.

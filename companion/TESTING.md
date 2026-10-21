@@ -117,7 +117,12 @@ engine's parsed-frame and decoder-fault entry points are pinned by
 (`EbpCommandActorTest`): the bounded process lane, and the action lane the
 bridge's dispatch executor uses for what the user did — taken first by the
 one worker and never saturated, so a tap or a keystroke neither waits behind
-queued process work nor surfaces as an overload toast.
+queued process work nor surfaces as an overload toast. Typed drafts
+coalesce (PLAN-responsiveness C2d): the store's `draftFlushScheduler`, which
+the bridge sets to a 400 ms window on the action lane, turns a burst of
+keystrokes into one draft write, and the engine flushes before any event
+leaves (`SurfaceStoreTest.keystrokesCoalesceIntoOneScheduledDraftWrite`,
+`ActionEventTest.anEventFlushesTheScheduledDraftWriteFirst`).
 The engine half of
 the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),

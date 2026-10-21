@@ -153,9 +153,8 @@ its own evidence, as above.
    equal copy not); the insert-at-head case unchanged (no pre-existing row
    runs, so each keeps its state); the scroll-retention instrumented tests
    on the phone.
-5. **C2d — draft persistence debounce** (C2b, the action lane, C2c, the
-   presentation off the monitor, and C6a, the reducer's stale check first,
-   are done 2026-10-21), then **E3** (Org render memoization) and **A2a** (a value-only
+5. The actor split is complete (C2a–d) and C6a is done, all 2026-10-21.
+   Then **E3** (Org render memoization) and **A2a** (a value-only
    glasspane handler: the todo-filter chips or the agenda mode, after
    confirming it moves values only), then **E2b** (reserve revisions in
    blocks), **C5** (cold start), **C8** (release build, baseline profile,
@@ -349,8 +348,17 @@ step that can ship on its own.
   0.05–1 ms wait (`present` lines under `JetpacsStages`); the §3.1 order is
   unchanged — the screen still draws after the commit, because a failed
   persist rolls the in-memory record back and an early publish would show
-  what then disappears (`SurfacePresenterTest`); (d) debounce draft
-  persistence in `SurfaceStore.putDraft` within the 500 ms SPEC 14.6 ceiling.
+  what then disappears (`SurfacePresenterTest`); (d) **done 2026-10-21** —
+  `SurfaceStore.draftFlushScheduler`: with it installed a keystroke marks
+  the drafts dirty and schedules one `flushDrafts`; the bridge runs the
+  flush on the actor's action lane after a 400 ms window (inside §14.6's
+  500 ms), so a burst of keystrokes is one draft write instead of one per
+  key; SPEC 15.1 holds because the engine flushes before any `event.action`
+  leaves and before `queue.admit`, and the strict `tryPutDraft` path and a
+  draft-reconciling snapshot write the whole map themselves
+  (`SurfaceStoreTest.keystrokesCoalesceIntoOneScheduledDraftWrite`,
+  `ActionEventTest.anEventFlushesTheScheduledDraftWriteFirst`); the price
+  is up to 400 ms of typing lost to a process death inside the window.
   Evidence per step: `CompanionEngineTest` ordering cases green; a new case
   that a UI action is answered while a multi-chunk frame is mid-feed.
 - **C3.** Input displays per surface. `DeviceBridge` republishes
