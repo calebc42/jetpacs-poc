@@ -65,8 +65,8 @@ tools/m3-check.sh buttons
 From `companion/`:
 
 ```sh
-./gradlew :renderer:material3:testDebugUnitTest
-./gradlew :renderer:material3:compileDebugAndroidTestKotlin :renderer:material3-screenshots:compileDebugScreenshotTestKotlin
+./gradlew :renderer:material3:testAndroidHostTest :renderer:material3:compileKotlinJvm
+./gradlew :renderer:material3:compileAndroidDeviceTest :renderer:material3-screenshots:compileDebugScreenshotTestKotlin
 ```
 
 Use the existing `ebp-compose/tools/gen-renderer-extension-vocabulary.py`

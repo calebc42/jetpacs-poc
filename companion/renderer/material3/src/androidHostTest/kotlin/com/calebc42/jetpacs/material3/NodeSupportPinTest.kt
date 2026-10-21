@@ -23,7 +23,7 @@ import org.junit.Test
 class NodeSupportPinTest {
 
     private val relPath =
-        "src/main/kotlin/com/calebc42/jetpacs/material3/Renderer.kt"
+        "src/commonMain/kotlin/com/calebc42/jetpacs/material3/Renderer.kt"
 
     private fun rendererSource(): String {
         var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile

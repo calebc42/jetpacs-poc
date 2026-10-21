@@ -10,13 +10,10 @@ package com.calebc42.jetpacs.material3
 
 import com.calebc42.ebp.renderer.model.*
 
-import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.dynamicDarkColorScheme
-import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -27,7 +24,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Density
@@ -179,15 +175,11 @@ fun EbpTheme(payload: JsonObject?, content: @Composable () -> Unit) {
     }
     val colors = payload?.objOrNull("colors")
     // §18.4 `dynamic`: the wallpaper-derived scheme as the BASE, where the
-    // platform has one (S+); the pushed roles still overlay it, and below S
-    // the baseline scheme stands in.
-    val context = LocalContext.current
-    val base = if (payload?.boolOrNull("dynamic") == true &&
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-    } else {
-        if (dark) darkColorScheme() else lightColorScheme()
-    }
+    // platform has one; the pushed roles still overlay it, and where it has
+    // none the baseline scheme stands in.
+    val dynamic =
+        if (payload?.boolOrNull("dynamic") == true) platformDynamicColorScheme(dark) else null
+    val base = dynamic ?: if (dark) darkColorScheme() else lightColorScheme()
     val scheme = buildColorScheme(colors, base)
     val extended = buildExtendedColors(colors, dark)
     // SPEC 18.4: the pushed `syntax` SyntaxStyle map overlays the polarity

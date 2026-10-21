@@ -30,7 +30,7 @@ if not REPOSITORIES_ROOT and not os.environ.get("EBP_SPEC_DIR"):
 EBP_ROOT = os.environ.get("EBP_SPEC_DIR") or os.path.join(REPOSITORIES_ROOT, "ebp")
 OUT = os.path.join(HERE, "MODIFIERS-REFERENCE.org")
 ATTRS_KT = os.path.join(
-    ROOT, "companion/renderer/material3/src/main/kotlin/com/calebc42/jetpacs/"
+    ROOT, "companion/renderer/material3/src/commonMain/kotlin/com/calebc42/jetpacs/"
     "material3/Attributes.kt")
 SENTINEL = ("# >>> HAND-AUTHORED BELOW — proposals / ideation; "
             "not implemented; preserved verbatim by the generator")

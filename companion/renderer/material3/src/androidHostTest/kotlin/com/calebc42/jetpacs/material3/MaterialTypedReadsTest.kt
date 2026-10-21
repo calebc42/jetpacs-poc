@@ -29,7 +29,7 @@ class MaterialTypedReadsTest {
 
     private fun sourceDirectory(): File {
         var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
-        val relative = "src/main/kotlin/com/calebc42/jetpacs/material3"
+        val relative = "src/commonMain/kotlin/com/calebc42/jetpacs/material3"
         while (dir != null) {
             for (candidate in listOf(File(dir, relative), File(dir, "renderer/material3/$relative"))) {
                 if (candidate.isDirectory) return candidate

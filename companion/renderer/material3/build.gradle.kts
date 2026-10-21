@@ -1,72 +1,86 @@
+// :renderer:material3 is Kotlin Multiplatform with an Android and a JVM target
+// (docs/PLAN-desktop-d1-renderers.md). commonMain keeps Google's Compose
+// coordinates; the Companion build substitutes JetBrains' desktop builds on
+// JVM classpaths, so this module's own `jvmTest` must not run Compose. The
+// screenshot suite lives in ../material3-screenshots.
 plugins {
-    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kmp.library)
     alias(libs.plugins.kotlin.compose)
 }
 
-android {
-    namespace = "com.calebc42.jetpacs.material3"
-    compileSdk = 37
-    defaultConfig {
+kotlin {
+    jvmToolchain(21)
+
+    jvm()
+
+    android {
+        namespace = "com.calebc42.jetpacs.material3"
+        compileSdk = 37
         minSdk = 34
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-    }
-    buildFeatures { compose = true }
-    testOptions {
         // Robolectric: the JVM golden replay and component tests compose the
         // real Material renderer without a device (companion/TESTING.md).
-        unitTests.isIncludeAndroidResources = true
+        androidResources { enable = true }
+        withHostTestBuilder {}.configure { isIncludeAndroidResources = true }
+        withDeviceTestBuilder {
+            sourceSetTreeName = "test"
+        }.configure {
+            instrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        }
     }
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_21
-        targetCompatibility = JavaVersion.VERSION_21
-    }
-}
 
-kotlin {
     compilerOptions {
         freeCompilerArgs.add(
             "-opt-in=androidx.compose.foundation.style.ExperimentalFoundationStyleApi",
         )
+    }
+
+    sourceSets {
+        commonMain.dependencies {
+            api(projects.renderer.compose)
+            implementation(projects.wire)
+            implementation(project.dependencies.platform(libs.androidx.compose.bom))
+            implementation(libs.androidx.lifecycle.runtime.compose)
+            implementation(libs.androidx.compose.material3)
+            implementation(libs.androidx.compose.foundation)
+            implementation(libs.androidx.compose.ui)
+            implementation(libs.androidx.compose.material.icons)
+            implementation(libs.androidx.adaptive)
+            implementation(libs.androidx.adaptive.layout)
+            implementation(libs.androidx.adaptive.navigation)
+            implementation(libs.kotlinx.serialization.json)
+        }
+        // Android-only dependencies stay on the Android classpath exactly as
+        // the Android library declared them.
+        androidMain.dependencies {
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.kotlinx.coroutines.android)
+            implementation(libs.androidx.compose.ui.tooling.preview)
+        }
+        getByName("androidHostTest").dependencies {
+            implementation(libs.junit)
+            implementation(projects.renderer.material3Testing)
+            implementation(project.dependencies.platform(libs.androidx.compose.bom))
+            implementation(libs.androidx.compose.ui.test.junit4)
+            implementation(libs.androidx.compose.ui.test.manifest)
+            implementation(libs.robolectric)
+        }
+        getByName("androidDeviceTest").dependencies {
+            implementation(project.dependencies.platform(libs.androidx.compose.bom))
+            implementation(projects.renderer.material3Testing)
+            implementation(libs.androidx.compose.ui.test.junit4)
+            implementation(libs.androidx.compose.ui.test.manifest)
+            implementation(libs.androidx.test.espresso.core)
+            implementation(libs.androidx.test.core)
+            implementation(libs.androidx.test.runner)
+            implementation(libs.androidx.test.ext.junit)
+        }
     }
 }
 
 composeCompiler {
     reportsDestination = layout.buildDirectory.dir("compose_compiler")
     metricsDestination = layout.buildDirectory.dir("compose_compiler")
-}
-
-dependencies {
-    api(projects.renderer.compose)
-    implementation(projects.wire)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.foundation)
-    implementation(libs.androidx.compose.ui)
-    implementation(libs.androidx.compose.material.icons)
-    implementation(libs.androidx.adaptive)
-    implementation(libs.androidx.adaptive.layout)
-    implementation(libs.androidx.adaptive.navigation)
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.androidx.compose.ui.tooling.preview)
-
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
-    testImplementation(libs.junit)
-    testImplementation(projects.renderer.material3Testing)
-    testImplementation(platform(libs.androidx.compose.bom))
-    testImplementation(libs.androidx.compose.ui.test.junit4)
-    testImplementation(libs.androidx.compose.ui.test.manifest)
-    testImplementation(libs.robolectric)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(projects.renderer.material3Testing)
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    androidTestImplementation(libs.androidx.test.espresso.core)
-    androidTestImplementation(libs.androidx.test.core)
-    androidTestImplementation(libs.androidx.test.runner)
-    androidTestImplementation(libs.androidx.test.ext.junit)
 }
 
 tasks.withType<Test>().configureEach {

@@ -14,11 +14,11 @@ references when the explicit update task is used.
 ./gradlew :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm
 ./gradlew :renderer:jetpacs:compileAndroidDeviceTest
 ./gradlew :renderer:jetpacs-screenshots:compileDebugScreenshotTestKotlin
-./gradlew :renderer:material3:compileDebugAndroidTestKotlin
+./gradlew :renderer:material3:compileAndroidDeviceTest :renderer:material3:compileKotlinJvm
 ./gradlew :renderer:material3-screenshots:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:compose-testing:testDebugUnitTest
-./gradlew :renderer:material3:testDebugUnitTest --tests '*MaterialWidgetsGoldenReplayTest*'
-./gradlew :renderer:material3:testDebugUnitTest --tests 'com.calebc42.jetpacs.material3.PatchRecompositionTest'
+./gradlew :renderer:material3:testAndroidHostTest --tests '*MaterialWidgetsGoldenReplayTest*'
+./gradlew :renderer:material3:testAndroidHostTest --tests 'com.calebc42.jetpacs.material3.PatchRecompositionTest'
 ```
 
 The two headless gates run under Robolectric (`@Config(sdk = [34])`, native
@@ -247,16 +247,16 @@ With one authorized device connected:
 ./gradlew :renderer:jetpacs:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsSemanticsTest
 
-./gradlew :renderer:material3:connectedDebugAndroidTest \
+./gradlew :renderer:material3:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.ui.JetpacsComponentsSemanticsTest
 
 ./gradlew :renderer:compose:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EbpSemanticsTest
 
-./gradlew :renderer:material3:connectedDebugAndroidTest \
+./gradlew :renderer:material3:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.ScopedCoreOverrideDispatchTest
 
-./gradlew :renderer:material3:connectedDebugAndroidTest \
+./gradlew :renderer:material3:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.LazyColumnPinnedTest
 ```
 
@@ -309,7 +309,7 @@ time) passed on the Galaxy S21 Ultra, again through `am instrument` against
 the debug Companion installed with `:app:installDebug`; each
 re-materialization now passes the previously shown tree as `previous`
 (`Materializer.share`) and asserts `assertSame` on an untouched row before
-it is shown. The whole `:renderer:material3:connectedDebugAndroidTest`
+it is shown. The whole `:renderer:material3:connectedAndroidDeviceTest`
 module (16 tests: the three material3 classes above plus
 `ChromeStylesSeamTest`) passed there the same day as a regression of
 comparing Json parameters by reference. Two checks needed
@@ -433,8 +433,8 @@ rendering. Both tasks read the wire golden from the `ebp` checkout under
   :renderer:compose:compileAndroidDeviceTest \
   :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm \
   :renderer:jetpacs:compileAndroidDeviceTest \
-  :renderer:material3:testDebugUnitTest \
-  :renderer:material3:compileDebugAndroidTestKotlin \
+  :renderer:material3:testAndroidHostTest :renderer:material3:compileKotlinJvm \
+  :renderer:material3:compileAndroidDeviceTest \
   :renderer:compose-testing:testDebugUnitTest \
   :app:testDebugUnitTest \
   :app:assembleDebug \

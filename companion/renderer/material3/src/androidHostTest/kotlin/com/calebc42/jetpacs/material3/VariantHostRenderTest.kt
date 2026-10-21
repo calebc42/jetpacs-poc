@@ -20,8 +20,8 @@ class VariantHostRenderTest {
         var dir: File? = File(System.getProperty("user.dir") ?: ".").absoluteFile
         while (dir != null) {
             val source = listOf(
-                File(dir, "src/main/kotlin/com/calebc42/jetpacs/material3/$name"),
-                File(dir, "renderer/material3/src/main/kotlin/com/calebc42/jetpacs/material3/$name"),
+                File(dir, "src/commonMain/kotlin/com/calebc42/jetpacs/material3/$name"),
+                File(dir, "renderer/material3/src/commonMain/kotlin/com/calebc42/jetpacs/material3/$name"),
             ).firstOrNull(File::isFile)
             if (source != null) return source
             dir = dir.parentFile

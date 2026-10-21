@@ -71,7 +71,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
@@ -99,28 +98,13 @@ import kotlinx.serialization.json.JsonObject
  * executable format. content_scale maps fit/crop/fill; width/height/
  * aspect_ratio size the box.
  */
-/**
- * Where `image` nodes fetch from: the shared [ImageCache] in production, a
- * stub in headless tests so no socket is opened. The only seam the Material
- * renderer exposes for the network.
- */
-val LocalMaterialImageSource =
-    androidx.compose.runtime.staticCompositionLocalOf<suspend (String, ImageLoader.Limits) -> android.graphics.Bitmap?> {
-        ImageCache::get
-    }
-
 @Composable
 internal fun RenderImage(node: JsonObject, m: Modifier) {
     val p = NodeProperties(node, ImageMembers)
     val url = p.getOr(ImageMembers.Url, "")
     val desc = p[ImageMembers.ContentDescription]?.takeIf { it.isNotEmpty() }
-    val limits = ImageLoader.DEFAULT_LIMITS
-    val source = LocalMaterialImageSource.current
-    // LD-11: through the cache, so scrolling a lazy_column back to a seen
-    // image does not re-fetch, and N nodes on one URL share one load.
-    val bitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(null, url) {
-        value = source(url, limits)
-    }
+    // The platform loads and caches; null while loading and on any failure.
+    val bitmap = rememberNodeImage(url)
     val scale = when (p[ImageMembers.ContentScale]) {
         ImageContentScale.Crop -> androidx.compose.ui.layout.ContentScale.Crop
         ImageContentScale.Fill -> androidx.compose.ui.layout.ContentScale.FillBounds
@@ -142,10 +126,9 @@ internal fun RenderImage(node: JsonObject, m: Modifier) {
                     Modifier.aspectRatio(p.getOr(UniversalMembers.AspectRatio, 1.0).toFloat()))
             else -> Modifier
         })
-    val bmp = bitmap
-    if (bmp != null) {
+    if (bitmap != null) {
         androidx.compose.foundation.Image(
-            bitmap = bmp.asImageBitmap(),
+            bitmap = bitmap,
             contentDescription = desc,
             contentScale = scale,
             modifier = sizeMod)

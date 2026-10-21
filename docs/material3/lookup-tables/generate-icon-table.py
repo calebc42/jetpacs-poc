@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ORG = os.path.join(HERE, "M3-ICON-REFERENCE.org")
 ICONMAP = os.path.normpath(os.path.join(
     HERE, "..", "..", "..", "companion", "renderer", "material3", "src",
-    "main", "kotlin", "com", "calebc42", "jetpacs", "material3",
+    "commonMain", "kotlin", "com", "calebc42", "jetpacs", "material3",
     "IconMap.kt"))
 BEGIN = "# BEGIN GENERATED ICON TABLE"
 END = "# END GENERATED ICON TABLE"

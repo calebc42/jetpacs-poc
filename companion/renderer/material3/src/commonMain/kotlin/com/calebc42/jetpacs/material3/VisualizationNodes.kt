@@ -13,7 +13,6 @@ import com.calebc42.ebp.renderer.model.vocabulary.StringOrNumber
 import com.calebc42.ebp.renderer.model.vocabulary.generated.*
 import com.calebc42.ebp.renderer.model.*
 
-import android.graphics.Paint
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -53,9 +52,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
@@ -267,15 +263,9 @@ internal fun RenderCanvas(node: JsonObject, m: Modifier) {
                         else drawPath(path, color, style = Stroke(strokeW))
                     }
                 }
-                "text" -> drawIntoCanvas { c ->
-                    val paint = Paint().apply {
-                        this.color = color.toArgb()
-                        textSize = px(o.doubleOr("size", 12.0))
-                        isAntiAlias = true
-                    }
-                    c.nativeCanvas.drawText(o.stringOr("text"),
-                        px(o["x"]?.numOrNull()), px(o["y"]?.numOrNull()), paint)
-                }
+                "text" -> drawCanvasText(o.stringOr("text"),
+                    px(o["x"]?.numOrNull()), px(o["y"]?.numOrNull()),
+                    px(o.doubleOr("size", 12.0)), color)
                 else -> {} // SPEC 17.5: unknown op skipped, never fatal
             }
         }

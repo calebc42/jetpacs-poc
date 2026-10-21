@@ -1571,7 +1571,7 @@ fun RenderScaffold(
     // race (two STARTED hosts, e.g. split screen) single-show. Keying the
     // effect on the pending value was the previous bug: clearing the flow
     // changed the key and cancelled the coroutine awaiting showSnackbar.
-    val lifecycle = androidx.compose.ui.platform.LocalLifecycleOwner.current.lifecycle
+    val lifecycle = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle
     LaunchedEffect(Unit) {
         lifecycle.repeatOnLifecycle(androidx.lifecycle.Lifecycle.State.STARTED) {
             SnackbarRaises.flow.collect { raise ->

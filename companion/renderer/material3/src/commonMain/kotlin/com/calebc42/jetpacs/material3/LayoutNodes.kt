@@ -480,7 +480,7 @@ internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         }) { measurables, constraints ->
             // Deliberately do not measure inactive alternatives. Their outer
             // slots remain reusable, but hidden LazyColumns do no frame work.
-            android.os.Trace.beginSection("EBP variant layout")
+            beginTraceSection("EBP variant layout")
             try {
                 val placeable = measurables.getOrNull(selected)?.measure(constraints)
                 if (placeable == null) {
@@ -491,7 +491,7 @@ internal fun RenderVariantHost(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     }
                 }
             } finally {
-                android.os.Trace.endSection()
+                endTraceSection()
             }
         }
     }
