@@ -73,6 +73,20 @@ class CompanionStores(
         false
     }
 
+    /**
+     * Submit what the user just did on the actor's action lane
+     * (PLAN-responsiveness C2b): taken ahead of queued process work and
+     * never saturated, so a tap, a keystroke or a dialog answer neither
+     * waits behind an inbound frame's successors nor surfaces as an
+     * overload toast. Same single writer; false only once the actor closed.
+     */
+    fun submitAction(block: suspend () -> Unit): Boolean = try {
+        commandActor.submitAction(block)
+        true
+    } catch (_: IllegalStateException) {
+        false
+    }
+
     fun queue(): DurableQueue = queueInstance ?: synchronized(this) {
         queueInstance ?: DurableQueue(
             RoomQueueStore(durableStore, pairingId, triggerOccurrence),

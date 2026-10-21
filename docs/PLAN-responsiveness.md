@@ -153,8 +153,8 @@ its own evidence, as above.
    equal copy not); the insert-at-head case unchanged (no pre-existing row
    runs, so each keeps its state); the scroll-retention instrumented tests
    on the phone.
-5. **C2b–d — the rest of the actor split** (C6a, the reducer's stale check
-   first, is done 2026-10-21 in ebp-kmp), then **E3** (Org render memoization) and **A2a** (a value-only
+5. **C2c–d — the rest of the actor split** (C2b, the action lane, and C6a,
+   the reducer's stale check first, are done 2026-10-21 in ebp-kmp), then **E3** (Org render memoization) and **A2a** (a value-only
    glasspane handler: the todo-filter chips or the agenda mode, after
    confirming it moves values only), then **E2b** (reserve revisions in
    blocks), **C5** (cold start), **C8** (release build, baseline profile,
@@ -329,8 +329,14 @@ step that can ship on its own.
   tap during a large snapshot waits behind every queued chunk, and 64 pending
   commands show the overload toast. Steps: (a) **done** — `FrameReader` reads
   until a frame is complete and the actor runs one command per frame, the
-  parse on the reader thread outside the monitor; (b) a separate
-  UI-action lane whose capacity never produces the toast; (c) hold the monitor
+  parse on the reader thread outside the monitor; (b) **done 2026-10-21** —
+  `EbpCommandActor.submitAction`, an unbounded second lane the one worker
+  takes from first (biased `select`), so what the user did never waits
+  behind queued process work and never saturates; `DeviceBridge`'s
+  dispatch executor rides it, and the "command actor overloaded" toast is
+  gone from that path (`EbpCommandActorTest`: an action ahead of queued
+  work, a 200-action burst on a saturated process lane, close drains both
+  lanes); (c) hold the monitor
   only for the state mutation, running `inputDisplays`, incarnation
   projection and `publish` after `feed` returns; (d) debounce draft
   persistence in `SurfaceStore.putDraft` within the 500 ms SPEC 14.6 ceiling.

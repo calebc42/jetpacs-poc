@@ -109,7 +109,11 @@ reader thread and the process actor runs one engine command per complete
 frame, so a partial frame holds neither the actor nor the engine monitor
 (`FrameReaderTest.aUiActionIsAnsweredWhileAMultiChunkFrameIsMidFeed`; the
 engine's parsed-frame and decoder-fault entry points are pinned by
-`CompanionEngineTest`).
+`CompanionEngineTest`). The actor itself has two lanes
+(`EbpCommandActorTest`): the bounded process lane, and the action lane the
+bridge's dispatch executor uses for what the user did — taken first by the
+one worker and never saturated, so a tap or a keystroke neither waits behind
+queued process work nor surfaces as an overload toast.
 The engine half of
 the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),

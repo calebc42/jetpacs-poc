@@ -615,11 +615,15 @@ class DeviceBridge(
     private val engine: CompanionEngine? get() = variantEngineRoute.current()
 
     // Renderer, receiver, trigger, and socket entry points all share the same
-    // bounded process actor. The Executor facade keeps the renderer host API
-    // synchronous without creating a second writer.
+    // process actor — one writer. The Executor facade keeps the renderer host
+    // API synchronous. What arrives here is what the user did, so it rides
+    // the actor's action lane (PLAN-responsiveness C2b): ahead of queued
+    // process work, never saturated, so it can no longer surface as the
+    // "command actor overloaded" toast. A refusal now means the actor is
+    // closed — the process is going away — and is reported once.
     private val dispatchExecutor = Executor { command ->
-        if (!stores.submit { command.run() }) {
-            onQueueProblem("command actor overloaded")
+        if (!stores.submitAction { command.run() }) {
+            onQueueProblem("command actor closed")
         }
     }
 
