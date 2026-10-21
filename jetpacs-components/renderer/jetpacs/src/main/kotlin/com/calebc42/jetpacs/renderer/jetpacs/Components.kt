@@ -251,7 +251,8 @@ private fun JetpacsChoiceLayout(
 
 /** Stable final interaction states used only by deterministic visual tests. */
 @Composable
-internal fun JetpacsActionFocusFixture(label: String) {
+@InternalJetpacsRendererApi
+fun JetpacsActionFocusFixture(label: String) {
     val source = remember { MutableInteractionSource() }
     val state = remember {
         MutableStyleState(null).apply {
@@ -264,7 +265,8 @@ internal fun JetpacsActionFocusFixture(label: String) {
 
 /** Stable final interaction states used only by deterministic visual tests. */
 @Composable
-internal fun JetpacsChoiceHoverFixture(label: String) {
+@InternalJetpacsRendererApi
+fun JetpacsChoiceHoverFixture(label: String) {
     val source = remember { MutableInteractionSource() }
     val state = remember {
         MutableStyleState(null).apply {

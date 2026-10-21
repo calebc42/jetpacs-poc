@@ -465,7 +465,8 @@ private fun JetpacsTextFieldDecoration(
 
 /** Stable focused visual state used only by deterministic screenshot tests. */
 @Composable
-internal fun JetpacsTextFieldFocusFixture(
+@InternalJetpacsRendererApi
+fun JetpacsTextFieldFocusFixture(
     state: TextFieldState,
     label: String,
 ) {
@@ -503,7 +504,8 @@ internal fun JetpacsTextFieldFocusFixture(
 
 /** Jetpacs-owned non-interactive glyph with a deterministic unknown fallback. */
 @Composable
-internal fun JetpacsFieldGlyph(name: String, modifier: Modifier = Modifier) {
+@InternalJetpacsRendererApi
+fun JetpacsFieldGlyph(name: String, modifier: Modifier = Modifier) {
     val color = JetpacsTheme.colors.mutedContent
     Canvas(modifier.size(16.dp).clearAndSetSemantics { }) {
         val stroke = 1.5.dp.toPx()

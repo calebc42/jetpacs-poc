@@ -283,7 +283,8 @@ internal fun JetpacsEditorReadOnlyFixture(
 
 /** Stable focused visual state used only by deterministic screenshot tests. */
 @Composable
-internal fun JetpacsEditorFocusFixture(state: TextFieldState) {
+@InternalJetpacsRendererApi
+fun JetpacsEditorFocusFixture(state: TextFieldState) {
     val styleState = remember {
         MutableStyleState(null).apply {
             isEnabled = true

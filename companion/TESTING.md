@@ -13,7 +13,7 @@ references when the explicit update task is used.
 ./gradlew :renderer:compose:compileAndroidDeviceTest
 ./gradlew :renderer:jetpacs:testDebugUnitTest
 ./gradlew :renderer:jetpacs:compileDebugAndroidTestKotlin
-./gradlew :renderer:jetpacs:compileDebugScreenshotTestKotlin
+./gradlew :renderer:jetpacs-screenshots:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:material3:compileDebugAndroidTestKotlin
 ./gradlew :renderer:material3:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:compose-testing:testDebugUnitTest
@@ -182,7 +182,7 @@ configuration/private-receiver export boundary. The full lifecycle mapping is in
 ## Screenshot references
 
 ```sh
-./gradlew :renderer:jetpacs:validateDebugScreenshotTest
+./gradlew :renderer:jetpacs-screenshots:validateDebugScreenshotTest
 ./gradlew :renderer:material3:validateDebugScreenshotTest
 ```
 
@@ -229,7 +229,7 @@ guard growth trends; they are not device-frame benchmarks.
 Update references only after reviewing the rendered change:
 
 ```sh
-./gradlew :renderer:jetpacs:updateDebugScreenshotTest
+./gradlew :renderer:jetpacs-screenshots:updateDebugScreenshotTest
 ./gradlew :renderer:material3:updateDebugScreenshotTest
 ```
 
@@ -438,7 +438,7 @@ rendering. Both tasks read the wire golden from the `ebp` checkout under
   :renderer:compose-testing:testDebugUnitTest \
   :app:testDebugUnitTest \
   :app:assembleDebug \
-  :renderer:jetpacs:validateDebugScreenshotTest \
+  :renderer:jetpacs-screenshots:validateDebugScreenshotTest \
   :renderer:material3:validateDebugScreenshotTest
 ```
 

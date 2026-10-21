@@ -65,7 +65,8 @@ internal const val MAX_VISIBLE_NAVIGATOR_OPTIONS = 8
 
 /** Renderer-private option shape shared by peer-view and document navigators. */
 @Immutable
-internal data class JetpacsNavigatorOption(
+@InternalJetpacsRendererApi
+data class JetpacsNavigatorOption(
     val label: String,
     val value: String,
     val accessibleLabel: String,
@@ -73,7 +74,8 @@ internal data class JetpacsNavigatorOption(
 )
 
 /** Keeps the shared interaction machinery from conflating tabs with headings. */
-internal enum class JetpacsNavigatorSemantics {
+@InternalJetpacsRendererApi
+enum class JetpacsNavigatorSemantics {
     Tabs,
     Sections,
 }
@@ -255,7 +257,8 @@ internal fun JetpacsControlledNavigator(
 
 /** Bounded, keyed popup content shared by runtime and visual test fixtures. */
 @Composable
-internal fun JetpacsNavigatorPopupContent(
+@InternalJetpacsRendererApi
+fun JetpacsNavigatorPopupContent(
     options: List<JetpacsNavigatorOption>,
     value: String,
     semantics: JetpacsNavigatorSemantics,

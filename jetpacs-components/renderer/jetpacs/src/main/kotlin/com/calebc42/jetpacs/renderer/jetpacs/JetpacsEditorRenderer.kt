@@ -204,7 +204,8 @@ internal fun editorSyncStatusText(phase: EditorSyncPhase): String? = when (phase
 }
 
 @Composable
-internal fun JetpacsEditorSyncStatus(phase: EditorSyncPhase) {
+@InternalJetpacsRendererApi
+fun JetpacsEditorSyncStatus(phase: EditorSyncPhase) {
     val text = editorSyncStatusText(phase) ?: return
     val styleState = remember { MutableStyleState(null) }
     Box(

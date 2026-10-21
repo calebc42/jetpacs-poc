@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.compose.screenshot)
 }
 
 android {
@@ -12,10 +11,8 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
-    experimentalProperties["android.experimental.enableScreenshotTest"] = true
     testOptions {
         unitTests.isIncludeAndroidResources = true
-        screenshotTests { imageDifferenceThreshold = 0.001f }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
@@ -25,8 +22,9 @@ android {
 
 kotlin {
     compilerOptions {
-        freeCompilerArgs.add(
+        freeCompilerArgs.addAll(
             "-opt-in=androidx.compose.foundation.style.ExperimentalFoundationStyleApi",
+            "-opt-in=com.calebc42.jetpacs.renderer.jetpacs.InternalJetpacsRendererApi",
         )
     }
 }
@@ -49,6 +47,4 @@ dependencies {
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    screenshotTestImplementation(libs.screenshot.validation.api)
-    screenshotTestImplementation(libs.androidx.compose.ui.tooling)
 }

@@ -248,7 +248,8 @@ fun JetpacsMenu(
 
 /** Bounded popup body, separated from the window so tests can draw it. */
 @Composable
-internal fun JetpacsMenuPopupContent(
+@InternalJetpacsRendererApi
+fun JetpacsMenuPopupContent(
     items: List<JetpacsMenuItem> = emptyList(),
     groups: List<JetpacsMenuGroup> = emptyList(),
     initialScroll: JetpacsMenuScroll = JetpacsMenuScroll.Start,

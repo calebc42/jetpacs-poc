@@ -54,7 +54,8 @@ internal const val MAX_VISIBLE_JETPACS_COMPLETIONS = 12
  * actions into the sole editable semantics owner.
  */
 @Composable
-internal fun JetpacsEditorCompletion(
+@InternalJetpacsRendererApi
+fun JetpacsEditorCompletion(
     offer: CompletionOffer,
     view: CompletionOfferView,
     document: CandidateDocument?,
@@ -220,7 +221,8 @@ internal fun completionKindGlyph(kind: String?): String? = when (kind) {
 
 /** Diagnostic-at-caret status, with eldoc as the lower-priority fallback. */
 @Composable
-internal fun JetpacsEditorToolingStatus(
+@InternalJetpacsRendererApi
+fun JetpacsEditorToolingStatus(
     diagnostic: DiagnosticRange?,
     eldoc: EldocLine?,
     diagnosticColors: JetpacsDiagnosticColors,

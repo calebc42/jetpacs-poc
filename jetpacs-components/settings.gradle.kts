@@ -27,3 +27,5 @@ project(":renderer:compose").projectDir = repositoriesRoot.resolve("ebp-compose/
 include(":renderer:compose-testing")
 project(":renderer:compose-testing").projectDir = repositoriesRoot.resolve("ebp-compose/renderer/compose-testing")
 include(":renderer:jetpacs")
+// The screenshot suite is a separate Android library (docs/PLAN-desktop-d1-renderers.md).
+include(":renderer:jetpacs-screenshots")

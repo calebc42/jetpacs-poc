@@ -330,7 +330,8 @@ private fun JsonObject.editorToolbarObject(name: String): JsonObject? = get(name
 
 /** Stable toolbar chrome used only by deterministic screenshot tests. */
 @Composable
-internal fun JetpacsEditorToolbarFixture() {
+@InternalJetpacsRendererApi
+fun JetpacsEditorToolbarFixture() {
     val styleState = remember {
         MutableStyleState(null).apply { isEnabled = true }
     }

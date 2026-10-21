@@ -18,7 +18,8 @@ import com.calebc42.ebp.renderer.model.currentDiagnostics
 import com.calebc42.ebp.renderer.model.currentFontifyRuns
 
 /** Jetpacs-private severity colors for synchronized editor diagnostics. */
-internal data class JetpacsDiagnosticColors(
+@InternalJetpacsRendererApi
+data class JetpacsDiagnosticColors(
     val error: Color,
     val warning: Color,
     val info: Color,
@@ -70,7 +71,8 @@ internal fun jetpacsDiagnosticStyle(
  * Styling never inserts text or changes offsets, so caret, selection, and
  * synchronization continue to index the controller's untransformed value.
  */
-internal class JetpacsAnnotationOutputTransformation(
+@InternalJetpacsRendererApi
+class JetpacsAnnotationOutputTransformation(
     private val fontify: FontifySet?,
     private val diagnostics: DiagnosticSet?,
     private val language: String,
@@ -106,7 +108,8 @@ internal class JetpacsAnnotationOutputTransformation(
 }
 
 /** Jetpacs palette mapping for the shared syntax-role projection. */
-internal class JetpacsSyntaxOutputTransformation(
+@InternalJetpacsRendererApi
+class JetpacsSyntaxOutputTransformation(
     private val language: String,
     private val colors: JetpacsSyntaxColors,
 ) : OutputTransformation {

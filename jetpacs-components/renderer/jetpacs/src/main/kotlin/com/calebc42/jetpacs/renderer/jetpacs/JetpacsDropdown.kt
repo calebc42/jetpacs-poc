@@ -283,7 +283,8 @@ fun JetpacsDropdown(
 
 /** Bounded popup body, separated from the window so tests can draw it. */
 @Composable
-internal fun JetpacsDropdownPopupContent(
+@InternalJetpacsRendererApi
+fun JetpacsDropdownPopupContent(
     options: List<JetpacsDropdownOption>,
     value: String?,
     enabled: Boolean,
