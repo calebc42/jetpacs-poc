@@ -15,7 +15,7 @@ references when the explicit update task is used.
 ./gradlew :renderer:jetpacs:compileAndroidDeviceTest
 ./gradlew :renderer:jetpacs-screenshots:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:material3:compileDebugAndroidTestKotlin
-./gradlew :renderer:material3:compileDebugScreenshotTestKotlin
+./gradlew :renderer:material3-screenshots:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:compose-testing:testDebugUnitTest
 ./gradlew :renderer:material3:testDebugUnitTest --tests '*MaterialWidgetsGoldenReplayTest*'
 ./gradlew :renderer:material3:testDebugUnitTest --tests 'com.calebc42.jetpacs.material3.PatchRecompositionTest'
@@ -183,7 +183,7 @@ configuration/private-receiver export boundary. The full lifecycle mapping is in
 
 ```sh
 ./gradlew :renderer:jetpacs-screenshots:validateDebugScreenshotTest
-./gradlew :renderer:material3:validateDebugScreenshotTest
+./gradlew :renderer:material3-screenshots:validateDebugScreenshotTest
 ```
 
 The Jetpacs gallery covers compact and expanded widths, dark mode, 1.5× font
@@ -230,7 +230,7 @@ Update references only after reviewing the rendered change:
 
 ```sh
 ./gradlew :renderer:jetpacs-screenshots:updateDebugScreenshotTest
-./gradlew :renderer:material3:updateDebugScreenshotTest
+./gradlew :renderer:material3-screenshots:updateDebugScreenshotTest
 ```
 
 Reference updates are evidence of an intentional visual change, not a way to
@@ -439,7 +439,7 @@ rendering. Both tasks read the wire golden from the `ebp` checkout under
   :app:testDebugUnitTest \
   :app:assembleDebug \
   :renderer:jetpacs-screenshots:validateDebugScreenshotTest \
-  :renderer:material3:validateDebugScreenshotTest
+  :renderer:material3-screenshots:validateDebugScreenshotTest
 ```
 
 Compilation and screenshots prove deterministic code and pixels. Behavior that

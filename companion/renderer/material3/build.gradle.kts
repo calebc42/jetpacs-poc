@@ -1,7 +1,6 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.compose.screenshot)
 }
 
 android {
@@ -12,9 +11,7 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
-    experimentalProperties["android.experimental.enableScreenshotTest"] = true
     testOptions {
-        screenshotTests { imageDifferenceThreshold = 0.001f }
         // Robolectric: the JVM golden replay and component tests compose the
         // real Material renderer without a device (companion/TESTING.md).
         unitTests.isIncludeAndroidResources = true
@@ -70,8 +67,6 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
-    screenshotTestImplementation(libs.screenshot.validation.api)
-    screenshotTestImplementation(libs.androidx.compose.ui.tooling)
 }
 
 tasks.withType<Test>().configureEach {

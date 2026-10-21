@@ -66,7 +66,7 @@ From `companion/`:
 
 ```sh
 ./gradlew :renderer:material3:testDebugUnitTest
-./gradlew :renderer:material3:compileDebugAndroidTestKotlin :renderer:material3:compileDebugScreenshotTestKotlin
+./gradlew :renderer:material3:compileDebugAndroidTestKotlin :renderer:material3-screenshots:compileDebugScreenshotTestKotlin
 ```
 
 Use the existing `ebp-compose/tools/gen-renderer-extension-vocabulary.py`

@@ -33,6 +33,7 @@ include(":renderer:glance")
 include(":renderer:jetpacs")
 include(":renderer:jetpacs-screenshots")
 include(":renderer:material3")
+include(":renderer:material3-screenshots")
 include(":renderer:material3-testing")
 include(":renderer:compose-testing")
 
@@ -63,5 +64,7 @@ project(":renderer:jetpacs-screenshots").projectDir =
     file("../jetpacs-components/renderer/jetpacs-screenshots")
 project(":renderer:material3").projectDir =
     file("renderer/material3")
+project(":renderer:material3-screenshots").projectDir =
+    file("renderer/material3-screenshots")
 project(":renderer:material3-testing").projectDir =
     file("renderer/material3-testing")
