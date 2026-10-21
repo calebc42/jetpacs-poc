@@ -2067,5 +2067,130 @@ one every snackbar in the product rides."
   (should-not (jetpacs-shell--inject-snackbar
                '(:t "text" :text "x") nil "Hi")))
 
+(ert-deftest jetpacs-chrome-navigation-push-reuses-the-screens-below ()
+  "A push-screen builds the screen it adds; the hub ships from the cache.
+Growing the stack again reuses both lower screens; an ordinary push still
+rebuilds every screen; `jetpacs-chrome-reuse-on-navigate' nil restores the
+full rebuild on navigation."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (let ((hub-builds 0) (detail-builds 0) (deeper-builds 0))
+          (with-jetpacs-owner "filesapp"
+            (jetpacs-chrome-define-root
+             "filesapp" "hub"
+             (lambda (_back)
+               (cl-incf hub-builds)
+               (jetpacs-chrome-screen "Hub" (jetpacs-text "hub")))))
+          (jetpacs-shell-push "app:filesapp")
+          (should (= hub-builds 1))
+          ;; The first drill: the hub is cached from the push above.
+          (jetpacs-chrome-push-screen
+           "filesapp" "detail"
+           (lambda (back)
+             (cl-incf detail-builds)
+             (jetpacs-chrome-screen "Detail" (jetpacs-text "detail")
+                                    :back back)))
+          (should (= hub-builds 1))
+          (should (= detail-builds 1))
+          (let ((views (plist-get (cadr (car recs)) :views)))
+            (should (gethash "hub" views))
+            (should (gethash "detail" views)))
+          ;; Deeper: hub and detail both ship from the cache.
+          (jetpacs-chrome-push-screen
+           "filesapp" "deeper"
+           (lambda (back)
+             (cl-incf deeper-builds)
+             (should (equal (plist-get back :view) "detail"))
+             (jetpacs-chrome-screen "Deeper" (jetpacs-text "deeper")
+                                    :back back)))
+          (should (= hub-builds 1))
+          (should (= detail-builds 1))
+          (should (= deeper-builds 1))
+          (let ((views (plist-get (cadr (car recs)) :views)))
+            (should (= 3 (hash-table-count views)))
+            (should (string-match-p
+                     "\"builtin\":\"view.switch\",\"view\":\"detail\""
+                     (jetpacs-node->canonical-json (gethash "deeper" views)))))
+          ;; An ordinary push rebuilds every screen, as before.
+          (jetpacs-shell-push "app:filesapp")
+          (should (= hub-builds 2))
+          (should (= detail-builds 2))
+          (should (= deeper-builds 2))
+          ;; Opting out: a navigation rebuilds the whole stack.
+          (let ((jetpacs-chrome-reuse-on-navigate nil))
+            (jetpacs-chrome-reset-screens "filesapp")
+            (should (= hub-builds 3))
+            (jetpacs-chrome-push-screen
+             "filesapp" "detail"
+             (lambda (back)
+               (cl-incf detail-builds)
+               (jetpacs-chrome-screen "Detail" (jetpacs-text "detail")
+                                      :back back)))
+            (should (= hub-builds 4))
+            (should (= detail-builds 3))))))))
+
+(ert-deftest jetpacs-chrome-reentrant-push-rebuilds-above-the-truncation ()
+  "Pushing an id already on the stack truncates to it; the screens below it
+ship from the cache, the replaced screen is built."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording _recs
+        (let ((hub-builds 0) (detail-builds 0) (deeper-builds 0))
+          (with-jetpacs-owner "filesapp"
+            (jetpacs-chrome-define-root
+             "filesapp" "hub"
+             (lambda (_back)
+               (cl-incf hub-builds)
+               (jetpacs-chrome-screen "Hub" (jetpacs-text "hub")))))
+          (jetpacs-chrome-push-screen
+           "filesapp" "detail"
+           (lambda (back)
+             (cl-incf detail-builds)
+             (jetpacs-chrome-screen "Detail" (jetpacs-text "detail") :back back)))
+          (jetpacs-chrome-push-screen
+           "filesapp" "deeper"
+           (lambda (back)
+             (cl-incf deeper-builds)
+             (jetpacs-chrome-screen "Deeper" (jetpacs-text "deeper") :back back)))
+          (should (= hub-builds 1))
+          ;; Re-entrant "detail": the stack truncates to hub + a new detail.
+          (jetpacs-chrome-push-screen
+           "filesapp" "detail"
+           (lambda (back)
+             (cl-incf detail-builds)
+             (jetpacs-chrome-screen "Detail 2" (jetpacs-text "detail 2") :back back)))
+          (should (equal (jetpacs-chrome-stack "filesapp") '("detail" "hub")))
+          (should (= hub-builds 1))
+          (should (= detail-builds 2))
+          (should (= deeper-builds 1)))))))
+
+(ert-deftest jetpacs-chrome-drill-reuses-the-hub ()
+  "The navigate drill names the drilled screen as the one to build."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (let ((hub-builds 0))
+          (with-jetpacs-owner "filesapp"
+            (jetpacs-chrome-define-root
+             "filesapp" "hub"
+             (lambda (_back)
+               (cl-incf hub-builds)
+               (jetpacs-chrome-screen "Hub" (jetpacs-text "hub")))))
+          (jetpacs-shell-push "app:filesapp")
+          (should (= hub-builds 1))
+          (let ((deferred '()))
+            (cl-letf (((symbol-function 'run-at-time)
+                       (lambda (_t _r fn &rest _) (push fn deferred) nil)))
+              (should (jetpacs-chrome--drill
+                       "app:filesapp"
+                       (lambda () (list (jetpacs-text "drilled")))
+                       "Some buffer")))
+            (funcall (car deferred)))
+          (should (= hub-builds 1))
+          (let ((views (plist-get (cadr (car recs)) :views)))
+            (should (= 2 (hash-table-count views)))
+            (should (gethash "hub" views))))))))
+
 (provide 'jetpacs-chrome-test)
 ;;; jetpacs-chrome-test.el ends here

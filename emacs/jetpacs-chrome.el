@@ -64,9 +64,11 @@ the stack bottom — and returns a root Node.")
 
 (defvar jetpacs-chrome--view-cache (make-hash-table :test #'equal)
   "SURFACE id -> last successfully composed stack views and budget states.
-The cache is consulted only under an explicit current-view refresh.  Every
-ordinary push still rebuilds the whole stack, so unrelated model changes
-cannot leave a hidden screen stale.")
+The cache is consulted only under an explicit target view: a
+current-view refresh, or a navigation push naming the screen it added
+\(`jetpacs-chrome-reuse-on-navigate').  Every ordinary push still
+rebuilds the whole stack, so unrelated model changes cannot leave a
+hidden screen stale.")
 
 (defvar jetpacs-chrome--target-refresh-view nil
   "Dynamically bound view id whose builder alone needs to run this push.")
@@ -805,40 +807,63 @@ it into that screen's error card.  Returns the ids used."
   (setq jetpacs-buffer-extra-budget
         (copy-tree (plist-get snapshot :extra))))
 
-(defun jetpacs-chrome--same-stack-p (cached live)
-  "Whether CACHED and LIVE contain the identical immutable stack entries."
-  (and (= (length cached) (length live))
-       (cl-loop for old in cached
-                for new in live
-                always (eq old new))))
+(defcustom jetpacs-chrome-reuse-on-navigate t
+  "Whether a navigation push reuses the screens below the one it adds.
+A drill or `jetpacs-chrome-push-screen' names the new screen as the one
+to build; every lower screen whose stack entry and budget position are
+unchanged ships its cached node instead of running its builder again.
+The lower screens then show what the device already holds — the state
+before the handler that navigated — until the next ordinary push, which
+rebuilds every screen as it always did.  A handler that changes state
+those lower screens render and ALSO navigates should refresh
+\(`jetpacs-app-defer-refresh') rather than rely on the navigation push.
+Nil restores the pre-slice behaviour: every navigation rebuilds the
+whole stack."
+  :type 'boolean :group 'jetpacs)
 
-(defun jetpacs-chrome--cache-compatible-p (cache stack target gate-signature)
-  "Whether CACHE can supply every STACK view below topmost TARGET.
-Budget snapshots are part of compatibility: a changed welcome limit or
-different earlier spend forces the ordinary full rebuild."
-  (and cache target (equal target (caar stack))
-       (equal gate-signature (plist-get cache :gate-signature))
-       (jetpacs-chrome--same-stack-p (plist-get cache :stack) stack)
-       (let ((screens (plist-get cache :screens))
-             (expected (jetpacs-chrome--budget-snapshot))
-             (ok t))
-         (dolist (entry (reverse stack) ok)
-           (unless (equal (car entry) target)
-             (let ((record (gethash (car entry) screens)))
-               (if (and record
-                       (eq entry (plist-get record :entry))
-                       (plist-get record :reusable)
-                       (plist-get record :analysis)
-                       (equal expected (plist-get record :before)))
-                   (setq expected (plist-get record :after))
-                 (setq ok nil))))))))
+(defun jetpacs-chrome--reusable-screens (cache stack target gate-signature)
+  "The records of CACHE that can supply STACK's views below TARGET, by id.
+A record is reusable when its stack entry is the live one (`eq'), it was
+built without failure under the same welcome GATE-SIGNATURE, and the
+budget it was built against is the budget the build will reach: the
+stack renders bottom-first, so the chain is followed upward and stops at
+the first screen that must be built — everything above it is built too,
+since its spend is unknown until then.  Returns nil when nothing is
+reusable, so a changed welcome limit or a different earlier spend forces
+the ordinary full rebuild."
+  (when (and cache target
+             (equal gate-signature (plist-get cache :gate-signature)))
+    (let ((screens (plist-get cache :screens))
+          (expected (jetpacs-chrome--budget-snapshot))
+          (reusable (make-hash-table :test #'equal)))
+      ;; A screen's node also embeds the Back descriptor to the screen
+      ;; BELOW it, so the record is reusable only above the same neighbour
+      ;; (an eviction or a re-entrant truncation changes it).
+      (let ((below nil))
+        (cl-loop for entry in (reverse stack)
+                 for id = (car entry)
+                 for record = (and (not (equal id target))
+                                   (gethash id screens))
+                 while (and record
+                            (eq entry (plist-get record :entry))
+                            (equal below (plist-get record :below))
+                            (plist-get record :reusable)
+                            (plist-get record :analysis)
+                            (equal expected (plist-get record :before)))
+                 do (puthash id record reusable)
+                    (setq expected (plist-get record :after)
+                          below id)))
+      (and (> (hash-table-count reusable) 0) reusable))))
 
 (defun jetpacs-chrome--build (surface)
   "Build SURFACE's stack as one complete multi_view snapshot.
 Ordinary pushes rebuild every screen.  When
-`jetpacs-chrome--target-refresh-view' names the unchanged stack top, reuse
-the last lower views and run only that visible screen's builder.  The cached
-views remain in the complete snapshot required by SPEC 13.2."
+`jetpacs-chrome--target-refresh-view' names the stack top — a view-local
+refresh of an unchanged stack, or the screen a navigation just added —
+every lower view whose entry and budget position are unchanged ships
+its cached node (`jetpacs-chrome--reusable-screens') and only the
+target's builder runs.  The cached views remain in the complete
+snapshot required by SPEC 13.2."
   (let ((stack (gethash surface jetpacs-chrome--stacks)))
     (unless stack
       (error "jetpacs-chrome: no chrome stack for %s" surface))
@@ -849,12 +874,16 @@ views remain in the complete snapshot required by SPEC 13.2."
              (globals (jetpacs-chrome--global-slot surface))
              (gate-signature (jetpacs-chrome--gate-signature))
              (old-cache (gethash surface jetpacs-chrome--view-cache))
-             (reuse-cache
-              (and (jetpacs-chrome--cache-compatible-p
-                    old-cache stack jetpacs-chrome--target-refresh-view
-                    gate-signature)
-                   old-cache))
-             (old-screens (and reuse-cache (plist-get reuse-cache :screens)))
+             ;; Nodes to ship unbuilt: the reusable chain below the target.
+             (old-screens (jetpacs-chrome--reusable-screens
+                           old-cache stack jetpacs-chrome--target-refresh-view
+                           gate-signature))
+             ;; Facts to reuse for a rebuilt screen whose node came out
+             ;; identical: any record built under this welcome signature.
+             (prior-screens (and old-cache
+                                 (equal gate-signature
+                                        (plist-get old-cache :gate-signature))
+                                 (plist-get old-cache :screens)))
              (new-screens (make-hash-table :test #'equal))
              analyses views prev-id)
         (dolist (entry (reverse stack))
@@ -865,10 +894,8 @@ views remain in the complete snapshot required by SPEC 13.2."
                  (spans (car-safe budget))
                  (bytes (cdr-safe budget))
                  (extra (copy-tree jetpacs-buffer-extra-budget))
-                 (prior-record (and old-screens (gethash id old-screens)))
-                 (record (and (not (equal id
-                                          jetpacs-chrome--target-refresh-view))
-                              prior-record))
+                 (prior-record (and prior-screens (gethash id prior-screens)))
+                 (record (and old-screens (gethash id old-screens)))
                  (cached (and record (plist-get record :node)))
                  (exposure-capture (and (not cached) (list nil)))
                  (jetpacs-buffer--exposure-capture exposure-capture)
@@ -990,6 +1017,9 @@ views remain in the complete snapshot required by SPEC 13.2."
             (push analysis analyses)
             (puthash id
                      (list :entry entry :node node :before before
+                           ;; The neighbour the node's Back descriptor
+                           ;; names; reuse is valid only above the same one.
+                           :below prev-id
                            :after (jetpacs-chrome--budget-snapshot)
                            :analysis analysis
                            :ids ids
@@ -1098,7 +1128,11 @@ surface stays renderable — `jetpacs-chrome--build' rebuilds the whole
 stack on every push, so an entry that failed a gate would otherwise
 refuse every later push of the surface for the process lifetime."
   (condition-case err
-      (jetpacs-shell-push surface :current-view view)
+      ;; VIEW is the screen this navigation added: the one to build, the
+      ;; lower ones shipping from the cache (`jetpacs-chrome-reuse-on-navigate').
+      (let ((jetpacs-chrome--target-refresh-view
+             (and jetpacs-chrome-reuse-on-navigate view)))
+        (jetpacs-shell-push surface :current-view view))
     (error
      (funcall undo)
      ;; `jetpacs-shell-push' consumed SURFACE's queued repush entry
@@ -1379,7 +1413,12 @@ refused" surface)
     (run-at-time 0 nil
                  (lambda ()
                    (condition-case err
-                       (jetpacs-shell-push surface :current-view id)
+                       ;; The drilled screen is the one to build; the hub
+                       ;; and any middle screen ship from the cache
+                       ;; (`jetpacs-chrome-reuse-on-navigate').
+                       (let ((jetpacs-chrome--target-refresh-view
+                              (and jetpacs-chrome-reuse-on-navigate id)))
+                         (jetpacs-shell-push surface :current-view id))
                      (error
                       ;; Deferring dodged the rejected-flattening; it does
                       ;; NOT dodge the poison — the failed entry would be
