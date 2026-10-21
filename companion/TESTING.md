@@ -106,7 +106,8 @@ The engine half of
 the same gate carries the EBP §13.8 data-model suites: `DataGoldenReplayTest`
 (every `ebp/goldens/data.golden` vector through the materializer),
 `DataModelContractTest`, `SurfaceStoreDataTest` and `SurfaceDataEngineTest`
-(`surface.data` patches, floors, draft acknowledgement, the `data.model`
+(`surface.data` patches, floors — a stale patch is answered before any
+apply, materialize or admit runs — draft acknowledgement, the `data.model`
 gate), `DataOpsGoldenReplayTest` (every `ebp/goldens/data-ops.golden`
 vector, including the §13.8.4 `insert` op), and the EBP §13.8.5 template suites: `SurfaceStoreTemplateTest`
 (expansion, re-expansion on patch with identity following the bound key,

@@ -147,8 +147,8 @@ its own evidence, as above.
    `LayoutNodes.kt`, `CoreComposeRenderer.kt`, `VisualizationNodes.kt` key on
    identity or revision. Evidence: the insert-at-head case keeps later rows'
    state; the scroll-retention instrumented test.
-5. **C2b–d, C6a — the rest of the actor split and the reducer's stale check
-   first**, then **E3** (Org render memoization) and **A2a** (a value-only
+5. **C2b–d — the rest of the actor split** (C6a, the reducer's stale check
+   first, is done 2026-10-21 in ebp-kmp), then **E3** (Org render memoization) and **A2a** (a value-only
    glasspane handler: the todo-filter chips or the agenda mode, after
    confirming it moves values only), then **E2b** (reserve revisions in
    blocks), **C5** (cold start), **C8** (release build, baseline profile,
@@ -366,8 +366,10 @@ step that can ship on its own.
   Room and KeyStore opened off the main thread with only the bridge start
   gated on them, not `setContent`. Evidence: macrobenchmark startup before and
   after; `RoomEbpDurableStoreTest` unchanged.
-- **C6.** Patch fast path in the reducer. Steps: (a) the stale check before
-  any work in `SurfaceStore.patch`; (b) document bounds along the op paths
+- **C6.** Patch fast path in the reducer. Steps: (a) **done 2026-10-21**
+  (ebp-kmp: the floor check precedes apply, materialize and admit in
+  `SurfaceStore.patch`; a stale patch is timed as decode and reply alone);
+  (b) document bounds along the op paths
   (depth per path, octets as the cached total adjusted by the removed and
   inserted values, full JCS only near the limit); (c) fuse `share` into the
   walk, returning the previous instance when a node's resolved members equal
