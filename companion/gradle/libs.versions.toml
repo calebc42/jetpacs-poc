@@ -44,6 +44,10 @@ jetbrains-navigation3-ui = "1.1.2"
 # Google's icons artifact resolves Google-built Compose UI 1.6.0 on desktop,
 # beside the JetBrains UI line; JetBrains' last icons release avoids that.
 jetbrains-compose-icons = "1.7.3"
+# Desktop credentials (D4): the OS keychain through one BSD-3 library whose
+# backends are the macOS Keychain, the Windows Credential Manager, GNOME's
+# Secret Service over D-Bus and KWallet.
+java-keyring = "1.0.4"
 
 [libraries]
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "compose-bom" }
@@ -75,6 +79,7 @@ androidx-navigation3-ui = { group = "androidx.navigation3", name = "navigation3-
 androidx-adaptive-navigation3 = { group = "androidx.compose.material3.adaptive", name = "adaptive-navigation3", version.ref = "adaptive" }
 androidx-room3-runtime = { group = "androidx.room3", name = "room3-runtime", version.ref = "room3" }
 androidx-room3-compiler = { group = "androidx.room3", name = "room3-compiler", version.ref = "room3" }
+androidx-room3-testing = { group = "androidx.room3", name = "room3-testing", version.ref = "room3" }
 androidx-sqlite-bundled = { group = "androidx.sqlite", name = "sqlite-bundled", version.ref = "sqlite" }
 androidx-test-core = { group = "androidx.test", name = "core", version.ref = "androidx-test-core" }
 androidx-test-runner = { group = "androidx.test", name = "runner", version.ref = "androidx-test-runner" }
@@ -88,6 +93,7 @@ jetbrains-adaptive = { group = "org.jetbrains.compose.material3.adaptive", name 
 jetbrains-adaptive-layout = { group = "org.jetbrains.compose.material3.adaptive", name = "adaptive-layout", version.ref = "jetbrains-adaptive" }
 jetbrains-adaptive-navigation = { group = "org.jetbrains.compose.material3.adaptive", name = "adaptive-navigation", version.ref = "jetbrains-adaptive" }
 jetbrains-adaptive-navigation3 = { group = "org.jetbrains.compose.material3.adaptive", name = "adaptive-navigation3", version.ref = "jetbrains-adaptive" }
+java-keyring = { group = "com.github.javakeyring", name = "java-keyring", version.ref = "java-keyring" }
 jetbrains-compose-material-icons = { group = "org.jetbrains.compose.material", name = "material-icons-extended", version.ref = "jetbrains-compose-icons" }
 jetbrains-navigation3-ui = { group = "org.jetbrains.androidx.navigation3", name = "navigation3-ui", version.ref = "jetbrains-navigation3-ui" }
 

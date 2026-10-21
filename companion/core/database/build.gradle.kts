@@ -36,6 +36,11 @@ kotlin {
             implementation(libs.kotlin.test)
             implementation(libs.kotlinx.coroutines.test)
         }
+        // The migration test seeds an exported schema version and validates
+        // the auto-migrations up to the current one.
+        jvmTest.dependencies {
+            implementation(libs.androidx.room3.testing)
+        }
         getByName("androidDeviceTest").dependencies {
             implementation(libs.androidx.test.core)
             implementation(libs.androidx.test.ext.junit)
