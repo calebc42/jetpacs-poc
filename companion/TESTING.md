@@ -14,7 +14,7 @@ references when the explicit update task is used.
 ./gradlew :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm
 ./gradlew :renderer:jetpacs:compileAndroidDeviceTest
 ./gradlew :renderer:jetpacs-screenshots:compileDebugScreenshotTestKotlin
-./gradlew :renderer:material3:compileAndroidDeviceTest :renderer:material3:compileKotlinJvm
+./gradlew :renderer:material3:jvmTest :renderer:material3:compileAndroidDeviceTest
 ./gradlew :renderer:material3-screenshots:compileDebugScreenshotTestKotlin
 ./gradlew :renderer:compose-testing:testDebugUnitTest
 ./gradlew :renderer:material3:testAndroidHostTest --tests '*MaterialWidgetsGoldenReplayTest*'
@@ -446,7 +446,7 @@ activity launch otherwise fails whole suites.
   :renderer:compose:compileAndroidDeviceTest \
   :renderer:jetpacs:testAndroidHostTest :renderer:jetpacs:compileKotlinJvm \
   :renderer:jetpacs:compileAndroidDeviceTest \
-  :renderer:material3:testAndroidHostTest :renderer:material3:compileKotlinJvm \
+  :renderer:material3:testAndroidHostTest :renderer:material3:jvmTest \
   :renderer:material3:compileAndroidDeviceTest \
   :renderer:compose-testing:testDebugUnitTest \
   :app:testDebugUnitTest \

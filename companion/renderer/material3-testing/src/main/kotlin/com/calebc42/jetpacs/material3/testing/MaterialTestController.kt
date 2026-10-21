@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.material3.testing
 
-import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -12,6 +11,7 @@ import com.calebc42.ebp.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.ebp.renderer.compose.LocalComposeIconResolver
 import com.calebc42.jetpacs.material3.EbpTheme
 import com.calebc42.jetpacs.material3.IconMap
+import androidx.compose.ui.graphics.ImageBitmap
 import com.calebc42.jetpacs.material3.ImageLoader
 import com.calebc42.jetpacs.material3.LocalMaterialImageSource
 import com.calebc42.jetpacs.material3.LocalNodeRenderObserver
@@ -35,7 +35,7 @@ class MaterialTestController(
     private val configuration: ComposeRendererConfiguration = NodeSupport.COMPOSE_CONFIGURATION,
     private val surface: String = "app:test",
     private val theme: JsonObject? = null,
-    private val imageSource: suspend (String, ImageLoader.Limits) -> Bitmap? = { _, _ -> null },
+    private val imageSource: suspend (String, ImageLoader.Limits) -> ImageBitmap? = { _, _ -> null },
     /** Called with a node's identity path each time its body runs
      * ([LocalNodeRenderObserver]); a test counts recompositions with it. */
     private val onNodeRender: ((String) -> Unit)? = null,

@@ -1,8 +1,10 @@
 // :renderer:material3 is Kotlin Multiplatform with an Android and a JVM target
 // (docs/PLAN-desktop-d1-renderers.md). commonMain keeps Google's Compose
-// coordinates; the Companion build substitutes JetBrains' desktop builds on
-// JVM classpaths, so this module's own `jvmTest` must not run Compose. The
-// screenshot suite lives in ../material3-screenshots.
+// coordinates; this module is compiled only by the Companion build, which
+// substitutes JetBrains' desktop builds on every JVM classpath, so jvmMain may
+// use desktop API and `jvmTest` runs the plain tests in commonTest against
+// JetBrains' jars. Compose UI tests on the JVM live in :desktop, which carries
+// the Skiko runtime. The screenshot suite lives in ../material3-screenshots.
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.android.kmp.library)
@@ -57,6 +59,11 @@ kotlin {
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.androidx.compose.ui.tooling.preview)
         }
+        // Plain JUnit tests run on both `jvmTest` and `testAndroidHostTest`;
+        // androidHostTest keeps the Robolectric ones.
+        commonTest.dependencies {
+            implementation(libs.junit)
+        }
         getByName("androidHostTest").dependencies {
             implementation(libs.junit)
             implementation(projects.renderer.material3Testing)
@@ -81,6 +88,10 @@ kotlin {
 composeCompiler {
     reportsDestination = layout.buildDirectory.dir("compose_compiler")
     metricsDestination = layout.buildDirectory.dir("compose_compiler")
+}
+
+tasks.named<Test>("jvmTest") {
+    useJUnit()
 }
 
 tasks.withType<Test>().configureEach {

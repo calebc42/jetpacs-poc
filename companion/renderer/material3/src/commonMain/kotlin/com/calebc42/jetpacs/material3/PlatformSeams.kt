@@ -6,48 +6,36 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.text.TextMeasurer
 
-// The Material renderer's platform seams (docs/PLAN-desktop-d1-renderers.md).
-// Each Android actual is the code the Android library ran; each JVM actual is
-// the placeholder that the named item of docs/PLAN-desktop-companion.md
-// replaces.
+// The Material renderer's platform seams (docs/PLAN-desktop-d1-renderers.md,
+// closed by D3 of docs/PLAN-desktop-companion.md). Each platform decodes,
+// draws and traces with its own toolkit; everything around these calls is
+// common code.
 
 /**
- * The decoded image for an `image` node, or null while it loads and on any
- * failure, in which case the caller shows its neutral placeholder. Android
- * loads through [LocalMaterialImageSource]; the desktop JVM returns null
- * until D3 ports the guarded loader.
+ * Bounds-check and decode an encoded raster under [limits]: null for an
+ * undecodable response or one over the pixel or decoded-byte limit. Android
+ * decodes with BitmapFactory, the desktop with Skia; both retain four bytes
+ * per pixel.
  */
-@Composable
-internal expect fun rememberNodeImage(url: String): ImageBitmap?
+internal expect fun decodeGuardedImage(bytes: ByteArray, limits: ImageLoader.Limits): ImageBitmap?
 
 /**
  * The platform's wallpaper-derived color scheme for a `dynamic` theme, or
  * null where the platform has none. Android answers on S and later; the
- * desktop JVM has none.
+ * desktop has none.
  */
 @Composable
 internal expect fun platformDynamicColorScheme(dark: Boolean): ColorScheme?
 
-/** Parse YYYY-MM-DD to UTC-midnight millis for the picker; null if invalid. */
-internal expect fun parseIsoDateUtc(iso: String): Long?
-
-/** Format the picker's UTC-midnight millis back to YYYY-MM-DD. */
-internal expect fun isoDateFromUtcMillis(millis: Long): String
-
-/** The day of week of a UTC instant, 1 = Sunday through 7 = Saturday. */
-internal expect fun utcCalendarDayOfWeek(utcMillis: Long): Int
-
-/** The calendar year of a UTC instant. */
-internal expect fun utcYear(utcMillis: Long): Int
-
 /**
- * A `canvas` text op: TEXT at (X, Y) in pixels with TEXT-SIZE-PX and COLOR.
- * Android draws through the native canvas; the desktop JVM draws nothing
- * until D3 measures text with Compose.
+ * A `canvas` text op: TEXT with its baseline at (X, Y) in pixels, at
+ * TEXT-SIZE-PX and COLOR. Android draws through the native canvas; the
+ * desktop measures with [measurer] and draws the layout.
  */
 internal expect fun DrawScope.drawCanvasText(
-    text: String, x: Float, y: Float, textSizePx: Float, color: Color,
+    measurer: TextMeasurer, text: String, x: Float, y: Float, textSizePx: Float, color: Color,
 )
 
 /** A system-trace section around variant layout; a no-op off Android. */

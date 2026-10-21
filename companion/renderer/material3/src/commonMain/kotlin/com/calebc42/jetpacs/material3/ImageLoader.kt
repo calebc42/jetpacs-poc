@@ -8,8 +8,7 @@
 // and never treats the response as an executable format.
 package com.calebc42.jetpacs.material3
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.ImageBitmap
 import com.calebc42.ebp.wire.ImageGuards
 import java.io.InputStream
 import java.net.InetAddress
@@ -44,7 +43,7 @@ object ImageLoader {
 
     /** Load [url] under [limits], or null on any guard failure. Off the main
      * thread — the caller composes a placeholder while this runs. */
-    suspend fun load(url: String, limits: Limits): Bitmap? = withContext(Dispatchers.IO) {
+    suspend fun load(url: String, limits: Limits): ImageBitmap? = withContext(Dispatchers.IO) {
         gate.withPermit {
             try {
                 when {
@@ -62,9 +61,9 @@ object ImageLoader {
         }
     }
 
-    private fun loadData(url: String, limits: Limits): Bitmap? {
+    private fun loadData(url: String, limits: Limits): ImageBitmap? {
         val di = ImageGuards.parseDataImage(url, limits.maxBytes) ?: return null
-        return decodeGuarded(di.bytes, limits)
+        return decodeGuardedImage(di.bytes, limits)
     }
 
     /**
@@ -75,7 +74,7 @@ object ImageLoader {
      * The 15s total deadline is enforced on every read; the manual request
      * attaches ZERO ambient credentials (no cookies/auth/client-certs).
      */
-    private fun loadHttps(start: String, limits: Limits): Bitmap? {
+    private fun loadHttps(start: String, limits: Limits): ImageBitmap? {
         val deadline = System.currentTimeMillis() + DEADLINE_MS
         var current = start
         for (hop in 0..MAX_REDIRECTS) {
@@ -92,7 +91,7 @@ object ImageLoader {
             val pinned = ImageGuards.firstAllowedAddress(addrs) ?: return null
             val hop = fetchOnce(pinned, host, port, path, limits, deadline) ?: return null
             when (hop) {
-                is Hop.Body -> return decodeGuarded(hop.bytes, limits)
+                is Hop.Body -> return decodeGuardedImage(hop.bytes, limits)
                 is Hop.Redirect -> {
                     // SPEC 17.2: resolve a relative Location against the current
                     // URL, require https, and re-validate the address next loop.
@@ -237,19 +236,5 @@ object ImageLoader {
             readLine(input, deadline) // trailing CRLF after the chunk data
         }
         return out.toByteArray()
-    }
-
-    /** Bounds-decode to enforce the pixel + decoded-byte limits before the full
-     * decode; reject an undecodable or over-limit image. */
-    private fun decodeGuarded(bytes: ByteArray, limits: Limits): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        val w = bounds.outWidth
-        val h = bounds.outHeight
-        if (w <= 0 || h <= 0) return null // not a decodable raster
-        val pixels = w.toLong() * h.toLong()
-        if (pixels > limits.maxPixels) return null
-        if (pixels * 4 > limits.maxDecodedBytes) return null // ARGB_8888
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 }

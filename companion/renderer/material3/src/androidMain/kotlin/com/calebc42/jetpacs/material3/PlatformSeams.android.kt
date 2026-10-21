@@ -1,19 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.material3
 
-import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Paint
-import android.icu.util.Calendar
-import android.icu.util.TimeZone
 import android.os.Build
 import android.os.Trace
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -22,27 +17,20 @@ import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextMeasurer
 
-/**
- * Where `image` nodes fetch from: the shared [ImageCache] in production, a
- * stub in headless tests so no socket is opened. The only seam the Material
- * renderer exposes for the network.
- */
-val LocalMaterialImageSource =
-    staticCompositionLocalOf<suspend (String, ImageLoader.Limits) -> Bitmap?> {
-        ImageCache::get
-    }
-
-@Composable
-internal actual fun rememberNodeImage(url: String): ImageBitmap? {
-    val limits = ImageLoader.DEFAULT_LIMITS
-    val source = LocalMaterialImageSource.current
-    // LD-11: through the cache, so scrolling a lazy_column back to a seen
-    // image does not re-fetch, and N nodes on one URL share one load.
-    val bitmap by produceState<Bitmap?>(null, url) {
-        value = source(url, limits)
-    }
-    return bitmap?.asImageBitmap()
+/** Bounds-decode to enforce the pixel + decoded-byte limits before the full
+ * decode; reject an undecodable or over-limit image. */
+internal actual fun decodeGuardedImage(bytes: ByteArray, limits: ImageLoader.Limits): ImageBitmap? {
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    val w = bounds.outWidth
+    val h = bounds.outHeight
+    if (w <= 0 || h <= 0) return null // not a decodable raster
+    val pixels = w.toLong() * h.toLong()
+    if (pixels > limits.maxPixels) return null
+    if (pixels * 4 > limits.maxDecodedBytes) return null // ARGB_8888
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
 }
 
 @Composable
@@ -57,37 +45,10 @@ internal actual fun platformDynamicColorScheme(dark: Boolean): ColorScheme? {
     }
 }
 
-internal actual fun parseIsoDateUtc(iso: String): Long? {
-    val parts = iso.split("-")
-    if (parts.size != 3) return null
-    val y = parts[0].toIntOrNull() ?: return null
-    val mo = parts[1].toIntOrNull() ?: return null
-    val d = parts[2].toIntOrNull() ?: return null
-    return Calendar.getInstance(TimeZone.getTimeZone("UTC")).apply {
-        clear(); set(y, mo - 1, d)
-    }.timeInMillis
-}
-
-internal actual fun isoDateFromUtcMillis(millis: Long): String {
-    val cal = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        .apply { timeInMillis = millis }
-    return String.format("%04d-%02d-%02d",
-        cal.get(Calendar.YEAR), cal.get(Calendar.MONTH) + 1,
-        cal.get(Calendar.DAY_OF_MONTH))
-}
-
-internal actual fun utcCalendarDayOfWeek(utcMillis: Long): Int {
-    val c = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-    c.timeInMillis = utcMillis
-    return c.get(Calendar.DAY_OF_WEEK)
-}
-
-internal actual fun utcYear(utcMillis: Long): Int =
-    Calendar.getInstance(TimeZone.getTimeZone("UTC"))
-        .apply { timeInMillis = utcMillis }.get(Calendar.YEAR)
-
+// The native canvas draws the text as it always has on Android; the measurer
+// is the desktop's instrument.
 internal actual fun DrawScope.drawCanvasText(
-    text: String, x: Float, y: Float, textSizePx: Float, color: Color,
+    measurer: TextMeasurer, text: String, x: Float, y: Float, textSizePx: Float, color: Color,
 ) {
     drawIntoCanvas { c ->
         val paint = Paint().apply {

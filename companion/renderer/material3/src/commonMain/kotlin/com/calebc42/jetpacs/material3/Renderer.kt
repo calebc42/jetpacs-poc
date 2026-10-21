@@ -1444,20 +1444,21 @@ internal fun completionKindIcon(kind: String?): String? = when (kind) {
     else -> null
 }
 
-/** SPEC 17.7 `${date}`: local `YYYY-MM-DD Day`. */
-private fun localDateStamp(): String {
-    val cal = java.util.Calendar.getInstance()
+/** SPEC 17.7 `${date}`: local `YYYY-MM-DD Day`, Gregorian and ASCII under
+ * every locale (Calendars.kt). */
+internal fun localDateStamp(): String {
+    val cal = localCalendar()
     val days = arrayOf("Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat")
-    return "%04d-%02d-%02d %s".format(
+    return String.format(java.util.Locale.ROOT, "%04d-%02d-%02d %s",
         cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH) + 1,
         cal.get(java.util.Calendar.DAY_OF_MONTH),
         days[cal.get(java.util.Calendar.DAY_OF_WEEK) - 1])
 }
 
 /** SPEC 17.7 `${time}`: local `HH:MM`. */
-private fun localTimeStamp(): String {
-    val cal = java.util.Calendar.getInstance()
-    return "%02d:%02d".format(
+internal fun localTimeStamp(): String {
+    val cal = localCalendar()
+    return String.format(java.util.Locale.ROOT, "%02d:%02d",
         cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE))
 }
 

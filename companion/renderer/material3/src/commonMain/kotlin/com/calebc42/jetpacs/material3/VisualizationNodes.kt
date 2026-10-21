@@ -58,8 +58,10 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.rememberTextMeasurer
 import java.text.DateFormatSymbols
 import java.util.Calendar
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.serialization.json.JsonArray
@@ -217,6 +219,8 @@ internal fun RenderCanvas(node: JsonObject, m: Modifier) {
         resolveColorIn(scheme, (ops[i] as? JsonObject)?.stringOr("color")
             ?.takeIf { it.isNotEmpty() }) ?: fallback
     }
+    // Likewise the measurer for `text` ops: created here, used in the DrawScope.
+    val textMeasurer = rememberTextMeasurer()
     Canvas(modifier = m.size(wDp.dp, hDp.dp)) {
         // C6: org.json's ONE-arg optDouble defaulted to NaN, and a NaN
         // coordinate draws nothing — so an absent or non-numeric op member
@@ -263,7 +267,7 @@ internal fun RenderCanvas(node: JsonObject, m: Modifier) {
                         else drawPath(path, color, style = Stroke(strokeW))
                     }
                 }
-                "text" -> drawCanvasText(o.stringOr("text"),
+                "text" -> drawCanvasText(textMeasurer, o.stringOr("text"),
                     px(o["x"]?.numOrNull()), px(o["y"]?.numOrNull()),
                     px(o.doubleOr("size", 12.0)), color)
                 else -> {} // SPEC 17.5: unknown op skipped, never fatal
@@ -372,15 +376,12 @@ internal fun RenderMonthGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         }
         val year = shownMonth.substring(0, 4).toInt()
         val month = shownMonth.substring(5, 7).toInt()
-        val cal = Calendar.getInstance()
+        val cal = localCalendar()
         val weekStart = cal.firstDayOfWeek
         cal.clear(); cal.set(year, month - 1, 1)
         val daysInMonth = cal.getActualMaximum(Calendar.DAY_OF_MONTH)
         val leadingBlanks = (cal.get(Calendar.DAY_OF_WEEK) - weekStart + 7) % 7
-        val today = Calendar.getInstance().let {
-            "%04d-%02d-%02d".format(it.get(Calendar.YEAR),
-                it.get(Calendar.MONTH) + 1, it.get(Calendar.DAY_OF_MONTH))
-        }
+        val today = localTodayIso()
         val symbols = remember { DateFormatSymbols() }
         val density = LocalDensity.current
         val swipeThresholdPx = with(density) { 60.dp.toPx() }
@@ -428,7 +429,7 @@ internal fun RenderMonthGrid(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                             if (day < 1 || day > daysInMonth) {
                                 Spacer(Modifier.weight(1f).height(MonthGridDayCellHeight))
                             } else {
-                                val date = "%s-%02d".format(shownMonth, day)
+                                val date = String.format(Locale.ROOT, "%s-%02d", shownMonth, day)
                                 // 0 = Sunday, matching the contract.
                                 val weekday = (weekStart - 1 + col) % 7
                                 val dayEnabled =
@@ -547,5 +548,5 @@ internal fun monthAdd(month: String, delta: Int): String {
     val y = month.substring(0, 4).toInt()
     val mo = month.substring(5, 7).toInt()
     val total = y * 12 + (mo - 1) + delta
-    return "%04d-%02d".format(total / 12, total % 12 + 1)
+    return String.format(Locale.ROOT, "%04d-%02d", total / 12, total % 12 + 1)
 }

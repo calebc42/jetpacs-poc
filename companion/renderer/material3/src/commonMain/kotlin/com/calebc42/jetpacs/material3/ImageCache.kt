@@ -4,8 +4,8 @@
 // discarded the bitmap and cancelled the load; RenderLazyColumn disposes
 // off-screen items, so scrolling re-ran the whole loadHttps path — fresh DNS,
 // TLS, up to 8 MiB re-downloaded, full decode — and ten identical avatars were
-// ten concurrent sockets. This cache holds decoded Bitmaps (so it lives in
-// app/, not wire/), under an LRU byte budget, and coalesces concurrent
+// ten concurrent sockets. This cache holds decoded images (so it lives in
+// the renderer, not wire/), under an LRU byte budget, and coalesces concurrent
 // requests for one URL into a single fetch.
 //
 // SPEC 17.2: "any such cache MUST be app-private, scoped to the pairing
@@ -16,11 +16,11 @@
 //
 // It completes LD-12 too: ImageLoader.Semaphore(3) bounds concurrent DECODES;
 // this budget bounds RETAINED decoded bytes. Eviction drops the cache's
-// reference only — it never recycle()s, so a bitmap still held by an on-screen
-// Image is freed by GC when that Image leaves, never mid-draw.
+// reference only, so an image still held by an on-screen Image is freed by GC
+// when that Image leaves, never mid-draw.
 package com.calebc42.jetpacs.material3
 
-import android.graphics.Bitmap
+import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -41,8 +41,8 @@ object ImageCache {
 
     private val mutex = Mutex()
     // Access-order LinkedHashMap = LRU: get() moves an entry to the front.
-    private val lru = object : LinkedHashMap<Key, Bitmap>(16, 0.75f, true) {}
-    private val inFlight = HashMap<Key, Deferred<Bitmap?>>()
+    private val lru = object : LinkedHashMap<Key, ImageBitmap>(16, 0.75f, true) {}
+    private val inFlight = HashMap<Key, Deferred<ImageBitmap?>>()
     private var usedBytes = 0L
 
     // Default until configure() runs; overwritten from ActivityManager's
@@ -77,9 +77,9 @@ object ImageCache {
         clear()
     }
 
-    /** The decoded bitmap for [url], from cache or a coalesced fetch; null on
+    /** The decoded image for [url], from cache or a coalesced fetch; null on
      * any guard failure (the caller shows a placeholder). */
-    suspend fun get(url: String, limits: ImageLoader.Limits): Bitmap? {
+    suspend fun get(url: String, limits: ImageLoader.Limits): ImageBitmap? {
         val key = Key(identity, url, limits)
         val deferred = mutex.withLock {
             lru[key]?.let { return it }
@@ -116,9 +116,13 @@ object ImageCache {
         generation++
     }
 
-    private fun admit(key: Key, bitmap: Bitmap) {
+    /** What a decode retains: four bytes per pixel on both platforms. */
+    private fun retainedBytes(image: ImageBitmap): Long =
+        image.width.toLong() * image.height.toLong() * 4
+
+    private fun admit(key: Key, bitmap: ImageBitmap) {
         if (lru.containsKey(key)) return
-        val size = bitmap.allocationByteCount.toLong()
+        val size = retainedBytes(bitmap)
         // An image larger than the whole budget is NOT admitted: evicting
         // every other entry to make room for it would empty the cache and
         // still leave usedBytes over budget. One legal 4096x4096 decodes to
@@ -127,7 +131,7 @@ object ImageCache {
         val it = lru.entries.iterator()
         while (usedBytes + size > budgetBytes && it.hasNext()) {
             val e = it.next()
-            usedBytes -= e.value.allocationByteCount.toLong()
+            usedBytes -= retainedBytes(e.value)
             it.remove()
         }
         lru[key] = bitmap
