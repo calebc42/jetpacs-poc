@@ -7,10 +7,10 @@ references when the explicit update task is used.
 ## Focused component gates
 
 ```sh
-./gradlew :renderer:model:testDebugUnitTest
+./gradlew :renderer:model:jvmTest :renderer:model:testAndroidHostTest
 ./gradlew :wire:jvmTest --tests '*SemanticsTest'
-./gradlew :renderer:compose:testDebugUnitTest
-./gradlew :renderer:compose:compileDebugAndroidTestKotlin
+./gradlew :renderer:compose:testAndroidHostTest :renderer:compose:compileKotlinJvm
+./gradlew :renderer:compose:compileAndroidDeviceTest
 ./gradlew :renderer:jetpacs:testDebugUnitTest
 ./gradlew :renderer:jetpacs:compileDebugAndroidTestKotlin
 ./gradlew :renderer:jetpacs:compileDebugScreenshotTestKotlin
@@ -241,7 +241,7 @@ make a validation failure disappear.
 With one authorized device connected:
 
 ```sh
-./gradlew :renderer:compose:connectedDebugAndroidTest \
+./gradlew :renderer:compose:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EditingControllersInstrumentedTest
 
 ./gradlew :renderer:jetpacs:connectedDebugAndroidTest \
@@ -250,7 +250,7 @@ With one authorized device connected:
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.jetpacs.material3.ui.JetpacsComponentsSemanticsTest
 
-./gradlew :renderer:compose:connectedDebugAndroidTest \
+./gradlew :renderer:compose:connectedAndroidDeviceTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.calebc42.ebp.renderer.compose.EbpSemanticsTest
 
 ./gradlew :renderer:material3:connectedDebugAndroidTest \
@@ -428,9 +428,9 @@ rendering. Both tasks read the wire golden from the `ebp` checkout under
 
 ```sh
 ./gradlew :wire:jvmTest \
-  :renderer:model:testDebugUnitTest \
-  :renderer:compose:testDebugUnitTest \
-  :renderer:compose:compileDebugAndroidTestKotlin \
+  :renderer:model:jvmTest :renderer:model:testAndroidHostTest \
+  :renderer:compose:testAndroidHostTest :renderer:compose:compileKotlinJvm \
+  :renderer:compose:compileAndroidDeviceTest \
   :renderer:jetpacs:testDebugUnitTest \
   :renderer:jetpacs:compileDebugAndroidTestKotlin \
   :renderer:material3:testDebugUnitTest \

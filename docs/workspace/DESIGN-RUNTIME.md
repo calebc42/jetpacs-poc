@@ -162,13 +162,13 @@ occupies a stable node position so an error does not reset disclosure state.
   or reordering profile structure still requires the inert Source editor, and
   the structured binding editor still represents ordered styles as
   comma-separated text.
-- The shared [`Semantics.kt`](../../../ebp-compose/renderer/model/src/main/kotlin/com/calebc42/ebp/renderer/model/Semantics.kt)
+- The shared [`Semantics.kt`](../../../ebp-compose/renderer/model/src/commonMain/kotlin/com/calebc42/ebp/renderer/model/Semantics.kt)
   projection currently exposes a bare icon identifier as an accessible name
   even when the icon is decorative. EBP Section 16.4 requires a derived name
   for interactive nodes; resolving the decorative-icon behavior belongs in
   `ebp-compose`, not in a host or applet workaround.
 - A canonical card's accessibility swipe action still follows the generic
- [`EbpSemantics.kt`](../../../ebp-compose/renderer/compose/src/main/kotlin/com/calebc42/ebp/renderer/compose/EbpSemantics.kt)
+ [`EbpSemantics.kt`](../../../ebp-compose/renderer/compose/src/commonMain/kotlin/com/calebc42/ebp/renderer/compose/EbpSemantics.kt)
   action path without the renderer-injected `direction` argument that its
   finger gesture supplies. The Foundation list-item path injects the direction
   correctly. These paths must be reconciled before claiming gesture and

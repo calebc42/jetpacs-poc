@@ -578,7 +578,7 @@ internal class JetpacsWorkbench(internal val workspace: Workspace) {
             "The renderer consumes accepted EBP data and does not reconstruct application behavior.",
             listOf(
                 PatternLocation(
-                    "ebp-compose/renderer/compose/src/main/kotlin/com/calebc42/ebp/renderer/compose/CoreComposeRenderer.kt",
+                    "ebp-compose/renderer/compose/src/commonMain/kotlin/com/calebc42/ebp/renderer/compose/CoreComposeRenderer.kt",
                     "fun RenderCoreComposeNode",
                 ),
             ),
