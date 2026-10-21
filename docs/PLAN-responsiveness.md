@@ -119,7 +119,8 @@ refresh it replaces.
 The first slice is in `main`. Do these in order; each is one commit with
 its own evidence, as above.
 
-1. **Measure the first slice on a device.** Baseline workload from the
+1. **Measure the first slice on a device — done 2026-10-21**, see
+   "Numbers, 2026-10-21" in the measurement section. Baseline workload from the
    measurement section. Emacs: `jetpacs-devtools-profile` on, read the
    "Tap → send" rows of `jetpacs-devtools-report` and the tap→send and prep
    figures in `jetpacs-devtools-action-log-buffer` for a harp tag filter
@@ -188,6 +189,72 @@ frame against an 18.9 KB stack snapshot on a Galaxy S21 Ultra over an adb port
 forward) and the Orgzly fold (204 bytes against an 11 KB set of `/rows`).
 Every number recorded in this document names the device, the APK type, the
 Emacs build and the command.
+
+### Numbers, 2026-10-21 — the first slice on a device
+
+Setup: Galaxy S21 Ultra (SM-G998U, Android 15), **debug APK**
+(`:app:assembleDebug` at jetpacs-poc `b2aa6b36` with ebp-kmp `a028324`,
+`adb install -r`), wireless adb (`adb-tls-connect`) with
+`adb forward tcp:8765 tcp:8765`; desktop GNU Emacs 31.1 from source
+(native-comp) as `emacs -Q --daemon` with `jetpacs-devtools-profile` on,
+harp-native `651b2bb`, ebp.el `78957cc`. Harp needs the Companion's
+"Experimental Elisp design runtime" switch on (otherwise the launcher says
+"Unavailable: requires jetpacs.design" and the root screen fails to build).
+Workload: a synthetic 30-entry journal with three heading tags
+(`harp-page-size` 20) opened from the profiles root; every tap is a real
+tap on the phone. `JetpacsStages` as set above.
+
+Emacs, from `jetpacs-devtools-action-log-buffer` (ms):
+
+| Tap | Frame | Handler | Tap → send | Prep | Send → reply |
+|---|---|---|---|---|---|
+| tag chip (`harp.filter`), 5 taps | `surface.data`, 4 ops, 1,843–3,536 B | 0.2–0.3 | 0.3–0.4 | 0.1–0.2 | 59.6–86.2 |
+| Next / Previous (`harp.page`), 3 taps | `surface.update`, 115 ops, 18,870 B | 0.1 | 34.0–57.9 | 33.8–57.8 | 75.3–80.0 |
+| Journal / Documents nav (`harp.open`, a chrome drill), 3 taps | `surface.update`, 115 ops, 18,870–18,876 B | 0.1 | 29.8–34.1 | 29.6–33.9 | 76.2–90.4 |
+| a profile from the root (`harp.profile`) | `surface.update`, 110 ops, 18,324 B | 49.5 | 33.3 | 33.1 | 95.6 |
+| Back | none; `view.switched` arrives as an event | 0.1 | — | — | — |
+
+`jetpacs-devtools-report`: builders last 5.1 ms, max 30.9 ms over six
+pushes; "Tap → send" last 34.0 ms, max 57.9 ms, prep 33.8 ms over eleven.
+
+Companion, `JetpacsStages` on the engine thread (ms; min–max over the taps
+above):
+
+| Frame | decode | apply | materialize | admit | commit | reply | listener | total |
+|---|---|---|---|---|---|---|---|---|
+| `surface.update` 18.9 KB, 6 frames | 7.7–8.3 | 0.3–1.9 | 7.3–15.3 | 9.8–15.5 | 11.0–15.7 | 0.2–0.4 | 2.0–3.1 | 38.8–52.0 |
+| `surface.data` 1.8–3.5 KB, 5 frames | 0.5–1.6 | 1.0–3.8 | 10.8–18.3 | 12.4–14.0 | 11.1–22.0 | 0.2–0.3 | 2.3–7.0 | 42.3–62.2 |
+
+The reconnect drain (ten `surface.update` frames back to back) ran 5.8–85.7
+ms per frame; the largest was `app:m3catalog` with 17.9 ms of decode.
+
+What the numbers say:
+
+1. **On the device a patch costs what a snapshot costs.** materialize, admit
+   and commit are 35–50 ms of both, and the patch pays *more* in materialize.
+   The patch saves decode (8 → 1 ms), the Emacs prep (34 → 0.3 ms) and 17 KB
+   of wire; it saves nothing in the engine. The device-side patch win is C6
+   (the stale check first, bounds along the op paths, `share` fused into the
+   walk, re-materializing only under the op paths).
+2. **Every frame waits for Room before it replies or publishes.** commit is
+   11–22 ms of every frame and runs before reply and listener. C1 moved the
+   listener ahead of the persist for `view.switch`; whether the surface frames
+   may do the same under §3.1 is the decision to settle before C2c.
+3. **Transport is 20–30 ms per round trip.** send → reply minus the engine
+   total leaves 20–30 ms in the socket path and the adb forward (and tcpNoDelay
+   is already on). Decode of the 18.9 KB frame is 8 ms, so C2a's payoff is a
+   tap answered during a multi-chunk feed, not this frame's latency.
+4. **The Emacs re-push prep is 30–58 ms with builders at 5–31 ms of it.** The
+   remainder is the gates, the analysis and the profile's size measurement
+   (which serializes the spec once more — measure with the profile off before
+   crediting E-items). A drill and a page tap push the same 115-op stack, so
+   E1's reuse saves builder time, not bytes.
+5. **M2 cannot rank C3 and C4a.** The listener stage is 2–3 ms and composition
+   is not timed at all; their evidence stays the `PatchRecompositionTest`
+   counter until C8's frame timing exists. The order of the next slice
+   therefore stays C2a, then C6a pulled ahead of C3 and C4a (the measured
+   bottleneck is the engine's patch path), with C2c's §3.1 question settled
+   on the way.
 
 ## Implemented baseline
 
