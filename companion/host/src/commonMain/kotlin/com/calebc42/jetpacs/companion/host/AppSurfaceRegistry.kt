@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -13,7 +13,7 @@ import kotlinx.serialization.json.JsonObject
  * has its own flow, so an update to a hidden Nav3 destination cannot recompose
  * the surface the user is currently reading.
  */
-internal class AppSurfaceRegistry {
+class AppSurfaceRegistry {
     data class Catalog(
         val loaded: Boolean = false,
         val surfaceIds: List<String> = emptyList(),

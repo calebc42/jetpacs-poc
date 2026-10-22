@@ -21,6 +21,8 @@ include(":wire")
 include(":app")
 // Compose for Desktop host; see docs/PLAN-desktop-companion.md.
 include(":desktop")
+// The platform-neutral Companion host both composition roots share (D5).
+include(":host")
 include(":core:model")
 include(":core:database")
 include(":core:ebp-store")

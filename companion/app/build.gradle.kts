@@ -232,6 +232,7 @@ dependencies {
     implementation(projects.core.navigation)
     implementation(projects.core.database)
     implementation(projects.core.ebpStore)
+    implementation(projects.host)
     implementation(libs.androidx.room3.runtime)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

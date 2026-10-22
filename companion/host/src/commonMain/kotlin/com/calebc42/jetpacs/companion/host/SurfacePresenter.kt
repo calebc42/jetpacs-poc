@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -16,7 +16,7 @@ import java.util.concurrent.Executors
  * order, which is engine order, so no presentation overtakes an earlier
  * one and the actor is free for the next command — a tap — meanwhile.
  */
-internal class SurfacePresenter(
+class SurfacePresenter(
     /** A presentation that threw: reported, never fatal to the thread. */
     private val onFailure: (surface: String, failure: Throwable) -> Unit = { _, _ -> },
     /** Per timed presentation: how long it waited in the queue and ran. */

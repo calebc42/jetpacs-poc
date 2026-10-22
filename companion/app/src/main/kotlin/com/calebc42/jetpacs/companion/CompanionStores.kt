@@ -3,9 +3,9 @@ package com.calebc42.jetpacs.companion
 
 import android.content.Context
 import android.provider.Settings
-import com.calebc42.ebp.wire.DurableQueue
 import com.calebc42.ebp.wire.AppSurfaceAdmission
 import com.calebc42.ebp.wire.CapabilityHandler
+import com.calebc42.ebp.wire.DurableQueue
 import com.calebc42.ebp.wire.EbpActorOverloaded
 import com.calebc42.ebp.wire.EbpCommandActor
 import com.calebc42.ebp.wire.LiveSession
@@ -16,6 +16,13 @@ import com.calebc42.ebp.wire.TriggerFiringService
 import com.calebc42.ebp.wire.TriggerStore
 import com.calebc42.ebp.wire.jsonStringSet
 import com.calebc42.ebp.wire.memberSupportFromProfiles
+import com.calebc42.jetpacs.companion.host.RoomQueueStore
+import com.calebc42.jetpacs.companion.host.RoomReminderBacking
+import com.calebc42.jetpacs.companion.host.RoomSurfaceBacking
+import com.calebc42.jetpacs.companion.host.RoomThemeStore
+import com.calebc42.jetpacs.companion.host.RoomTriggerBacking
+import com.calebc42.jetpacs.companion.host.RoomTriggerOccurrenceCoordinator
+import com.calebc42.jetpacs.companion.host.stringOrNull
 import com.calebc42.jetpacs.core.ebpstore.RoomEbpDurableStore
 import java.util.concurrent.atomic.AtomicReference
 

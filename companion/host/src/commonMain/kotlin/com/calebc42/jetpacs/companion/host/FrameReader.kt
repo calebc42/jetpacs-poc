@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import com.calebc42.ebp.wire.FrameClose
 import com.calebc42.ebp.wire.FrameDecoder
@@ -17,7 +17,7 @@ import java.io.InputStream
  * reader's alone — a tap dispatched while a large snapshot is still arriving
  * takes the engine without waiting for the frame's remaining bytes.
  */
-internal class FrameReader(
+class FrameReader(
     private val input: InputStream,
     private val timing: Boolean = false,
     bufferSize: Int = 65_536,

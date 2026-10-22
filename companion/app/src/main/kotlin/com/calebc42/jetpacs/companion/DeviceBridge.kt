@@ -8,28 +8,6 @@
 // with onboarding). Not a secret and not a deployment configuration.
 package com.calebc42.jetpacs.companion
 
-import com.calebc42.jetpacs.material3.ImageCache
-import com.calebc42.jetpacs.material3.MaterialRendererHost
-import com.calebc42.jetpacs.material3.RetainedPresentationIncarnationTracker
-import com.calebc42.ebp.renderer.model.objOrNull
-import com.calebc42.ebp.renderer.model.stringOr
-import com.calebc42.ebp.wire.CompletionNarrowing
-import com.calebc42.ebp.wire.CompletionOfferView
-import com.calebc42.ebp.wire.ActionAdmissionOutcome
-import com.calebc42.ebp.wire.SafeAdmissionEvidence
-import com.calebc42.ebp.wire.CompanionEngine
-import com.calebc42.ebp.wire.CompanionConfig
-import com.calebc42.ebp.wire.CompanionProofProvider
-import com.calebc42.ebp.wire.EditorSeed
-import com.calebc42.ebp.wire.EditorSession
-import com.calebc42.ebp.wire.InputDisplay
-import com.calebc42.ebp.wire.ScalarPos
-import com.calebc42.ebp.wire.SessionState
-import com.calebc42.ebp.wire.SurfaceStore
-import com.calebc42.ebp.wire.Utf16Pos
-import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
-import com.calebc42.ebp.wire.dispatchContextless
-import com.calebc42.ebp.wire.utf16PosIn
 import com.calebc42.ebp.renderer.model.ActionHandoff
 import com.calebc42.ebp.renderer.model.CandidateDocument
 import com.calebc42.ebp.renderer.model.CompletionCandidate
@@ -42,37 +20,57 @@ import com.calebc42.ebp.renderer.model.RendererActionContext
 import com.calebc42.ebp.renderer.model.RendererActionOutcome
 import com.calebc42.ebp.renderer.model.RendererActionRequest
 import com.calebc42.ebp.renderer.model.RendererVolatileSecret
+import com.calebc42.ebp.renderer.model.objOrNull
 import com.calebc42.ebp.renderer.model.parseDiagnostics
 import com.calebc42.ebp.renderer.model.parseEldoc
 import com.calebc42.ebp.renderer.model.parseFontify
-import kotlinx.coroutines.launch
+import com.calebc42.ebp.renderer.model.stringOr
+import com.calebc42.ebp.wire.ActionAdmissionOutcome
+import com.calebc42.ebp.wire.CompanionConfig
+import com.calebc42.ebp.wire.CompanionEngine
+import com.calebc42.ebp.wire.CompanionProofProvider
+import com.calebc42.ebp.wire.CompletionNarrowing
+import com.calebc42.ebp.wire.CompletionOfferView
+import com.calebc42.ebp.wire.EditorSeed
+import com.calebc42.ebp.wire.EditorSession
+import com.calebc42.ebp.wire.InputDisplay
+import com.calebc42.ebp.wire.SafeAdmissionEvidence
+import com.calebc42.ebp.wire.ScalarPos
+import com.calebc42.ebp.wire.SessionState
+import com.calebc42.ebp.wire.SurfaceStore
+import com.calebc42.ebp.wire.Utf16Pos
+import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
+import com.calebc42.ebp.wire.dispatchContextless
+import com.calebc42.ebp.wire.utf16PosIn
+import com.calebc42.jetpacs.companion.host.CandidateDocSlot
+import com.calebc42.jetpacs.companion.host.FrameReader
+import com.calebc42.jetpacs.companion.host.offerEpochCurrent
+import com.calebc42.jetpacs.companion.host.RendererOutcomeGate
+import com.calebc42.jetpacs.companion.host.SecretActionAttempt
+import com.calebc42.jetpacs.companion.host.SurfacePresenter
+import com.calebc42.jetpacs.companion.host.SystemSecretDeadlineScheduler
+import com.calebc42.jetpacs.material3.ImageCache
+import com.calebc42.jetpacs.material3.MaterialRendererHost
+import com.calebc42.jetpacs.material3.RetainedPresentationIncarnationTracker
+import java.net.InetSocketAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.net.SocketException
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.Executor
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.concurrent.thread
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.Executor
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicBoolean
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.net.SocketException
-import kotlin.concurrent.thread
-
-/** R5: the ONE offer-currency rule — is the published offer's epoch
- * (null when none is published) exactly EPOCH?  Used at gesture
- * admission, doc publication, and desired-pair reissue alike; pure so
- * each site's drop-the-check mutant is killable (review F11 named the
- * gesture arm, and no Compose/bridge test rig exists to kill it in
- * place). */
-internal fun offerEpochCurrent(liveEpoch: Long?, epoch: Long): Boolean =
-    liveEpoch != null && liveEpoch == epoch
 
 /** CHALLENGED is only a pairing claim; authentication begins at SYNCING. */
 internal fun isAuthenticatedConnectionState(state: SessionState): Boolean =

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 /**
  * SPEC 19.3 (amendment #172, R5): one editor's one-outstanding
@@ -36,6 +36,15 @@ package com.calebc42.jetpacs.companion
  * path runs on the bridge's dispatch executor, conclusions on the
  * engine's reader thread.
  */
+/** R5: the ONE offer-currency rule — is the published offer's epoch
+ * (null when none is published) exactly EPOCH?  Used at gesture
+ * admission, doc publication, and desired-pair reissue alike; pure so
+ * each site's drop-the-check mutant is killable (review F11 named the
+ * gesture arm, and no Compose/bridge test rig exists to kill it in
+ * place). */
+fun offerEpochCurrent(liveEpoch: Long?, epoch: Long): Boolean =
+    liveEpoch != null && liveEpoch == epoch
+
 class CandidateDocSlot {
 
     /** One issued flight: what was asked, and the ticket its conclusion

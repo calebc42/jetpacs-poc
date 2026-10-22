@@ -12,6 +12,9 @@ import android.graphics.drawable.Icon
 import android.util.Base64
 import com.calebc42.ebp.wire.EbpJson
 import com.calebc42.ebp.wire.SpecValidator
+import com.calebc42.jetpacs.companion.host.objOrNull
+import com.calebc42.jetpacs.companion.host.reqString
+import com.calebc42.jetpacs.companion.host.stringOrNull
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64 as JvmBase64

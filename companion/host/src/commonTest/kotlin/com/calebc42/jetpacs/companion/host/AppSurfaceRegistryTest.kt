@@ -1,4 +1,4 @@
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject

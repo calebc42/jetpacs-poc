@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import com.calebc42.ebp.wire.CompanionEngine
 import com.calebc42.ebp.wire.TEXT_INPUT_CONTRACT
@@ -12,18 +12,18 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /** A cancellable task scheduled against a monotonic time source. */
-internal fun interface SecretDeadlineHandle {
+fun interface SecretDeadlineHandle {
     fun cancel()
 }
 
 /** Injectable monotonic scheduler for the hard password lifetime. */
-internal interface SecretDeadlineScheduler {
+interface SecretDeadlineScheduler {
     fun nowNanos(): Long
     fun scheduleAt(deadlineNanos: Long, task: () -> Unit): SecretDeadlineHandle
 }
 
 /** Process-owned scheduler; wall-clock changes cannot extend a password life. */
-internal object SystemSecretDeadlineScheduler : SecretDeadlineScheduler {
+object SystemSecretDeadlineScheduler : SecretDeadlineScheduler {
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
         Thread(task, "ebp-secret-deadline").apply { isDaemon = true }
     }.apply { removeOnCancelPolicy = true }
@@ -41,7 +41,7 @@ internal object SystemSecretDeadlineScheduler : SecretDeadlineScheduler {
 }
 
 /** Exactly-once terminal gate shared by every renderer occurrence. */
-internal class RendererOutcomeGate(
+class RendererOutcomeGate(
     private val terminal: (RendererActionOutcome) -> Unit,
 ) {
     private val concluded = AtomicBoolean(false)
@@ -59,7 +59,7 @@ internal class RendererOutcomeGate(
  * exact bound engine, so teardown callbacks and late peer responses cannot
  * replace the mandated Timeout conclusion or erase twice.
  */
-internal class SecretActionAttempt(
+class SecretActionAttempt(
     val engine: CompanionEngine?,
     private val capture: RendererVolatileSecret,
     scheduler: SecretDeadlineScheduler,

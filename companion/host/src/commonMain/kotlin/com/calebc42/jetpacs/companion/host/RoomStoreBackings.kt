@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import com.calebc42.ebp.wire.AtomicReminderPresentationBacking
 import com.calebc42.ebp.wire.DurableDraft
@@ -45,7 +45,7 @@ import kotlinx.serialization.json.put
  * durability still has one owner: every call below commits through the same
  * pairing-scoped Room store. The process command actor is the only caller.
  */
-internal class RoomSurfaceBacking(
+class RoomSurfaceBacking(
     // The durable-store contract, not the Room class: production wires the
     // pairing-scoped Room store, and a test can drive the same row-level
     // persistence through the memory reference store.
@@ -252,7 +252,7 @@ private fun sameJson(a: JsonObject?, b: JsonObject?): Boolean = a === b || a == 
  * DurableQueue first stages its next snapshot; TriggerStore then supplies the
  * consumed runtime records. Room commits both projections together.
  */
-internal class RoomTriggerOccurrenceCoordinator(
+class RoomTriggerOccurrenceCoordinator(
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
 ) : TriggerOccurrenceTransaction {
@@ -312,7 +312,7 @@ internal class RoomTriggerOccurrenceCoordinator(
     }
 }
 
-internal class RoomQueueStore(
+class RoomQueueStore(
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
     private val occurrenceCoordinator: RoomTriggerOccurrenceCoordinator? = null,
@@ -342,7 +342,7 @@ internal class RoomQueueStore(
     }
 }
 
-internal class RoomReminderBacking(
+class RoomReminderBacking(
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
     private val nowMs: () -> Long,
@@ -428,7 +428,7 @@ internal class RoomReminderBacking(
     }
 }
 
-internal class RoomTriggerBacking(
+class RoomTriggerBacking(
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
     private val occurrenceCoordinator: RoomTriggerOccurrenceCoordinator? = null,
@@ -483,7 +483,7 @@ internal class RoomTriggerBacking(
     }
 }
 
-internal class RoomThemeStore(
+class RoomThemeStore(
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
     private val nowMs: () -> Long,

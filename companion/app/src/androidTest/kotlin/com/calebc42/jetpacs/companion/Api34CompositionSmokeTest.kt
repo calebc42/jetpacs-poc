@@ -8,6 +8,9 @@ import android.os.Build
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.calebc42.ebp.wire.PairingFence
+import com.calebc42.jetpacs.companion.host.arrOrNull
+import com.calebc42.jetpacs.companion.host.boolOr
+import com.calebc42.jetpacs.companion.host.objOrNull
 import com.calebc42.jetpacs.core.database.JETPACS_DATABASE_NAME
 import java.security.KeyStore
 import kotlinx.coroutines.runBlocking

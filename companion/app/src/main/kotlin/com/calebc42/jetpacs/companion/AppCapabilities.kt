@@ -23,6 +23,12 @@ import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import com.calebc42.ebp.wire.CapabilityHandler
 import com.calebc42.ebp.wire.CapabilityOutcome
+import com.calebc42.jetpacs.companion.host.arrOrNull
+import com.calebc42.jetpacs.companion.host.boolOr
+import com.calebc42.jetpacs.companion.host.integralLongOrNull
+import com.calebc42.jetpacs.companion.host.objOrNull
+import com.calebc42.jetpacs.companion.host.stringOr
+import com.calebc42.jetpacs.companion.host.stringOrNull
 import java.net.URI
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit

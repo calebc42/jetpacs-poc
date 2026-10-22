@@ -39,6 +39,9 @@ val desktopComposeGroups = mapOf(
         ("org.jetbrains.compose.material3.adaptive" to libs.versions.jetbrains.adaptive.get()),
 )
 val desktopIconsVersion = libs.versions.jetbrains.compose.icons.get()
+// Google's navigation3-ui is also jvmStubs on desktop; its runtime is real
+// and stays Google's (D0 found JetBrains' 1.1.2 requires Google's 1.1.7).
+val desktopNavigation3UiVersion = libs.versions.jetbrains.navigation3.ui.get()
 
 subprojects {
     configurations.configureEach {
@@ -47,15 +50,20 @@ subprojects {
         resolutionStrategy.dependencySubstitution.all {
             val selector = requested as? org.gradle.api.artifacts.component.ModuleComponentSelector
                 ?: return@all
-            val (group, version) = desktopComposeGroups[selector.group] ?: return@all
+            val target = if (selector.group == "androidx.navigation3" && selector.module == "navigation3-ui") {
+                "org.jetbrains.androidx.navigation3:navigation3-ui:$desktopNavigation3UiVersion"
+            } else {
+                val (group, version) = desktopComposeGroups[selector.group] ?: return@all
+                val resolved =
+                    if (selector.module.startsWith("material-icons-")) desktopIconsVersion else version
+                "$group:${selector.module}:$resolved"
+            }
             val platformKey = configuration.attributes.keySet()
                 .firstOrNull { it.name == "org.jetbrains.kotlin.platform.type" }
                 ?: return@all
             if (configuration.attributes.getAttribute(platformKey)?.toString() != "jvm") return@all
-            val target =
-                if (selector.module.startsWith("material-icons-")) desktopIconsVersion else version
             useTarget(
-                "$group:${selector.module}:$target",
+                target,
                 "desktop JVM classpaths link JetBrains Compose (PLAN-desktop-d1-renderers.md)",
             )
         }

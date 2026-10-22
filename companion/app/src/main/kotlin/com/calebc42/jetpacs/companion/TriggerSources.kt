@@ -24,6 +24,7 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import com.calebc42.ebp.wire.StatePredicateEvaluator
+import com.calebc42.jetpacs.companion.host.stringOrNull
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.serialization.json.JsonArray

@@ -8,6 +8,9 @@ import android.content.Intent
 import android.graphics.drawable.Icon
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import com.calebc42.jetpacs.companion.host.boolOr
+import com.calebc42.jetpacs.companion.host.objOrNull
+import com.calebc42.jetpacs.companion.host.stringOr
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 

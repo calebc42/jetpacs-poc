@@ -11,10 +11,11 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
+import com.calebc42.jetpacs.companion.host.AppSurfaceRegistry
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
-import java.util.concurrent.atomic.AtomicLong
 
 class JetpacsApplication : Application() {
 
