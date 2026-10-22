@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The loopback-tcp binder (SPEC 5.2): 127.0.0.1 on the platform's port, one
-// client, a new authenticated session supersedes the old. Wraps
+// The Companion host over a CompanionTransport: the loopback-tcp binder by
+// default (SPEC 5.2), the desktop's emacs-unix dialer (SPEC 5.6). One
+// client; a new authenticated session supersedes the old. Wraps
 // CompanionEngine; the store outlives connections (SPEC 10.4). Platform
 // neutral: every operating-system call goes through CompanionHostPlatform.
 package com.calebc42.jetpacs.companion.host
@@ -42,10 +43,10 @@ import com.calebc42.ebp.wire.utf16PosIn
 import com.calebc42.jetpacs.material3.ImageCache
 import com.calebc42.jetpacs.material3.MaterialRendererHost
 import com.calebc42.jetpacs.material3.RetainedPresentationIncarnationTracker
-import java.net.InetSocketAddress
-import java.net.ServerSocket
-import java.net.Socket
-import java.net.SocketException
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.ExecutionException
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.TimeoutException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executor
 import java.util.concurrent.atomic.AtomicBoolean
@@ -268,6 +269,11 @@ class DeviceBridge(
     /** SPEC 14.2 `companion.settings.open`: present the Companion's own
      * settings (R4: the completion-narrowing row is its first tenant). */
     private val onOpenSettings: () -> Unit = {},
+    /**
+     * SPEC 5: where connections come from. The loopback-tcp listener on the
+     * platform's port by default; the desktop passes its emacs-unix dialer.
+     */
+    val transport: CompanionTransport = LoopbackTcpTransport(platform.loopbackPort, platform.log),
 ) : MaterialRendererHost {
 
     private companion object {
@@ -297,9 +303,9 @@ class DeviceBridge(
     // attaches to it as the LiveSession in its constructor; cold receivers and
     // the FGS-owned sources feed it independently of any connection.
     private val firing = stores.firing()
-    @Volatile private var current: Socket? = null
+    @Volatile private var current: CompanionConnection? = null
     /** Exact engine-to-socket ownership used by password deadline aborts. */
-    private val engineTransports = ConcurrentHashMap<CompanionEngine, Socket>()
+    private val engineTransports = ConcurrentHashMap<CompanionEngine, CompanionConnection>()
     private val acceptedConnectionGeneration = AtomicLong(0)
     // Unlike CompanionStores.liveSession (which preserves the existing
     // accept-time routing behavior), this tracker advances only after proof
@@ -367,7 +373,7 @@ class DeviceBridge(
                 _experimentalDesignRuntimeEnabled.value = it
                 _rendererInstallation.value = renderer.installation(it)
             },
-            closeActiveSession = { activeTransport?.runCatching { close() } },
+            closeActiveSession = { activeTransport?.runCatching { abort("design runtime changed") } },
         )
         if (!applied) onToast("Could not save the experimental design setting")
     }
@@ -408,11 +414,8 @@ class DeviceBridge(
     }
 
     private val running = AtomicBoolean(false)
-    @Volatile private var listenerServer: ServerSocket? = null
-    private val _listeningPort = MutableStateFlow<Int?>(null)
-
-    /** SPEC 5.2: the bound loopback port while the listener is up, null otherwise. */
-    val listeningPort: StateFlow<Int?> get() = _listeningPort
+    /** What the transport is doing: listening, dialing, connected, idle, or failed. */
+    val transportStatus: StateFlow<TransportStatus> get() = transport.status
     @Volatile private var listenerThread: Thread? = null
 
     fun start() {
@@ -456,82 +459,60 @@ class DeviceBridge(
             onAppSurfaceCacheLoaded()
         }
 
-        // The listener is process-lifetime state.  The old implementation
-        // wrapped this whole block in one catch: one SocketException from
-        // accept() permanently ended `ebp-bridge`, while its unclosed server
-        // FD kept port 8765 looking healthy.  New Emacs connections then sat
-        // in the kernel backlog forever (awaiting-nonce on the client) with no
-        // `ebp-conn` thread to service them.  Own each listener with `use` and
-        // recreate it after a transient bind/accept failure instead.
-        while (running.get() && !Thread.currentThread().isInterrupted) {
-            try {
-                ServerSocket().use { server ->
-                    listenerServer = server
-                    server.reuseAddress = true
-                    // SPEC 5.2: bind only a loopback interface.
-                    server.bind(InetSocketAddress("127.0.0.1", platform.loopbackPort))
-                    _listeningPort.value = server.localPort
-                    while (running.get()) {
-                        val socket = server.accept()
-                        // Request/response frames are small and the peer
-                        // answers each one; Nagle would hold a reply behind
-                        // an unacknowledged segment (PLAN-responsiveness C7a).
-                        socket.runCatching { tcpNoDelay = true }
-                        val generation = acceptedConnectionGeneration.incrementAndGet()
-                        if (readyConnection.supersede(generation)) {
-                            persistReadyConnectionChange(
-                                System.currentTimeMillis().coerceAtLeast(0),
-                            )
-                        }
-                        // SPEC 5.2: one session at a time; the newcomer
-                        // supersedes the prior transport immediately. Advance
-                        // the receiver-local route first: this closes any
-                        // installed engine or half-built candidate under the
-                        // same monitor used by offline variant commits.
-                        variantEngineRoute.advanceTo(generation) { prior ->
-                            prior.close("superseded by newer connection")
-                        }
-                        // Newest-wins ends the prior READY authority at
-                        // accept time, before the replacement authenticates.
-                        // Freeze synchronized fields across that entire gap.
-                        _editorConnectionPhase.value = EditorConnectionPhase.OFFLINE
-                        current?.runCatching { close() }
-                        current = socket
-                        // Neither may the CONNECTION thread. `serve` sets up
-                        // a whole engine before it ever reads, and every line
-                        // of that setup runs on a socket a newcomer may already
-                        // have closed.
-                        thread(name = "ebp-conn", isDaemon = true) {
-                            runCatching { serve(socket, generation) }
-                                .onFailure { failure ->
-                                    if (failure !is SocketException) {
-                                        platform.log.e("EbpBridge", "Connection setup failed", failure)
-                                    }
-                                }
-                            socket.runCatching { close() }
-                        }
+        // The transport runs on this thread until stop(); each connection it
+        // produces is admitted below and served on its own thread.
+        transport.run({ running.get() && !Thread.currentThread().isInterrupted }, ::admit)
+        }
+    }
+
+    /**
+     * SPEC 5.2/5.6: one session at a time; the newcomer supersedes the prior
+     * connection immediately. Runs on the transport's thread; the engine is
+     * built and served on "ebp-conn", and the returned handle is what a
+     * dialer waits on before it redials.
+     */
+    private fun admit(connection: CompanionConnection): ServeHandle {
+        val generation = acceptedConnectionGeneration.incrementAndGet()
+        if (readyConnection.supersede(generation)) {
+            persistReadyConnectionChange(
+                System.currentTimeMillis().coerceAtLeast(0),
+            )
+        }
+        // Advance the receiver-local route first: this closes any installed
+        // engine or half-built candidate under the same monitor used by
+        // offline variant commits.
+        variantEngineRoute.advanceTo(generation) { prior ->
+            prior.close("superseded by newer connection")
+        }
+        // Newest-wins ends the prior READY authority at admission time,
+        // before the replacement authenticates. Freeze synchronized fields
+        // across that entire gap.
+        _editorConnectionPhase.value = EditorConnectionPhase.OFFLINE
+        current?.runCatching { abort("superseded by newer connection") }
+        current = connection
+        val outcome = CompletableFuture<ServeOutcome>()
+        // The transport thread must not block either. `serve` sets up a
+        // whole engine before it ever reads, and every line of that setup
+        // runs on a connection a newcomer may already have closed.
+        thread(name = "ebp-conn", isDaemon = true) {
+            val served = runCatching { serve(connection, generation) }
+                .onFailure { failure ->
+                    if (failure !is java.io.IOException) {
+                        platform.log.e("EbpBridge", "Connection setup failed", failure)
                     }
                 }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                return@thread
-            } catch (e: Exception) {
-                if (!running.get()) return@thread
-                // Closing the owned ServerSocket above prevents an orphaned
-                // bound port. A short retry keeps process startup and a
-                // transient accept failure from making reconnect impossible.
-                platform.log.w("EbpBridge", "Listener restarting", e)
-                try {
-                    Thread.sleep(500)
-                } catch (_: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    return@thread
-                }
-            } finally {
-                listenerServer = null
-                _listeningPort.value = null
-            }
+                .getOrDefault(ServeOutcome(reachedReady = false))
+            connection.runCatching { close() }
+            outcome.complete(served)
         }
+        return object : ServeHandle {
+            override fun join(timeoutMs: Long): ServeOutcome? = try {
+                if (timeoutMs == Long.MAX_VALUE) outcome.get() else outcome.get(timeoutMs, TimeUnit.MILLISECONDS)
+            } catch (_: TimeoutException) {
+                null
+            } catch (_: ExecutionException) {
+                ServeOutcome(reachedReady = false)
+            }
         }
     }
 
@@ -540,8 +521,8 @@ class DeviceBridge(
         if (!running.compareAndSet(true, false)) return
         localeObserver?.runCatching { close() }
         localeObserver = null
-        listenerServer?.runCatching { close() }
-        current?.runCatching { close() }
+        transport.stop()
+        current?.runCatching { abort("bridge stopped") }
         listenerThread?.interrupt()
         val generation = acceptedConnectionGeneration.incrementAndGet()
         variantEngineRoute.advanceTo(generation) { engine ->
@@ -937,7 +918,7 @@ class DeviceBridge(
     private fun abortSecretTransport(boundEngine: CompanionEngine?) {
         if (boundEngine == null) return
         boundEngine.runCatching { close("password submission deadline") }
-        engineTransports.remove(boundEngine)?.runCatching { close() }
+        engineTransports.remove(boundEngine)?.runCatching { abort("password submission deadline") }
     }
 
     /** SPEC 14.6: renderer edit -> draft + state.changed publication. */
@@ -1625,8 +1606,8 @@ class DeviceBridge(
         return views.objOrNull(name)
     }
 
-    private fun serve(socket: Socket, generation: Long) {
-        val out = socket.getOutputStream()
+    private fun serve(connection: CompanionConnection, generation: Long): ServeOutcome {
+        val out = connection.output
         val engine = variantEngineRoute.prepare(generation) {
             CompanionEngine(sessionConfig(), store, queue, reminders, triggers, firing) { bytes ->
                 // The sink runs on whatever thread emits — the reader, the pump,
@@ -1637,14 +1618,14 @@ class DeviceBridge(
                     out.write(bytes)
                     out.flush()
                 } catch (failure: java.io.IOException) {
-                    socket.runCatching { close() }
+                    connection.runCatching { close() }
                     throw failure
                 }
             }
-        } ?: return
+        } ?: return ServeOutcome(reachedReady = false)
         // Installed before activation, so every renderer-visible engine has
         // an exact transport the hard password deadline can abort.
-        engineTransports[engine] = socket
+        engineTransports[engine] = connection
         // SPEC 20.1.1: seed the new session with the last-known geometry so
         // the welcome can mirror it before the Activity recomposes.
         lastWindow?.let { (w, h) -> engine.windowChanged(w, h) }
@@ -1814,7 +1795,7 @@ class DeviceBridge(
             }) {
             engineTransports.remove(engine)
             engine.close("superseded before activation")
-            return
+            return ServeOutcome(reachedReady = false)
         }
         var authenticated = false
         var reachedReady = false
@@ -1833,7 +1814,7 @@ class DeviceBridge(
             // still arriving is answered at once instead of waiting behind
             // every queued 8 KiB chunk of it.
             val reader = FrameReader(
-                socket.getInputStream(),
+                connection.input,
                 timing = engine.stageObserver != null,
             )
             fun noteSessionState() {
@@ -1920,8 +1901,9 @@ class DeviceBridge(
                 )) {
                 platform.presentation.reconnectNotification(true)
             }
-            socket.runCatching { close() }
+            connection.runCatching { close() }
         }
+        return ServeOutcome(reachedReady = reachedReady)
     }
 }
 

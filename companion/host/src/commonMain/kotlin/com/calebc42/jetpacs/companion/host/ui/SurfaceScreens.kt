@@ -81,7 +81,7 @@ fun SurfaceCatalogScreen(
             Box(Modifier.fillMaxSize().padding(padding)) {
                 if (catalogLoaded) {
                     WaitingForEmacs(
-                        endpoint = LocalHostUiPlatform.current.listeningEndpoint,
+                        description = LocalHostUiPlatform.current.listeningDescription,
                         onRepair = repair,
                     )
                 } else {
@@ -162,7 +162,7 @@ private fun SurfaceDocumentHost(
         null -> {
             val repair = dropUnlessResumed { onRepair() }
             WaitingForEmacs(
-                endpoint = LocalHostUiPlatform.current.listeningEndpoint,
+                description = LocalHostUiPlatform.current.listeningDescription,
                 onRepair = repair,
             )
         }
@@ -269,16 +269,16 @@ fun OfflineConnectionBanner(
     }
 }
 
-/** The empty state: the Companion listens and Emacs has not pushed a surface. */
+/** The empty state: the Companion's transport is up and Emacs has not pushed a surface. */
 @Composable
-fun WaitingForEmacs(endpoint: String, onRepair: () -> Unit) {
+fun WaitingForEmacs(description: String, onRepair: () -> Unit) {
     Column(
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
         Text("Waiting for Emacs", style = MaterialTheme.typography.headlineMedium)
         Text(
-            "Jetpacs Companion is listening on $endpoint.",
+            description,
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
         )

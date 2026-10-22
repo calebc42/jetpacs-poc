@@ -32,6 +32,13 @@ interface HostUiPlatform {
 
     /** The listener's address as the user should type it, for the waiting screen. */
     val listeningEndpoint: String
+
+    /**
+     * The waiting screen's sentence about this host's transport. The default
+     * is the binding host's; a dialing host says what it dials.
+     */
+    val listeningDescription: String
+        get() = "Jetpacs Companion is listening on $listeningEndpoint."
 }
 
 /** The platform behind the window; every host provides it at its root. */

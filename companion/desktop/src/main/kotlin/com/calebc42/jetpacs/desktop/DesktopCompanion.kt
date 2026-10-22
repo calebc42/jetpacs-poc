@@ -3,6 +3,7 @@ package com.calebc42.jetpacs.desktop
 
 import com.calebc42.jetpacs.companion.host.CompanionProcess
 import com.calebc42.jetpacs.companion.host.DeviceBridge
+import com.calebc42.jetpacs.companion.host.TransportStatus
 import com.calebc42.jetpacs.core.database.buildJetpacsDatabase
 import com.calebc42.jetpacs.core.ebpstore.KeychainPairingCredentials
 import com.calebc42.jetpacs.core.ebpstore.SecretStore
@@ -32,17 +33,17 @@ class DesktopCompanion private constructor(
     /** Why the OS keychain was passed over, when it was; shown with the floor notice. */
     val keychainReports: List<String>,
 ) {
-    /** The bound loopback port while the listener is up, null otherwise. */
-    val listeningPort: StateFlow<Int?> get() = bridge.listeningPort
+    /** What the transport is doing; `Listening(port)` carries an ephemeral port. */
+    val transportStatus: StateFlow<TransportStatus> get() = bridge.transportStatus
 
     fun start(): Boolean = process.startBridge(bridge)
 
     fun stop(): Boolean = process.stopBridge(bridge)
 
-    /** Stop the bridge, wait for the listener to close, then close Room. */
+    /** Stop the bridge, wait for the transport to go idle, then close Room. */
     suspend fun shutdown() {
         stop()
-        withTimeoutOrNull(SHUTDOWN_MILLIS) { listeningPort.first { it == null } }
+        withTimeoutOrNull(SHUTDOWN_MILLIS) { transportStatus.first { !it.isActive } }
         process.database.close()
     }
 

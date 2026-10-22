@@ -9,6 +9,7 @@ import com.calebc42.ebp.wire.FrameDecoder
 import com.calebc42.ebp.wire.SafeAdmissionEvidence
 import com.calebc42.ebp.wire.encodeFrame
 import com.calebc42.ebp.wire.request
+import com.calebc42.jetpacs.companion.host.TransportStatus
 import com.calebc42.jetpacs.core.ebpstore.PrivateFileSecretStore
 import com.calebc42.jetpacs.material3.SnackbarRaises
 import java.net.Socket
@@ -64,7 +65,7 @@ class DesktopCompanionTest {
         val pairingId = companion.pairing.pairingId.value
         try {
             assertTrue(companion.start())
-            val port = withTimeout(10_000) { companion.listeningPort.first { it != null } }!!
+            val port = (withTimeout(10_000) { companion.transportStatus.first { it is TransportStatus.Listening } } as TransportStatus.Listening).port
             val token = EbpAuth.decodePairingToken(companion.pairing.freshTokenDisplay!!)
             ScriptedEmacs(port).use { emacs ->
                 val clientNonce = EbpAuth.generateNonce()
@@ -138,7 +139,7 @@ class DesktopCompanionTest {
         } finally {
             companion.shutdown()
         }
-        assertNull(companion.listeningPort.value)
+        assertFalse(companion.transportStatus.value.isActive)
 
         val again = DesktopCompanion.create(config, direct, store())
         assertEquals(pairingId, again.pairing.pairingId.value)
