@@ -14,7 +14,8 @@ import kotlinx.coroutines.runBlocking
 /**
  * The desktop Companion. Configuration comes from the command line and the
  * environment (see [DesktopConfig.parse]); the composition root is built on
- * an IO thread before the window opens, the listener starts, and closing the
+ * an IO thread before the window opens, the transport starts (the loopback
+ * listener, or the emacs-unix dialer the profile selects), and closing the
  * window stops it. A desktop Companion never launches or signals Emacs
  * (SPEC §5.8): the user pairs from the screen this window shows first.
  */
@@ -31,8 +32,8 @@ fun main(args: Array<String>) {
     }
     if (config.devKnownAnswerPairing) {
         Logger.getLogger("Jetpacs").warning(
-            "DEV PAIRING: accepting the public SPEC known-answer credential; anyone on this " +
-                "machine's loopback can authenticate",
+            "DEV PAIRING: accepting the public SPEC known-answer credential; anyone who can " +
+                "reach its transport (" + config.endpoint + ") can authenticate",
         )
     }
     DesktopFonts.install()

@@ -48,7 +48,9 @@ fun CompanionWindow(
     LaunchedEffect(size) {
         bridge.windowChanged(size.width.value.toInt(), size.height.value.toInt())
     }
-    val hostUi = remember(companion) { DesktopHostUi(windowSize, companion.config.listeningEndpoint) }
+    val hostUi = remember(companion) {
+        DesktopHostUi(windowSize, companion.config.endpoint, companion.config.waitingDescription)
+    }
     // A freshly generated token must be shown before anything else, whatever
     // an older settings file says.
     var onboardingRequired by remember {
@@ -78,8 +80,7 @@ fun CompanionWindow(
                             pairingContent = { onDone, onCancel ->
                                 DesktopPairingScreen(
                                     pairing = companion.pairing,
-                                    endpoint = companion.config.listeningEndpoint,
-                                    port = companion.config.port,
+                                    config = companion.config,
                                     keychainReports = companion.keychainReports,
                                     onDone = onDone,
                                     onCancel = onCancel,
@@ -90,6 +91,7 @@ fun CompanionWindow(
                         DialogHost(presentation.currentDialog, bridge)
                         ConfirmHost(bridge)
                         ToastHost(companion.toasts)
+                        TransportStatusStrip(companion.transportStatus, companion.toasts)
                     }
                 }
             }

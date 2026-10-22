@@ -33,14 +33,14 @@ import com.calebc42.jetpacs.core.ebpstore.CredentialProtection
  * SPEC §9.1: the pairing values shown out of band, once. The token appears
  * only on the run that generated it; the reduced-protection notice appears
  * whenever the token rests on the file floor instead of a keychain; the
- * development credential is never shown without its warning.
+ * development credential is never shown without its warning. SPEC §5.1: the
+ * offered transport profile and its address are named here too.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DesktopPairingScreen(
     pairing: DesktopPairing,
-    endpoint: String,
-    port: Int,
+    config: DesktopConfig,
     keychainReports: List<String>,
     onDone: () -> Unit,
     onCancel: (() -> Unit)?,
@@ -76,8 +76,8 @@ fun DesktopPairingScreen(
                 ) {
                     Text(
                         "Development pairing: this Companion accepts the public SPEC " +
-                            "known-answer credential. Anyone who can reach this machine's " +
-                            "loopback interface can authenticate. Start without " +
+                            "known-answer credential. Anyone who can reach its transport " +
+                            "(${config.endpoint}) can authenticate. Start without " +
                             "JETPACS_DEV_PAIRING for a real pairing.",
                         modifier = Modifier.padding(16.dp),
                         style = MaterialTheme.typography.bodyMedium,
@@ -85,9 +85,19 @@ fun DesktopPairingScreen(
                 }
             }
             Text("Pair this Companion with Emacs", style = MaterialTheme.typography.headlineMedium)
+            // SPEC 5.1: the pairing UI says which profile this Companion offers.
             Text(
-                "Jetpacs Companion listens on $endpoint. Put these values in your Emacs " +
-                    "init, then start Jetpacs in Emacs.",
+                when (config.transport) {
+                    TransportProfile.LOOPBACK_TCP ->
+                        "Jetpacs Companion offers the loopback-tcp profile and listens on " +
+                            "${config.endpoint}. Put these values in your Emacs init, then start " +
+                            "Jetpacs in Emacs."
+                    TransportProfile.EMACS_UNIX ->
+                        "Jetpacs Companion offers the emacs-unix profile and dials the socket " +
+                            "${config.endpoint}, which your Emacs binds. Put these values in your " +
+                            "Emacs init; starting Jetpacs in Emacs binds the socket and this " +
+                            "Companion connects to it."
+                },
                 style = MaterialTheme.typography.bodyMedium,
             )
             LabeledCode("Pairing ID", pairing.pairingId.value)
@@ -95,7 +105,13 @@ fun DesktopPairingScreen(
                 ?: if (pairing.isDevKnownAnswer) KnownAnswerPairing.TOKEN else null
             if (token != null) {
                 LabeledCode("Pairing token", token)
-                val snippet = pairingInitSnippet(pairing.pairingId.value, token, port)
+                val snippet = pairingInitSnippet(
+                    pairing.pairingId.value,
+                    token,
+                    config.port,
+                    transport = config.transport.id,
+                    socket = config.socket?.toString(),
+                )
                 LabeledCode("Emacs init", snippet)
                 OutlinedButton(onClick = { copyToSystemClipboard(snippet) }) {
                     Text("Copy the init snippet")

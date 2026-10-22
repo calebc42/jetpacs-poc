@@ -69,4 +69,37 @@ class CompanionWindowTest {
             root.toFile().deleteRecursively()
         }
     }
+
+    @OptIn(ExperimentalTestApi::class)
+    @Test
+    fun anEmacsUnixRunNamesTheProfileAndTheSocket() {
+        val root = Files.createTempDirectory("ebp-")
+        val data = root.resolve("data")
+        val socket = root.resolve("ebp.sock")
+        DesktopFonts.install()
+        val companion = runBlocking {
+            DesktopCompanion.create(
+                DesktopConfig(data, transport = TransportProfile.EMACS_UNIX, socket = socket),
+                Executor { it.run() },
+                PrivateFileSecretStore(data.resolve(PrivateFileSecretStore.FILE_NAME)),
+            )
+        }
+        try {
+            runDesktopComposeUiTest(width = 1280, height = 800) {
+                setContent {
+                    CompanionWindow(companion, { DpSize(1280.dp, 800.dp) }, onExit = {})
+                }
+                onAllNodesWithText("emacs-unix profile", substring = true).onFirst().assertIsDisplayed()
+                onAllNodesWithText(socket.toString(), substring = true).onFirst().assertIsDisplayed()
+                onNodeWithText("jetpacs-transport 'emacs-unix", substring = true).assertIsDisplayed()
+                onNodeWithText("jetpacs-socket \"$socket\"", substring = true).assertIsDisplayed()
+                onNodeWithText("jetpacs-port", substring = true).assertDoesNotExist()
+                onNodeWithText("I have copied these").performScrollTo().performClick()
+                onNodeWithText("Jetpacs Companion dials the Emacs socket $socket (emacs-unix).").assertIsDisplayed()
+            }
+        } finally {
+            runBlocking { companion.shutdown() }
+            root.toFile().deleteRecursively()
+        }
+    }
 }

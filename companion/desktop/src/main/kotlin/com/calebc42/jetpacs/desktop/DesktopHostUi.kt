@@ -17,6 +17,7 @@ import com.calebc42.jetpacs.companion.host.ui.HostUiPlatform
 class DesktopHostUi(
     private val windowSize: () -> DpSize,
     override val listeningEndpoint: String,
+    override val listeningDescription: String,
 ) : HostUiPlatform {
     @Composable
     override fun BackHandler(enabled: Boolean, onBack: () -> Unit) = Unit

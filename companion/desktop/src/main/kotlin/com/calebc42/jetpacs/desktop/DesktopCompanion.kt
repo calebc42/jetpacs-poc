@@ -2,6 +2,8 @@
 package com.calebc42.jetpacs.desktop
 
 import com.calebc42.jetpacs.companion.host.CompanionProcess
+import com.calebc42.jetpacs.companion.host.CompanionTransport
+import com.calebc42.jetpacs.companion.host.LoopbackTcpTransport
 import com.calebc42.jetpacs.companion.host.DeviceBridge
 import com.calebc42.jetpacs.companion.host.TransportStatus
 import com.calebc42.jetpacs.core.database.buildJetpacsDatabase
@@ -16,9 +18,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The desktop composition root (D5 of docs/PLAN-desktop-companion.md): the
- * Room database in the private data directory, the credentials in the OS
- * keychain or SPEC §9.1's floor, the one pairing, and the shared
+ * The desktop composition root (D5 and D6 of docs/PLAN-desktop-companion.md):
+ * the Room database in the private data directory, the credentials in the OS
+ * keychain or SPEC §9.1's floor, the one pairing, the transport the profile
+ * selects (the loopback listener, or the emacs-unix dialer), and the shared
  * `CompanionProcess` and `DeviceBridge` over the desktop platform adapters.
  * `main` builds one and hands it to the window; a test builds one on a
  * temporary directory with a direct UI executor and an ephemeral port.
@@ -55,6 +58,7 @@ class DesktopCompanion private constructor(
             config: DesktopConfig,
             uiExecutor: Executor = Executor(EventQueue::invokeLater),
             secretStore: SecretStore? = null,
+            transport: CompanionTransport? = null,
         ): DesktopCompanion {
             val reports = mutableListOf<String>()
             val database = buildJetpacsDatabase(config.dataDirectory)
@@ -75,9 +79,15 @@ class DesktopCompanion private constructor(
                 renderer = DesktopCompanionRenderer,
             )
             val presentation = process.presentation
+            // SPEC 5: one profile per run; the pairing screen names it.
+            val chosenTransport = transport ?: when (config.transport) {
+                TransportProfile.LOOPBACK_TCP -> LoopbackTcpTransport(config.port, platform.log)
+                TransportProfile.EMACS_UNIX -> EmacsUnixDialer(config.socket!!, platform.log)
+            }
             val bridge = DeviceBridge(
                 platform = platform,
                 renderer = DesktopCompanionRenderer,
+                transport = chosenTransport,
                 stores = process.stores,
                 proofProvider = credentials.proofProvider,
                 onSurfaceChanged = presentation.onSurfaceChanged,
