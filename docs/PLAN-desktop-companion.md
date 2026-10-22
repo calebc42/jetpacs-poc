@@ -1,8 +1,9 @@
 # Desktop Companion plan
 
 Status: active. D0, the toolchain spike, D1, the multiplatform renderer
-modules, D2, the fonts, D3, the Material seams, and D4, the JVM database and
-credentials, are done (2026-10-21). Every later item is open.
+modules, D2, the fonts, D3, the Material seams, D4, the JVM database and
+credentials, and D5, the desktop composition root, are done (2026-10-21).
+Every later item is open.
 
 The outcome is a Compose for Desktop Companion host at `companion/desktop`.
 It renders the same accepted EBP surfaces as `:app` against a desktop or
@@ -62,6 +63,13 @@ The EBP specification already defines this host:
   `companion/settings.gradle.kts` build. It reuses the
   `JETPACS_REPOSITORIES_ROOT` mapping and type-safe accessors, and one build
   checks both hosts.
+- **Shared host.** The protocol host core (`DeviceBridge`, `CompanionStores`,
+  `CompanionProcess`, `CompanionRenderer`) and the window composition (the
+  Nav 3 host, the screens and the overlays) live in `companion/host`, a
+  Kotlin Multiplatform module both composition roots depend on. A platform
+  implements exactly two seams, `CompanionHostPlatform` and `HostUiPlatform`;
+  Android's implementations are the code that used to be inline, and the
+  Android app's behavior, classpaths and suites are unchanged by the move.
 - **Credentials.** Token and HMAC key material live in the operating-system
   keychain from the first credential item: Secret Service on Linux, Keychain
   on macOS, Credential Manager on Windows. The SPEC §9.1 floor (a file only
@@ -215,14 +223,43 @@ existing gates must pass after every item.
 
 ### Host lane
 
-6. **D5 — Desktop composition root.** `main()` builds the process container,
-   `CompanionStores`, `DeviceBridge` and the presentation flows that
-   `JetpacsApplication` owns on Android, and hosts the navigation host, pie
-   menu, dialog and confirmation overlays in a window. Window size feeds
-   `bridge.windowChanged`. The desktop rows enter
-   `REPOSITORY-BOUNDARIES.md` here. Evidence: desktop Emacs with `ebp.el`
-   dials 127.0.0.1:8765, pairs, receives a Glasspane surface and a Material
-   catalog page, and one action round-trips.
+6. **D5 — Desktop composition root (done 2026-10-21).** The protocol host
+   core and the window composition moved out of `:app` into `companion/host`
+   behind `CompanionHostPlatform` and `HostUiPlatform` (three commits, each
+   with the Android unit, lint, assembly and classpath-parity gates green).
+   `companion/desktop` then became the desktop Companion: `main` builds a
+   `DesktopCompanion` (Room in the private data directory,
+   `KeychainPairingCredentials` over the OS keychain or the SPEC §9.1 floor,
+   the one pairing, `CompanionProcess` and `DeviceBridge` over the desktop
+   adapters), starts the loopback listener on `--port`/`JETPACS_PORT`
+   (default 8765, shown on the pairing screen) and opens one window that
+   composes the shared tree; closing it stops the bridge. The first run
+   generates the pairing per SPEC §9.1 and shows the token once with the
+   port, the Emacs init snippet and, on the file floor, the
+   reduced-protection notice; later runs read the identity back from Room.
+   `JETPACS_DEV_PAIRING=public-known-answer` substitutes the public SPEC §9.3
+   credential with a window-title suffix and a banner. The desktop advertises
+   `theme`, `surfaces.dialog`, `presentation.toast`, `presentation.snackbar`,
+   `presentation.pie-menu`, `editor.sync` and `data.model`, only the app and
+   dialog profiles, no `share.send`, and never `offline.wake`. `wire` gained
+   the SPEC §9.1 generator (`EbpAuth.generatePairingId`,
+   `generatePairingToken`, `encodePairingToken`), and `emacs/jetpacs-init.el`
+   gained `jetpacs-host` and `jetpacs-port`. Evidence: `:desktop:test` 20
+   (configuration, pairing lifecycle, a scripted Emacs over a real loopback
+   socket pairing with the generated token, receiving the reduced welcome,
+   pushing a surface into the presentation, accepting a dispatched
+   `event.action` and raising a snackbar, and the headless window);
+   `test/smoke-desktop.el` against `:desktop:run` on port 8766 with the
+   development pairing: READY, `presentation.snackbar` granted, `app:m3catalog`
+   and `app:glasspane` both `applied`. Not done here: the interactive
+   `JETPACS_SMOKE_WAIT_ACTION` click (the action round trip is proved by
+   `DesktopCompanionTest`), the keychain path on a host with a Secret Service
+   (this machine has none), the `:app` instrumented suites and the
+   `:core:ebp-store` device suite with the new
+   `AndroidKeyStorePairingCredentialsTest` (the phone's wireless debugging
+   endpoint went away mid-session; both compile), and re-pairing (a new
+   identity needs a new data directory until the SPEC §9.1 revocation flow
+   has a UI on either host).
 7. **D6 — `emacs-unix` dialer.** The Companion dials a daemon Emacs socket
    through the JDK's `UnixDomainSocketAddress` under SPEC §5.6, reusing the
    same engine. The ebp-java host tier's dialer is the porting reference.
@@ -270,7 +307,7 @@ existing gates must pass after every item.
 | D2 fonts | jetpacs-components `renderer/jetpacs` | JVM design-fixture render |
 | D3 Material seams | `companion/renderer/material3` | `jvmTest` plus unchanged Android screenshots |
 | D4 database and credentials | `:core:database`, `:core:ebp-store`, rental register | Reopen, migration and credential tests on the JVM |
-| D5 composition root | `companion/desktop`, `REPOSITORY-BOUNDARIES.md` | Desktop Emacs pairing, surface push and action round-trip |
+| D5 composition root | `companion/host`, `companion/desktop`, `REPOSITORY-BOUNDARIES.md` | Desktop Emacs pairing, surface push and action round-trip (`test/smoke-desktop.el`, `DesktopCompanionTest`) |
 | D6 `emacs-unix` | `companion/desktop` transport adapter | Pairing and push against `ebp-unix.el` |
 | D7 capability report | `companion/desktop` | Emacs-side negotiation test |
 | D8 packaging | `companion/desktop`, testing modules, `companion/TESTING.md` | Installable artifact and JVM golden corpus |
@@ -323,4 +360,11 @@ The desktop host is conforming only while all applicable gates hold:
   java-keyring finds no backend and `openSecretStore` falls back to the
   private file within the probe timeout; the keychain path itself has not
   yet run on a desktop with a keyring. Run `JavaKeyringSecretStoreTest` on
-  one before D5 relies on it.
+  one, and start the desktop Companion there to see the keychain notice.
+- Re-pairing on either host: the desktop shows its generated token once and
+  offers no "forget this pairing"; a new identity needs a new data
+  directory. The SPEC §9.1 revocation flow (fence, drain, erase the keychain
+  items) needs a UI on both hosts.
+- The Emacs side keeps `jetpacs-pairing-token` as a plain variable in the
+  init file, short of SPEC §9.1's private-storage floor; an `auth-source`
+  path belongs to `ebp.el` and `jetpacs-init.el`, outside this plan.

@@ -88,6 +88,13 @@ Kotlin.
 | Pairing token and payload key | the OS keychain through java-keyring (macOS Keychain, Windows Credential Manager, GNOME Secret Service, KWallet) | `KeychainPairingCredentials` over `openSecretStore`. The keychain is probed with a set, get and delete inside a timeout; only when it fails does SPEC §9.1's floor, `credentials.json` in the data directory, take over, and `CredentialProtection.PrivateFile` makes the host show the reduced-protection notice and keep `sensitiveQueueEncrypted` false (SPEC §21.5). |
 | HMAC-SHA256 and AES-256-GCM | `javax.crypto` | Keys load once into `SecretKeySpec`s behind operation-only handles; the envelope is the common `OutboxEnvelopeFormat` with a twelve-byte random IV, so one format decodes on both platforms. Tokens never reach Room, logs or exception messages (`TokenContainmentTest`). |
 | Key names | `PairingKeyAliases.v1` (commonMain) | One spelling for an Android Keystore entry, a keychain item and a Room partition row. Deriving a name is never evidence of provisioning. |
+| Pairing generation | `java.security.SecureRandom` through `EbpAuth.generatePairingId`/`generatePairingToken`/`encodePairingToken` | SPEC §9.1: the Companion generates both values; the token's display form leaves the process only through the pairing screen. |
+| Protocol host and window | `companion/host` behind `CompanionHostPlatform` and `HostUiPlatform` | The desktop implements the two seams (`DesktopHostPlatform`, `DesktopHostUi`); it never copies the bridge, the stores or a screen. |
+| UI thread | the AWT event queue (`java.awt.EventQueue.invokeLater`) | Renderer outcomes and editor results are delivered where Compose for Desktop composes; no coroutines-swing dependency. |
+| Clipboard | `java.awt.Toolkit.systemClipboard` | `clipboard.copy` and the pairing screen's copy button. No share sheet exists, so `share.send` is not advertised. |
+| Receiver-local settings | `java.util.Properties` in `settings.properties` inside the data directory | Non-secret presentation preferences (completion narrowing, the design-runtime toggle, the pairing acknowledgement); never EBP state, never a secret. |
+| Diagnostics | `java.util.logging`, one logger per tag | The stage timer runs when `JetpacsStages` admits FINE (`-Djetpacs.stages=true`). Nothing logged carries token material. |
+| Locale advice | `java.util.Locale`, `java.util.TimeZone`, the localized short time pattern | SPEC §20.1.2 facts at start; no desktop broadcast says they changed. |
 
 ## Intentionally custom EBP behavior
 

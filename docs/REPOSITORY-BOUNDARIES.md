@@ -39,8 +39,9 @@ lower layer:
   Material, Jetpacs policy, or a downstream renderer extension.
 - Renderer-extension manifests and their generated Kotlin/Elisp projections
   belong to the owning module or repository. EBP treats their identifiers as opaque.
-- Jetpacs is the Android composition root and Elisp host; selecting a renderer
-  or applet does not transfer ownership into Jetpacs.
+- Jetpacs owns the Android and desktop composition roots and is the Elisp
+  host; selecting a renderer or applet does not transfer ownership into
+  Jetpacs.
 - Applets may depend on public Jetpacs APIs. Jetpacs foundation source does not
   name an applet or encode its domain policy.
 
@@ -83,7 +84,13 @@ The following stay in this repository:
 - `companion/renderer/material3`, `emacs/apps/jetpacs-material3`, and
   `emacs/apps/m3-catalog`: optional Material rendering, authoring, and catalog;
 - `renderer-extensions/jetpacs-material3.json`: the Material extension authority;
-- `companion/app`: Android composition root and platform adapters;
+- `companion/host`: the platform-neutral Companion host both composition
+  roots share, the protocol host core and the window composition, behind
+  `CompanionHostPlatform` and `HostUiPlatform`;
+- `companion/app`: Android composition root and platform adapters over
+  `companion/host`;
+- `companion/desktop`: the Compose for Desktop composition root and its JDK
+  and AWT adapters ([`PLAN-desktop-companion.md`](PLAN-desktop-companion.md));
 - `emacs/jetpacs-*.el`: surface builders, shell, chrome, navigation, files,
   reader/editor hosts, Org presentation adapters, app host, and device policy;
 - composition policy that selects extension-owned generated projections;

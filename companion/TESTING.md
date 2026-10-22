@@ -82,6 +82,8 @@ Run the JVM persistence and production compilation gates with:
   :wire:jvmTest \
   :core:database:jvmTest \
   :core:ebp-store:jvmTest \
+  :host:jvmTest \
+  :host:testAndroidHostTest \
   :app:testDebugUnitTest \
   :app:lintDebug \
   :app:lintRelease \
@@ -418,31 +420,54 @@ transitive Espresso cannot initialize on Android 17/API 37.
 
 ## Desktop host
 
-The Compose for Desktop host lives in `desktop/`
-([`../docs/PLAN-desktop-companion.md`](../docs/PLAN-desktop-companion.md)).
-It holds the D0 toolchain spike and links the multiplatform renderers (D1).
+The Compose for Desktop Companion lives in `desktop/` over the shared `host/`
+module ([`../docs/PLAN-desktop-companion.md`](../docs/PLAN-desktop-companion.md)).
 
 ```sh
 ./gradlew :desktop:test
-./gradlew :desktop:run
+JETPACS_DATA_DIR=$(mktemp -d) ./gradlew :desktop:run
+JETPACS_DEV_PAIRING=public-known-answer JETPACS_PORT=8766 ./gradlew :desktop:run
 ```
 
-`:desktop:test` renders the spike headless at 1280 by 800, asserts every
-proving region, pushes a `JetpacsNavKey` through Navigation 3, and writes
-`desktop/build/spike/spike.png`; `RendererLinkTest` composes the Material and
+`:desktop:test` is headless: `RendererLinkTest` composes the Material and
 Jetpacs theme providers on the JVM and fails if a Google Compose UI jar or a
-`jvmstubs` jar reaches the test classpath; `DesignFontsTest` renders a
-`jetpacs.design` text in IBM Plex Serif and reads its text layout to prove the
-bundled font files load through the host's `JetpacsJvmFonts.loader`, and that
-the platform serif stands in without one; `MaterialRendererTest` composes
-Material `RenderNode` on the JVM through `MaterialTestHost` and proves the D3
-seams: a PNG decoded by Skia and shown, the placeholder for an undecodable
-payload, a drawn canvas `text` op, the exact authored slider value, a
-connected toggle button and a checkable menu item's state. None needs a
-display.
-`:desktop:run` opens the window and needs one; under WSLg Skiko falls back
-from OpenGL to software rendering. The tasks read the wire golden from the
-`ebp` checkout under `JETPACS_REPOSITORIES_ROOT`.
+`jvmstubs` jar reaches the test classpath; `DesignFontsTest` proves the
+bundled IBM Plex files load through `JetpacsJvmFonts.loader`;
+`MaterialRendererTest` composes Material `RenderNode` through
+`MaterialTestHost` and proves the D3 seams; `DesktopConfigTest` covers
+`--port`, `--data-dir`, `JETPACS_PORT`, `JETPACS_DATA_DIR` and the exact
+`JETPACS_DEV_PAIRING` literal; `DesktopPairingTest` generates a pairing on the
+file floor, reopens by identity without the token, proves the token is in no
+file but `credentials.json`, substitutes the development credential, and
+refuses a recorded pairing whose token is gone; `DesktopCompanionTest` is the
+end-to-end run without a window: a scripted Emacs over a real loopback socket
+on an ephemeral port pairs with the generated token, receives a welcome that
+grants no `offline.wake` and advertises exactly the app and dialog profiles,
+pushes `app:m3catalog` into the presentation, accepts an `event.action` the
+bridge dispatched and raises a snackbar; `CompanionWindowTest` renders the
+window at 1280 by 800 through a first run, the pairing screen with the ID,
+token, port, init snippet and reduced-protection notice, then the catalog
+waiting at the endpoint, and writes `desktop/build/spike/pairing.png` and
+`window.png`.
+
+`:desktop:run` opens the window and needs a display; under WSLg Skiko falls
+back from OpenGL to software rendering. The first run shows the pairing
+screen; paste its snippet into a desktop Emacs init, or start with
+`JETPACS_DEV_PAIRING=public-known-answer` so the default `jetpacs-init.el`
+values and the smoke scripts work. The Emacs-side gate, from the repository
+root against a running desktop Companion:
+
+```sh
+JETPACS_PORT=8766 emacs -Q --batch -l test/smoke-desktop.el
+```
+
+It dials `JETPACS_HOST`/`JETPACS_PORT` with `JETPACS_PAIRING_ID` and
+`JETPACS_PAIRING_TOKEN` (the known-answer defaults), waits for READY, pushes
+the Material catalog and Glasspane (with a temporary demo Org corpus) and
+exits 0 when both are `applied`; `JETPACS_SMOKE_WAIT_ACTION=1` then waits up
+to a minute for a click on a catalog demo button and reports the accepted
+`m3catalog.demo`. The desktop module reads the wire golden from the `ebp`
+checkout under `JETPACS_REPOSITORIES_ROOT`.
 
 The multiplatform renderer modules (`:renderer:model`, `:renderer:compose`,
 `:renderer:jetpacs`, `:renderer:material3`) have no `testDebugUnitTest`:

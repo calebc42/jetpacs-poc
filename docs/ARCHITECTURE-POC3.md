@@ -55,7 +55,7 @@ downstream application dependency.
 
 ## Companion module graph
 
-`companion/settings.gradle.kts` currently composes 14 modules:
+`companion/settings.gradle.kts` composes these modules:
 
 | Module | Responsibility and boundary |
 |---|---|
@@ -74,7 +74,9 @@ downstream application dependency.
 | `:renderer:glance` | Restricted generic home-screen-widget renderer and profile |
 | `:renderer:jetpacs` | Foundation-only `jetpacs.components` and optional `jetpacs.design` implementations; sourced from the in-repository `jetpacs-components/` module |
 | `:renderer:material3` | Jetpacs Material 3 implementation and optional extension; owned locally in `companion/renderer/material3` |
-| `:app` | Android composition root, Room/Nav shell, transport, platform adapters, and exact installed renderer selection |
+| `:host` | The platform-neutral Companion host both composition roots share: the loopback listener and engine wiring (`DeviceBridge`), the process-wide projections (`CompanionStores`), the composition root below a platform's own (`CompanionProcess`), the renderer installation over platform targets (`CompanionRenderer`), and the Nav 3 window composition; a platform implements `CompanionHostPlatform` and `HostUiPlatform` |
+| `:app` | Android composition root over `:host`: the Keystore bootstrap, the Android halves of the two seams, platform adapters, onboarding and exact installed renderer selection |
+| `:desktop` | Compose for Desktop composition root over `:host`: the data directory, keychain credentials, the generated pairing and the JDK/AWT halves of the two seams ([`PLAN-desktop-companion.md`](PLAN-desktop-companion.md)) |
 
 The app may compose these modules; it does not transfer their authority. In
 particular, `:wire` cannot depend on Room, Android, Navigation, Compose, or a
