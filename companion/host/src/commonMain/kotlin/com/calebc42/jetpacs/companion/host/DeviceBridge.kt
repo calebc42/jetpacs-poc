@@ -409,6 +409,10 @@ class DeviceBridge(
 
     private val running = AtomicBoolean(false)
     @Volatile private var listenerServer: ServerSocket? = null
+    private val _listeningPort = MutableStateFlow<Int?>(null)
+
+    /** SPEC 5.2: the bound loopback port while the listener is up, null otherwise. */
+    val listeningPort: StateFlow<Int?> get() = _listeningPort
     @Volatile private var listenerThread: Thread? = null
 
     fun start() {
@@ -466,6 +470,7 @@ class DeviceBridge(
                     server.reuseAddress = true
                     // SPEC 5.2: bind only a loopback interface.
                     server.bind(InetSocketAddress("127.0.0.1", platform.loopbackPort))
+                    _listeningPort.value = server.localPort
                     while (running.get()) {
                         val socket = server.accept()
                         // Request/response frames are small and the peer
@@ -524,6 +529,7 @@ class DeviceBridge(
                 }
             } finally {
                 listenerServer = null
+                _listeningPort.value = null
             }
         }
         }

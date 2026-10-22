@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Compose for Desktop Companion host (docs/PLAN-desktop-companion.md).
-// D0: a toolchain spike. The module stays and grows into the D5 composition
-// root; the SpikeApp screen is throwaway. Google's material3, adaptive and
+// D5: the desktop composition root over the shared :host module, the JVM
+// Room builder and the keychain credentials. Google's material3, adaptive and
 // navigation3-ui are jvmStubs on desktop, so this JVM-only module takes the
 // JetBrains builds; Google's Navigation 3 runtime and lifecycle are real
 // desktop artifacts and are shared with the Android host.
@@ -31,7 +31,13 @@ dependencies {
     implementation(libs.androidx.navigation3.runtime)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.jetbrains.compose.material.icons)
+    implementation(projects.host)
     implementation(projects.core.navigation)
+    implementation(projects.core.database)
+    implementation(projects.core.ebpStore)
+    implementation(libs.androidx.room3.runtime)
+    implementation(libs.androidx.sqlite.bundled)
+    implementation(libs.kotlinx.coroutines.core)
     implementation(projects.wire)
     implementation(projects.ebpKmp)
     // D1: the multiplatform renderers, linked here against JetBrains' Compose

@@ -53,6 +53,10 @@ abstract class PairingDao {
     @Query("SELECT * FROM pairing_partitions WHERE pairing_id = :pairingId")
     abstract suspend fun getPartition(pairingId: String): PairingPartitionEntity?
 
+    /** Every ACTIVE partition, oldest first: a host with one pairing reads its identity back here. */
+    @Query("SELECT * FROM pairing_partitions WHERE state = 'ACTIVE' ORDER BY created_at_epoch_ms")
+    abstract suspend fun listActivePartitions(): List<PairingPartitionEntity>
+
     @Query("SELECT * FROM pairing_runtime WHERE pairing_id = :pairingId")
     abstract suspend fun getRuntime(pairingId: String): PairingRuntimeEntity?
 
