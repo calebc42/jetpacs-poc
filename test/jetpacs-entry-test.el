@@ -149,5 +149,44 @@
     (should (member "surfaces.widget"
                     (plist-get (nthcdr 2 connect-args) :wants)))))
 
+(ert-deftest jetpacs-entry-start-binds-the-emacs-unix-socket-when-selected ()
+  "Under `emacs-unix' Emacs binds the socket (SPEC 5.6): path, nil port, :transport."
+  (let (connect-args)
+    (cl-letf (((symbol-function 'jetpacs-connect)
+               (lambda (&rest args)
+                 (setq connect-args args)
+                 'stub-client))
+              ((symbol-function 'ebp-decode-pairing-token)
+               (lambda (_token) "decoded")))
+      (let ((jetpacs-transport 'emacs-unix)
+            (jetpacs-socket "/tmp/x/ebp.sock")
+            (jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (should (eq (jetpacs--start-1) 'stub-client)))
+      (should (equal "/tmp/x/ebp.sock" (nth 0 connect-args)))
+      (should (null (nth 1 connect-args)))
+      (should (eq 'emacs-unix (plist-get (nthcdr 2 connect-args) :transport)))
+      (should (member "surfaces.widget"
+                      (plist-get (nthcdr 2 connect-args) :wants)))
+      ;; A nil socket is ebp.el's own default path.
+      (let ((jetpacs-transport 'emacs-unix)
+            (jetpacs-socket nil)
+            (jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (jetpacs--start-1))
+      (should (equal (expand-file-name (ebp-unix-default-path))
+                     (nth 0 connect-args)))
+      ;; The default profile dials loopback-tcp and names no transport.
+      (let ((jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (jetpacs--start-1))
+      (should (equal (list jetpacs-host jetpacs-port)
+                     (list (nth 0 connect-args) (nth 1 connect-args))))
+      (should-not (plist-member (nthcdr 2 connect-args) :transport))
+      (let ((jetpacs-transport 'bogus)
+            (jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (should-error (jetpacs--start-1))))))
+
 (provide 'jetpacs-entry-test)
 ;;; jetpacs-entry-test.el ends here

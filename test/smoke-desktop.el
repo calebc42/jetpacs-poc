@@ -5,7 +5,11 @@
 ;;
 ;;   JETPACS_PORT=8766 emacs -Q --batch -l test/smoke-desktop.el
 ;;
-;; Environment: JETPACS_HOST (127.0.0.1), JETPACS_PORT (8765),
+;; Environment: JETPACS_TRANSPORT (loopback-tcp, or emacs-unix, under which
+;; this Emacs binds JETPACS_SOCKET, or ebp.el's default path, and the
+;; Companion started with --transport emacs-unix dials it; run this script a
+;; second time against the same Companion to see its SPEC 5.7 redial reach
+;; READY again), JETPACS_HOST (127.0.0.1), JETPACS_PORT (8765),
 ;; JETPACS_PAIRING_ID and JETPACS_PAIRING_TOKEN (default: the SPEC 9.3
 ;; known-answer credential, which a Companion started with
 ;; JETPACS_DEV_PAIRING=public-known-answer accepts; paste the pairing
@@ -55,6 +59,8 @@
 (require 'jetpacs)
 (setq jetpacs-host (or (getenv "JETPACS_HOST") "127.0.0.1")
       jetpacs-port (string-to-number (or (getenv "JETPACS_PORT") "8765"))
+      jetpacs-transport (intern (or (getenv "JETPACS_TRANSPORT") "loopback-tcp"))
+      jetpacs-socket (getenv "JETPACS_SOCKET")
       jetpacs-pairing-id (or (getenv "JETPACS_PAIRING_ID") jetpacs-pairing-id)
       jetpacs-pairing-token (or (getenv "JETPACS_PAIRING_TOKEN") jetpacs-pairing-token))
 
@@ -74,10 +80,16 @@
            do (accept-process-output nil 0.1))
   (funcall predicate))
 
+;; A dialing Companion may be at the top of its SPEC 5.7 backoff (15 s)
+;; when this Emacs binds, so the binder waits longer than the dialer.
 (jetpacs-start)
-(unless (smoke-desktop--wait 30 #'jetpacs-connected-p)
-  (message "smoke-desktop: no READY session on %s:%d (state=%s close=%S)"
-           jetpacs-host jetpacs-port
+(unless (smoke-desktop--wait (if (eq jetpacs-transport 'emacs-unix) 60 30)
+                             #'jetpacs-connected-p)
+  (message "smoke-desktop: no READY session over %s at %s (state=%s close=%S)"
+           jetpacs-transport
+           (if (eq jetpacs-transport 'emacs-unix)
+               (or jetpacs-socket "the default socket")
+             (format "%s:%d" jetpacs-host jetpacs-port))
            (and (jetpacs-client) (ebp-client-state (jetpacs-client)))
            (and (jetpacs-client) (ebp-client-close-reason (jetpacs-client))))
   (kill-emacs 1))

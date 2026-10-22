@@ -391,10 +391,12 @@ Replays every `jetpacs-defaction' registration into CLIENT's SPEC 14
 allowlist — the registrations are top-level forms evaluated long before
 any client exists, while ebp's allowlist is per-client.  Errors when a
 different live client is already attached (decision Q1); re-attaching
-the same client is idempotent, and a closed client is replaced."
+the same client is idempotent, and a terminal client is replaced.  A
+client that is merely `closed' between dials, or listening for a
+Companion under `emacs-unix', is live (`ebp-client-active-p')."
   (when (and jetpacs--client
              (not (eq jetpacs--client client))
-             (not (eq (ebp-client-state jetpacs--client) 'closed)))
+             (ebp-client-active-p jetpacs--client))
     (error "jetpacs: a live client is already attached (single-client floor)"))
   (setq jetpacs--client client)
   (maphash (lambda (name _fn)

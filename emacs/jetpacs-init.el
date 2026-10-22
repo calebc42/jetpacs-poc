@@ -8,6 +8,7 @@
 (require 'subr-x)
 (declare-function server-running-p "server" ())
 (declare-function server-start "server" (&optional leave-dead inhibit-prompt))
+(declare-function ebp-unix-default-path "ebp-unix" ())
 
 ;; Android's exported file-opening activity hands warm launches to
 ;; emacsclient.  The user's init has already run before this managed loader,
@@ -460,6 +461,21 @@ the value stays a loopback address.")
 A Companion that was started on another port, such as a desktop Companion
 beside an `adb forward' of a phone, shows its port on its pairing screen.")
 
+(defvar jetpacs-transport 'loopback-tcp
+  "The EBP SPEC 5 transport profile this Emacs uses.
+Under `loopback-tcp' (SPEC 5.2, the default on every platform) Emacs dials
+the Companion at `jetpacs-host' and `jetpacs-port'.  Under `emacs-unix'
+\(SPEC 5.6, a daemon Emacs serving desktop Companions) Emacs binds the Unix
+socket `jetpacs-socket' in a directory private to this user, and the
+Companion, started with `--transport emacs-unix', dials it and redials
+after any loss; this Emacs never redials.")
+
+(defvar jetpacs-socket nil
+  "The Unix socket Emacs binds under the `emacs-unix' profile, or nil.
+Nil means ebp.el's default, `ebp-unix-default-path': `ebp.sock' in
+$XDG_RUNTIME_DIR/ebp, else in the temporary directory's ebp<uid>.  The
+desktop Companion's pairing screen names the path it dials.")
+
 (defvar jetpacs-pairing-id "101112131415161718191a1b1c1d1e1f"
   "Pairing identity used to authenticate this Emacs to the Companion.")
 
@@ -467,12 +483,15 @@ beside an `adb forward' of a phone, shows its port on its pairing screen.")
   "Display-form pairing token used to authenticate to the Companion.")
 
 (defun jetpacs-start ()
-  "Keep the device EBP endpoint active and land on the hub when READY.
-Emacs is the SPEC 5.2 dialer.  The logical client therefore survives a
-stopped or restarted Companion and performs fresh handshakes with jittered
-bounded backoff until the listener returns.  Calling this command while a
-redial is pending requests an immediate attempt; calling it while READY brings
-the hub forward without creating a competing client."
+  "Keep the EBP endpoint active and land on the hub when READY.
+Under `loopback-tcp' Emacs is the SPEC 5.2 dialer: the logical client
+survives a stopped or restarted Companion and performs fresh handshakes with
+jittered bounded backoff until the listener returns.  Under `emacs-unix'
+Emacs is the SPEC 5.6 binder: the client listens on `jetpacs-socket' until a
+Companion dials and authenticates, and never redials (the Companion does,
+SPEC 5.7).  Calling this command while a redial is pending requests an
+immediate attempt (a listener re-checks its socket); calling it while READY
+brings the hub forward without creating a competing client."
   (interactive)
   (let ((client (jetpacs-client)))
     (cond
@@ -483,19 +502,37 @@ the hub forward without creating a competing client."
       client)
      (t (jetpacs--start-1)))))
 
+(defun jetpacs--connect-config ()
+  "The `ebp-connect' config this composition root uses under every profile."
+  (list :client-name "device-emacs" :client-version emacs-version
+        :pairing-id jetpacs-pairing-id
+        :token (ebp-decode-pairing-token jetpacs-pairing-token)
+        :wants '("theme" "presentation.toast" "presentation.snackbar"
+                 "surfaces.dialog" "surfaces.notification" "surfaces.widget"
+                 "reminders.owner" "reminders.actions" "offline.wake" "editor.sync"
+                 "triggers" "capabilities" "data.model")
+        :receipt-file (expand-file-name "receipts.sqlite"
+                                        jetpacs-var-directory)
+        :ready-function #'jetpacs-ready-landing))
+
 (defun jetpacs--start-1 ()
-  (jetpacs-connect
-   jetpacs-host jetpacs-port
-   :client-name "device-emacs" :client-version emacs-version
-   :pairing-id jetpacs-pairing-id
-   :token (ebp-decode-pairing-token jetpacs-pairing-token)
-   :wants '("theme" "presentation.toast" "presentation.snackbar"
-            "surfaces.dialog" "surfaces.notification" "surfaces.widget"
-            "reminders.owner" "reminders.actions" "offline.wake" "editor.sync"
-            "triggers" "capabilities" "data.model")
-   :receipt-file (expand-file-name "receipts.sqlite"
-                                   jetpacs-var-directory)
-   :ready-function #'jetpacs-ready-landing))
+  "Open the logical client for `jetpacs-transport'.
+Under `loopback-tcp' Emacs dials `jetpacs-host' and `jetpacs-port' (SPEC
+5.2).  Under `emacs-unix' Emacs binds `jetpacs-socket', or ebp.el's default
+path, and the Companion dials it (SPEC 5.6): the host argument is the socket
+path and the port is nil, exactly as `ebp-unix-listen' passes them."
+  (pcase jetpacs-transport
+    ('loopback-tcp
+     (apply #'jetpacs-connect jetpacs-host jetpacs-port
+            (jetpacs--connect-config)))
+    ('emacs-unix
+     (require 'ebp-unix)
+     (apply #'jetpacs-connect
+            (expand-file-name (or jetpacs-socket (ebp-unix-default-path))) nil
+            :transport 'emacs-unix
+            (jetpacs--connect-config)))
+    (_ (error "jetpacs-transport must be loopback-tcp or emacs-unix, not %S"
+              jetpacs-transport))))
 
 (defun jetpacs-ready-landing (_client)
   "Land on an explicitly seeded app/route, or the native Jetpacs hub.
@@ -518,15 +555,16 @@ same safe native root instead of making READY callback failure fatal."
   (jetpacs-shell-push "app:hub" :current-view "home"))
 
 (defun jetpacs-stop ()
-  "Close the session."
+  "Close the session; under `emacs-unix' also the listener, unlinking its socket."
   (interactive)
   (when-let* ((c (jetpacs-client)))
     (ebp-client-close c 'user-quit)
     (jetpacs-detach)))
 
-;; Keep one logical dialer alive from startup.  A Companion that is not yet
-;; running leaves it in bounded backoff; opening or restarting the app no
-;; longer requires restarting Emacs.
+;; Keep one logical client alive from startup: a dialer, or under
+;; `emacs-unix' a binder.  A Companion that is not yet running leaves the
+;; dialer in bounded backoff (and the binder listening); opening or
+;; restarting the app no longer requires restarting Emacs.
 (add-hook 'after-init-hook
           (lambda () (with-demoted-errors "jetpacs-start: %S"
                        (jetpacs-start))))
