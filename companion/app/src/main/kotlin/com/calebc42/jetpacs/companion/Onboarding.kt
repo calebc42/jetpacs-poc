@@ -33,7 +33,6 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -269,24 +268,6 @@ private fun stageSetupKit(context: Context): Int {
         }
     }
     return count
-}
-
-@Composable
-internal fun WaitingForEmacs(onRepair: () -> Unit) {
-    Column(
-        Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-    ) {
-        Text("Waiting for Emacs", style = MaterialTheme.typography.headlineMedium)
-        Text(
-            "Jetpacs Companion is listening on 127.0.0.1:8765.",
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(top = 8.dp, bottom = 20.dp),
-        )
-        OutlinedButton(onClick = onRepair, modifier = Modifier.fillMaxWidth()) {
-            Text("Set up or repair Jetpacs")
-        }
-    }
 }
 
 @Composable

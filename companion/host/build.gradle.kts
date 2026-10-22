@@ -26,6 +26,13 @@ kotlin {
         withHostTestBuilder {}
     }
 
+    compilerOptions {
+        // The Material renderer's catalog rows are foundation-style components.
+        freeCompilerArgs.add(
+            "-opt-in=androidx.compose.foundation.style.ExperimentalFoundationStyleApi",
+        )
+    }
+
     sourceSets {
         commonMain.dependencies {
             api(projects.wire)

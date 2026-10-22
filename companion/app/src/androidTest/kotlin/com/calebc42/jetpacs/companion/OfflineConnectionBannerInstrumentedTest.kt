@@ -8,6 +8,7 @@ import androidx.compose.ui.test.junit4.v2.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.calebc42.jetpacs.companion.host.ui.OfflineConnectionBanner
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
