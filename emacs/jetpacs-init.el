@@ -449,6 +449,17 @@ and Files."
 
 ;;;; Connection
 
+(defvar jetpacs-host "127.0.0.1"
+  "Loopback address the Companion listens on (EBP SPEC 5.2).
+The `loopback-tcp' profile binds an IP loopback interface only; a bridged
+deployment forwards the Companion's listener onto this host's loopback, so
+the value stays a loopback address.")
+
+(defvar jetpacs-port 8765
+  "Loopback port the Companion listens on (EBP SPEC 5.2, default 8765).
+A Companion that was started on another port, such as a desktop Companion
+beside an `adb forward' of a phone, shows its port on its pairing screen.")
+
 (defvar jetpacs-pairing-id "101112131415161718191a1b1c1d1e1f"
   "Pairing identity used to authenticate this Emacs to the Companion.")
 
@@ -474,7 +485,7 @@ the hub forward without creating a competing client."
 
 (defun jetpacs--start-1 ()
   (jetpacs-connect
-   "127.0.0.1" 8765
+   jetpacs-host jetpacs-port
    :client-name "device-emacs" :client-version emacs-version
    :pairing-id jetpacs-pairing-id
    :token (ebp-decode-pairing-token jetpacs-pairing-token)
