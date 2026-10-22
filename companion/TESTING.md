@@ -427,6 +427,7 @@ module ([`../docs/PLAN-desktop-companion.md`](../docs/PLAN-desktop-companion.md)
 ./gradlew :desktop:test
 JETPACS_DATA_DIR=$(mktemp -d) ./gradlew :desktop:run
 JETPACS_DEV_PAIRING=public-known-answer JETPACS_PORT=8766 ./gradlew :desktop:run
+JETPACS_DEV_PAIRING=public-known-answer ./gradlew :desktop:run --args="--transport emacs-unix"
 ```
 
 `:desktop:test` is headless: `RendererLinkTest` composes the Material and
@@ -448,7 +449,17 @@ bridge dispatched and raises a snackbar; `CompanionWindowTest` renders the
 window at 1280 by 800 through a first run, the pairing screen with the ID,
 token, port, init snippet and reduced-protection notice, then the catalog
 waiting at the endpoint, and writes `desktop/build/spike/pairing.png` and
-`window.png`.
+`window.png`; its second run names the emacs-unix profile and socket.
+`EmacsUnixDialerTest` is SPEC 5.6 from the Companion's side over a fake
+daemon Emacs (`ServerSocketChannel` on a Unix socket in a private temporary
+directory, the dialer's sleeps and jitter injected): the full pairing script
+over the socket, a socket that appears late dialed after 750 then 1500 ms, a
+binder close followed by a redial to a second READY session, a
+Companion-initiated close redialed at once, an owner mismatch that is
+terminal and never dialed, a mute peer closed after the first-byte deadline,
+stop while sleeping and while connected, and the 1 s doubling to 15 s
+schedule. The host module's `PairingSnippetTest` pins the init snippet per
+profile on both targets.
 
 `:desktop:run` opens the window and needs a display; under WSLg Skiko falls
 back from OpenGL to software rendering. The first run shows the pairing
@@ -466,8 +477,21 @@ It dials `JETPACS_HOST`/`JETPACS_PORT` with `JETPACS_PAIRING_ID` and
 the Material catalog and Glasspane (with a temporary demo Org corpus) and
 exits 0 when both are `applied`; `JETPACS_SMOKE_WAIT_ACTION=1` then waits up
 to a minute for a click on a catalog demo button and reports the accepted
-`m3catalog.demo`. The desktop module reads the wire golden from the `ebp`
-checkout under `JETPACS_REPOSITORIES_ROOT`.
+`m3catalog.demo`. With `JETPACS_TRANSPORT=emacs-unix` (and `JETPACS_SOCKET`,
+or ebp.el's default path) this Emacs binds the socket instead and the
+Companion started with `--transport emacs-unix --socket PATH` dials it;
+running the script a second time against the same Companion shows its SPEC
+5.7 redial reach READY again:
+
+```sh
+JETPACS_DEV_PAIRING=public-known-answer JETPACS_TRANSPORT=emacs-unix \
+  JETPACS_SOCKET=$XDG_RUNTIME_DIR/ebp-smoke/ebp.sock ./gradlew :desktop:run
+JETPACS_TRANSPORT=emacs-unix JETPACS_SOCKET=$XDG_RUNTIME_DIR/ebp-smoke/ebp.sock \
+  emacs -Q --batch -l test/smoke-desktop.el   # twice
+```
+
+The desktop module reads the wire golden from the `ebp` checkout under
+`JETPACS_REPOSITORIES_ROOT`.
 
 The multiplatform renderer modules (`:renderer:model`, `:renderer:compose`,
 `:renderer:jetpacs`, `:renderer:material3`) have no `testDebugUnitTest`:

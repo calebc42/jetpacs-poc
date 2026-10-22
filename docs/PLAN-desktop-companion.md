@@ -2,8 +2,9 @@
 
 Status: active. D0, the toolchain spike, D1, the multiplatform renderer
 modules, D2, the fonts, D3, the Material seams, D4, the JVM database and
-credentials, and D5, the desktop composition root, are done (2026-10-21).
-Every later item is open.
+credentials, and D5, the desktop composition root, are done (2026-10-21);
+D6, the `emacs-unix` dialer, is done (2026-10-22). Every later item is
+open.
 
 The outcome is a Compose for Desktop Companion host at `companion/desktop`.
 It renders the same accepted EBP surfaces as `:app` against a desktop or
@@ -70,6 +71,18 @@ The EBP specification already defines this host:
   implements exactly two seams, `CompanionHostPlatform` and `HostUiPlatform`;
   Android's implementations are the code that used to be inline, and the
   Android app's behavior, classpaths and suites are unchanged by the move.
+- **Transports.** `DeviceBridge` owns the session code only; a
+  `CompanionTransport` produces connections through a seam that carries JDK
+  streams and nothing else (the Android SDK has no Unix-domain socket
+  address). The loopback-tcp listener is one transport, in `companion/host`;
+  the emacs-unix dialer is another, in `companion/desktop`. A desktop run
+  offers exactly one profile (`--transport`), because SPEC §5.6 allows both
+  but leaves cross-profile supersession undefined. The dialer redials with
+  the SPEC §5.7 jittered backoff after any close it did not initiate, at
+  once after one it asked for on a READY session, resets its attempt
+  counter only when a session reached READY, refuses a symbolic link, a
+  non-socket or another user's socket terminally and visibly, and closes a
+  dialed peer that stays silent for ten seconds, since Emacs speaks first.
 - **Credentials.** Token and HMAC key material live in the operating-system
   keychain from the first credential item: Secret Service on Linux, Keychain
   on macOS, Credential Manager on Windows. The SPEC §9.1 floor (a file only
@@ -260,11 +273,32 @@ existing gates must pass after every item.
    endpoint went away mid-session; both compile), and re-pairing (a new
    identity needs a new data directory until the SPEC §9.1 revocation flow
    has a UI on either host).
-7. **D6 — `emacs-unix` dialer.** The Companion dials a daemon Emacs socket
-   through the JDK's `UnixDomainSocketAddress` under SPEC §5.6, reusing the
-   same engine. The ebp-java host tier's dialer is the porting reference.
-   `loopback-tcp` stays the default. Evidence: pairing and a surface push over
-   the socket against `ebp-unix.el`.
+7. **D6 — `emacs-unix` dialer (done 2026-10-22).** `DeviceBridge` serves any
+   `CompanionTransport`; the loopback listener moved into one verbatim, and
+   `EmacsUnixDialer` dials a daemon Emacs's socket through the JDK's
+   `UnixDomainSocketAddress` with the rules in Decisions. The desktop takes
+   `--transport emacs-unix` and `--socket PATH` (`JETPACS_TRANSPORT`,
+   `JETPACS_SOCKET`; the socket defaults to ebp.el's own path,
+   `$XDG_RUNTIME_DIR/ebp/ebp.sock` or `$TMPDIR/ebp<uid>/ebp.sock`), names
+   the offered profile and address on the pairing screen (SPEC §5.1), emits
+   `jetpacs-transport 'emacs-unix` and `jetpacs-socket` in the init snippet,
+   and shows the dialer's state between attempts. The Emacs composition root
+   gained `jetpacs-transport` and `jetpacs-socket`: under `emacs-unix`
+   `jetpacs--start-1` binds through `ebp-unix` and never redials, and
+   `jetpacs-attach` keeps a listening or backing-off client. Evidence:
+   `:desktop:test` 32 (the dialer suite over a fake binder: the full pairing
+   script, a late socket dialed after backoff, a redial to a second READY
+   session, an immediate redial after a Companion-initiated close, a
+   terminal owner mismatch, a mute peer closed, stop while sleeping and
+   connected, the schedule); `test/smoke-desktop.el` with
+   `JETPACS_TRANSPORT=emacs-unix` against `:desktop:run --transport
+   emacs-unix` on a development pairing, run twice: Emacs binds, the
+   Companion dials, READY, `app:m3catalog` and `app:glasspane` applied, then
+   a second Emacs rebinds over the stale socket and the Companion's redial
+   reaches READY again; the loopback smoke unchanged. Not done here: the
+   `:app` instrumented suites (not run from this machine) and a real daemon
+   Emacs started by the user's init, which the smoke's batch Emacs stands in
+   for.
 8. **D7 — Desktop capability report.** A desktop device report advertises
    only implemented capabilities, such as clipboard, `state.get`,
    `trigger.fire`, `manual` and `time` triggers, and tray notifications if
@@ -308,7 +342,7 @@ existing gates must pass after every item.
 | D3 Material seams | `companion/renderer/material3` | `jvmTest` plus unchanged Android screenshots |
 | D4 database and credentials | `:core:database`, `:core:ebp-store`, rental register | Reopen, migration and credential tests on the JVM |
 | D5 composition root | `companion/host`, `companion/desktop`, `REPOSITORY-BOUNDARIES.md` | Desktop Emacs pairing, surface push and action round-trip (`test/smoke-desktop.el`, `DesktopCompanionTest`) |
-| D6 `emacs-unix` | `companion/desktop` transport adapter | Pairing and push against `ebp-unix.el` |
+| D6 `emacs-unix` | `CompanionTransport` in `companion/host`, `EmacsUnixDialer` in `companion/desktop` | Pairing and push against `ebp-unix.el` (`test/smoke-desktop.el` twice, `EmacsUnixDialerTest`) |
 | D7 capability report | `companion/desktop` | Emacs-side negotiation test |
 | D8 packaging | `companion/desktop`, testing modules, `companion/TESTING.md` | Installable artifact and JVM golden corpus |
 | D9 distributions | `../ebp/SPEC.md` §5.8 first, then `companion/desktop`, `companion/app` | Amendment aligned; a bundled build pairs with its own daemon |
@@ -365,6 +399,11 @@ The desktop host is conforming only while all applicable gates hold:
   offers no "forget this pairing"; a new identity needs a new data
   directory. The SPEC §9.1 revocation flow (fence, drain, erase the keychain
   items) needs a UI on both hosts.
+- SPEC §5.6 permits a Companion to offer `emacs-unix` beside a binding
+  profile but does not say how an authenticated session under one profile
+  meets a login under the other; the desktop offers one profile per run
+  until it does. The dialer's ten-second first-byte deadline is this
+  Companion's rule, not the SPEC's; §5.7 names only the binder's bound.
 - The Emacs side keeps `jetpacs-pairing-token` as a plain variable in the
   init file, short of SPEC §9.1's private-storage floor; an `auth-source`
   path belongs to `ebp.el` and `jetpacs-init.el`, outside this plan.

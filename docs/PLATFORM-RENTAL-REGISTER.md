@@ -95,6 +95,8 @@ Kotlin.
 | Receiver-local settings | `java.util.Properties` in `settings.properties` inside the data directory | Non-secret presentation preferences (completion narrowing, the design-runtime toggle, the pairing acknowledgement); never EBP state, never a secret. |
 | Diagnostics | `java.util.logging`, one logger per tag | The stage timer runs when `JetpacsStages` admits FINE (`-Djetpacs.stages=true`). Nothing logged carries token material. |
 | Locale advice | `java.util.Locale`, `java.util.TimeZone`, the localized short time pattern | SPEC §20.1.2 facts at start; no desktop broadcast says they changed. |
+| Loopback listener (SPEC §5.2) | `java.net.ServerSocket` bound to 127.0.0.1, as `LoopbackTcpTransport` in `companion/host` | One `CompanionTransport` among others; the bridge never binds a socket itself. |
+| Emacs socket (SPEC §5.6 `emacs-unix`) | `java.nio.channels.SocketChannel` over `java.net.UnixDomainSocketAddress` (JDK 16+), as `EmacsUnixDialer` in `companion/desktop` | Inspect the socket file before every dial (`Files.readAttributes` without following links, `Files.getOwner` against the running user's principal); refuse symbolic links, non-sockets and foreign owners terminally. Stream views read and write the channel directly, never `Channels.newInputStream`. Redial 1 s doubling to 15 s with jitter; close a silent peer after ten seconds. |
 
 ## Intentionally custom EBP behavior
 

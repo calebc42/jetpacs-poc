@@ -85,12 +85,14 @@ The following stay in this repository:
   `emacs/apps/m3-catalog`: optional Material rendering, authoring, and catalog;
 - `renderer-extensions/jetpacs-material3.json`: the Material extension authority;
 - `companion/host`: the platform-neutral Companion host both composition
-  roots share, the protocol host core and the window composition, behind
-  `CompanionHostPlatform` and `HostUiPlatform`;
+  roots share, the protocol host core, the window composition and the
+  loopback-tcp transport, behind `CompanionHostPlatform`, `HostUiPlatform`
+  and `CompanionTransport`;
 - `companion/app`: Android composition root and platform adapters over
   `companion/host`;
-- `companion/desktop`: the Compose for Desktop composition root and its JDK
-  and AWT adapters ([`PLAN-desktop-companion.md`](PLAN-desktop-companion.md));
+- `companion/desktop`: the Compose for Desktop composition root, its JDK
+  and AWT adapters and the `emacs-unix` dialer
+  ([`PLAN-desktop-companion.md`](PLAN-desktop-companion.md));
 - `emacs/jetpacs-*.el`: surface builders, shell, chrome, navigation, files,
   reader/editor hosts, Org presentation adapters, app host, and device policy;
 - composition policy that selects extension-owned generated projections;
