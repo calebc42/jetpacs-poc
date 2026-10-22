@@ -2,10 +2,11 @@
 package com.calebc42.jetpacs.companion
 
 import android.content.Context
+import com.calebc42.jetpacs.companion.host.ExperimentalDesignRuntime
 
 /** Device-global, receiver-owned persistence for the experimental runtime. */
 internal object ExperimentalElispDesignRuntime {
-    const val LABEL = "Experimental Elisp design runtime"
+    const val LABEL = ExperimentalDesignRuntime.LABEL
     private const val PREFERENCES = "jetpacs_experiments"
     private const val ENABLED = "elisp_design_runtime_enabled"
 
@@ -20,19 +21,4 @@ internal object ExperimentalElispDesignRuntime {
             .edit()
             .putBoolean(ENABLED, enabled)
             .commit()
-}
-
-/** Ordered toggle transaction, split out so failure and reconnect are unit-testable. */
-internal fun applyExperimentalDesignRuntimeChange(
-    current: Boolean,
-    requested: Boolean,
-    persist: (Boolean) -> Boolean,
-    publish: (Boolean) -> Unit,
-    closeActiveSession: () -> Unit,
-): Boolean {
-    if (current == requested) return true
-    if (!persist(requested)) return false
-    publish(requested)
-    closeActiveSession()
-    return true
 }

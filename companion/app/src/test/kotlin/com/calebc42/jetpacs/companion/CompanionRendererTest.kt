@@ -24,7 +24,7 @@ import org.junit.Test
 class CompanionRendererTest {
     @Test
     fun designRuntimeIsDefaultOffWithoutLeakingJetpacsIntoDialogs() {
-        val profiles = CompanionRenderer.surfaceProfiles()
+        val profiles = AndroidCompanionRenderer.surfaceProfiles()
         fun extensions(target: String): Set<String> =
             (((profiles.getValue(target) as JsonObject)
                 .getValue("extensions") as JsonArray))
@@ -42,7 +42,7 @@ class CompanionRendererTest {
 
     @Test
     fun disabledInstallationRecognizesCachedDesignWithoutOwningOrExecutingIt() {
-        val disabled = CompanionRenderer.installation(false)
+        val disabled = AndroidCompanionRenderer.installation(false)
 
         assertTrue(disabled.nodeVocabulary.schema.keys.containsAll(JETPACS_DESIGN_NODE_SCHEMA.keys))
         assertFalse(JETPACS_DESIGN_EXTENSION in disabled.nodeVocabulary.extensions)
@@ -61,8 +61,8 @@ class CompanionRendererTest {
 
     @Test
     fun enabledInstallationAddsTypedAdmissionSemanticsAndComposeAsOneUnit() {
-        val disabled = CompanionRenderer.installation(false)
-        val enabled = CompanionRenderer.installation(true)
+        val disabled = AndroidCompanionRenderer.installation(false)
+        val enabled = AndroidCompanionRenderer.installation(true)
 
         assertEquals(
             disabled.appProfile.nodeTypes + JETPACS_DESIGN_NODE_SCHEMA.keys,
@@ -104,23 +104,23 @@ class CompanionRendererTest {
     fun admissionAndComposeDispatchInstallTheSameJetpacsNodes() {
         val owned = JETPACS_COMPONENTS_NODE_SCHEMA.keys
 
-        assertTrue(CompanionRenderer.APP_NODE_TYPES.containsAll(owned))
+        assertTrue(AndroidCompanionRenderer.APP_NODE_TYPES.containsAll(owned))
         assertEquals(
             owned,
-            CompanionRenderer.NODE_VOCABULARY.extensions
+            AndroidCompanionRenderer.NODE_VOCABULARY.extensions
                 .getValue(JETPACS_COMPONENTS_EXTENSION),
         )
         assertEquals(
             JETPACS_COMPONENTS_SELECTION_OPTIONS,
-            CompanionRenderer.NODE_VOCABULARY.selectionOptions,
+            AndroidCompanionRenderer.NODE_VOCABULARY.selectionOptions,
         )
         assertEquals(
             JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT,
-            CompanionRenderer.NODE_VOCABULARY.trueRequiresParent,
+            AndroidCompanionRenderer.NODE_VOCABULARY.trueRequiresParent,
         )
         assertEquals(
             JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS,
-            CompanionRenderer.composeConfiguration.pinnedNodeMembers,
+            AndroidCompanionRenderer.composeConfiguration.pinnedNodeMembers,
         )
         assertEquals(
             mapOf(
@@ -129,25 +129,25 @@ class CompanionRendererTest {
             ),
             JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS,
         )
-        assertEquals(owned, CompanionRenderer.composeConfiguration.extensions.nodeTypes)
+        assertEquals(owned, AndroidCompanionRenderer.composeConfiguration.extensions.nodeTypes)
         assertEquals(
             setOf(JETPACS_MATERIAL3_EXTENSION, JETPACS_COMPONENTS_EXTENSION),
-            CompanionRenderer.composeConfiguration.appExtensions,
+            AndroidCompanionRenderer.composeConfiguration.appExtensions,
         )
         assertEquals(
             setOf(JETPACS_MATERIAL3_EXTENSION),
-            CompanionRenderer.composeConfiguration.dialogExtensions,
+            AndroidCompanionRenderer.composeConfiguration.dialogExtensions,
         )
         assertEquals(
             setOf(JETPACS_COMPONENTS_EXTENSION),
-            CompanionRenderer.composeConfiguration.canonicalOverrides.designScopes,
+            AndroidCompanionRenderer.composeConfiguration.canonicalOverrides.designScopes,
         )
         assertEquals(
             setOf("text_input", "editor"),
-            CompanionRenderer.composeConfiguration.canonicalOverrides
+            AndroidCompanionRenderer.composeConfiguration.canonicalOverrides
                 .nodeTypesFor(JETPACS_COMPONENTS_EXTENSION),
         )
-        val designOverrides = CompanionRenderer.installation(designRuntimeEnabled = true)
+        val designOverrides = AndroidCompanionRenderer.installation(designRuntimeEnabled = true)
             .composeConfiguration.canonicalOverrides
         assertEquals(
             setOf(JETPACS_COMPONENTS_EXTENSION, JETPACS_DESIGN_EXTENSION),
@@ -161,12 +161,12 @@ class CompanionRendererTest {
             ),
             designOverrides.nodeTypesFor(JETPACS_DESIGN_EXTENSION),
         )
-        assertTrue(owned.none { it in CompanionRenderer.DIALOG_NODE_TYPES })
+        assertTrue(owned.none { it in AndroidCompanionRenderer.DIALOG_NODE_TYPES })
     }
 
     @Test
     fun tileProfileIsNodeLessAndContextless() {
-        val profile = CompanionRenderer.surfaceProfiles().getValue("tile") as JsonObject
+        val profile = AndroidCompanionRenderer.surfaceProfiles().getValue("tile") as JsonObject
         assertEquals(0, (profile.getValue("node_types") as JsonArray).size)
         assertEquals(
             setOf(

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -8,7 +8,7 @@ import org.junit.Test
 class DeviceLocaleTest {
     @Test
     fun twentyFourHourClockIsH23() {
-        val advice = AppCapabilities.localeAdvice("de-DE", true, "Europe/Berlin")
+        val advice = localeAdvice("de-DE", true, "Europe/Berlin")
         assertEquals("de-DE", advice.tag)
         assertEquals("h23", advice.hourCycle)
         assertEquals("Europe/Berlin", advice.timeZone)
@@ -16,7 +16,7 @@ class DeviceLocaleTest {
 
     @Test
     fun twelveHourClockIsH12() {
-        val advice = AppCapabilities.localeAdvice("en-US", false, "America/Denver")
+        val advice = localeAdvice("en-US", false, "America/Denver")
         assertEquals("h12", advice.hourCycle)
         assertEquals("en-US", advice.tag)
         assertEquals("America/Denver", advice.timeZone)

@@ -12,76 +12,40 @@ import android.os.Handler
 import android.os.Looper
 import android.widget.Toast
 import com.calebc42.jetpacs.companion.host.AppSurfaceRegistry
-import java.util.concurrent.atomic.AtomicLong
-import kotlinx.coroutines.flow.MutableStateFlow
+import com.calebc42.jetpacs.companion.host.CompanionPresentation
+import com.calebc42.jetpacs.companion.host.CompanionProcess
+import com.calebc42.jetpacs.companion.host.CompanionStores
+import com.calebc42.jetpacs.companion.host.DeviceBridge
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.json.JsonObject
 
 class JetpacsApplication : Application() {
 
-    // Process-owned presentation state: the bridge writes, any Activity
-    // observes. An Activity is a pure renderer of these flows — no bridge
-    // callback may close over one (RF-0.5a's gate condition).
-    private val appSurfaces = AppSurfaceRegistry()
+    // Process-owned presentation state lives in the shared CompanionPresentation:
+    // the bridge writes, any Activity observes. These members keep the Activity,
+    // the receivers and the widgets reading it under their existing names. An
+    // Activity is a pure renderer of these flows — no bridge callback may close
+    // over one (RF-0.5a's gate condition).
+    val presentation: CompanionPresentation get() = container.presentation
     internal val appSurfaceCatalog: StateFlow<AppSurfaceRegistry.Catalog>
-        get() = appSurfaces.catalog
-    fun appSurface(surfaceId: String): StateFlow<JsonObject?> =
-        appSurfaces.surface(surfaceId)
-    // D-3(d): `epoch` advances on EVERY show, so a same-id dialog is a
-    // DISTINCT value twice over — the renderer keys its per-dialog field
-    // state on it (a same-id successor must never inherit its
-    // predecessor's typed fields, SPEC 18.1), and the StateFlow's
-    // equality-conflation can never swallow a re-show whose id and spec
-    // are structurally identical to what is already on screen.
-    data class DialogShow(val id: String, val spec: JsonObject, val epoch: Long)
-    private var dialogEpoch = 0L
-    private val _currentDialog = MutableStateFlow<DialogShow?>(null)
-    val currentDialog: StateFlow<DialogShow?> get() = _currentDialog
-    // SPEC 18.4: the accepted theme payload ({dark, colors, syntax}) to mirror,
-    // or null for the native scheme (dark = follow-system, amendment #36).
-    private val _theme = MutableStateFlow<JsonObject?>(null)
-    val theme: StateFlow<JsonObject?> get() = _theme
-    private val _currentPieMenu = MutableStateFlow<Pair<String, JsonObject>?>(null)
-    val currentPieMenu: StateFlow<Pair<String, JsonObject>?> get() = _currentPieMenu
-    // SPEC 14.2 companion.settings.open (R4): the Companion's OWN settings
-    // sheet — receiver-local presentation state, no wire member anywhere.
-    private val _settingsOpen = MutableStateFlow(false)
-    val settingsOpen: StateFlow<Boolean> get() = _settingsOpen
-    fun dismissSettings() { _settingsOpen.value = false }
-    private val _keepScreenOn = MutableStateFlow(false)
-    val keepScreenOn: StateFlow<Boolean> get() = _keepScreenOn
-    internal fun setKeepScreenOn(enabled: Boolean) { _keepScreenOn.value = enabled }
-
-    // SPEC 14.2 `surface.open`: an occurrence is receiver-local host-shell
-    // navigation, not a surface refresh. The epoch prevents StateFlow's
-    // equality conflation from swallowing two taps on the same destination.
-    data class SurfaceOpenRequest(
-        val surfaceId: String,
-        val epoch: Long,
-    )
-    private val surfaceOpenEpoch = AtomicLong()
-    private val _surfaceOpenRequest = MutableStateFlow<SurfaceOpenRequest?>(null)
-    val surfaceOpenRequest: StateFlow<SurfaceOpenRequest?> get() = _surfaceOpenRequest
-    fun dismissSurfaceOpen(epoch: Long) {
-        if (_surfaceOpenRequest.value?.epoch == epoch) {
-            _surfaceOpenRequest.value = null
-        }
-    }
-
-    private fun requestSurfaceOpen(surfaceId: String) {
-        _surfaceOpenRequest.value = SurfaceOpenRequest(
-            surfaceId = surfaceId,
-            epoch = surfaceOpenEpoch.incrementAndGet(),
-        )
-    }
-
-    internal fun requestSurfaceOpenFromPlatform(surfaceId: String) {
-        requestSurfaceOpen(surfaceId)
-    }
+        get() = presentation.appSurfaceCatalog
+    fun appSurface(surfaceId: String): StateFlow<JsonObject?> = presentation.appSurface(surfaceId)
+    val currentDialog: StateFlow<CompanionPresentation.DialogShow?> get() = presentation.currentDialog
+    val theme: StateFlow<JsonObject?> get() = presentation.theme
+    val currentPieMenu: StateFlow<Pair<String, JsonObject>?> get() = presentation.currentPieMenu
+    val settingsOpen: StateFlow<Boolean> get() = presentation.settingsOpen
+    fun dismissSettings() = presentation.dismissSettings()
+    val keepScreenOn: StateFlow<Boolean> get() = presentation.keepScreenOn
+    internal fun setKeepScreenOn(enabled: Boolean) = presentation.setKeepScreenOn(enabled)
+    val surfaceOpenRequest: StateFlow<CompanionPresentation.SurfaceOpenRequest?>
+        get() = presentation.surfaceOpenRequest
+    fun dismissSurfaceOpen(epoch: Long) = presentation.dismissSurfaceOpen(epoch)
+    internal fun requestSurfaceOpenFromPlatform(surfaceId: String) =
+        presentation.requestSurfaceOpen(surfaceId)
 
     lateinit var bridge: DeviceBridge
         private set
-    lateinit var container: JetpacsProcessContainer
+    lateinit var container: CompanionProcess
         private set
     val stores: CompanionStores get() = container.stores
 
@@ -97,16 +61,16 @@ class JetpacsApplication : Application() {
         com.calebc42.jetpacs.material3.ImageCache.configure(
             am.memoryClass.toLong() * 1024 * 1024 / 8)
         container = JetpacsProcessContainer.create(this)
+        val presentation = container.presentation
         // The best-effort FGS owns listener lifetime. This process root constructs the
         // bridge once, but does not claim that process existence means the
         // listener or an Emacs session is alive.
         bridge = DeviceBridge(
-            this,
+            platform = container.platform,
+            renderer = AndroidCompanionRenderer,
             stores = container.stores,
-            proofProvider = container.proofProvider,
-            onSurfaceChanged = { surface, spec ->
-                appSurfaces.publish(surface, spec)
-            },
+            proofProvider = container.credentials.proofProvider,
+            onSurfaceChanged = presentation.onSurfaceChanged,
             onWidgetSurfaceChanged = { surface ->
                 WidgetUpdateCoordinator.enqueueSurface(this, surface)
             },
@@ -117,7 +81,7 @@ class JetpacsApplication : Application() {
                 )
                 WidgetUpdateCoordinator.enqueueAll(this)
             },
-            onAppSurfaceCacheLoaded = appSurfaces::markLoaded,
+            onAppSurfaceCacheLoaded = presentation.onAppSurfaceCacheLoaded,
             // SPEC 15.1: storage failure and queue exhaustion MUST reach the
             // user as a visible diagnostic.
             onQueueProblem = { message ->
@@ -126,24 +90,17 @@ class JetpacsApplication : Application() {
                                    Toast.LENGTH_LONG).show()
                 }
             },
-            onDialogChanged = { id, spec ->
-                // SPEC 18.1: one outstanding dialog presented at a time here.
-                _currentDialog.value =
-                    if (spec != null && id != null)
-                        DialogShow(id, spec, ++dialogEpoch)
-                    else null
-            },
+            onDialogChanged = presentation.onDialogChanged,
             onToast = { text ->
                 mainHandler.post {
                     Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
                 }
             },
-            onTheme = { payload -> _theme.value = payload },
-            onPieMenuChanged = { id, spec ->
-                _currentPieMenu.value = if (spec != null) id to spec else null
-            },
-            onOpenSurface = ::requestSurfaceOpen,
-            onOpenSettings = { _settingsOpen.value = true })
+            onTheme = presentation.onTheme,
+            onPieMenuChanged = presentation.onPieMenuChanged,
+            onOpenSurface = presentation.onOpenSurface,
+            onOpenSettings = presentation.onOpenSettings,
+        )
         WidgetUpdateCoordinator.start(this, processStartedAtEpochMs)
     }
 }

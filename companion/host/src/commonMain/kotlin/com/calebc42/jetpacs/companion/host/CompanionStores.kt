@@ -1,14 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
-import android.content.Context
-import android.provider.Settings
 import com.calebc42.ebp.wire.AppSurfaceAdmission
 import com.calebc42.ebp.wire.CapabilityHandler
 import com.calebc42.ebp.wire.DurableQueue
 import com.calebc42.ebp.wire.EbpActorOverloaded
 import com.calebc42.ebp.wire.EbpCommandActor
 import com.calebc42.ebp.wire.LiveSession
+import com.calebc42.ebp.wire.MAX_WIDGET_LAZY_ITEMS
+import com.calebc42.ebp.wire.MAX_WIDGET_NODES
+import com.calebc42.ebp.wire.MAX_WIDGET_NODE_DEPTH
+import com.calebc42.ebp.wire.MAX_WIDGET_SIZE_VARIANTS
 import com.calebc42.ebp.wire.PairingId
 import com.calebc42.ebp.wire.ReminderStore
 import com.calebc42.ebp.wire.SurfaceStore
@@ -16,41 +18,49 @@ import com.calebc42.ebp.wire.TriggerFiringService
 import com.calebc42.ebp.wire.TriggerStore
 import com.calebc42.ebp.wire.jsonStringSet
 import com.calebc42.ebp.wire.memberSupportFromProfiles
-import com.calebc42.jetpacs.companion.host.RoomQueueStore
-import com.calebc42.jetpacs.companion.host.RoomReminderBacking
-import com.calebc42.jetpacs.companion.host.RoomSurfaceBacking
-import com.calebc42.jetpacs.companion.host.RoomThemeStore
-import com.calebc42.jetpacs.companion.host.RoomTriggerBacking
-import com.calebc42.jetpacs.companion.host.RoomTriggerOccurrenceCoordinator
-import com.calebc42.jetpacs.companion.host.stringOrNull
 import com.calebc42.jetpacs.core.ebpstore.RoomEbpDurableStore
 import java.util.concurrent.atomic.AtomicReference
 
 /**
  * Process-owned compatibility projections over one Room EBP store.
  *
- * The Android application is the sole constructor. No production code opens
- * a file-backed store, and every mutation is admitted through [commandActor].
+ * A composition root is the sole constructor. No production code opens a
+ * file-backed store, and every mutation is admitted through [commandActor].
+ * Everything platform-specific (the device report, trigger sources, the
+ * alarm and notification adapters) arrives through [platform]; the renderer
+ * installation through [renderer].
  */
 class CompanionStores(
-    context: Context,
+    private val platform: CompanionHostPlatform,
+    private val renderer: CompanionRenderer,
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
     val commandActor: EbpCommandActor,
+    /** `screen.keep_on`: the host's window keeps the screen awake, or not. */
+    private val setKeepScreenOn: (Boolean) -> Unit,
 ) {
-    private val app = context.applicationContext
     private val nowMs = System::currentTimeMillis
     private val triggerOccurrence = RoomTriggerOccurrenceCoordinator(durableStore, pairingId)
-    private val platformEffects = PlatformEffectReconciler(app, durableStore, pairingId, nowMs)
+    private val platformEffects = PlatformEffectReconciler(platform, durableStore, pairingId, nowMs)
 
     @Volatile private var queueInstance: DurableQueue? = null
     @Volatile private var surfacesInstance: SurfaceStore? = null
     @Volatile private var remindersInstance: ReminderStore? = null
     @Volatile private var triggersInstance: TriggerStore? = null
     @Volatile private var firingInstance: TriggerFiringService? = null
-    @Volatile private var sourcesInstance: TriggerSources? = null
+    @Volatile private var sourcesInstance: HostTriggerSources? = null
     @Volatile private var themeInstance: RoomThemeStore? = null
-    @Volatile private var capabilityHandlerInstance: CapabilityHandler? = null
+    private val capabilityHandlerInstance: Lazy<CapabilityHandler?> = lazy {
+        platform.capabilities.handler(
+            MAX_FIELD_BYTES,
+            AppCapabilityBindings(
+                pairingIdentity = pairingId.value,
+                state = triggerSources(),
+                fireManual = ::fireManualFromHost,
+                setKeepScreenOn = setKeepScreenOn,
+            ),
+        )
+    }
 
     private val liveSessionRef = AtomicReference<LiveSession?>()
 
@@ -109,32 +119,33 @@ class CompanionStores(
             maxCaptureFields = 64,
             maxChartPoints = 4096,
             maxCanvasOps = 4096,
-            appNodeTypes = CompanionRenderer.APP_NODE_TYPES,
-            notificationNodeTypes = CompanionRenderer.NOTIFICATION_NODE_TYPES,
-            widgetNodeTypes = CompanionRenderer.WIDGET_NODE_TYPES,
-            appBuiltins = CompanionRenderer.APP_BUILTINS,
-            notificationBuiltins = CompanionRenderer.NOTIFICATION_BUILTINS,
-            widgetBuiltins = CompanionRenderer.WIDGET_BUILTINS,
-            appFeatures = CompanionRenderer.APP_FEATURES,
-            notificationFeatures = CompanionRenderer.NOTIFICATION_FEATURES,
-            widgetFeatures = CompanionRenderer.WIDGET_FEATURES,
+            appNodeTypes = renderer.APP_NODE_TYPES,
+            notificationNodeTypes = renderer.NOTIFICATION_NODE_TYPES,
+            widgetNodeTypes = renderer.WIDGET_NODE_TYPES,
+            appBuiltins = renderer.APP_BUILTINS,
+            notificationBuiltins = renderer.NOTIFICATION_BUILTINS,
+            widgetBuiltins = renderer.WIDGET_BUILTINS,
+            appFeatures = renderer.APP_FEATURES,
+            notificationFeatures = renderer.NOTIFICATION_FEATURES,
+            widgetFeatures = renderer.WIDGET_FEATURES,
             widgetMembers = memberSupportFromProfiles(
-                CompanionRenderer.surfaceProfiles(),
+                renderer.surfaceProfiles(),
                 "widget",
             ),
-            maxWidgetNodes = CompanionRenderer.widgetProfile.limits!!.maxNodes,
-            maxWidgetLazyItems = CompanionRenderer.widgetProfile.limits!!.maxLazyItems,
-            maxWidgetNodeDepth = CompanionRenderer.widgetProfile.limits!!.maxNodeDepth,
-            maxWidgetSizeVariants = CompanionRenderer.widgetProfile.limits!!.maxSizeVariants,
-            tileBuiltins = CompanionRenderer.TILE_BUILTINS,
-            tileFeatures = CompanionRenderer.TILE_FEATURES,
-            tileSurfaceIds = TileSlots.surfaceIds,
-            nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
+            // A platform without a widget target keeps wire's own widget
+            // ceilings; nothing can reach them, since no widget is admitted.
+            maxWidgetNodes = renderer.widgetProfile?.limits?.maxNodes ?: MAX_WIDGET_NODES,
+            maxWidgetLazyItems = renderer.widgetProfile?.limits?.maxLazyItems ?: MAX_WIDGET_LAZY_ITEMS,
+            maxWidgetNodeDepth = renderer.widgetProfile?.limits?.maxNodeDepth ?: MAX_WIDGET_NODE_DEPTH,
+            maxWidgetSizeVariants =
+                renderer.widgetProfile?.limits?.maxSizeVariants ?: MAX_WIDGET_SIZE_VARIANTS,
+            tileBuiltins = renderer.TILE_BUILTINS,
+            tileFeatures = renderer.TILE_FEATURES,
+            tileSurfaceIds = platform.capabilities.tileSurfaceIds,
+            nodeVocabulary = renderer.NODE_VOCABULARY,
             backing = RoomSurfaceBacking(durableStore, pairingId, nowMs),
             appAdmissionProvider = {
-                val installation = CompanionRenderer.installation(
-                    ExperimentalElispDesignRuntime.isEnabled(app),
-                )
+                val installation = renderer.installation(platform.settings.designRuntimeEnabled)
                 AppSurfaceAdmission(
                     nodeTypes = installation.appProfile.nodeTypes,
                     builtins = installation.appProfile.builtins,
@@ -171,31 +182,26 @@ class CompanionStores(
                 triggers(),
                 queue(),
                 MAX_EVENT_BYTES,
-                triggerCaps = jsonStringSet(AppCapabilities.deviceReport(app), "trigger_caps"),
+                triggerCaps = jsonStringSet(platform.capabilities.deviceReport(), "trigger_caps"),
                 capabilityHandler = capabilityHandler(),
-                bootGeneration = { bootGeneration() },
+                bootGeneration = { platform.capabilities.bootGeneration() },
                 occurrenceTransaction = triggerOccurrence,
             ).also { service ->
                 service.stateProvider = { type -> triggerSources().currentState(type) }
                 service.statePredicateProvider = { predicate ->
                     triggerSources().predicateHolds(predicate)
                 }
-                service.notifyListener = { notify -> Notifications.postTrigger(app, notify) }
-                service.onTimeScheduleChanged = { TriggerAlarms.reschedule(app, this) }
+                service.notifyListener = { notify -> platform.presentation.triggerNotification(notify) }
+                service.onTimeScheduleChanged = { platform.presentation.timeScheduleChanged(this) }
                 firingInstance = service
             }
         }
     }
 
-    private fun bootGeneration(): String? = runCatching {
-        Settings.Global.getString(app.contentResolver, Settings.Global.BOOT_COUNT)
-    }.getOrNull()
-
-    internal fun triggerSources(): TriggerSources {
+    internal fun triggerSources(): HostTriggerSources {
         sourcesInstance?.let { return it }
         return synchronized(this) {
-            sourcesInstance ?: TriggerSources(
-                app,
+            sourcesInstance ?: platform.capabilities.triggerSources(
                 onSample = { type, sample ->
                     submit { firing().observeSample(type, sample) }
                 },
@@ -206,23 +212,8 @@ class CompanionStores(
         }
     }
 
-    fun capabilityHandler(): CapabilityHandler {
-        capabilityHandlerInstance?.let { return it }
-        return synchronized(this) {
-            capabilityHandlerInstance ?: AppCapabilities.handler(
-                app,
-                MAX_FIELD_BYTES,
-                AppCapabilityBindings(
-                    pairingIdentity = pairingId.value,
-                    state = triggerSources(),
-                    fireManual = ::fireManualFromHost,
-                    setKeepScreenOn = { enabled ->
-                        (app as? JetpacsApplication)?.setKeepScreenOn(enabled)
-                    },
-                ),
-            ).also { capabilityHandlerInstance = it }
-        }
-    }
+    /** SPEC 20.2: the platform's capability executor, or null where it offers none. */
+    fun capabilityHandler(): CapabilityHandler? = capabilityHandlerInstance.value
 
     /** `trigger.fire` succeeds only for a stored manual registration. */
     internal fun fireManualFromHost(triggerId: String): Boolean {

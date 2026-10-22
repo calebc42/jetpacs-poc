@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
-import android.content.Context
-import android.util.Log
 import com.calebc42.ebp.wire.DurablePlatformEffect
 import com.calebc42.ebp.wire.PairingId
 import com.calebc42.ebp.wire.claimPlatformEffect
@@ -19,14 +17,12 @@ import kotlinx.serialization.json.put
  * A crash after NotificationManager accepts a reminder merely replaces the
  * same tag/id on replay; a crash before that leaves the lease reclaimable.
  */
-internal class PlatformEffectReconciler(
-    context: Context,
+class PlatformEffectReconciler(
+    private val platform: CompanionHostPlatform,
     private val durableStore: RoomEbpDurableStore,
     private val pairingId: PairingId,
     private val nowMs: () -> Long = System::currentTimeMillis,
 ) {
-    private val app = context.applicationContext
-
     suspend fun drain() {
         val durableFloor = durableStore.restore(pairingId).platformEffects.maxOfOrNull { effect ->
             maxOf(
@@ -53,7 +49,7 @@ internal class PlatformEffectReconciler(
 
             val completed = runCatching { execute(effect) }
                 .onFailure { failure ->
-                    Log.w(TAG, "Platform effect ${effect.effectId} will be retried", failure)
+                    platform.log.w(TAG, "Platform effect ${effect.effectId} will be retried", failure)
                 }
                 .getOrDefault(false)
             if (!completed) return
@@ -84,17 +80,11 @@ internal class PlatformEffectReconciler(
             // crash-stranded pre-actions effects (which carried title/body but
             // no nested reminder) replayable across the upgrade.
             if (current == null) return true
-            Notifications.postReminder(
-                app,
-                owner,
-                reminderId,
-                atMs,
-                current.payload,
-            )
+            platform.presentation.postReminder(owner, reminderId, atMs, current.payload)
             true
         }
         else -> {
-            Log.w(TAG, "Unknown platform effect kind ${effect.kind}; retaining it for an update")
+            platform.log.w(TAG, "Unknown platform effect kind ${effect.kind}; retaining it for an update")
             false
         }
     }

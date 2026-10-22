@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
 import com.calebc42.ebp.wire.SessionState
 import com.calebc42.ebp.renderer.model.EditorConnectionPhase
@@ -9,11 +9,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ReconnectNotificationTest {
-    @Test
-    fun notificationTargetsAndroidEmacs() {
-        assertEquals("org.gnu.emacs", ANDROID_EMACS_PACKAGE)
-    }
-
     @Test
     fun onlyAuthenticatedStatesCountAsAConnection() {
         assertFalse(isAuthenticatedConnectionState(SessionState.CONNECTED))

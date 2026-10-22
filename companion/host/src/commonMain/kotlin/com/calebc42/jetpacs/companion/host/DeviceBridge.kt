@@ -1,12 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// The android-loopback-tcp binder (SPEC 5.2): 127.0.0.1:8765, one client,
-// a new authenticated session supersedes the old. Wraps CompanionEngine;
-// the store outlives connections (SPEC 10.4).
-//
-// W4 SMOKE SCOPE: the pairing is the SPEC 9.3 known-answer credentials so
-// the desktop can drive the device before the pairing UI exists (arrives
-// with onboarding). Not a secret and not a deployment configuration.
-package com.calebc42.jetpacs.companion
+// The loopback-tcp binder (SPEC 5.2): 127.0.0.1 on the platform's port, one
+// client, a new authenticated session supersedes the old. Wraps
+// CompanionEngine; the store outlives connections (SPEC 10.4). Platform
+// neutral: every operating-system call goes through CompanionHostPlatform.
+package com.calebc42.jetpacs.companion.host
 
 import com.calebc42.ebp.renderer.model.ActionHandoff
 import com.calebc42.ebp.renderer.model.CandidateDocument
@@ -42,13 +39,6 @@ import com.calebc42.ebp.wire.Utf16Pos
 import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
 import com.calebc42.ebp.wire.dispatchContextless
 import com.calebc42.ebp.wire.utf16PosIn
-import com.calebc42.jetpacs.companion.host.CandidateDocSlot
-import com.calebc42.jetpacs.companion.host.FrameReader
-import com.calebc42.jetpacs.companion.host.offerEpochCurrent
-import com.calebc42.jetpacs.companion.host.RendererOutcomeGate
-import com.calebc42.jetpacs.companion.host.SecretActionAttempt
-import com.calebc42.jetpacs.companion.host.SurfacePresenter
-import com.calebc42.jetpacs.companion.host.SystemSecretDeadlineScheduler
 import com.calebc42.jetpacs.material3.ImageCache
 import com.calebc42.jetpacs.material3.MaterialRendererHost
 import com.calebc42.jetpacs.material3.RetainedPresentationIncarnationTracker
@@ -83,8 +73,6 @@ internal fun editorConnectionPhaseOf(state: SessionState?): EditorConnectionPhas
         SessionState.READY -> EditorConnectionPhase.READY
         else -> EditorConnectionPhase.OFFLINE
     }
-
-private const val MAX_INPUT_STATE_BYTES = 262_144L
 
 /** A cached surface can be interactive before a replacement engine exists.
  * Every non-closed engine remains the ordering authority, including its
@@ -243,7 +231,8 @@ internal class ReadyConnectionTracker<T : Any> {
 }
 
 class DeviceBridge(
-    private val appContext: android.content.Context,
+    private val platform: CompanionHostPlatform,
+    private val renderer: CompanionRenderer,
     private val stores: CompanionStores,
     private val proofProvider: CompanionProofProvider,
     /** SPEC 14.4: the shown surface's ID travels with its spec, so an
@@ -295,8 +284,6 @@ class DeviceBridge(
         const val DRAFT_FLUSH_WINDOW_MS = 400L
     }
 
-    internal val context: android.content.Context get() = appContext
-
     // SPEC 13.1/15.1/18.6: the durable stores are process-wide singletons
     // (CompanionStores), shared with cold-started manifest receivers.
     // The composition root initializes these projections from Room on its IO
@@ -327,12 +314,12 @@ class DeviceBridge(
         get() = _editorConnectionPhase
 
     private val _experimentalDesignRuntimeEnabled = MutableStateFlow(
-        ExperimentalElispDesignRuntime.isEnabled(appContext),
+        platform.settings.designRuntimeEnabled,
     )
     val experimentalDesignRuntimeEnabled: StateFlow<Boolean>
         get() = _experimentalDesignRuntimeEnabled
     private val _rendererInstallation = MutableStateFlow(
-        CompanionRenderer.installation(_experimentalDesignRuntimeEnabled.value),
+        renderer.installation(_experimentalDesignRuntimeEnabled.value),
     )
     val rendererInstallation: StateFlow<CompanionRendererInstallation>
         get() = _rendererInstallation
@@ -342,77 +329,27 @@ class DeviceBridge(
         serverVersion = "0.1.0-w4",
         pairings = emptyMap(),
         proofProvider = proofProvider,
-        supportedCapabilities = setOf("theme", "surfaces.dialog", "presentation.toast",
-            "presentation.snackbar",
-            "presentation.pie-menu", "reminders.owner", "reminders.actions",
-            "surfaces.notification",
-            "surfaces.widget", "surfaces.tile",
-            "editor.sync", "capabilities", "triggers",
-            // EBP 13.8 (amendment #194): the surface data document.
-            "data.model"),
-        // `offline.wake` is deliberately absent until the user configures an
-        // exact, inert OS-local Emacs wake target and the host rechecks it at
-        // every send (SPEC 5.3). A durable queue alone is not a wake grant.
+        // SPEC 22.1: what this host implements, and only that. The platform
+        // adapter owns the set; `offline.wake` is never in it without an
+        // exact, inert OS-local Emacs wake target rechecked at every send
+        // (SPEC 5.3). A durable queue alone is not a wake grant.
+        supportedCapabilities = platform.capabilities.supportedCapabilities,
         // SPEC 10.2: what this build's renderer actually honors — derived from
-        // the render/NodeSupport registry (the pin test holds the renderer's
+        // the renderer registries (the pin test holds the renderer's
         // dispatch to the same sets), never hand-kept here.
-        surfaceProfiles = CompanionRenderer.surfaceProfiles(),
-        nodeVocabulary = CompanionRenderer.NODE_VOCABULARY,
-        // C6: every value below stays INTEGER-spelled. The engine's constructor
-        // reads the limits with reqLong, so a `.0` spelling would not merely
-        // widen a bound — it would throw at engine construction.
-        limits = buildJsonObject {
-            put("max_frame_bytes", 4_194_304)
-            put("max_queued_events", 256)
-            put("max_queued_bytes", 8_388_608)
-            put("max_event_bytes", 262_144)
-            put("max_surfaces", 64)
-            put("max_surface_ids", 4096)
-            put("max_field_bytes", 65_536)
-            put("max_input_state_bytes", MAX_INPUT_STATE_BYTES)
-            put("max_capture_fields", 64)
-            put("max_dialogs", 4)
-            put("max_pie_menus", 1)
-            put("max_reminders", 256)
-            put("max_editor_sessions", 8)
-            put("max_trigger_responses", 8)
-            put("max_triggers", 64)
-            put("max_device_report_bytes", AppCapabilities.MAX_DEVICE_REPORT_BYTES)
-            put("max_shortcut_icon_bytes", AppCapabilities.MAX_SHORTCUT_ICON_BYTES)
-            put("max_shortcuts", AppCapabilities.MAX_SHORTCUTS)
-            // SPEC 4.5/17.2: the three image limits are REQUIRED whenever image
-            // is advertised — the same constants the loader enforces (no drift).
-            put("max_image_bytes",
-                com.calebc42.jetpacs.material3.ImageLoader.MAX_IMAGE_BYTES)
-            put("max_decoded_image_bytes",
-                com.calebc42.jetpacs.material3.ImageLoader.MAX_DECODED_IMAGE_BYTES)
-            put("max_image_pixels",
-                com.calebc42.jetpacs.material3.ImageLoader.MAX_IMAGE_PIXELS)
-            // SPEC 4.5/17.5: REQUIRED whenever chart/canvas are advertised.
-            put("max_chart_points", 4096)
-            put("max_canvas_ops", 4096)
-            // SPEC 4.5: REQUIRED whenever rich_text/table are advertised —
-            // aggregate counts across one SurfaceSpec or dialog (LD-22).
-            put("max_rich_spans", 4096)
-            put("max_table_cells", 4096)
-            // Retained alternatives are bounded independently of the global
-            // node count so a sender can size authoring work to this host.
-            put("max_variants_per_host",
-                com.calebc42.ebp.wire.WireLimits.MAX_VARIANTS_PER_HOST)
-            // SPEC 4.5 (amendment #84): REQUIRED when editor.sync is granted.
-            // Declared at the floor: it is what keeps every editor path
-            // (shadow rebuild, diff, highlight, relayout) comfortably linear.
-            put("max_editor_bytes", CompanionStores.MAX_EDITOR_BYTES)
-        },
+        surfaceProfiles = renderer.surfaceProfiles(),
+        nodeVocabulary = renderer.NODE_VOCABULARY,
+        // SPEC 4.5: the one limits object every host advertises (CompanionLimits.kt).
+        limits = companionLimits(),
         // SPEC 20.1/20.2: advertise the device report and the platform executor.
-        deviceReport = AppCapabilities.deviceReport(appContext),
+        deviceReport = platform.capabilities.deviceReport(),
         // Permissions and the launchable-app inventory may change without a
         // process restart. Each connection gets one fresh welcome snapshot.
-        deviceReportProvider = { AppCapabilities.deviceReport(appContext) },
+        deviceReportProvider = { platform.capabilities.deviceReport() },
         capabilityHandler = stores.capabilityHandler(),
-        // Room encrypts every queued payload with an identity-scoped Android
-        // KeyStore key, so queued sms/call fire data satisfies SPEC 21.5.
-        sensitiveQueueEncrypted = true,
+        // SPEC 21.5: true only where the platform's keystore protects every
+        // queued payload at rest; the platform adapter says so.
+        sensitiveQueueEncrypted = platform.capabilities.sensitiveQueueEncrypted,
     )
 
     /**
@@ -425,10 +362,10 @@ class DeviceBridge(
         val applied = applyExperimentalDesignRuntimeChange(
             current = _experimentalDesignRuntimeEnabled.value,
             requested = enabled,
-            persist = { ExperimentalElispDesignRuntime.persist(appContext, it) },
+            persist = platform.settings::persistDesignRuntimeEnabled,
             publish = {
                 _experimentalDesignRuntimeEnabled.value = it
-                _rendererInstallation.value = CompanionRenderer.installation(it)
+                _rendererInstallation.value = renderer.installation(it)
             },
             closeActiveSession = { activeTransport?.runCatching { close() } },
         )
@@ -448,7 +385,8 @@ class DeviceBridge(
 
     private fun saveTheme(payload: JsonObject) = stores.theme().replace(payload)
 
-    internal fun hasReadySession(): Boolean = readyConnection.connected()
+    /** Whether the newest transport generation has reached READY. */
+    fun hasReadySession(): Boolean = readyConnection.connected()
 
     private fun persistReadyConnectionChange(disconnectedAtEpochMs: Long?) {
         // Queued on the process actor, which runs it in order behind
@@ -465,11 +403,7 @@ class DeviceBridge(
                 }
             }
         } catch (failure: Throwable) {
-            android.util.Log.e(
-                "EbpBridge",
-                "Could not persist READY connection lifecycle",
-                failure,
-            )
+            platform.log.e("EbpBridge", "Could not persist READY connection lifecycle", failure)
         }
     }
 
@@ -490,17 +424,7 @@ class DeviceBridge(
         if (!running.compareAndSet(false, true)) return
         // SPEC 20.1.2 (#197): the platform says when the locale, the clock
         // cycle or the time zone changed; every live session hears it once.
-        runCatching {
-            appContext.registerReceiver(
-                localeReceiver,
-                android.content.IntentFilter().apply {
-                    addAction(android.content.Intent.ACTION_LOCALE_CHANGED)
-                    addAction(android.content.Intent.ACTION_TIMEZONE_CHANGED)
-                    addAction(android.content.Intent.ACTION_TIME_CHANGED)
-                },
-                android.content.Context.RECEIVER_NOT_EXPORTED,
-            )
-        }
+        localeObserver = runCatching { platform.locale.observe { localeChanged() } }.getOrNull()
         listenerThread = thread(name = "ebp-bridge", isDaemon = true) {
         // Deliver the cached theme before any session so a reconnecting device
         // renders in the mirrored palette immediately (§18.4 persistence).
@@ -523,7 +447,7 @@ class DeviceBridge(
                     onSurfaceChanged(it, resolveView(it))
                 }
         } catch (e: Exception) {
-            android.util.Log.e("EbpBridge", "Could not restore cached surfaces", e)
+            platform.log.e("EbpBridge", "Could not restore cached surfaces", e)
         } finally {
             onAppSurfaceCacheLoaded()
         }
@@ -541,7 +465,7 @@ class DeviceBridge(
                     listenerServer = server
                     server.reuseAddress = true
                     // SPEC 5.2: bind only a loopback interface.
-                    server.bind(InetSocketAddress("127.0.0.1", 8765))
+                    server.bind(InetSocketAddress("127.0.0.1", platform.loopbackPort))
                     while (running.get()) {
                         val socket = server.accept()
                         // Request/response frames are small and the peer
@@ -576,11 +500,7 @@ class DeviceBridge(
                             runCatching { serve(socket, generation) }
                                 .onFailure { failure ->
                                     if (failure !is SocketException) {
-                                        android.util.Log.e(
-                                            "EbpBridge",
-                                            "Connection setup failed",
-                                            failure,
-                                        )
+                                        platform.log.e("EbpBridge", "Connection setup failed", failure)
                                     }
                                 }
                             socket.runCatching { close() }
@@ -595,7 +515,7 @@ class DeviceBridge(
                 // Closing the owned ServerSocket above prevents an orphaned
                 // bound port. A short retry keeps process startup and a
                 // transient accept failure from making reconnect impossible.
-                android.util.Log.w("EbpBridge", "Listener restarting", e)
+                platform.log.w("EbpBridge", "Listener restarting", e)
                 try {
                     Thread.sleep(500)
                 } catch (_: InterruptedException) {
@@ -612,7 +532,8 @@ class DeviceBridge(
     /** Stop the listener and current transport; the FGS owns restart policy. */
     fun stop() {
         if (!running.compareAndSet(true, false)) return
-        runCatching { appContext.unregisterReceiver(localeReceiver) }
+        localeObserver?.runCatching { close() }
+        localeObserver = null
         listenerServer?.runCatching { close() }
         current?.runCatching { close() }
         listenerThread?.interrupt()
@@ -816,7 +737,7 @@ class DeviceBridge(
                 return@execute
             }
             val traceVariant = descriptor.stringOr("builtin") == "variant.switch"
-            if (traceVariant) android.os.Trace.beginSection("EBP variant.switch")
+            if (traceVariant) platform.trace.begin("EBP variant.switch")
             try {
                 if (traceVariant && !surface.startsWith("dialog:")) {
                     variantEngineRoute.withCurrent { activeEngine ->
@@ -881,7 +802,7 @@ class DeviceBridge(
                 ) { outcome -> completeOutcome(onOutcome, outcome) }
                     ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
             } finally {
-                if (traceVariant) android.os.Trace.endSection()
+                if (traceVariant) platform.trace.end()
             }
         }
     }
@@ -896,12 +817,7 @@ class DeviceBridge(
                         )
                     }
                 }
-                "clipboard.copy" -> appContext.getSystemService(
-                    android.content.ClipboardManager::class.java,
-                ).setPrimaryClip(android.content.ClipData.newPlainText(
-                    "EBP",
-                    descriptor.stringOr("text"),
-                ))
+                "clipboard.copy" -> platform.clipboard.copy("EBP", descriptor.stringOr("text"))
                 "surface.open" -> onOpenSurface(descriptor.stringOr("surface"))
                 "companion.settings.open" -> onOpenSettings()
                 else -> return RendererActionOutcome.NotAdmitted(
@@ -1051,7 +967,7 @@ class DeviceBridge(
         callback: (RendererActionOutcome) -> Unit,
         outcome: RendererActionOutcome,
     ) {
-        appContext.mainExecutor.execute { callback(outcome) }
+        platform.uiExecutor.execute { callback(outcome) }
     }
 
     private fun rendererNotReadyOutcome() = RendererActionOutcome.NotAdmitted(
@@ -1092,10 +1008,10 @@ class DeviceBridge(
     // C2c: one serial presentation thread; see SurfacePresenter.
     private val presenter = SurfacePresenter(
         onFailure = { surface, failure ->
-            android.util.Log.e("EbpBridge", "presentation of $surface failed", failure)
+            platform.log.e("EbpBridge", "presentation of $surface failed", failure)
         },
         onTiming = { surface, waitNanos, runNanos ->
-            android.util.Log.d(
+            platform.log.d(
                 STAGE_LOG_TAG,
                 "present $surface wait=${waitNanos / 1000}us run=${runNanos / 1000}us",
             )
@@ -1321,16 +1237,10 @@ class DeviceBridge(
      * presentation, user-settable, persisted; strict is the reference
      * default. No wire member anywhere: Emacs cannot tell the policies
      * apart, which is what made this a setting instead of a schism. */
-    override var completionNarrowing: CompletionNarrowing =
-        if (appContext.getSharedPreferences("ebp", android.content.Context.MODE_PRIVATE)
-                .getString("completion_narrowing", "strict") == "contains")
-            CompletionNarrowing.CONTAINS else CompletionNarrowing.STRICT
+    override var completionNarrowing: CompletionNarrowing = platform.settings.completionNarrowing
         set(value) {
             field = value
-            appContext.getSharedPreferences("ebp", android.content.Context.MODE_PRIVATE)
-                .edit().putString("completion_narrowing",
-                    if (value == CompletionNarrowing.CONTAINS) "contains"
-                    else "strict").apply()
+            platform.settings.completionNarrowing = value
         }
 
     // Amendment #171 (R4 review): the tracker's render-facing view as
@@ -1519,7 +1429,7 @@ class DeviceBridge(
                 // publish what it decided on the same serial executor.
                 publishOfferViewFor(document, editorId)
             }
-            appContext.mainExecutor.execute { onOutcome(outcome) }
+            platform.uiExecutor.execute { onOutcome(outcome) }
         }
     }
 
@@ -1680,17 +1590,14 @@ class DeviceBridge(
      * platform broadcast is cheap and never chatty. The engine call marshals
      * through the dispatch executor like every other UI-originated call. */
     fun localeChanged() {
-        val advice = runCatching { AppCapabilities.deviceLocale(appContext) }.getOrNull() ?: return
+        val advice = runCatching { platform.locale.current() }.getOrNull() ?: return
         dispatchExecutor.execute {
             engine?.localeChanged(advice.tag, advice.hourCycle, advice.timeZone)
         }
     }
 
-    private val localeReceiver = object : android.content.BroadcastReceiver() {
-        override fun onReceive(context: android.content.Context?, intent: android.content.Intent?) {
-            localeChanged()
-        }
-    }
+    /** The platform's locale-change subscription for the life of [start] to [stop]. */
+    @Volatile private var localeObserver: AutoCloseable? = null
 
     /** SPEC 20.1.1: the Activity reports window geometry here on first
      * composition and every configuration change. The caller is the COMPOSE
@@ -1736,7 +1643,7 @@ class DeviceBridge(
         // the welcome can mirror it before the Activity recomposes.
         lastWindow?.let { (w, h) -> engine.windowChanged(w, h) }
         // SPEC 20.1.2: seed the locale advice too, so the welcome mirrors it.
-        runCatching { AppCapabilities.deviceLocale(appContext) }.getOrNull()
+        runCatching { platform.locale.current() }.getOrNull()
             ?.let { engine.localeChanged(it.tag, it.hourCycle, it.timeZone) }
         // SPEC 18.2.1: the event-driven snackbar routes to whichever
         // scaffold host is on screen.
@@ -1755,9 +1662,9 @@ class DeviceBridge(
         // and listener per surface frame, in microseconds, on the engine
         // thread. Installed only while the logcat tag is enabled, so the
         // measured path pays nothing otherwise.
-        if (android.util.Log.isLoggable(STAGE_LOG_TAG, android.util.Log.DEBUG)) {
+        if (platform.log.isDebugEnabled(STAGE_LOG_TAG)) {
             engine.stageObserver = { method, surface, stages ->
-                android.util.Log.d(
+                platform.log.d(
                     STAGE_LOG_TAG,
                     buildString {
                         append(method).append(' ').append(surface)
@@ -1805,13 +1712,10 @@ class DeviceBridge(
                 when {
                     // SPEC 18.5: a notification:* surface is a system notification;
                     // its removal (tombstone -> null spec) cancels it.
-                    surface.startsWith("notification:") -> {
-                        if (spec != null) Notifications.postSurface(appContext, surface, spec)
-                        else Notifications.cancelSurface(appContext, surface)
-                    }
+                    surface.startsWith("notification:") ->
+                        platform.presentation.surfaceNotification(surface, spec)
                     surface.startsWith("widget:") -> onWidgetSurfaceChanged(surface)
-                    surface.startsWith("tile:") ->
-                        TileSlots.refresh(appContext, surface)
+                    surface.startsWith("tile:") -> platform.presentation.tileChanged(surface)
                     surface.startsWith("app:") ->
                         onSurfaceChanged(surface, view)
                 }
@@ -1826,31 +1730,20 @@ class DeviceBridge(
             }
         }
         engine.localStateProblemListener = onQueueProblem
-        // SPEC 14.2: host-platform builtins cross only their owning Android
+        // SPEC 14.2: host-platform builtins cross only their owning platform
         // seam; none is converted into a remote action or silently dropped.
         engine.hostBuiltinListener = { builtin, descriptor ->
             when (builtin) {
-                "clipboard.copy" -> {
-                    val clip = android.content.ClipData.newPlainText(
-                        "EBP", descriptor.stringOr("text"))
-                    appContext.getSystemService(
-                        android.content.ClipboardManager::class.java)
-                        .setPrimaryClip(clip)
-                    // SPEC 14.2: no additional private copy, no logging.
-                }
+                // SPEC 14.2: no additional private copy, no logging.
+                "clipboard.copy" -> platform.clipboard.copy("EBP", descriptor.stringOr("text"))
                 "share.send" -> {
-                    val send = android.content.Intent(android.content.Intent.ACTION_SEND)
-                        .setType("text/plain")
-                        .putExtra(android.content.Intent.EXTRA_TEXT,
-                            descriptor.stringOr("text"))
-                        .also {
-                            descriptor.stringOr("title").takeIf { t -> t.isNotEmpty() }
-                                ?.let { t -> it.putExtra(
-                                    android.content.Intent.EXTRA_TITLE, t) }
-                        }
-                    appContext.startActivity(
-                        android.content.Intent.createChooser(send, null)
-                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                    // Advertised only where the platform has a share sheet
+                    // (PlatformRendererTargets.hostBuiltins); the engine admits
+                    // nothing outside the profile, so this arm cannot miss.
+                    platform.share?.send(
+                        descriptor.stringOr("text"),
+                        descriptor.stringOr("title").takeIf { t -> t.isNotEmpty() },
+                    ) ?: platform.log.w("EbpBridge", "share.send reached a host without a share sheet")
                 }
                 "surface.open" -> onOpenSurface(descriptor.stringOr("surface"))
                 "companion.settings.open" -> onOpenSettings()
@@ -1859,7 +1752,7 @@ class DeviceBridge(
         // SPEC 18.6: reconcile platform alarms with the accepted set (cancel
         // removed, arm new/changed non-fired).
         engine.reminderListener = { owner, newSet, priorSet ->
-            Notifications.scheduleReminders(appContext, stores, owner, newSet, priorSet)
+            platform.presentation.scheduleReminders(stores, owner, newSet, priorSet)
         }
         engine.dialogListener = { id, spec -> onDialogChanged(id, spec) }
         // SPEC 19.4 (T2/LD-5): every inbound edit.apply republishes the
@@ -1944,7 +1837,7 @@ class DeviceBridge(
                 if (!authenticated && isAuthenticatedConnectionState(engine.state)) {
                     authenticated = true
                     authenticatedConnection.authenticated(engine)
-                    Notifications.cancelReconnect(appContext)
+                    platform.presentation.reconnectNotification(false)
                 }
                 if (!reachedReady &&
                     engine.state == SessionState.READY &&
@@ -2019,7 +1912,7 @@ class DeviceBridge(
                     authenticated,
                     wasCurrentAuthenticatedSession,
                 )) {
-                Notifications.postReconnect(appContext)
+                platform.presentation.reconnectNotification(true)
             }
             socket.runCatching { close() }
         }

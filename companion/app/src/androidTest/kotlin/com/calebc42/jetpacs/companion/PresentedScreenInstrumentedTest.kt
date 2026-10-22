@@ -73,7 +73,7 @@ class PresentedScreenInstrumentedTest {
                     node,
                     "app:test",
                     host,
-                    configuration = CompanionRenderer.installation(true).composeConfiguration,
+                    configuration = AndroidCompanionRenderer.installation(true).composeConfiguration,
                 )
             }
         }

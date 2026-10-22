@@ -24,6 +24,8 @@ import android.os.PowerManager
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import com.calebc42.ebp.wire.StatePredicateEvaluator
+import com.calebc42.jetpacs.companion.host.CompanionStores
+import com.calebc42.jetpacs.companion.host.HostTriggerSources
 import com.calebc42.jetpacs.companion.host.stringOrNull
 import java.time.ZoneId
 import java.util.concurrent.ConcurrentHashMap
@@ -44,7 +46,7 @@ internal class TriggerSources(
     context: Context,
     private val onSample: (String, JsonObject) -> Unit,
     private val onExternal: (String, JsonObject) -> Unit,
-) : DeviceStateAccess {
+) : HostTriggerSources {
     private val app = context.applicationContext
     private val current = ConcurrentHashMap<String, JsonObject>()
     @Volatile private var started = false
@@ -168,7 +170,7 @@ internal class TriggerSources(
     }.getOrNull()
 
     /** Compatibility name used by the process store composition root. */
-    fun currentState(type: String): JsonObject? = sample(type)
+    override fun currentState(type: String): JsonObject? = sample(type)
 
     override fun unavailableReason(type: String): String = when (type) {
         "calendar.event" -> if (!calendar.granted()) "read_calendar" else "calendar_unavailable"
@@ -184,13 +186,13 @@ internal class TriggerSources(
     override fun predicatesHold(predicates: JsonArray): Boolean =
         evaluator.allHold(predicates)
 
-    fun predicateHolds(predicate: JsonObject): Boolean? =
+    override fun predicateHolds(predicate: JsonObject): Boolean? =
         if (predicate.stringOrNull("type") == "calendar.event") {
             calendar.predicateHolds(predicate)
         } else null
 
     @Synchronized
-    fun start() {
+    override fun start() {
         if (started) return
         started = true
         primeNetworkBaseline()

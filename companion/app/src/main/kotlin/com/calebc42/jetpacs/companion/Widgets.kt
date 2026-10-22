@@ -20,6 +20,7 @@ import androidx.glance.appwidget.ExperimentalGlanceRemoteViewsApi
 import androidx.glance.appwidget.GlanceRemoteViews
 import androidx.glance.appwidget.action.actionSendBroadcast
 import com.calebc42.ebp.wire.dispatchSurfaceOccurrence
+import com.calebc42.jetpacs.companion.host.CompanionStores
 import com.calebc42.jetpacs.core.database.PairingRuntimeEntity
 import com.calebc42.jetpacs.core.database.SurfaceRecordEntity
 import com.calebc42.jetpacs.core.database.WidgetActionTokenEntity
@@ -220,7 +221,7 @@ internal object RemoteViewsParcelSizer {
 }
 
 internal fun remoteViewsFitsBudget(bytes: Int): Boolean =
-    bytes in 0..CompanionRenderer.widgetProfile.limits!!.maxRemoteViewsBytes
+    bytes in 0..AndroidCompanionRenderer.widgetProfile!!.limits!!.maxRemoteViewsBytes
 
 @OptIn(ExperimentalGlanceRemoteViewsApi::class)
 internal object WidgetUpdateCoordinator {

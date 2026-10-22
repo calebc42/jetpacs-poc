@@ -48,6 +48,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import com.calebc42.jetpacs.companion.host.pairingInitSnippet
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -93,9 +94,7 @@ internal const val TERMUX_EARLY_INIT_SNIPPET =
         ";;; <<< Jetpacs managed: Android Emacs HOME <<<"
 
 internal fun remoteInitSnippet(): String =
-    "(setq jetpacs-pairing-id \"$JETPACS_PAIRING_ID\"\n" +
-        "      jetpacs-pairing-token \"$JETPACS_PAIRING_TOKEN\")\n" +
-        "(require 'jetpacs)"
+    pairingInitSnippet(JETPACS_PAIRING_ID, JETPACS_PAIRING_TOKEN)
 
 internal enum class JetpacsVaultChoice {
     SDCARD,

@@ -5,8 +5,8 @@
 // freely without constructing another store, actor, or listener.
 package com.calebc42.jetpacs.companion
 
-import android.os.Bundle
 import android.content.Intent
+import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,7 +17,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -25,13 +24,16 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
-import com.calebc42.jetpacs.material3.EbpTheme
-import com.calebc42.jetpacs.material3.RenderDialogRoot
-import com.calebc42.jetpacs.material3.RenderPieMenu
 import com.calebc42.ebp.renderer.compose.ComposeIconResolver
 import com.calebc42.ebp.renderer.compose.LocalComposeIconResolver
+import com.calebc42.jetpacs.companion.host.CompanionPresentation
+import com.calebc42.jetpacs.companion.host.DeviceBridge
+import com.calebc42.jetpacs.material3.EbpTheme
 import com.calebc42.jetpacs.material3.IconMap
+import com.calebc42.jetpacs.material3.RenderDialogRoot
+import com.calebc42.jetpacs.material3.RenderPieMenu
 import com.calebc42.jetpacs.renderer.jetpacs.ProvideJetpacsTheme
 import kotlinx.serialization.json.JsonObject
 
@@ -206,7 +208,7 @@ private fun PieMenuHost(
 
 @androidx.compose.runtime.Composable
 private fun DialogHost(
-    flow: kotlinx.coroutines.flow.StateFlow<JetpacsApplication.DialogShow?>,
+    flow: kotlinx.coroutines.flow.StateFlow<CompanionPresentation.DialogShow?>,
     bridge: DeviceBridge,
 ) {
     val dialog by flow.collectAsState()

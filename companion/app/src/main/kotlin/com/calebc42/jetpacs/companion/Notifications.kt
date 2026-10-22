@@ -7,8 +7,8 @@
 // connection) noted for a follow-on.
 package com.calebc42.jetpacs.companion
 
-import android.app.AlarmManager
 import android.app.Activity
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -19,14 +19,16 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.drawable.Icon
 import android.os.Bundle
-import com.calebc42.ebp.wire.routeReminderAction
-import com.calebc42.ebp.wire.routeReminderTap
 import com.calebc42.ebp.renderer.model.arrOrNull
 import com.calebc42.ebp.renderer.model.boolOr
 import com.calebc42.ebp.renderer.model.longByValue
 import com.calebc42.ebp.renderer.model.objOrNull
 import com.calebc42.ebp.renderer.model.stringOr
 import com.calebc42.ebp.renderer.model.stringOrNull
+import com.calebc42.ebp.wire.routeReminderAction
+import com.calebc42.ebp.wire.routeReminderTap
+import com.calebc42.jetpacs.companion.host.CompanionStores
+import com.calebc42.jetpacs.companion.host.PlatformEffectReconciler
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -503,12 +505,6 @@ object Notifications {
         return out.toString()
     }
 }
-
-/** Only the loss of the authoritative authenticated session is user-visible. */
-internal fun shouldPostReconnectNotification(
-    authenticated: Boolean,
-    wasCurrentSession: Boolean,
-): Boolean = authenticated && wasCurrentSession
 
 class ReminderAlarmReceiver : BroadcastReceiver() {
     override fun onReceive(ctx: Context, intent: Intent) {

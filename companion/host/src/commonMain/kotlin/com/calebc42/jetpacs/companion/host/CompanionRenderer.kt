@@ -1,44 +1,80 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-package com.calebc42.jetpacs.companion
+package com.calebc42.jetpacs.companion.host
 
+import com.calebc42.ebp.renderer.compose.ComposeCanonicalOverrideRegistry
+import com.calebc42.ebp.renderer.compose.ComposeExtensionRegistry
+import com.calebc42.ebp.renderer.compose.ComposeNodeExtension
+import com.calebc42.ebp.renderer.compose.ComposeRendererConfiguration
+import com.calebc42.ebp.renderer.compose.CoreComposeContribution
+import com.calebc42.ebp.renderer.model.RendererContribution
+import com.calebc42.ebp.renderer.model.RendererProfile
+import com.calebc42.ebp.renderer.model.RendererRegistry
+import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
+import com.calebc42.ebp.wire.NODE_SCHEMA
+import com.calebc42.ebp.wire.NodeVocabulary
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_AT_LEAST_ONE_NON_EMPTY
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_EXTENSION
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_NODE_SCHEMA
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_STATEFUL_WHEN_PRESENT
 import com.calebc42.jetpacs.material3.JETPACS_MATERIAL3_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.material3.NodeSupport
-import com.calebc42.ebp.wire.EBP_NODE_VOCABULARY
-import com.calebc42.ebp.wire.NODE_SCHEMA
-import com.calebc42.ebp.wire.NodeVocabulary
-import com.calebc42.ebp.renderer.compose.ComposeExtensionRegistry
-import com.calebc42.ebp.renderer.compose.ComposeCanonicalOverrideRegistry
-import com.calebc42.ebp.renderer.compose.ComposeRendererConfiguration
-import com.calebc42.ebp.renderer.compose.CoreComposeContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_AT_LEAST_ONE_NON_EMPTY
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STICKY_MEMBERS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
-import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_EXTENSION
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsRenderer
+import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignCanonicalOverrides
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignSemanticValidator
-import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignCanonicalOverrides
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsEditorRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsTextInputRenderer
-import com.calebc42.jetpacs.renderer.glance.GlanceRendererContribution
-import com.calebc42.ebp.renderer.model.RendererProfile
-import com.calebc42.ebp.renderer.model.RendererRegistry
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+
+/**
+ * SPEC 14.2: the builtins a host executes itself, outside any renderer. A
+ * platform that lacks one of them (a desktop has no share sheet) names the
+ * subset it does execute in [PlatformRendererTargets.hostBuiltins], and the
+ * renderer installation stops advertising the rest.
+ */
+val HOST_BUILTINS: Set<String> = setOf(
+    "clipboard.copy",
+    "share.send",
+    "surface.open",
+    "companion.settings.open",
+)
+
+/**
+ * The surface targets a platform adds beside the shared app and dialog
+ * profiles. Android supplies all three; the desktop supplies none. Every
+ * absent target is simply not advertised and never admitted.
+ */
+data class PlatformRendererTargets(
+    /** SPEC 18.5 `notification:*` surfaces, or null where notifications do not exist. */
+    val notification: RendererContribution?,
+    /** `widget:*` surfaces, or null where home-screen widgets do not exist. */
+    val widget: RendererContribution?,
+    /** `tile:*` surfaces: a node-less, context-less profile, or null. */
+    val tile: RendererProfile?,
+    /** The [HOST_BUILTINS] this platform executes. */
+    val hostBuiltins: Set<String>,
+) {
+    init {
+        require(hostBuiltins.all { it in HOST_BUILTINS }) {
+            "hostBuiltins may name only host builtins: ${hostBuiltins - HOST_BUILTINS}"
+        }
+    }
+}
 
 /** One internally consistent admission, welcome, and Compose installation. */
 class CompanionRendererInstallation internal constructor(
@@ -49,20 +85,15 @@ class CompanionRendererInstallation internal constructor(
     val composeConfiguration: ComposeRendererConfiguration,
 )
 
-/** Renderer selection followed by every cached app-surface composition. */
-internal val LocalCompanionRendererConfiguration =
-    androidx.compose.runtime.staticCompositionLocalOf {
-        CompanionRenderer.composeConfiguration
-    }
-
 /**
- * The renderer installation packaged by the Jetpacs Companion application.
+ * The renderer installation a Companion composition root packages.
  *
  * EBP contributes neutral vocabulary, each design module contributes only its
- * generated downstream schema and implemented profile, and this composition
- * root is the sole place that selects the installed combination.
+ * generated downstream schema and implemented profile, and the composition
+ * root is the sole place that selects the installed combination: the shared
+ * app and dialog profiles here, plus the platform's own [targets].
  */
-object CompanionRenderer {
+open class CompanionRenderer(private val targets: PlatformRendererTargets) {
     private val baseExtensionOwners = mapOf(
         JETPACS_MATERIAL3_EXTENSION to JETPACS_MATERIAL3_NODE_SCHEMA.keys,
         JETPACS_COMPONENTS_EXTENSION to JETPACS_COMPONENTS_NODE_SCHEMA.keys,
@@ -71,42 +102,33 @@ object CompanionRenderer {
         (JETPACS_DESIGN_EXTENSION to JETPACS_DESIGN_NODE_SCHEMA.keys)
 
     private val registry = RendererRegistry(
-        listOf(
+        listOfNotNull(
             CoreComposeContribution,
             NodeSupport.MATERIAL_APP_CONTRIBUTION,
             NodeSupport.MATERIAL_DIALOG_CONTRIBUTION,
-            NodeSupport.NOTIFICATION_CONTRIBUTION,
-            GlanceRendererContribution,
+            targets.notification,
+            targets.widget,
             JetpacsComponentsContribution,
             JetpacsDesignContribution,
         ),
         extensionOwners = allExtensionOwners,
     )
 
+    /** A builtin the platform cannot execute leaves every advertised profile. */
+    private val hiddenBuiltins = HOST_BUILTINS - targets.hostBuiltins
+
+    private fun RendererProfile.executable(): RendererProfile =
+        if (hiddenBuiltins.isEmpty()) this else copy(builtins = builtins - hiddenBuiltins)
+
     private val dialogProfile: RendererProfile = registry.profile(
         CoreComposeContribution.id,
         NodeSupport.MATERIAL_DIALOG_CONTRIBUTION.id,
-    )
-    private val notificationProfile: RendererProfile = registry.profile(
-        NodeSupport.NOTIFICATION_CONTRIBUTION.id,
-    )
-    val widgetProfile: RendererProfile = registry.profile(
-        GlanceRendererContribution.id,
-    )
-    // A Quick Settings tile has no Node renderer. Its only executable field
-    // is a context-less ActionDescriptor, so the profile advertises exactly
-    // the builtins DeviceBridge can execute without a surface or dialog.
-    private val tileProfile = RendererProfile(
-        nodeTypes = emptySet(),
-        builtins = setOf(
-            "surface.open",
-            "clipboard.copy",
-            "companion.settings.open",
-            "trigger.fire",
-        ),
-        features = emptySet(),
-        extensions = emptySet(),
-    )
+    ).executable()
+    val notificationProfile: RendererProfile? =
+        targets.notification?.let { registry.profile(it.id).executable() }
+    val widgetProfile: RendererProfile? =
+        targets.widget?.let { registry.profile(it.id).executable() }
+    val tileProfile: RendererProfile? = targets.tile?.executable()
 
     private fun buildInstallation(designRuntimeEnabled: Boolean): CompanionRendererInstallation {
         val appContributions = buildList {
@@ -115,7 +137,7 @@ object CompanionRenderer {
             add(JetpacsComponentsContribution.id)
             if (designRuntimeEnabled) add(JetpacsDesignContribution.id)
         }
-        val appProfile = registry.profile(*appContributions.toTypedArray())
+        val appProfile = registry.profile(*appContributions.toTypedArray()).executable()
         val extensionOwners = if (designRuntimeEnabled) {
             allExtensionOwners
         } else {
@@ -147,14 +169,15 @@ object CompanionRenderer {
                 emptyMap()
             },
         )
+        // SPEC 10.2: only the targets this platform has are advertised.
         val profiles = buildJsonObject {
             put("app", appProfile.toJson())
             put("dialog", dialogProfile.toJson())
-            put("notification", notificationProfile.toJson())
-            put("widget", widgetProfile.toJson())
-            put("tile", tileProfile.toJson())
+            notificationProfile?.let { put("notification", it.toJson()) }
+            widgetProfile?.let { put("widget", it.toJson()) }
+            tileProfile?.let { put("tile", it.toJson()) }
         }
-        val extensionRenderers = buildList<com.calebc42.ebp.renderer.compose.ComposeNodeExtension> {
+        val extensionRenderers = buildList<ComposeNodeExtension> {
             add(JetpacsComponentsRenderer)
             if (designRuntimeEnabled) add(JetpacsDesignRenderer)
         }
@@ -200,18 +223,18 @@ object CompanionRenderer {
 
     val APP_NODE_TYPES: Set<String> get() = disabledInstallation.appProfile.nodeTypes
     val DIALOG_NODE_TYPES: Set<String> get() = dialogProfile.nodeTypes
-    val NOTIFICATION_NODE_TYPES: Set<String> get() = notificationProfile.nodeTypes
+    val NOTIFICATION_NODE_TYPES: Set<String> get() = notificationProfile?.nodeTypes.orEmpty()
     val APP_BUILTINS: Set<String> get() = disabledInstallation.appProfile.builtins
     val DIALOG_BUILTINS: Set<String> get() = dialogProfile.builtins
-    val NOTIFICATION_BUILTINS: Set<String> get() = notificationProfile.builtins
+    val NOTIFICATION_BUILTINS: Set<String> get() = notificationProfile?.builtins.orEmpty()
     val APP_FEATURES: Set<String> get() = disabledInstallation.appProfile.features
     val DIALOG_FEATURES: Set<String> get() = dialogProfile.features
-    val NOTIFICATION_FEATURES: Set<String> get() = notificationProfile.features
-    val WIDGET_NODE_TYPES: Set<String> get() = widgetProfile.nodeTypes
-    val WIDGET_BUILTINS: Set<String> get() = widgetProfile.builtins
-    val WIDGET_FEATURES: Set<String> get() = widgetProfile.features
-    val TILE_BUILTINS: Set<String> get() = tileProfile.builtins
-    val TILE_FEATURES: Set<String> get() = tileProfile.features
+    val NOTIFICATION_FEATURES: Set<String> get() = notificationProfile?.features.orEmpty()
+    val WIDGET_NODE_TYPES: Set<String> get() = widgetProfile?.nodeTypes.orEmpty()
+    val WIDGET_BUILTINS: Set<String> get() = widgetProfile?.builtins.orEmpty()
+    val WIDGET_FEATURES: Set<String> get() = widgetProfile?.features.orEmpty()
+    val TILE_BUILTINS: Set<String> get() = tileProfile?.builtins.orEmpty()
+    val TILE_FEATURES: Set<String> get() = tileProfile?.features.orEmpty()
 
     /** Target profiles advertised in the authenticated EBP welcome. */
     fun surfaceProfiles(designRuntimeEnabled: Boolean = false): JsonObject =

@@ -23,9 +23,14 @@ import android.speech.tts.TextToSpeech
 import android.view.KeyEvent
 import com.calebc42.ebp.wire.CapabilityHandler
 import com.calebc42.ebp.wire.CapabilityOutcome
+import com.calebc42.jetpacs.companion.host.AppCapabilityBindings
+import com.calebc42.jetpacs.companion.host.DeviceLocale
+import com.calebc42.jetpacs.companion.host.DeviceStateAccess
+import com.calebc42.jetpacs.companion.host.HostLimits
 import com.calebc42.jetpacs.companion.host.arrOrNull
 import com.calebc42.jetpacs.companion.host.boolOr
 import com.calebc42.jetpacs.companion.host.integralLongOrNull
+import com.calebc42.jetpacs.companion.host.localeAdvice
 import com.calebc42.jetpacs.companion.host.objOrNull
 import com.calebc42.jetpacs.companion.host.stringOr
 import com.calebc42.jetpacs.companion.host.stringOrNull
@@ -40,22 +45,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** Host-owned state seam shared by `state.get` and trigger gates. */
-internal interface DeviceStateAccess {
-    val stateTypes: Set<String>
-    fun sample(type: String): JsonObject?
-    fun unavailableReason(type: String): String = "unavailable"
-    fun predicatesHold(predicates: JsonArray): Boolean
-}
-
-/** Runtime dependencies that keep the catalog adapter separate from app policy. */
-internal data class AppCapabilityBindings(
-    val pairingIdentity: String,
-    val state: DeviceStateAccess,
-    val fireManual: (String) -> Boolean,
-    val setKeepScreenOn: (Boolean) -> Unit,
-)
-
 /**
  * Android host implementation of the complete optional SPEC 20.3 catalog.
  *
@@ -65,9 +54,9 @@ internal data class AppCapabilityBindings(
  * actual Android handoff. No string from EBP is executed as code.
  */
 internal object AppCapabilities {
-    const val MAX_SHORTCUT_ICON_BYTES = 262_144L
-    const val MAX_SHORTCUTS = 5L
-    const val MAX_DEVICE_REPORT_BYTES = 8_192L
+    const val MAX_SHORTCUT_ICON_BYTES = HostLimits.MAX_SHORTCUT_ICON_BYTES
+    const val MAX_SHORTCUTS = HostLimits.MAX_SHORTCUTS
+    const val MAX_DEVICE_REPORT_BYTES = HostLimits.MAX_DEVICE_REPORT_BYTES
     private const val MAX_REPORTED_LAUNCHABLE_PACKAGES = 32
 
     private val CAPS = listOf(
@@ -141,16 +130,6 @@ internal object AppCapabilities {
         val reason: String,
         val permission: String? = null,
     ) : Exception(reason)
-
-    /** SPEC 20.1.2 (#197): the device's presentation locale advice — a BCP 47
-     * [tag], the clock cycle `h12`/`h23`, and an IANA [timeZone] — that the
-     * engine mirrors in the welcome and re-sends as `locale.changed`. Facts
-     * only: the Companion never formats a display string from them. */
-    data class DeviceLocale(val tag: String, val hourCycle: String, val timeZone: String)
-
-    /** The pure core of [deviceLocale]: [is24Hour] maps to `h23`, else `h12`. */
-    fun localeAdvice(tag: String, is24Hour: Boolean, timeZone: String): DeviceLocale =
-        DeviceLocale(tag, if (is24Hour) "h23" else "h12", timeZone)
 
     /** Read the platform's current locale advice (SPEC 20.1.2). */
     fun deviceLocale(context: Context): DeviceLocale = localeAdvice(

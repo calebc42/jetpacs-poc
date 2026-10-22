@@ -112,7 +112,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                     shown,
                     "app:patch-retention-test",
                     host,
-                    configuration = CompanionRenderer.installation(true).composeConfiguration,
+                    configuration = AndroidCompanionRenderer.installation(true).composeConfiguration,
                 )
             }
         }
@@ -191,7 +191,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                     shown,
                     "app:template-retention-test",
                     host,
-                    configuration = CompanionRenderer.installation(true).composeConfiguration,
+                    configuration = AndroidCompanionRenderer.installation(true).composeConfiguration,
                 )
             }
         }
@@ -250,7 +250,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                     shown,
                     "app:padded-patch-retention-test",
                     host,
-                    configuration = CompanionRenderer.installation(true).composeConfiguration,
+                    configuration = AndroidCompanionRenderer.installation(true).composeConfiguration,
                 )
             }
         }

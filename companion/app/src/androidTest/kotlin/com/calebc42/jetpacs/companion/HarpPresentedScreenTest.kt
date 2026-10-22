@@ -57,7 +57,7 @@ class HarpPresentedScreenTest {
                 CompositionLocalProvider(LocalComposeIconResolver provides ComposeIconResolver(IconMap::get)) {
                 Box(Modifier.width(400.dp)) {
                     RenderNode(node, "app:harp", host,
-                        configuration = CompanionRenderer.installation(true).composeConfiguration)
+                        configuration = AndroidCompanionRenderer.installation(true).composeConfiguration)
                 }
                 }
             }
