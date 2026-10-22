@@ -23,10 +23,17 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(projects.ebpKmp)
+            // `api`: CompanionProofProvider is part of PairingCredentials.
+            api(projects.wire)
             implementation(projects.core.database)
             implementation(libs.androidx.room3.runtime)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
+        }
+        jvmMain.dependencies {
+            // The OS keychain behind KeychainPairingCredentials (D4 of
+            // docs/PLAN-desktop-companion.md).
+            implementation(libs.java.keyring)
         }
         jvmTest.dependencies {
             implementation(libs.androidx.sqlite.bundled)

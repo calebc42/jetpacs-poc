@@ -91,7 +91,17 @@ Run the JVM persistence and production compilation gates with:
 
 The Room suite includes reopen, revocation, reminder/effect, and fault-injected
 queue-plus-trigger rollback coverage, and the surface record's authored tree
-and data document round trip (`RoomEbpDurableStoreTest`). The app's
+and data document round trip (`RoomEbpDurableStoreTest`). The desktop's core
+actuals (D4) run in the same two tasks: `:core:database:jvmTest` opens the
+database through `buildJetpacsDatabase(directory)`, proves the directory is
+owner-only and refuses symbolic links, resolves the data directory per
+operating system, and migrates a version-1 database through both
+auto-migrations with `room3-testing`; `:core:ebp-store:jvmTest` provisions a
+token into an in-memory and a file-backed `SecretStore`, checks the proof
+handle against `EbpAuth`, tampers with every envelope part, proves the
+credential file's atomic writes, and asserts the token reaches only the
+credential file (`TokenContainmentTest`). `JavaKeyringSecretStoreTest` talks to
+the real OS keychain and is skipped, with the reason, where none answers. The app's
 `RoomSurfaceBackingTest` drives the surface backing through the memory
 reference store and pins row-level persistence: an accepted update, patch,
 removal or view switch writes one `surface_records` row and leaves every

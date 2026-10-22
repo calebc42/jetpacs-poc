@@ -73,6 +73,22 @@ references. Online examples are not substituted for a newer local checkout.
 | Renderer capabilities | installed renderer registries | Derive per-target profiles from actual handlers. Compose, notification, and Glance profiles remain distinct. |
 | Common-code purity | a real non-JVM compile target and import lint | A directory named `commonMain` is not proof. JVM file stores/crypto/time/DNS remain adapters. |
 
+## Desktop JVM
+
+The desktop Companion (`companion/desktop`,
+[`PLAN-desktop-companion.md`](PLAN-desktop-companion.md)) rents its platform
+from the JDK and the operating system; nothing below is reimplemented in
+Kotlin.
+
+| Concern | Authority to rent | POC 3 rule |
+|---|---|---|
+| Durable state | Room 3 with the bundled SQLite driver at the per-user data directory | `buildJetpacsDatabase(directory)` in `:core:database` jvmMain opens the one `jetpacs.db` with the Android builder's driver and query context. Migrations are proved with `room3-testing` against the exported schemas, never by hand-written SQL. |
+| Data directory | `JETPACS_DATA_DIR`, else XDG (`$XDG_DATA_HOME/jetpacs`), `~/Library/Application Support/Jetpacs`, `%LOCALAPPDATA%\Jetpacs` | `JetpacsDataDirectory.resolve` is the only place that spells these paths. Pure path logic, tested per operating system. |
+| Private directories and files | `java.nio.file` POSIX permissions and attribute views | `ensurePrivateDirectory` applies ebp-java's discipline: `rwx------`, owned by the running user, symbolic links and non-directories refused. Files are written temporary, forced, then moved atomically. Without POSIX permissions or ACLs there is no private place, and the store refuses to run. |
+| Pairing token and payload key | the OS keychain through java-keyring (macOS Keychain, Windows Credential Manager, GNOME Secret Service, KWallet) | `KeychainPairingCredentials` over `openSecretStore`. The keychain is probed with a set, get and delete inside a timeout; only when it fails does SPEC §9.1's floor, `credentials.json` in the data directory, take over, and `CredentialProtection.PrivateFile` makes the host show the reduced-protection notice and keep `sensitiveQueueEncrypted` false (SPEC §21.5). |
+| HMAC-SHA256 and AES-256-GCM | `javax.crypto` | Keys load once into `SecretKeySpec`s behind operation-only handles; the envelope is the common `OutboxEnvelopeFormat` with a twelve-byte random IV, so one format decodes on both platforms. Tokens never reach Room, logs or exception messages (`TokenContainmentTest`). |
+| Key names | `PairingKeyAliases.v1` (commonMain) | One spelling for an Android Keystore entry, a keychain item and a Room partition row. Deriving a name is never evidence of provisioning. |
+
 ## Intentionally custom EBP behavior
 
 The platform-rental rule does not mean deleting protocol semantics. These stay

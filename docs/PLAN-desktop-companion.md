@@ -1,8 +1,8 @@
 # Desktop Companion plan
 
 Status: active. D0, the toolchain spike, D1, the multiplatform renderer
-modules, D2, the fonts, and D3, the Material seams, are done (2026-10-21).
-Every later item is open.
+modules, D2, the fonts, D3, the Material seams, and D4, the JVM database and
+credentials, are done (2026-10-21). Every later item is open.
 
 The outcome is a Compose for Desktop Companion host at `companion/desktop`.
 It renders the same accepted EBP surfaces as `:app` against a desktop or
@@ -192,12 +192,26 @@ existing gates must pass after every item.
 
 ### Core lane
 
-5. **D4 — JVM core actuals.** A `DatabaseBuilder.jvm.kt` opens Room 3 with the
-   bundled SQLite driver at a per-user data path. A keychain-backed credential
-   adapter meets SPEC §9.1 on Linux, macOS and Windows, with the surfaced floor
-   as its only fallback. The desktop rows enter the rental register here.
-   Evidence: `:core:database:jvmTest` reopen and migration cases, and a
-   credential test proving token bytes never reach Room or logs.
+5. **D4 — JVM core actuals (done 2026-10-21).** `buildJetpacsDatabase(directory)`
+   opens Room 3 with the bundled SQLite driver inside a private per-user
+   directory (`JetpacsDataDirectory`: `JETPACS_DATA_DIR`, XDG, Application
+   Support, `%LOCALAPPDATA%`), and the module's first migration test drives a
+   version-1 database through both auto-migrations with `room3-testing`. A
+   common `PairingCredentials` interface (provision, erase, proof provider,
+   envelope codec; `PairingKeyAliases.v1` names keys identically everywhere)
+   has two implementations: `AndroidKeyStorePairingCredentials` over the
+   existing Keystore code, and `KeychainPairingCredentials` over a
+   `SecretStore` that is the OS keychain through java-keyring when a probe
+   succeeds and otherwise SPEC §9.1's floor, an owner-only `credentials.json`
+   written atomically. `CredentialProtection` tells the host which one it
+   got. The desktop rows are in the rental register. Evidence:
+   `:core:database:jvmTest` (31: reopen, private directory, data directory,
+   migration), `:core:ebp-store:jvmTest` (32: provisioning, proof handle,
+   codec tampering, file floor, token containment; the live-keychain case is
+   skipped with its reason on a host without a Secret Service). Not here: a
+   SPEC §9.1 pairing-token and pairing-ID generator; `wire` still has none
+   and the app ships a compiled-in development token, so D5's first
+   prerequisite is that generator.
 
 ### Host lane
 
@@ -305,5 +319,8 @@ The desktop host is conforming only while all applicable gates hold:
   without reimplementing Material.
 - Whether the ebp-compose conversion in D1 waits for a stable Compose
   Multiplatform 1.13.
-- How the credential adapter behaves on a headless Linux session with no
-  Secret Service.
+- On a headless Linux session with no Secret Service (this WSL machine),
+  java-keyring finds no backend and `openSecretStore` falls back to the
+  private file within the probe timeout; the keychain path itself has not
+  yet run on a desktop with a keyring. Run `JavaKeyringSecretStoreTest` on
+  one before D5 relies on it.
