@@ -849,8 +849,8 @@ refused write rolls back to `rejected'."
         (should (string-search "- [X] One" (disk)))
         ;; A refused write rolls the toggle back.
         (let ((before (with-current-buffer buf (buffer-string))))
-          (require 'jetpacs-editor-org)
-          (cl-letf (((symbol-function 'jetpacs-editor-org-save-policy)
+          (require 'jetpacs-org-save)
+          (cl-letf (((symbol-function 'jetpacs-org-save-policy)
                      (lambda (&rest _) (error "Write refused"))))
             (should (eq 'rejected (tap))))
           (should (equal before (with-current-buffer buf (buffer-string))))
@@ -1181,105 +1181,7 @@ no `:command' ops, one-level menus only, and op-plist long-presses."
   (should (jetpacs-editor "tb-test" :value "x"
                           :toolbar (jetpacs-org-toolbar))))
 
-;;;; The files seams (JA-5f)
-
-(require 'jetpacs-files)   ; fires the with-eval-after-load wiring
-
-(defmacro jetpacs-org-render-test--without-reader (&rest body)
-  "Run BODY with the reusable reader host absent, as the legacy seams assume.
-`jetpacs-org-render-rendered-p' defers to `jetpacs-reader-active-p' the
-moment that host is loaded, and any verb that saves through the Org
-policy loads it mid-suite; the pre-mode-app seams under test here are
-the arm taken WITHOUT it."
-  (declare (indent 0))
-  `(let ((definition (and (fboundp 'jetpacs-reader-active-p)
-                          (symbol-function 'jetpacs-reader-active-p))))
-     (unwind-protect
-         (progn (fmakunbound 'jetpacs-reader-active-p) ,@body)
-       (when definition (fset 'jetpacs-reader-active-p definition)))))
-
-(ert-deftest jetpacs-org-render-files-body-rendered-and-plain ()
-  "The body seam renders org files by default, passes in plain mode,
-ignores non-org paths — and never pushes during a build."
-  (jetpacs-org-render-test--with-file f "* H\nbody\n"
-    (jetpacs-org-render-test--without-reader
-      (unwind-protect
-          (cl-letf (((symbol-function 'jetpacs-shell-push)
-                     (lambda (&rest _) (error "a seam builder pushed"))))
-            (let ((node (jetpacs-org-render--files-body f)))
-              (should node)
-              (should (equal (plist-get node :t) "column")))
-            (puthash f 'plain jetpacs-org-render--files-mode)
-            (should-not (jetpacs-org-render--files-body f))
-            (should-not (jetpacs-org-render--files-body "/tmp/x.txt")))
-        (clrhash jetpacs-org-render--files-mode)))))
-
-(ert-deftest jetpacs-org-render-files-view-mode-toggle ()
-  "The actions seam offers the toggle; the verb flips the mode and
-rejects non-org paths."
-  (jetpacs-org-render-test--with-file f "* H\n"
-    (jetpacs-org-render-test--without-reader
-     (unwind-protect
-        (progn
-          (let ((actions (jetpacs-org-render--files-actions f)))
-            (should (= 1 (length actions)))
-            (should (equal (plist-get (car actions) :t) "icon_button"))
-            (should (equal (plist-get (plist-get (car actions) :on_tap)
-                                      :action)
-                           "jetpacs.org.view-mode")))
-          (should-not (jetpacs-org-render--files-actions "/tmp/x.txt"))
-          (should (eq 'accepted
-                      (jetpacs-org-render--view-mode
-                       (list :path f) '(:surface "app:jetpacs.files"))))
-          (should-not (jetpacs-org-render-rendered-p f))
-          (should (eq 'accepted
-                      (jetpacs-org-render--view-mode
-                       (list :path f) '(:surface "app:jetpacs.files"))))
-          (should (jetpacs-org-render-rendered-p f))
-          ;; D-4: the public accessor IS the seam app layers key off;
-          ;; the old private spelling survives as an alias until the
-          ;; internal callers migrate — pin both facts.
-          (should (eq (indirect-function
-                       'jetpacs-org-render--files-rendered-p)
-                      (indirect-function
-                       'jetpacs-org-render-rendered-p)))
-          (should (eq 'rejected
-                      (jetpacs-org-render--view-mode
-                       '(:path "/etc/passwd.txt")
-                       '(:surface "app:jetpacs.files")))))
-      (clrhash jetpacs-org-render--files-mode)))))
-
-(ert-deftest jetpacs-org-render-files-toolbar-and-fab-seams ()
-  "The chained single-function seams answer for org paths: the toolbar
-list and the FAB whose descriptor was minted WITH its record."
-  (jetpacs-org-render-test--with-file f "* H\n"
-    (should (jetpacs-org-render--files-toolbar f))
-    (should-not (jetpacs-org-render--files-toolbar "/tmp/x.py"))
-    (let ((fab (jetpacs-org-render--files-fab f)))
-      (should (equal (plist-get fab :t) "icon_button"))
-      (should (equal (plist-get (plist-get fab :on_tap) :action)
-                     "jetpacs.org.add-heading"))
-      (let ((name (buffer-name (find-buffer-visiting f))))
-        (should (jetpacs-buffer-exposed-buffer-p
-                 name "jetpacs.org.add-heading"))))))
-
-(ert-deftest jetpacs-org-render-files-after-save-busts-cache ()
-  (let ((busted 0))
-    (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
-               (lambda (&rest _) (cl-incf busted))))
-      (jetpacs-org-render--files-after-save "/x/notes.org")
-      (jetpacs-org-render--files-after-save "/x/notes.org_archive")
-      (jetpacs-org-render--files-after-save "/x/notes.txt")
-      (should (= 2 busted)))))
-
-(ert-deftest jetpacs-org-render-legacy-path-p-includes-native-archives ()
-  "The compatibility Files seams recognize Org's archive filenames."
-  (dolist (path '("/tmp/note.org" "/tmp/note.ORG"
-                  "/tmp/note.org_archive" "/tmp/note.ORG_ARCHIVE"))
-    (should (jetpacs-org-render--org-path-p path)))
-  (dolist (path '("/tmp/note.org_archive.bak" "/tmp/note_archive"
-                  "/tmp/note.orgx_archive" nil))
-    (should-not (jetpacs-org-render--org-path-p path))))
+;;;; Saving through the policy
 
 (ert-deftest jetpacs-org-render-encrypt-saves-through-the-policy ()
   "Encrypting an entry saves now, through `ebp-org-file-save-function'."

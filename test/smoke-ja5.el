@@ -286,13 +286,9 @@
                      (member "edit" (jetpacs-chrome-stack "jetpacs.files")))
     (smoke-j5--mark "F2-TAP-THE-EDIT-(pencil)-ICON")
     (smoke-j5--drain 240 (lambda ()
-                           (eq (gethash (file-truename smoke-j5--file)
-                                        jetpacs-org-render--files-mode)
-                               'plain)))
+                           (not (jetpacs-reader-active-p (file-truename smoke-j5--file)))))
     (smoke-j5--check "F2 view mode flipped to plain"
-                     (eq (gethash (file-truename smoke-j5--file)
-                                  jetpacs-org-render--files-mode)
-                         'plain))
+                     (not (jetpacs-reader-active-p (file-truename smoke-j5--file))))
     (smoke-j5--mark "F3-TOOLBAR:Src->emacs-lisp-THEN-SAVE")
     (smoke-j5--drain 300 (lambda ()
                            (string-search "#+begin_src emacs-lisp"

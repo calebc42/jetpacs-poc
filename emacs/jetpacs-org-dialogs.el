@@ -52,6 +52,7 @@
 (require 'jetpacs-dialog)
 (require 'jetpacs-navigate)
 (require 'jetpacs-org-settings)         ; file-property tag candidates
+(require 'jetpacs-org-save)
 (require 'ebp)
 
 (defconst jetpacs-org-dialogs-owner "jetpacs.org"
@@ -1337,8 +1338,6 @@ and newline-flattened — a multi-line title would smuggle structure."
 ;; duplicate, a logbook note, properties, refile.  The app keeps only
 ;; what it owns: token scope, notification text, and the refresh.
 
-(declare-function jetpacs-editor-org-save-policy "jetpacs-editor-org"
-                  (&optional buffer))
 
 (defun jetpacs-org-heading-at-ref (ref fn &optional save)
   "Resolve REF and run FN with point at its heading; a SPEC 14.4 status.
@@ -1351,7 +1350,7 @@ and newline-flattened — a multi-line title would smuggle structure."
 
 With SAVE nil the memo table is dropped whole — a heading mutation stales
 every consumer's projection, not one app's.  SAVE t saves the buffer
-synchronously through `jetpacs-editor-org-save-policy'; a function SAVE
+synchronously through `jetpacs-org-save-policy'; a function SAVE
 is called with the buffer and owns the save instead (the seam for an
 app's own funnel).  Deliberately NOT `ebp-org-with-mutation': the engine
 defers saves to an idle timer, which leaves the file not-yet-on-disk for
@@ -1369,9 +1368,7 @@ replay).  The raw error stays in *Messages*; the wire never carries it
                  (funcall fn))
                 (cond
                  ((functionp save) (funcall save (current-buffer)))
-                 (save
-                  (require 'jetpacs-editor-org)
-                  (jetpacs-editor-org-save-policy (current-buffer)))
+                 (save (jetpacs-org-save-policy (current-buffer)))
                  (t (ebp-org-cache-invalidate))))
             (set-marker marker nil))
           'accepted)
@@ -1505,14 +1502,12 @@ configured no `org-refile-targets'."
   "Refile the subtree at point to TARGET, then save every dirty Org buffer.
 TARGET is an `org-refile-get-targets' entry.  Refile may dirty both
 source and target, so every modified Org file buffer goes through SAVE
-\(a function of the buffer; default `jetpacs-editor-org-save-policy') —
+\(a function of the buffer; default `jetpacs-org-save-policy') —
 neither side may bypass Org Crypt or leave another namespace's
 projection memo stale."
   (org-refile nil nil target)
-  (unless save
-    (require 'jetpacs-editor-org)
-    (setq save #'jetpacs-editor-org-save-policy))
-  (jetpacs-org-dialogs--save-dirty-org-buffers save))
+  (jetpacs-org-dialogs--save-dirty-org-buffers
+   (or save #'jetpacs-org-save-policy)))
 
 ;;;; The verbs
 

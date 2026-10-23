@@ -55,7 +55,7 @@
                        (goto-char (point-max))
                        (insert "partial encryption output\n")
                        (error "encryption failed"))))
-            (should-error (jetpacs-editor-org-save-policy buffer)
+            (should-error (jetpacs-org-save-policy buffer)
                           :type 'error))
           (should (equal (buffer-string) before))
           (should (= (point) before-point))
@@ -79,7 +79,7 @@ here; the foundation names none of them."
         (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
                    (lambda (&optional namespace)
                      (push namespace invalidated))))
-          (should (jetpacs-editor-org-save-policy buffer))))
+          (should (jetpacs-org-save-policy buffer))))
       (should (equal saved (file-truename file)))
       (should (equal invalidated '(nil)))
       (should-not (buffer-modified-p buffer))
@@ -91,7 +91,7 @@ here; the foundation names none of them."
 its after-save hooks run for a timer-driven save too."
   (jetpacs-editor-org-test--with-file file "* Before\n"
     (let ((buffer (find-file-noselect file))
-          (ebp-org-file-save-function #'jetpacs-editor-org-save-policy)
+          (ebp-org-file-save-function #'jetpacs-org-save-policy)
           saved)
       (with-current-buffer buffer
         (goto-char (point-max))
@@ -120,7 +120,7 @@ its verdict, the cache still drops once, and the error stays local."
         (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
                    (lambda (&optional _namespace)
                      (cl-incf invalidations))))
-          (should (jetpacs-editor-org-save-policy buffer))))
+          (should (jetpacs-org-save-policy buffer))))
       (should (= invalidations 1))
       (should-not (buffer-modified-p buffer))
       (should (string-search
@@ -153,6 +153,15 @@ its verdict, the cache still drops once, and the error stays local."
         (should (= (read-projection) 2))
         (should (= walks 2))))))
 
+(ert-deftest jetpacs-editor-org-save-policy-is-the-named-seam ()
+  "The editor's policy name is the leaf's policy, and the leaf knows
+nothing of the editor: the Org modules require it without a cycle."
+  (should (eq (indirect-function 'jetpacs-editor-org-save-policy)
+              (indirect-function 'jetpacs-org-save-policy)))
+  (with-temp-buffer
+    (insert-file-contents (locate-library "jetpacs-org-save.el" t))
+    (should-not (search-forward "jetpacs-editor-org" nil t))))
+
 (ert-deftest jetpacs-editor-org-register-rebinds-and-restores-save-policy ()
   "Registration owns EBP's save seam and restores the previous holder."
   (let ((jetpacs-editor--adapters nil)
@@ -163,7 +172,7 @@ its verdict, the cache still drops once, and the error stays local."
         (progn
           (jetpacs-editor-org-register)
           (should (eq ebp-org-file-save-function
-                      #'jetpacs-editor-org-save-policy))
+                      #'jetpacs-org-save-policy))
           (jetpacs-editor-org-unregister)
           (should (eq ebp-org-file-save-function #'ignore)))
       (jetpacs-editor-org-unregister))))
@@ -242,7 +251,7 @@ its verdict, the cache still drops once, and the error stays local."
                     ((symbol-function 'org-srs-log-end-of-drawer)
                      (lambda () (goto-char (point-max))))
                     ((symbol-function 'org-srs-log-hide-drawer) #'ignore)
-                    ((symbol-function 'jetpacs-editor-org-save-policy)
+                    ((symbol-function 'jetpacs-org-save-policy)
                      (lambda (&optional _buffer)
                        (cl-incf policy-calls)
                        (push 'policy events)

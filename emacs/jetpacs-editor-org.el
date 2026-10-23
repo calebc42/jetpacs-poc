@@ -9,11 +9,10 @@
 ;; formatting and insertion snippets on every editor rung, built-in Org
 ;; structural commands on synchronized editors, the add-heading FAB,
 ;; Org Crypt re-encryption before a real buffer save, and cache
-;; invalidation after a durable Files save.  It also owns the public
-;; synchronous Org save policy used by engine mutations: pre-write
-;; transforms, durable save, post-save hooks, and whole-cache
-;; invalidation remain one foundation operation — and, on top of it,
-;; the freshness-checked subtree splice (`jetpacs-editor-org-fresh-splice')
+;; invalidation after a durable Files save.  It installs the synchronous
+;; Org save policy (`jetpacs-org-save') as the engine's
+;; `ebp-org-file-save-function' and, on top of it, owns the
+;; freshness-checked subtree splice (`jetpacs-editor-org-fresh-splice')
 ;; a heading editor commits through.
 ;;
 ;; Commands use the existing SPEC 17.7 `edit.command' path.  They run in
@@ -27,6 +26,7 @@
 (require 'org)
 (require 'org-crypt)
 (require 'ebp-org)
+(require 'jetpacs-org-save)
 (require 'jetpacs-editor)
 (require 'jetpacs-reader-org)
 (require 'jetpacs-org-toolbar)
@@ -165,62 +165,12 @@ subtree and records its Emacs-owned splice identity for the save gate."
     (when (derived-mode-p 'org-mode)
       (org-encrypt-entries))))
 
-(defun jetpacs-editor-org--run-prewrite (path buffer)
-  "Run the mandatory Files pre-write chain for PATH and BUFFER.
-If a transform signals, restore BUFFER's text, restriction, point, and
-modified state to their exact pre-transform values before re-signaling.
-The caller has not attempted disk I/O yet, so this is an unambiguous
-pre-durability rollback."
-  (with-current-buffer buffer
-    (let* ((original-beg (point-min))
-           (original-end (point-max))
-           (original-point (point))
-           (original-modified (buffer-modified-p))
-           (original-full
-            (save-restriction
-              (widen)
-              (buffer-substring-no-properties (point-min) (point-max)))))
-      (condition-case err
-          (run-hook-with-args 'jetpacs-files-before-buffer-save-hook
-                              path buffer)
-        (error
-         (let ((inhibit-read-only t)
-               (buffer-undo-list t))
-           (widen)
-           (delete-region (point-min) (point-max))
-           (insert original-full)
-           (narrow-to-region original-beg original-end)
-           (goto-char (min (max original-point (point-min)) (point-max)))
-           (set-buffer-modified-p original-modified))
-         (signal (car err) (cdr err)))))))
-
-;;;###autoload
-(defun jetpacs-editor-org-save-policy (&optional buffer)
-  "Synchronously and safely save BUFFER, defaulting to the current buffer.
-Run every Files pre-write transform before `save-buffer', run isolated
-Files after-save hooks after the write, and invalidate the whole Org
-projection cache.  A pre-write failure restores the buffer and aborts
-the disk write; optional post-durability work is isolated.
-Inside a builder extent it signals `jetpacs-builder-side-effect': a
-render never writes."
-  (jetpacs--builder-guard 'jetpacs-editor-org-save-policy)
-  (let ((buffer (or buffer (current-buffer))))
-    (unless (buffer-live-p buffer)
-      (user-error "Org save target is not a live buffer"))
-    (with-current-buffer buffer
-      (let* ((file (or buffer-file-name
-                       (user-error "Buffer is not visiting a file")))
-             (true (file-truename file))
-             (save-silently t))
-        (jetpacs-editor-org--run-prewrite true buffer)
-        (save-buffer)
-        ;; Capture the file before optional callbacks: the durable save
-        ;; is complete, and neither post-save hooks nor cache cleanup may
-        ;; revise that verdict.
-        (unwind-protect
-            (jetpacs-run-isolated 'jetpacs-files-after-save-hook true)
-          (ebp-org-cache-invalidate)))))
-  t)
+(defalias 'jetpacs-editor-org-save-policy #'jetpacs-org-save-policy
+  "The policy's former home and name, kept live for app callers.
+The policy lives in `jetpacs-org-save' now, a leaf every Org module
+requires eagerly.  Stub `jetpacs-org-save-policy', which the
+foundation calls; stubbing this alias intercepts only callers that
+still use its name.")
 
 (defun jetpacs-editor-org--commit-narrowed
     (true path value record buffer)
@@ -391,7 +341,7 @@ opened (`jetpacs-editor-org-mtime-stamp', the subtree bounds, and
 including its Org ID, but the write proceeds only when disk mtime,
 subtree bounds, and buffer tick still match that snapshot; a file open
 in Files' synchronized editor is refused outright.  The save runs
-through `jetpacs-editor-org-save-policy'.  Any failure before durability
+through `jetpacs-org-save-policy'.  Any failure before durability
 restores the visiting buffer's full text and modified state.  Signals
 `jetpacs-editor-org-splice-refused' with a user-facing message, or the
 engine's own `ebp-org-refused' / `ebp-org-unresolved'.  Return a freshly
@@ -453,7 +403,7 @@ anchored ref."
                                 jetpacs-files-max-bytes)
                          (jetpacs-editor-org--splice-refuse
                           "Edited file exceeds the save limit"))
-                       (jetpacs-editor-org-save-policy (current-buffer))
+                       (jetpacs-org-save-policy (current-buffer))
                        (setq durable t)
                        new-ref)
                    (when (and changed (not durable))
@@ -492,10 +442,10 @@ allowlist and makes the built-in before-save scan retain the entry."
     (jetpacs-defaction "jetpacs.editor.org.save-narrowed"
                        #'jetpacs-editor-org--save-narrowed))
   (unless (eq ebp-org-file-save-function
-              #'jetpacs-editor-org-save-policy)
+              #'jetpacs-org-save-policy)
     (setq jetpacs-editor-org--previous-file-save-function
           ebp-org-file-save-function
-          ebp-org-file-save-function #'jetpacs-editor-org-save-policy))
+          ebp-org-file-save-function #'jetpacs-org-save-policy))
   t)
 
 (defun jetpacs-editor-org-unregister ()
@@ -506,7 +456,7 @@ allowlist and makes the built-in before-save scan retain the entry."
     (jetpacs-undefaction "jetpacs.editor.org.save-narrowed"))
   (when jetpacs-editor-org--previous-file-save-function
     (when (eq ebp-org-file-save-function
-              #'jetpacs-editor-org-save-policy)
+              #'jetpacs-org-save-policy)
       (setq ebp-org-file-save-function
             jetpacs-editor-org--previous-file-save-function))
     (setq jetpacs-editor-org--previous-file-save-function nil))

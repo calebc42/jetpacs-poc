@@ -358,7 +358,7 @@ device: the hub's Eval tab echoed forms and never answered."
   "Inside a builder extent neither the engine's deferred save nor the
 save policy writes; outside one the deferred save arms as before."
   (require 'jetpacs-org)
-  (require 'jetpacs-editor-org)
+  (require 'jetpacs-org-save)
   (let* ((file (make-temp-file "jetpacs-pure" nil ".org" "* A\n"))
          (buf (find-file-noselect file)))
     (unwind-protect
@@ -368,7 +368,7 @@ save policy writes; outside one the deferred save arms as before."
             (should-error (ebp-org-defer-save)
                           :type 'jetpacs-builder-side-effect)
             (should-not (timerp ebp-org--save-timer))
-            (should-error (jetpacs-editor-org-save-policy buf)
+            (should-error (jetpacs-org-save-policy buf)
                           :type 'jetpacs-builder-side-effect))
           (should (buffer-modified-p))
           (should (equal (with-temp-buffer

@@ -867,5 +867,15 @@
     (should (memq #'jetpacs-org-reminders--sync-reminders
                   jetpacs-shell-after-push-hook))))
 
+(ert-deftest jetpacs-mode-app-render-rendered-p-is-the-reader-host ()
+  "Whether an Org path presents rendered is the reader host's answer,
+whatever was loaded first: no per-path view-mode table remains."
+  (cl-letf (((symbol-function 'jetpacs-reader-active-p)
+             (lambda (path) (equal path "/v/rendered.org"))))
+    (should (jetpacs-org-render-rendered-p "/v/rendered.org"))
+    (should-not (jetpacs-org-render-rendered-p "/v/plain.org")))
+  (should-not (boundp 'jetpacs-org-render--files-mode))
+  (should-not (fboundp 'jetpacs-org-render--files-body)))
+
 (provide 'jetpacs-mode-app-test)
 ;;; jetpacs-mode-app-test.el ends here

@@ -124,7 +124,7 @@ defined afterwards; this file never owned either of them."
   "Every Org write in the foundation goes through the save policy.
 The Org modules, the Org reader and the Org editor never call
 `save-buffer' or Org's save-all, except the ONE `save-buffer' inside
-`jetpacs-editor-org-save-policy' itself; everything else funcalls
+`jetpacs-org-save-policy' itself (jetpacs-org-save.el); everything else funcalls
 `ebp-org-file-save-function' or defers to the engine, whose timer
 calls the same function."
   (let* ((dir (file-name-directory (locate-library "jetpacs-org.el" t)))
@@ -142,9 +142,25 @@ calls the same function."
                          (list (file-name-nondirectory file) 0)))
           (should (equal (list (file-name-nondirectory file) saves)
                          (list (file-name-nondirectory file)
-                               (if (string-suffix-p "jetpacs-editor-org.el"
+                               (if (string-suffix-p "jetpacs-org-save.el"
                                                     file)
                                    1 0)))))))))
+
+(ert-deftest jetpacs-org-no-lazy-editor-requires ()
+  "The Org modules that save require the save leaf eagerly and the
+editor never: a lazy `(require \\='jetpacs-editor-org)' inside a handler
+let load order decide which definition a test stub replaced."
+  (let ((dir (file-name-directory (locate-library "jetpacs-org.el" t))))
+    (dolist (file '("jetpacs-reader-org.el" "jetpacs-org-render.el"
+                    "jetpacs-org-dialogs.el" "jetpacs-org-table.el"))
+      (with-temp-buffer
+        (insert-file-contents (expand-file-name file dir))
+        (should (equal (list file (how-many "(require 'jetpacs-editor-org)"
+                                            (point-min) (point-max)))
+                       (list file 0)))
+        (should (equal (list file (how-many "^(require 'jetpacs-org-save)"
+                                            (point-min) (point-max)))
+                       (list file 1)))))))
 
 (provide 'jetpacs-org-test)
 ;;; jetpacs-org-test.el ends here

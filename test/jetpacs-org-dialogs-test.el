@@ -1305,7 +1305,7 @@ success -> accepted with the whole memo dropped (or the save function
 run), a signal from the body -> rejected, never accepted."
   ;; The funnel loads the save policy lazily; load it first so the stub
   ;; below is not clobbered by that load.
-  (require 'jetpacs-editor-org)
+  (require 'jetpacs-org-save)
   (should (eq (jetpacs-org-heading-at-ref nil #'ignore) 'stale))
   (let ((ref '(:id nil :file "/vault/tasks.org" :pos 1 :headline "H")))
     (cl-letf (((symbol-function 'ebp-org-resolve-ref)
@@ -1323,7 +1323,7 @@ run), a signal from the body -> rejected, never accepted."
                    (lambda (_) (copy-marker m)))
                   ((symbol-function 'ebp-org-cache-invalidate)
                    (lambda (&optional ns) (push ns invalidated)))
-                  ((symbol-function 'jetpacs-editor-org-save-policy)
+                  ((symbol-function 'jetpacs-org-save-policy)
                    (lambda (&optional buffer) (push (cons 'policy buffer) saved))))
           (should (eq (jetpacs-org-heading-at-ref
                        ref (lambda () (setq at (point))))

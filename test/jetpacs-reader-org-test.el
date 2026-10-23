@@ -21,7 +21,7 @@
 (require 'cl-lib)
 (require 'ebp)
 (require 'jetpacs-reader-org)
-(require 'jetpacs-editor-org)           ; the save policy the tests stub
+(require 'jetpacs-org-save)             ; the save policy the tests stub
 
 (defmacro jetpacs-reader-org-test--with-file (file content &rest body)
   "Bind FILE to a fresh root's code.org holding CONTENT, visited and current."
@@ -195,7 +195,7 @@ rolls back and keeps the draft."
       (let ((before (buffer-string))
             (disk (jetpacs-reader-org-test--disk file)))
         (if (eq failure 'write)
-            (cl-letf (((symbol-function 'jetpacs-editor-org-save-policy)
+            (cl-letf (((symbol-function 'jetpacs-org-save-policy)
                        (lambda (&rest _) (error "Write refused"))))
               (should (eq (jetpacs-reader-org-test--source-save "print(4)" "python")
                           'rejected)))
@@ -249,7 +249,7 @@ a failed save restores the buffer."
               (disk (jetpacs-reader-org-test--disk file)))
           (pcase failure
             ('write
-             (cl-letf (((symbol-function 'jetpacs-editor-org-save-policy)
+             (cl-letf (((symbol-function 'jetpacs-org-save-policy)
                         (lambda (&rest _) (error "Write refused"))))
                (should (eq (jetpacs-reader-org--on-call-execute
                             args '(:surface "app:test"))
@@ -414,7 +414,7 @@ cannot clobber a note; the dialog stays up for the user to retry."
           ('source (goto-char (point-max)) (insert "Changed elsewhere."))
           ('disk (with-temp-file file (insert "Changed on disk."))))
         (let ((after-drift (buffer-string)))
-          (cl-letf (((symbol-function 'jetpacs-editor-org-save-policy)
+          (cl-letf (((symbol-function 'jetpacs-org-save-policy)
                      (lambda (&rest _) (error "Simulated failed write"))))
             (should
              (eq (jetpacs-reader-org--on-footnote-save
@@ -456,6 +456,15 @@ unexposed and the ungranted, and goes stale on a moved snapshot."
           (should (eq (jetpacs-reader-org--on-footnote-open args '(:surface "app:test"))
                       'stale))
           (should-not shown))))))
+
+(ert-deftest jetpacs-reader-org-path-p-includes-native-archives ()
+  "The reader claims Org's archive filenames, in any case."
+  (dolist (path '("/tmp/note.org" "/tmp/note.ORG"
+                  "/tmp/note.org_archive" "/tmp/note.ORG_ARCHIVE"))
+    (should (jetpacs-reader-org-path-p path)))
+  (dolist (path '("/tmp/note.org_archive.bak" "/tmp/note_archive"
+                  "/tmp/note.orgx_archive" nil))
+    (should-not (jetpacs-reader-org-path-p path))))
 
 (provide 'jetpacs-reader-org-test)
 ;;; jetpacs-reader-org-test.el ends here

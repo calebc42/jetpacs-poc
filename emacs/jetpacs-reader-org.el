@@ -39,6 +39,7 @@
 (require 'ebp-org)
 (require 'jetpacs-reader)
 (require 'jetpacs-org-render)
+(require 'jetpacs-org-save)
 (require 'jetpacs-widgets)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-buffer)
@@ -945,8 +946,7 @@ its editor is deliberately plain and section-scoped."
 ;; places the editor node this module returns; the verbs here are
 ;; ownerless, like every other exposure-gated Org verb.
 
-(declare-function jetpacs-editor-org-save-policy "jetpacs-editor-org"
-                  (&optional buffer))
+
 (declare-function org-babel-lob-execute-maybe "ob-lob" ())
 
 (defconst jetpacs-reader-org-source-edit-limit 65536
@@ -978,9 +978,7 @@ spans, say) installs its own renderer here while registered.")
 
 (defun jetpacs-reader-org--save-buffer (buffer)
   "Save BUFFER synchronously through the Org save policy."
-  ;; Load at action time to avoid the reader/editor cycle.
-  (require 'jetpacs-editor-org)
-  (jetpacs-editor-org-save-policy buffer))
+  (jetpacs-org-save-policy buffer))
 
 (defun jetpacs-reader-org-source-draft ()
   "Return the live inline Babel draft plist, or nil."

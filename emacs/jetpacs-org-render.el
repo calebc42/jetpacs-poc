@@ -85,6 +85,8 @@
 ;; this file still installs the engine's teardown sweep — one hop longer
 ;; than before the split, and no longer this file's doing.
 (require 'jetpacs-org-dialogs)
+(require 'jetpacs-org-save)
+(require 'jetpacs-reader)                ; `jetpacs-org-render-rendered-p'
 
 ;;;; Options
 
@@ -1345,10 +1347,7 @@ before `accepted'; a failed write rolls the change back and answers
                          (org-toggle-checkbox
                           (when (equal state "indeterminate") '(16))))
                        (when buffer-file-name
-                         ;; Load at action time to avoid the
-                         ;; reader/editor cycle.
-                         (require 'jetpacs-editor-org)
-                         (jetpacs-editor-org-save-policy buf)))))
+                         (jetpacs-org-save-policy buf)))))
                  (ebp-org-cache-invalidate)
                  (jetpacs-buffer-defer-refresh (plist-get params :surface))
                  'accepted)
@@ -1475,9 +1474,7 @@ acceptance; only the view refresh is deferred."
                    (org-babel-execute-src-block))
                  (ebp-org-cache-invalidate)
                  (when buffer-file-name
-                   ;; Load at action time to avoid the reader/editor cycle.
-                   (require 'jetpacs-editor-org)
-                   (jetpacs-editor-org-save-policy buf))
+                   (jetpacs-org-save-policy buf))
                  (jetpacs-buffer-defer-refresh (plist-get params :surface))
                  (jetpacs-shell-notify "Executed block" (plist-get params :surface))
                  'accepted)
@@ -1578,142 +1575,20 @@ acceptance; only the view refresh is deferred."
 (jetpacs-defaction "jetpacs.org.footnote-return"
                    #'jetpacs-org-render--footnote-return)
 
-;;;; The JA-6 files seams (rendered⇄plain, toolbar, FAB, after-save)
-;;
-;; Deprecated by `jetpacs-reader', `jetpacs-reader-org',
-;; `jetpacs-editor', and `jetpacs-editor-org'.  The definitions remain
-;; for source compatibility with older app bundles, but their load-time
-;; installation is opt-in so a mode app has one composition path.
-
-(defcustom jetpacs-org-render-install-legacy-files-seams nil
-  "When non-nil, install the pre-mode-app Org/Files integration.
-New configurations should load `jetpacs-org-mode' instead."
-  :type 'boolean :group 'jetpacs-org)
-
-;; JA-6's tap-to-open path builds the PLAIN editor screen and publishes
-;; five seams; the org experience claims `.org' and `.org_archive' paths,
-;; using only public names.  The per-path VIEW MODE decides which face
-;; a file shows: `rendered' (default — the body seam replaces the
-;; editor with this skin's output) or `plain' (the body function
-;; passes, files builds its own editor, which then picks up the org
-;; toolbar through the toolbar seam).  The actions seam contributes
-;; the toggle; the FAB seam the add-heading affordance; the after-save
-;; hook busts the org cache when a device-side save lands on either form.
-;; Seam functions are PURE BUILDERS — they must never push (the JA-6
-;; audit names a pushing body function as unexplored territory).
-
-(defvar jetpacs-org-render--files-mode (make-hash-table :test #'equal)
-  "PATH -> `rendered' | `plain'.  Absent means `rendered' for org files.")
-
-(defun jetpacs-org-render--org-path-p (path)
-  (and (stringp path)
-       (let ((case-fold-search t))
-         (string-match-p "\\.org\\(_archive\\)?\\'" path))))
+;;;; The rendered-or-plain question
 
 (defun jetpacs-org-render-rendered-p (path)
   "Non-nil when PATH presents as the RENDERED org view, not plain text.
 PUBLIC — the D-4 advisory landed as the accessor itself: downstream
-readers key body and action seams off this exact question, and the first
-consumer had done so through the double-hyphen private, so a rename of
-the mode-table internals would have snapped the reader with no tripwire.
-App layers call THIS; the table stays private."
-  (if (fboundp 'jetpacs-reader-active-p)
-      (jetpacs-reader-active-p path)
-    (and (jetpacs-org-render--org-path-p path)
-         (not (eq (gethash path jetpacs-org-render--files-mode) 'plain)))))
-
-(defalias 'jetpacs-org-render--files-rendered-p
-  #'jetpacs-org-render-rendered-p
-  "The pre-D-4 private spelling; internal callers migrate at leisure.")
-
-(defun jetpacs-org-render--files-body (path)
-  "The body seam: the rendered org view, or nil to pass to the editor."
-  (when (jetpacs-org-render--files-rendered-p path)
-    (let ((buf (find-file-noselect path t)))
-      (with-current-buffer buf
-        (unless (derived-mode-p 'org-mode) (org-mode)))
-      (apply #'jetpacs-column (jetpacs-org-render buf)))))
-
-(defun jetpacs-org-render--files-actions (path)
-  "The actions seam: the rendered⇄plain toggle icon for org paths."
-  (when (jetpacs-org-render--org-path-p path)
-    (list (jetpacs-icon-button
-           (if (jetpacs-org-render--files-rendered-p path)
-               "edit" "preview")
-           (jetpacs-action "jetpacs.org.view-mode"
-                           :args (list :path path))
-           :content-description
-           (if (jetpacs-org-render--files-rendered-p path)
-               "Edit as text" "Show rendered")))))
-
-(defun jetpacs-org-render--files-toolbar (path)
-  "The toolbar seam: the org toolbar on the plain editor."
-  (when (jetpacs-org-render--org-path-p path)
-    (jetpacs-org-toolbar)))
-
-(defun jetpacs-org-render--files-fab (path)
-  "The FAB seam: the add-heading affordance (mint + record atomic)."
-  (when (jetpacs-org-render--org-path-p path)
-    (jetpacs-icon-button
-     "post_add"
-     (jetpacs-org-add-heading-descriptor
-      (buffer-name (find-file-noselect path t)))
-     :content-description "Add heading")))
-(defun jetpacs-org-render--files-after-save (truename)
-  "The after-save hook: a device-side org save busts the engine memo."
-  (when (jetpacs-org-render--org-path-p truename)
-    (ebp-org-cache-invalidate)))
-
-(defun jetpacs-org-render--view-mode (args params)
-  "Flip the per-path view mode.  The worst a forged path can do is
-flip a bit for a file nobody shows — the screens re-derive everything
-from their own state on the deferred re-push."
-  (let ((path (plist-get args :path)))
-    (cond
-     ((not (jetpacs-org-render--org-path-p path)) 'rejected)
-     ((jetpacs-event-stale-p params) 'stale)
-     (t
-      (puthash path
-               (if (jetpacs-org-render--files-rendered-p path)
-                   'plain 'rendered)
-               jetpacs-org-render--files-mode)
-      (jetpacs-buffer-defer-refresh (plist-get params :surface))
-      'accepted))))
-
-;; Compile-time declarations for the files seams (loaded lazily below).
-(defvar jetpacs-files-editor-toolbar-function)
-(defvar jetpacs-files-editor-fab-function)
-(declare-function jetpacs-org-toolbar "jetpacs-org-toolbar")
-(declare-function jetpacs-reader-active-p "jetpacs-reader" (path))
-(declare-function jetpacs-editor-org-save-policy "jetpacs-editor-org" (&optional buffer))
-
-(with-eval-after-load 'jetpacs-files
-  (when jetpacs-org-render-install-legacy-files-seams
-    (require 'jetpacs-org-toolbar)
-    (jetpacs-defaction "jetpacs.org.view-mode"
-                       #'jetpacs-org-render--view-mode)
-    (add-hook 'jetpacs-files-editor-body-functions
-              #'jetpacs-org-render--files-body)
-    (add-hook 'jetpacs-files-editor-actions-functions
-              #'jetpacs-org-render--files-actions)
-    (add-hook 'jetpacs-files-after-save-hook
-              #'jetpacs-org-render--files-after-save)
-    ;; Single-function seams: claim politely, chaining any prior holder.
-    (let ((prev (bound-and-true-p jetpacs-files-editor-toolbar-function)))
-      (setq jetpacs-files-editor-toolbar-function
-            (lambda (path)
-              (or (jetpacs-org-render--files-toolbar path)
-                  (and prev (funcall prev path))))))
-    (let ((prev (bound-and-true-p jetpacs-files-editor-fab-function)))
-      (setq jetpacs-files-editor-fab-function
-            (lambda (path)
-              (or (jetpacs-org-render--files-fab path)
-                  (and prev (funcall prev path))))))))
+readers key body and action seams off this exact question.  The reader
+host answers it (`jetpacs-reader-active-p'); the pre-reader per-path
+view-mode table and its Files seams are gone."
+  (jetpacs-reader-active-p path))
 
 ;;;; Reset / unload
 
 (defun jetpacs-org-render-reset ()
-  "Reset render-module state: LaTeX, view modes, and host presenters."
+  "Reset render-module state: LaTeX and host presenters."
   (clrhash jetpacs-org-render--latex-memo)
   (setq jetpacs-org-render--latex-order nil
         jetpacs-org-render--latex-queue nil
@@ -1721,13 +1596,12 @@ from their own state on the deferred re-push."
   (when (timerp jetpacs-org-render--latex-timer)
     (cancel-timer jetpacs-org-render--latex-timer))
   (setq jetpacs-org-render--latex-timer nil)
-  (clrhash jetpacs-org-render--files-mode)
   (clrhash jetpacs-org-render--surface-presenters))
 
 (add-hook 'jetpacs-reset-functions #'jetpacs-org-render-reset)
 
 (defun jetpacs-org-render-unload-function ()
-  "Unload hygiene: deregister the skin, the verbs and the seams."
+  "Unload hygiene: deregister the skin and the verbs."
   (remove-hook 'jetpacs-reset-functions #'jetpacs-org-render-reset)
   (setq jetpacs-render-buffer-functions
         (assq-delete-all 'org-mode jetpacs-render-buffer-functions))
@@ -1739,14 +1613,6 @@ from their own state on the deferred re-push."
   (jetpacs-undefaction "jetpacs.org.execute-src-block")
   (jetpacs-undefaction "jetpacs.org.follow")
   (jetpacs-undefaction "jetpacs.org.footnote-return")
-  (jetpacs-undefaction "jetpacs.org.view-mode")
-  (when (boundp 'jetpacs-files-editor-body-functions)
-    (remove-hook 'jetpacs-files-editor-body-functions
-                 #'jetpacs-org-render--files-body)
-    (remove-hook 'jetpacs-files-editor-actions-functions
-                 #'jetpacs-org-render--files-actions)
-    (remove-hook 'jetpacs-files-after-save-hook
-                 #'jetpacs-org-render--files-after-save))
   (jetpacs-org-render-reset)
   nil)
 

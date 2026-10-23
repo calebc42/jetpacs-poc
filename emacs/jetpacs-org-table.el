@@ -26,7 +26,7 @@
 ;; bridges through the jetpacs-dialog advice behind
 ;; `jetpacs-dialog-can-bridge-p', with the headless refusal notifying
 ;; instead of wedging a minibuffer nobody attends.  Mutations save
-;; through `jetpacs-editor-org-save-policy', so `accepted' means
+;; through `jetpacs-org-save-policy', so `accepted' means
 ;; on-disk.
 
 ;;; Code:
@@ -42,7 +42,7 @@
 (require 'jetpacs-buffer)
 (require 'jetpacs-dialog)
 (require 'jetpacs-org-settings)         ; `jetpacs-org-babel-timeout'
-(require 'jetpacs-editor-org)           ; the synchronous save policy
+(require 'jetpacs-org-save)             ; the synchronous save policy
 
 ;;;; The exposure gate (SPEC 23.1 — the jetpacs-org-dialogs tap order)
 
@@ -118,7 +118,7 @@ from their own flow."
                  (let ((case-fold-search t))
                    (looking-at-p "[ \t]*#\\+TBLFM:")))
            (org-table-recalculate t)))))
-    (jetpacs-editor-org-save-policy buffer)))
+    (jetpacs-org-save-policy buffer)))
 
 (defun jetpacs-org-table-clean-field (input)
   "INPUT flattened to one table field.
@@ -235,7 +235,7 @@ confirm that cannot reach the device refuses instead of wedging."
                (with-timeout ((max 1 jetpacs-org-babel-timeout)
                               (signal 'jetpacs-org-table--timeout nil))
                  (org-babel-execute-src-block nil info)))))
-          (jetpacs-editor-org-save-policy buffer))
+          (jetpacs-org-save-policy buffer))
         (jetpacs-shell-notify "Block executed" surface)
         (ignore-errors (jetpacs-shell-push surface)))
     (inhibited-interaction
