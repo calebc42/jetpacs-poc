@@ -11,6 +11,12 @@
 ;; Jetpacs runtime and that applet, then exposes live registry and render
 ;; determinism tools in addition to the static surface.
 ;;
+;; Loading the applet must register nothing: the launcher records every
+;; registration made from the applet's own files during the load and
+;; refuses the applet if there is one.  It then registers the applet
+;; through its packaged-apps manifest entry (or NAME-register), the same
+;; path the Apps screen takes.
+;;
 ;; The chosen applet is arbitrary Elisp.  Use this only for code you trust.
 
 ;;; Code:
@@ -27,6 +33,11 @@
 (declare-function jetpacs-applet-tooling-resolved-app-source-roots "jetpacs-applet-tooling" ())
 (declare-function jetpacs-applet-tooling-runtime-available-p "jetpacs-applet-tooling" ())
 (declare-function jetpacs-applet-tooling-workspace-root "jetpacs-applet-tooling" ())
+(declare-function jetpacs-applet-tooling-load-recording-registrations
+                  "jetpacs-applet-tooling" (file))
+(declare-function jetpacs-applet-tooling-lifecycle-functions
+                  "jetpacs-applet-tooling" (applet))
+(declare-function jetpacs-apps-call-register "jetpacs-apps" (register file))
 
 (defvar jetpacs-applet-mcp-suppress-auto-start)
 
@@ -80,6 +91,11 @@
     (let ((material3 (expand-file-name "apps/jetpacs-material3" platform)))
       (when (file-directory-p material3)
         (add-to-list 'load-path material3)))
+    ;; The packaged-apps manifest names each bundled app's register
+    ;; function; it requires no app feature, so loading it registers nothing.
+    (let ((packaged (expand-file-name "apps/packaged-apps" platform)))
+      (when (file-directory-p packaged)
+        (add-to-list 'load-path packaged)))
     ;; Optional in-repository modules remain dependency choices of the applet.
     (dolist (relative '("jetpacs-components/lisp/jetpacs-components"
                         "jetpacs-automations/lisp"
@@ -101,7 +117,21 @@
           (when (file-directory-p directory)
             (add-to-list 'load-path directory)))))
     (require 'jetpacs-devtools)
-    (load applet nil 'nomessage)
+    (require 'jetpacs-apps)
+    (require 'jetpacs-shell)
+    (require 'jetpacs-packaged-apps nil t)
+    (let ((at-load (jetpacs-applet-tooling-load-recording-registrations applet)))
+      (when at-load
+        (error (concat "Jetpacs Applet MCP runtime: %s registers at load; "
+                       "move these into its register function:\n%s")
+               (jetpacs-applet-tooling--relative applet)
+               (string-join at-load "\n"))))
+    (let ((lifecycle (jetpacs-applet-tooling-lifecycle-functions applet)))
+      (unless lifecycle
+        (error (concat "Jetpacs Applet MCP runtime: %s has no register and "
+                       "unregister functions")
+               (jetpacs-applet-tooling--relative applet)))
+      (jetpacs-apps-call-register (car lifecycle) applet))
     (setq jetpacs-applet-mcp-suppress-auto-start t)
     (load (expand-file-name "jetpacs-applet-mcp.el" mcp-directory) nil 'nomessage)
     (unless (jetpacs-applet-tooling-runtime-available-p)

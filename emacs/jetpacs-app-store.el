@@ -273,8 +273,9 @@ catalog or staged app, and this resolves it against what is available now."
 
 (defun jetpacs-app-store--activate-packaged (entry)
   "Load and register trusted packaged app ENTRY.
-`require' performs the first activation for traditional app entry files;
-REGISTER restores activation after a live Disable left the feature loaded."
+`require' only loads the app; REGISTER activates it, both the first time
+and after a live Disable left the feature loaded.  REGISTER runs with
+the app's entry file as `load-file-name' (`jetpacs-apps-call-register')."
   (let ((feature (plist-get entry :feature))
         (register (plist-get entry :register)))
     (unless (symbolp feature)
@@ -284,7 +285,8 @@ REGISTER restores activation after a live Disable left the feature loaded."
       (unless (and (symbolp register) (fboundp register))
         (error "Packaged app %s has no register function"
                (plist-get entry :name)))
-      (funcall register))
+      (jetpacs-apps-call-register register
+                                  (locate-library (symbol-name feature))))
     (unless (jetpacs-app-store--packaged-active-p entry)
       (error "Packaged app %s did not register"
              (plist-get entry :name)))))

@@ -51,6 +51,7 @@
 (declare-function jetpacs-shell--gate-variants "jetpacs-shell"
                   (spec &optional analysis))
 (declare-function jetpacs-shell-roots "jetpacs-shell" ())
+(declare-function jetpacs-apps-call-register "jetpacs-apps" (register file))
 (declare-function jetpacs-window "jetpacs-surfaces" ())
 (declare-function ebp-client-granted "ebp" (client))
 (declare-function ebp-client-limits "ebp" (client))
@@ -58,6 +59,7 @@
 (defvar jetpacs--claim-sites)
 (defvar jetpacs--registrations)
 (defvar jetpacs-action-handlers)
+(defvar jetpacs-app-store-packaged-apps)
 (defvar jetpacs-apps--registry)
 (defvar jetpacs-shell-builder-error-functions)
 (defvar jetpacs-shell--frame-headroom)
@@ -2543,6 +2545,205 @@ INCLUDE-CANONICAL is non-nil, append the first canonical EBP JSON payload."
               (concat "\nCanonical EBP JSON:\n" first-json "\n")
             "")))))))
 
+;;;; Lifecycle evidence: registration at load, register/unregister symmetry
+
+(defconst jetpacs-applet-tooling-watched-hooks
+  '(before-save-hook after-save-hook
+    org-mode-hook org-insert-heading-hook org-property-changed-functions
+    org-after-todo-state-change-hook org-capture-after-finalize-hook
+    org-clock-in-hook org-clock-out-hook
+    completion-at-point-functions
+    jetpacs-teardown-functions jetpacs-reset-functions
+    jetpacs-shell-refresh-hook jetpacs-shell-after-push-hook
+    jetpacs-design-profile-changed-hook
+    jetpacs-files-before-buffer-save-hook jetpacs-files-after-save-hook
+    ebp-complete-shadow-setup-hook)
+  "Global hooks whose membership a registry snapshot records.
+The hooks apps attach to at registration; an applet that leaves a member
+behind after its unregister is the leak the symmetry check exists for.")
+
+(defun jetpacs-applet-tooling--stable-name (value)
+  "A stable, bounded printed form of registry key VALUE.
+Symbols, strings and numbers print as themselves, a cons of them as a
+pair; anything else (a closure, a buffer) as an opaque marker."
+  (cond
+   ((or (symbolp value) (stringp value) (numberp value))
+    (format "%s" value))
+   ((and (consp value)
+         (or (symbolp (car value)) (stringp (car value)))
+         (or (symbolp (cdr value)) (stringp (cdr value))))
+    (format "%s/%s" (car value) (cdr value)))
+   (t "<anonymous>")))
+
+(defun jetpacs-applet-tooling--hook-members (hook)
+  "HOOK's global members as stable strings, or nil when HOOK is unbound."
+  (when (boundp hook)
+    (let ((value (default-value hook)))
+      (mapcar #'jetpacs-applet-tooling--stable-name
+              (if (or (functionp value) (not (listp value)))
+                  (list value)
+                value)))))
+
+(defun jetpacs-applet-tooling-registry-snapshot ()
+  "Return the live registries as one comparable value.
+A plist of sorted string lists: `:actions' (handler names), `:claims'
+\(\"KIND NAME OWNER\" from the attribution ledger), `:apps', `:roots',
+and `:hooks', an alist of each `jetpacs-applet-tooling-watched-hooks'
+member's global functions."
+  (jetpacs-applet-tooling--runtime-required)
+  (let (actions claims)
+    (maphash (lambda (name _fn) (push name actions)) jetpacs-action-handlers)
+    (when (and (boundp 'jetpacs--registrations)
+               (hash-table-p jetpacs--registrations))
+      (maphash (lambda (key owner)
+                 (push (format "%s %s %s" (car key)
+                               (jetpacs-applet-tooling--stable-name (cdr key))
+                               owner)
+                       claims))
+               jetpacs--registrations))
+    (list :actions (sort actions #'string<)
+          :claims (sort claims #'string<)
+          :apps (sort (mapcar #'car (and (boundp 'jetpacs-apps--registry)
+                                         jetpacs-apps--registry))
+                      #'string<)
+          :roots (sort (mapcar #'car (jetpacs-shell-roots)) #'string<)
+          :hooks (mapcar (lambda (hook)
+                           (cons hook (sort (jetpacs-applet-tooling--hook-members
+                                             hook)
+                                            #'string<)))
+                         jetpacs-applet-tooling-watched-hooks))))
+
+(defun jetpacs-applet-tooling-registry-diff (before after)
+  "Return the differences from snapshot BEFORE to AFTER as strings, or nil.
+Each line is \"+ KIND NAME\" for an addition or \"- KIND NAME\" for a
+removal; a hook whose anonymous members changed in number reports a
+count line."
+  (let (lines)
+    (dolist (key '(:actions :claims :apps :roots))
+      (let ((kind (substring (symbol-name key) 1))
+            (old (plist-get before key))
+            (new (plist-get after key)))
+        (dolist (item (seq-difference new old))
+          (push (format "+ %s %s" kind item) lines))
+        (dolist (item (seq-difference old new))
+          (push (format "- %s %s" kind item) lines))))
+    (dolist (entry (plist-get after :hooks))
+      (let* ((hook (car entry))
+             (old (alist-get hook (plist-get before :hooks)))
+             (new (cdr entry)))
+        (unless (equal old new)
+          (let ((added (seq-difference new old))
+                (removed (seq-difference old new)))
+            (dolist (item added) (push (format "+ hook %s %s" hook item) lines))
+            (dolist (item removed)
+              (push (format "- hook %s %s" hook item) lines))
+            (unless (or added removed)
+              (push (format "~ hook %s members %d -> %d"
+                            hook (length old) (length new))
+                    lines))))))
+    (nreverse lines)))
+
+(defun jetpacs-applet-tooling-lifecycle-functions (applet)
+  "Return APPLET's (REGISTER . UNREGISTER) function symbols, or nil.
+APPLET is an entry file name or bare name (\"glasspane.el\",
+\"glasspane\").  A packaged-apps manifest entry with that `:name' wins;
+otherwise NAME-register and NAME-unregister when both are defined."
+  (let* ((base (file-name-sans-extension (file-name-nondirectory applet)))
+         (entry (and (boundp 'jetpacs-app-store-packaged-apps)
+                     (seq-find (lambda (it)
+                                 (equal (plist-get it :name)
+                                        (concat base ".el")))
+                               jetpacs-app-store-packaged-apps)))
+         (register (or (plist-get entry :register)
+                       (intern-soft (concat base "-register"))))
+         (unregister (or (plist-get entry :unregister)
+                         (intern-soft (concat base "-unregister")))))
+    (and register unregister (fboundp register) (fboundp unregister)
+         (cons register unregister))))
+
+(defun jetpacs-applet-tooling-check-lifecycle-symmetry (applet)
+  "Unregister, register and unregister APPLET; report whether it is symmetric.
+APPLET names an entry file as `jetpacs-applet-tooling-lifecycle-functions'
+resolves it.  SYMMETRIC means the registries after the final unregister
+equal those before the register, and the register changed something.
+An applet registered on entry is registered again on exit."
+  (jetpacs-applet-tooling--runtime-required)
+  (let ((pair (jetpacs-applet-tooling-lifecycle-functions applet)))
+    (unless pair
+      (error "Jetpacs Applet Tooling: no register/unregister pair for %s"
+             applet))
+    (let* ((unregister (cdr pair))
+           ;; Register as the launcher and the Apps screen do, from the
+           ;; defining file, so claim sites keep naming the applet.
+           (file (symbol-file (car pair) 'defun))
+           (register (lambda ()
+                       (jetpacs-apps-call-register (car pair) file)))
+           (entry (jetpacs-applet-tooling-registry-snapshot))
+           (base (progn (funcall unregister)
+                        (jetpacs-applet-tooling-registry-snapshot)))
+           (mid (progn (funcall register)
+                       (jetpacs-applet-tooling-registry-snapshot)))
+           (post (progn (funcall unregister)
+                        (jetpacs-applet-tooling-registry-snapshot)))
+           (was-registered (not (equal entry base)))
+           (leaks (jetpacs-applet-tooling-registry-diff base post))
+           (symmetric (and (null leaks) (not (equal base mid)))))
+      (when was-registered (funcall register))
+      (jetpacs-applet-tooling--cap
+       (concat
+        (format "Jetpacs lifecycle symmetry: %s (%s / %s)\n"
+                applet (car pair) unregister)
+        (format "Status: %s\n" (if symmetric "SYMMETRIC" "ASYMMETRIC"))
+        (format "Registered on entry: %s\n" (if was-registered "yes" "no"))
+        (format "Register changes: %d\n"
+                (length (jetpacs-applet-tooling-registry-diff base mid)))
+        (if leaks
+            (concat "Left behind by unregister:\n" (string-join leaks "\n")
+                    "\n")
+          (if symmetric "" "Register changed nothing.\n")))))))
+
+(defun jetpacs-applet-tooling-load-recording-registrations (file)
+  "Load FILE; return the registrations made while loading its own files.
+A registration counts when `load-file-name' is in FILE's directory at the
+time: the applet's sources, never a foundation module its `require'
+chain pulls in (those register at load by design).  Recorded entry
+points are `jetpacs-defaction', `jetpacs-defapp', the root definers,
+every owner claim, and global `add-hook'.  Each entry is a string
+\"KIND NAME (SOURCE)\".  Registrations done without those entry points
+\(a direct `setq' of a hook) are not seen."
+  (let* ((dir (file-name-as-directory
+               (file-truename (file-name-directory file))))
+         (records nil)
+         (note (lambda (kind name)
+                 (let ((source load-file-name))
+                   (when (and source
+                              (string-prefix-p dir (file-truename source)))
+                     (push (format "%s %s (%s)" kind
+                                   (jetpacs-applet-tooling--stable-name name)
+                                   (file-name-nondirectory source))
+                           records)))))
+         (advices
+          (list (cons 'jetpacs-defaction
+                      (lambda (name &rest _) (funcall note "action" name)))
+                (cons 'jetpacs-defapp
+                      (lambda (id &rest _) (funcall note "app" id)))
+                (cons 'jetpacs-shell-define-root
+                      (lambda (surface &rest _) (funcall note "root" surface)))
+                (cons 'jetpacs-chrome-define-root
+                      (lambda (owner &rest _) (funcall note "root" owner)))
+                (cons 'jetpacs--claim
+                      (lambda (kind name) (funcall note kind name)))
+                (cons 'add-hook
+                      (lambda (hook fn &optional _depth local)
+                        (unless local
+                          (funcall note "hook" (cons hook fn))))))))
+    (unwind-protect
+        (progn
+          (dolist (advice advices) (advice-add (car advice) :before (cdr advice)))
+          (load file nil 'nomessage))
+      (dolist (advice advices) (advice-remove (car advice) (cdr advice))))
+    (delete-dups (nreverse records))))
+
 ;;;; Static applet validation
 
 (defun jetpacs-applet-tooling--issue (severity code message &optional path line)
@@ -2562,6 +2763,68 @@ A call nested beneath a form whose head is in ALLOWED-WRAPPERS is omitted."
                              ancestors)))
               (cl-pushnew (car node) found))))
     (nreverse found)))
+
+(defconst jetpacs-applet-tooling--registrars
+  '(jetpacs-defapp jetpacs-defaction
+    jetpacs-chrome-define-root jetpacs-shell-define-root)
+  "Registrars an applet may call only from its register function.
+Never at load: `require' must only load.")
+
+(defconst jetpacs-applet-tooling--definition-heads
+  '(defun cl-defun defmacro cl-defmacro defsubst defalias defvar
+    defvar-local defconst defcustom defgroup defface define-error
+    declare-function require provide eval-when-compile cl-defstruct
+    cl-defgeneric cl-defmethod define-minor-mode define-derived-mode
+    ert-deftest)
+  "Heads of top-level forms that define rather than run.")
+
+(defun jetpacs-applet-tooling--registering-definitions (definitions)
+  "The names in DEFINITIONS that register, directly or through each other.
+DEFINITIONS is the scan's list of (NAME-STRING . FORM)."
+  (let ((registering nil) (changed t))
+    (while changed
+      (setq changed nil)
+      (dolist (definition definitions)
+        (let ((name (intern (car definition))))
+          (unless (memq name registering)
+            (when (jetpacs-applet-tooling--calls-in-form
+                   (cdr definition)
+                   (append jetpacs-applet-tooling--registrars registering))
+              (push name registering)
+              (setq changed t))))))
+    registering))
+
+(defun jetpacs-applet-tooling--register-at-load-issues (scans definitions)
+  "Issues for SCANS' top-level forms that register when the file loads.
+A top-level call to a registering definition among DEFINITIONS is an
+error: `require' must only load, and the Apps screen or the trusted
+launcher calls the register function.  A registrar called directly at
+top level, outside any definition, is a warning."
+  (let ((registering (jetpacs-applet-tooling--registering-definitions
+                      definitions))
+        issues)
+    (dolist (scan scans)
+      (dolist (record (plist-get scan :records))
+        (let ((form (plist-get record :form)))
+          (when (and (consp form) (symbolp (car form))
+                     (not (memq (car form)
+                                jetpacs-applet-tooling--definition-heads)))
+            (cond
+             ((memq (car form) registering)
+              (push (jetpacs-applet-tooling--issue
+                     'error "applet.register-at-load"
+                     (format "Top-level (%s) registers when the file loads; let the Apps screen or the trusted launcher call it."
+                             (car form))
+                     (plist-get record :path) (plist-get record :line))
+                    issues))
+             ((jetpacs-applet-tooling--calls-in-form
+               form jetpacs-applet-tooling--registrars)
+              (push (jetpacs-applet-tooling--issue
+                     'warning "applet.register-at-load"
+                     "A registrar runs at load; move it into the register function."
+                     (plist-get record :path) (plist-get record :line))
+                    issues)))))))
+    (nreverse issues)))
 
 (defun jetpacs-applet-tooling-validate-applet (path)
   "Statically validate applet file or directory PATH.
@@ -2620,6 +2883,9 @@ prompt/blocking calls inside registered handlers."
                            (plist-get record :name))
                    (plist-get record :path) (plist-get record :line))
                   issues)))))
+    (setq issues (append (reverse (jetpacs-applet-tooling--register-at-load-issues
+                                   scans definitions))
+                         issues))
     (unless owners
       (push (jetpacs-applet-tooling--issue 'error "applet.owner"
                                 "No with-jetpacs-owner registration scope found.")
@@ -2810,7 +3076,6 @@ ID, LABEL, and ICON have already passed their wire-level checks."
         (jetpacs-undefaction ,action)
         (jetpacs-apps-unregister ,owner)
         (jetpacs-chrome-remove ,owner))
-     `(,register)
      `(provide ',feature))))
 
 (defun jetpacs-applet-tooling--read-forms-from-string (source)
@@ -2857,6 +3122,8 @@ homoiconic; no file is written or evaluated."
 
 ;; A Tier-1 Jetpacs applet.  Application state remains in Emacs; this file
 ;; declares a native surface and handles semantic actions from the device.
+;; Loading it registers nothing: `%s-register' does, called by the Apps
+;; screen, the trusted applet launcher, or a desktop init after `require'.
 
 ;;; Code:
 
@@ -2903,15 +3170,13 @@ homoiconic; no file is written or evaluated."
   (jetpacs-apps-unregister %s-owner)
   (jetpacs-chrome-remove %s-owner))
 
-(%s-register)
-
 (provide '%s)
 ;;; %s.el ends here
 "
-                    feature label prefix id prefix label
+                    feature label prefix prefix id prefix label
                     (format "Hello from %s" label) action prefix prefix
                     prefix prefix prefix action prefix prefix label icon prefix
-                    prefix action prefix prefix prefix feature feature)))
+                    prefix action prefix prefix feature feature)))
       (unless (equal forms (jetpacs-applet-tooling--read-forms-from-string source))
         (error "Jetpacs Applet Tooling: internal scaffold serializer drifted from its forms"))
       source)))

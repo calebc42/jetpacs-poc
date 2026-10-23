@@ -32,6 +32,12 @@ A complete applet has one stable owner and symmetric registration:
    its home.
 5. Provide an idempotent public `*-register` function and a matching
    `*-unregister` function for live reload, disable, and uninstall.
+6. Register nothing at load. `require` only loads; the Apps screen, the
+   trusted launcher, an interactive entry command, or a desktop init calls
+   `*-register`. Never end the file with a top-level `(*-register)`: the
+   static validator reports it as `applet.register-at-load`, and the
+   trusted launcher refuses an applet whose own files register while it
+   loads.
 
 Use a non-reserved owner such as `weather` or `notes.team`. The `jetpacs.`
 prefix belongs to platform surfaces. Wire identifiers contain 1–128 ASCII
@@ -253,10 +259,15 @@ action dispatch.
 ## Packaging and teardown
 
 A packaged app entry names its feature, app ID, register function, and
-unregister function. Loading source and enabling the app are separate acts.
+unregister function. Loading source and enabling the app are separate acts:
+the Apps screen requires the feature, then calls the register function.
 Registration should be idempotent so evaluation replaces handlers and roots in
 place. Unregistration removes actions, app identity, chrome roots, hooks,
-timers, and app-owned mutable state.
+timers, and app-owned mutable state; `jetpacs-apps-unregister` tears down
+everything attributed to the owner, so the unregister function adds only
+what the app holds itself (timers, caches). For trusted code,
+`jetpacs_check_lifecycle_symmetry` runs unregister, register, unregister and
+reports anything the final unregister left behind.
 
 Treat side-loaded Elisp as code, because it is code. Installation consent is
 not a sandbox. The MCP server's static inspection does not make an untrusted

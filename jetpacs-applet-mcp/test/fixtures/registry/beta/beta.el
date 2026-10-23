@@ -47,7 +47,5 @@
   (jetpacs-apps-unregister beta-owner)
   (jetpacs-chrome-remove beta-owner))
 
-(beta-register)
-
 (provide 'beta)
 ;;; beta.el ends here

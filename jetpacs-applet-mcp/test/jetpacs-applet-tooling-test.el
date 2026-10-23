@@ -246,6 +246,31 @@
     (should (string-match-p "1 registered action" report))
     (should (string-match-p "0 unresolved names" report))))
 
+(ert-deftest jetpacs-applet-tooling-test-register-at-load-is-an-error ()
+  "A top-level call to a registering function is an error; the same applet
+without it (the reference hello) passes; a test's own registrations, inside
+`ert-deftest', are not load-time registration."
+  (let ((bad (jetpacs-applet-tooling-validate-applet
+              "jetpacs-applet-mcp/test/fixtures/lifecycle/at-load/atload.el"))
+        (good (jetpacs-applet-tooling-validate-applet
+               "jetpacs-applet-mcp/examples/hello/hello.el")))
+    (should (string-match-p "Status: FAIL (1 error" bad))
+    (should (string-match-p
+             "\\[ERROR\\] applet.register-at-load .*atload.el:[0-9]+ — Top-level (atload-register)"
+             bad))
+    (should-not (string-match-p "register-at-load" good)))
+  (let ((definitions
+         '(("a-register" . (defun a-register () (b-setup)))
+           ("b-setup" . (defun b-setup ()
+                          (with-jetpacs-owner "a"
+                            (jetpacs-defaction "a.x" #'ignore))))
+           ("a-helper" . (defun a-helper () (message "no"))))))
+    (should (equal (sort (mapcar #'symbol-name
+                                 (jetpacs-applet-tooling--registering-definitions
+                                  definitions))
+                         #'string<)
+                   '("a-register" "b-setup")))))
+
 (ert-deftest jetpacs-applet-tooling-test-glasspane-documentation-contract-is-complete ()
   (let ((validation (jetpacs-applet-tooling-validate-applet "glasspane"))
         (inventory (jetpacs-applet-tooling-inspect-applet "glasspane")))
@@ -376,10 +401,10 @@
          (action (aref (plist-get manifest :actions) 0))
          (emission (aref (plist-get manifest :action-emissions) 0))
          (root (aref (plist-get manifest :roots) 0)))
-    (should (= (plist-get action :line) 43))
-    (should (= (plist-get emission :line) 30))
+    (should (= (plist-get action :line) 45))
+    (should (= (plist-get emission :line) 32))
     (should (equal (plist-get emission :name) "hello.refresh"))
-    (should (= (plist-get root :line) 41))
+    (should (= (plist-get root :line) 43))
     (should (equal (plist-get action :doc)
                    "Refresh the applet's root surface"))))
 

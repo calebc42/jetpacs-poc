@@ -52,6 +52,8 @@
 (declare-function jetpacs-applet-tooling-api-categories "jetpacs-applet-tooling" ())
 (declare-function jetpacs-applet-tooling-check-render-determinism "jetpacs-applet-tooling"
                   (surface &optional include-canonical))
+(declare-function jetpacs-applet-tooling-check-lifecycle-symmetry "jetpacs-applet-tooling"
+                  (applet))
 (declare-function jetpacs-applet-tooling-describe-node "jetpacs-applet-tooling" (node-type))
 (declare-function jetpacs-applet-tooling-describe-symbol "jetpacs-applet-tooling"
                   (name &optional include-source))
@@ -330,6 +332,14 @@ idempotent, but it reaches outside the checkout."
             ("includeCanonical" . ,(jetpacs-applet-mcp--property
                                      "boolean" "Include canonical EBP JSON; may contain app payload.")))
           '("surface"))
+         t)
+        (jetpacs-applet-mcp--tool
+         "jetpacs_check_lifecycle_symmetry" "Check register/unregister symmetry"
+         "Run the trusted applet's unregister, register and unregister (its packaged-apps manifest pair, else NAME-register/NAME-unregister) and report whether the final unregister restores every action, claim, app, root and watched global hook the register added.  Re-registers an applet that was registered on entry."
+         (jetpacs-applet-mcp--schema
+          `(("applet" . ,(jetpacs-applet-mcp--property
+                           "string" "Entry file or bare name, e.g. \"hello\" or \"glasspane.el\".")))
+          '("applet"))
          t))
      [])))
 
@@ -509,7 +519,10 @@ idempotent, but it reaches outside the checkout."
            ("jetpacs_check_render_determinism"
             (jetpacs-applet-tooling-check-render-determinism
              (jetpacs-applet-mcp--required-string arguments "surface")
-             (jetpacs-applet-mcp--optional-bool arguments "includeCanonical")))))
+             (jetpacs-applet-mcp--optional-bool arguments "includeCanonical")))
+           ("jetpacs_check_lifecycle_symmetry"
+            (jetpacs-applet-tooling-check-lifecycle-symmetry
+             (jetpacs-applet-mcp--required-string arguments "applet")))))
       (error
        (jetpacs-applet-mcp--text-result (error-message-string err) t)))))
 

@@ -64,8 +64,10 @@
       jetpacs-pairing-id (or (getenv "JETPACS_PAIRING_ID") jetpacs-pairing-id)
       jetpacs-pairing-token (or (getenv "JETPACS_PAIRING_TOKEN") jetpacs-pairing-token))
 
-;; Loading Glasspane registers it; the demo corpus gives its agenda rows.
+;; `require' only loads Glasspane; registering activates it.  The demo
+;; corpus gives its agenda rows.
 (require 'glasspane)
+(glasspane-register)
 (glasspane-demo-setup-org org-directory)
 
 (defvar smoke-desktop--demo-seen nil

@@ -58,7 +58,15 @@ Only that launcher advertises:
   registries and claim sites; and
 - `jetpacs_check_render_determinism`, which builds twice, compares canonical
   bytes, reports context and structure, and invokes the real non-sending
-  Jetpacs sender gates available in the current session.
+  Jetpacs sender gates available in the current session; and
+- `jetpacs_check_lifecycle_symmetry`, which runs the applet's unregister,
+  register and unregister and reports any action, claim, app, root or
+  watched global hook the final unregister left behind.
+
+Before it advertises those, the launcher loads the applet while recording
+every registration made from the applet's own files, refuses the applet if
+there is one (loading must register nothing), and then registers it through
+its packaged-apps manifest entry or `NAME-register`.
 
 Loading an applet is arbitrary Elisp execution. Runtime mode is for code you
 trust; static inspection is not a sandbox or a trust verdict.

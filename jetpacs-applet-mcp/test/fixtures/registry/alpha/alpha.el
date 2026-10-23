@@ -46,7 +46,5 @@
   (jetpacs-apps-unregister alpha-owner)
   (jetpacs-chrome-remove alpha-owner))
 
-(alpha-register)
-
 (provide 'alpha)
 ;;; alpha.el ends here

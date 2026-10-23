@@ -6,7 +6,9 @@
 ;;; Commentary:
 
 ;; A minimal Tier-1 Jetpacs applet and the reference output shape of
-;; `jetpacs_applet_template'.
+;; `jetpacs_applet_template'.  Loading it registers nothing:
+;; `hello-register' does, called by the Apps screen, the trusted applet
+;; launcher, or a desktop init after `require'.
 
 ;;; Code:
 
@@ -52,8 +54,6 @@
   (jetpacs-undefaction "hello.refresh")
   (jetpacs-apps-unregister hello-owner)
   (jetpacs-chrome-remove hello-owner))
-
-(hello-register)
 
 (provide 'hello)
 ;;; hello.el ends here
