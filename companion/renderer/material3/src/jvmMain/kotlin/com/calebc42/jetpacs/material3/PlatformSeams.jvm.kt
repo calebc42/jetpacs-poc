@@ -48,3 +48,6 @@ internal actual fun DrawScope.drawCanvasText(
 internal actual fun beginTraceSection(name: String) = Unit
 
 internal actual fun endTraceSection() = Unit
+
+@Composable
+internal actual fun SystemBarsMatch(background: Color) = Unit

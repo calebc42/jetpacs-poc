@@ -247,6 +247,8 @@ internal fun CompiledDesignScope.composeChromeStyles(
         railIndicator = railIndicator?.color(DesignProperty.BackgroundColor),
         drawerContainer = drawer?.color(DesignProperty.BackgroundColor),
         drawerShape = drawer?.shape(),
+        drawerWidth = (drawer?.get(DesignProperty.Width) as? DesignValue.DimensionValue)
+            ?.value?.dp,
         snackbarContainer = snackbar?.color(DesignProperty.BackgroundColor),
         snackbarContent = snackbar?.color(DesignProperty.ContentColor),
         snackbarShape = snackbar?.shape(),

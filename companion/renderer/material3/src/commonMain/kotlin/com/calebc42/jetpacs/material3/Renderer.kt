@@ -85,6 +85,7 @@ import com.calebc42.ebp.renderer.compose.LocalComposeChromeStyles
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -1599,6 +1600,7 @@ fun RenderScaffold(
     // hosts an authored navigation_rail, whose own variant and synced
     // expanded state carry the collapsed/expanded forms.
     val rail = p[ScaffoldMembers.Rail]
+    var fabHeightPx by remember { mutableStateOf(0) }
     val scaffold: @Composable () -> Unit = {
         Scaffold(
             modifier = modifier
@@ -1798,7 +1800,7 @@ fun RenderScaffold(
                         visible = scrollSignal.atStart,
                         alignment = Alignment.BottomEnd)
                 else Modifier
-                Box(fabMod) {
+                Box(fabMod.onSizeChanged { fabHeightPx = it.height }) {
                     p[ScaffoldMembers.Fab]?.let { RenderNode(it, ctx.child(it, 2, "fab")) }
                 }
             },
@@ -1844,6 +1846,20 @@ fun RenderScaffold(
                 }
             },
         ) { inner ->
+            SystemBarsMatch(MaterialTheme.colorScheme.background)
+            // Receiver overlays (the offline banner) sit above this scaffold's
+            // bottom chrome: the bar or navigation inset, plus the FAB and its
+            // 16 dp M3 margin when one is showing.
+            LocalScaffoldBottomClearance.current?.let { clearance ->
+                val owner = remember { Any() }
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                val fab = if (fabHeightPx > 0) with(density) { fabHeightPx.toDp() } + 16.dp else 0.dp
+                val bottom = inner.calculateBottomPadding() + fab
+                androidx.compose.runtime.SideEffect { clearance.report(owner, bottom) }
+                androidx.compose.runtime.DisposableEffect(clearance) {
+                    onDispose { clearance.clear(owner) }
+                }
+            }
             // Edge-to-edge: lift keyboard-adjacent body content clear of the
             // IME while the bottom bar stays put; consumeWindowInsets keeps
             // descendants with their own imePadding from double-padding.
@@ -2085,7 +2101,11 @@ fun RenderScaffold(
                         val chrome = LocalComposeChromeStyles.current
                         androidx.compose.material3.ModalDrawerSheet(
                             drawerState = state,
-                            modifier = Modifier.fillMaxWidth(0.75f),
+                            // A design scope may size the sheet (an app's own
+                            // drawer width); otherwise three quarters wide.
+                            modifier = chrome?.drawerWidth
+                                ?.let { Modifier.width(it) }
+                                ?: Modifier.fillMaxWidth(0.75f),
                             drawerShape = chrome?.drawerShape
                                 ?: androidx.compose.material3.DrawerDefaults.shape,
                             drawerContainerColor = chrome?.drawerContainer

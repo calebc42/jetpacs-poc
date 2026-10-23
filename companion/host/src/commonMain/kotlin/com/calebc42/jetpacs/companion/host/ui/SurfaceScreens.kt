@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion.host.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.calebc42.jetpacs.material3.LocalScaffoldBottomClearance
+import com.calebc42.jetpacs.material3.ScaffoldBottomClearance
+import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -142,11 +156,20 @@ fun SurfaceDestination(
     onSettings: () -> Unit,
     onRepair: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
-        SurfaceDocumentHost(surfaceId, surfaceFlow, connectedFlow, bridge, onRepair)
-        ConnectionStatusHost(surfaceFlow, connectedFlow, onSettings)
+    val clearance = remember { ScaffoldBottomClearance() }
+    CompositionLocalProvider(LocalScaffoldBottomClearance provides clearance) {
+        Box(Modifier.fillMaxSize()) {
+            SurfaceDocumentHost(surfaceId, surfaceFlow, connectedFlow, bridge, onRepair)
+            ConnectionStatusHost(surfaceFlow, connectedFlow, clearance, onSettings)
+        }
     }
 }
+
+/** A disconnect must last this long before the offline banner appears. */
+internal const val OFFLINE_BANNER_SHOW_DELAY_MS = 1_500L
+
+/** A reconnect must hold this long before the offline banner leaves. */
+internal const val OFFLINE_BANNER_HIDE_DELAY_MS = 2_000L
 
 @Composable
 private fun SurfaceDocumentHost(
@@ -206,11 +229,28 @@ private fun SurfaceDocumentHost(
 private fun ConnectionStatusHost(
     surfaceFlow: StateFlow<JsonObject?>,
     connectedFlow: StateFlow<Boolean>,
+    clearance: ScaffoldBottomClearance,
     onSettings: () -> Unit,
 ) {
     val shown by surfaceFlow.collectAsState()
     val connected by connectedFlow.collectAsState()
-    if (shown == null || connected) return
+    // Hysteresis: a redial or supersession blip (SPEC 5.2 backoff, a second
+    // Emacs contending for the pairing) toggles `connected` within a second
+    // or two. The banner appears only once a disconnect has lasted, and
+    // leaves only once a reconnect has held, so it reads as one steady
+    // notice instead of flashing with every attempt.
+    var visible by remember { mutableStateOf(false) }
+    LaunchedEffect(shown == null, connected) {
+        if (shown == null) {
+            visible = false
+        } else if (!connected) {
+            if (!visible) delay(OFFLINE_BANNER_SHOW_DELAY_MS)
+            visible = true
+        } else if (visible) {
+            delay(OFFLINE_BANNER_HIDE_DELAY_MS)
+            visible = false
+        }
+    }
 
     val openSettings = dropUnlessResumed { onSettings() }
     val openEmacs = LocalHostUiPlatform.current.openEmacs?.let { open -> dropUnlessResumed { open() } }
@@ -218,14 +258,28 @@ private fun ConnectionStatusHost(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.BottomCenter,
     ) {
-        OfflineConnectionBanner(
-            onSettings = openSettings,
-            onOpenEmacs = openEmacs,
-            modifier = Modifier
-                .padding(16.dp)
-                .widthIn(max = 560.dp)
-                .fillMaxWidth(),
-        )
+        AnimatedVisibility(
+            visible = visible,
+            enter = fadeIn() + slideInVertically { it / 2 },
+            exit = fadeOut() + slideOutVertically { it / 2 },
+        ) {
+            OfflineConnectionBanner(
+                onSettings = openSettings,
+                onOpenEmacs = openEmacs,
+                modifier = Modifier
+                    // Above whatever bottom chrome the surface is showing —
+                    // a navigation bar, the system navigation inset, a FAB —
+                    // on every window size; the system inset alone when no
+                    // scaffold reports.
+                    .then(
+                        if (clearance.reported) Modifier.padding(bottom = clearance.bottom)
+                        else Modifier.navigationBarsPadding(),
+                    )
+                    .padding(16.dp)
+                    .widthIn(max = 560.dp)
+                    .fillMaxWidth(),
+            )
+        }
     }
 }
 

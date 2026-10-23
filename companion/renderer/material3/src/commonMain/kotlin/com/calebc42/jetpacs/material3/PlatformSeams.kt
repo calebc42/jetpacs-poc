@@ -42,3 +42,14 @@ internal expect fun DrawScope.drawCanvasText(
 internal expect fun beginTraceSection(name: String)
 
 internal expect fun endTraceSection()
+
+/**
+ * Match the window's system-bar icons to a presented scaffold's [background]:
+ * dark icons over a light background, light icons over a dark one. A design
+ * scope can give a surface a palette unrelated to the system dark setting
+ * (an app's own light theme on a phone in dark mode), so the bars follow the
+ * pixels actually drawn behind them. Android sets the window's insets
+ * controller; the desktop window has no system bars.
+ */
+@Composable
+internal expect fun SystemBarsMatch(background: Color)

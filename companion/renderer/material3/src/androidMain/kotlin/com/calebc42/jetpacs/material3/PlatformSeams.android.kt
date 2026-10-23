@@ -12,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -63,3 +64,16 @@ internal actual fun DrawScope.drawCanvasText(
 internal actual fun beginTraceSection(name: String) = Trace.beginSection(name)
 
 internal actual fun endTraceSection() = Trace.endSection()
+
+@Composable
+internal actual fun SystemBarsMatch(background: Color) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (view.isInEditMode) return
+    val light = background.luminance() > 0.5f
+    androidx.compose.runtime.SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val bars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
+            android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+        window.insetsController?.setSystemBarsAppearance(if (light) bars else 0, bars)
+    }
+}
