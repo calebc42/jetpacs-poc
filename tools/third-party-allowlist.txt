@@ -1,0 +1,7 @@
+# Third-party (or not-on-load-path) features a foundation module may load
+# with a SOFT require, one per line.  Read by tools/check-layering.sh.
+#
+# modus-themes ships with Emacs, but under etc/themes rather than on the
+# load path, so `locate-library' cannot see it; jetpacs-modus.el loads it
+# softly and falls back to `require-theme'.
+modus-themes

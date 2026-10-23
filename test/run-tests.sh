@@ -21,6 +21,11 @@ export EBP_SPEC_DIR EBP_EL_DIR EBP_ORG_DIR EBP_KMP_DIR EBP_COMPOSE_DIR
 export JETPACS_COMPONENTS_DIR JETPACS_AUTHORING_DIR
 export JETPACS_AUTOMATIONS_DIR JETPACS_COMPONENT_CATALOG_DIR
 export GLASSPANE_DIR
+# SPEC 5.5's ebp-websocket.el rents the third-party websocket package; the
+# ebp delineation guard below loads it from the same sibling checkout
+# ebp.el's own runner uses.
+EBP_WEBSOCKET_DIR=${EBP_WEBSOCKET_DIR:-"$repositories_root/emacs/emacs-websocket"}
+export EBP_WEBSOCKET_DIR
 ORGZLY_DIR=${ORGZLY_DIR:-"$repositories_root/orgzly-native"}
 HARP_DIR=${HARP_DIR:-"$repositories_root/harp-native"}
 export GROVE_DIR ORGZLY_DIR HARP_DIR
@@ -31,6 +36,7 @@ for dependency in \
   "$EBP_ORG_DIR/lisp/ebp-org.el" \
   "$EBP_KMP_DIR/wire/build.gradle.kts" \
   "$EBP_COMPOSE_DIR/renderer/model/build.gradle.kts" \
+  "$EBP_WEBSOCKET_DIR/websocket.el" \
   "$GROVE_DIR/elisp/grove.el"; do
   test -r "$dependency" || {
     echo "workspace dependency missing: $dependency" >&2
@@ -48,6 +54,7 @@ emacs() {
   fi
   command emacs -Q --batch --eval '(setq load-prefer-newer t)' \
     -L "$EBP_EL_DIR/lisp" \
+    -L "$EBP_EL_DIR/test" \
     -L "$EBP_ORG_DIR/lisp" \
     -L "$JETPACS_AUTHORING_DIR/lisp" \
     -L "$jetpacs_root/emacs/apps/jetpacs-material3" \
@@ -59,22 +66,20 @@ emacs() {
     -L "$GROVE_DIR/elisp" "$@"
 }
 
-# Upstream and extension owners gate their own source. Jetpacs then runs the
-# integration suites against those exact neighboring working trees.
-EBP_SPEC_DIR="$EBP_SPEC_DIR" "$EBP_EL_DIR/test/run-tests.sh"
-EBP_EL_DIR="$EBP_EL_DIR" "$EBP_ORG_DIR/test/run-tests.sh"
-"$JETPACS_AUTHORING_DIR/test/run-tests.sh"
-"$jetpacs_root/test/material3/run-tests.sh"
-"$JETPACS_COMPONENTS_DIR/test/run-tests.sh"
-"$JETPACS_AUTOMATIONS_DIR/test/run-tests.sh"
-"$JETPACS_COMPONENT_CATALOG_DIR/test/run-tests.sh"
-JETPACS_ROOT="$jetpacs_root" \
-EBP_EL_ROOT="$EBP_EL_DIR" \
-EBP_ORG_ROOT="$EBP_ORG_DIR" \
-JETPACS_COMPONENTS_ROOT="$JETPACS_COMPONENTS_DIR" \
-  "$GROVE_DIR/test-elisp/run-tests.sh"
-JETPACS_ROOT="$jetpacs_root" "$ORGZLY_DIR/test/run-tests.sh"
-JETPACS_ROOT="$jetpacs_root" "$HARP_DIR/test/run-tests.sh"
+# Upstream, extension and downstream owners gate their own source.  Their
+# runners go LAST, through `run_sibling': a red sibling is reported and the
+# run continues, so one neighbor's failure never hides this checkout's
+# result.  The run still exits 1 when any sibling failed.
+sibling_failures=""
+run_sibling() {
+  name=$1
+  shift
+  echo "== sibling: $name"
+  if ! "$@"; then
+    echo "SIBLING FAILED: $name" >&2
+    sibling_failures="$sibling_failures $name"
+  fi
+}
 
 python3 "$EBP_KMP_DIR/tools/gen-vocabulary.py" \
   --spec-dir "$EBP_SPEC_DIR" \
@@ -123,7 +128,7 @@ bash test/onboarding-layout-test.sh
 ebp_guard_count=0
 for f in "$EBP_EL_DIR"/lisp/ebp*.el; do
   EBP_GUARD_FEATURE="$(basename "$f" .el)" \
-  emacs -Q --batch -L "$EBP_EL_DIR/lisp" --eval '
+  emacs -Q --batch -L "$EBP_EL_DIR/lisp" -L "$EBP_WEBSOCKET_DIR" --eval '
 (progn
   (require (intern (getenv "EBP_GUARD_FEATURE")))
   (let (offenders)
@@ -150,14 +155,13 @@ if [ "$ebp_guard_count" -lt 5 ]; then
 fi
 
 # Dependency direction is EBP -> Jetpacs -> downstream apps.  Foundation
-# Elisp must not name a downstream app even in a soft require or declaration;
-# keeping the source name-free also prevents documentary assumptions from
-# turning into the next reverse edge.  App code, integration tests, and plans
-# are outside this deliberately narrow boundary.
-if grep -n -i 'glasspane' emacs/*.el; then
-  echo "layering guard: foundation Elisp must not know Glasspane" >&2
-  exit 1
-fi
+# Elisp must not name a downstream app even in a soft require or declaration,
+# and requires only Jetpacs, EBP and built-in libraries (plus soft requires
+# of tools/third-party-allowlist.txt); every foundation module then loads
+# alone and leaves no downstream app symbol behind.  App code, integration
+# tests, and plans are outside this deliberately narrow boundary.
+sh tools/check-layering.sh
+sh tools/check-jetpacs-delineation.sh
 
 # Byte-compile guard: free-variable and undefined-function warnings are
 # treated as errors (catches unescaped-quote docstrings and typos before
@@ -552,10 +556,24 @@ emacs -Q --batch -L emacs \
   -l "$jetpacs_root/test/material3/jetpacs-m3-repl-test.el" \
   -f ert-run-tests-batch-and-exit
 
-# Glasspane is now a separately owned downstream applet at ../glasspane.
-# The legacy ladder suites retained in this POC are implementation evidence,
-# not current authority.  Glasspane's own focused ERT, static validator,
-# warning-as-error compile, and trusted determinism check run from that repo.
+# Applet developer tooling: the static reader/MCP/registry suites, then the
+# trusted runtime suite in a fresh process (it loads the hello applet).
+# Both run from their directory, as jetpacs-applet-mcp/AGENTS.md specifies,
+# without this runner's load-path wrapper and without the exported
+# JETPACS_REPOSITORIES_ROOT: the discovery tests build throwaway checkouts,
+# and an inherited root would override them.
+env -u JETPACS_REPOSITORIES_ROOT \
+  emacs --chdir="$jetpacs_root/jetpacs-applet-mcp" -Q --batch \
+  -l test/jetpacs-applet-tooling-test.el \
+  -l test/jetpacs-applet-mcp-test.el \
+  -l test/jetpacs-applet-source-discovery-test.el \
+  -l test/jetpacs-applet-registry-test.el \
+  -f ert-run-tests-batch-and-exit
+env -u JETPACS_REPOSITORIES_ROOT \
+  emacs --chdir="$jetpacs_root/jetpacs-applet-mcp" -Q --batch \
+  -L "$EBP_EL_DIR/lisp" \
+  -l test/jetpacs-applet-mcp-runtime-test.el \
+  -f ert-run-tests-batch-and-exit
 
 # Icon lint: SPEC 17.1's placeholder degrade means a misspelled icon
 # never fails at runtime — this is the only gate that catches a typo.
@@ -563,3 +581,29 @@ emacs -Q --batch -L emacs \
 # (regenerate in that repository after a dependency bump).
 emacs -Q --batch -l test/jetpacs-icon-lint-test.el \
   -f ert-run-tests-batch-and-exit
+
+# Siblings, last (see `run_sibling' above).  Glasspane is a separately owned
+# downstream applet at ../glasspane; its runner adds checkdoc and a
+# warning-as-error compile to its ERT suites.
+run_sibling ebp.el env EBP_SPEC_DIR="$EBP_SPEC_DIR" "$EBP_EL_DIR/test/run-tests.sh"
+run_sibling ebp-org env EBP_EL_DIR="$EBP_EL_DIR" "$EBP_ORG_DIR/test/run-tests.sh"
+run_sibling jetpacs-authoring "$JETPACS_AUTHORING_DIR/test/run-tests.sh"
+run_sibling material3 "$jetpacs_root/test/material3/run-tests.sh"
+run_sibling jetpacs-components "$JETPACS_COMPONENTS_DIR/test/run-tests.sh"
+run_sibling jetpacs-automations "$JETPACS_AUTOMATIONS_DIR/test/run-tests.sh"
+run_sibling jetpacs-component-catalog "$JETPACS_COMPONENT_CATALOG_DIR/test/run-tests.sh"
+run_sibling grove env JETPACS_ROOT="$jetpacs_root" \
+  EBP_EL_ROOT="$EBP_EL_DIR" EBP_ORG_ROOT="$EBP_ORG_DIR" \
+  JETPACS_COMPONENTS_ROOT="$JETPACS_COMPONENTS_DIR" \
+  "$GROVE_DIR/test-elisp/run-tests.sh"
+run_sibling orgzly env JETPACS_ROOT="$jetpacs_root" "$ORGZLY_DIR/test/run-tests.sh"
+run_sibling harp env JETPACS_ROOT="$jetpacs_root" "$HARP_DIR/test/run-tests.sh"
+run_sibling glasspane env JETPACS_ROOT="$jetpacs_root" \
+  EBP_EL_DIR="$EBP_EL_DIR" EBP_ORG_DIR="$EBP_ORG_DIR" \
+  JETPACS_REPOSITORIES_ROOT="$repositories_root" \
+  "$GLASSPANE_DIR/test/run-tests.sh"
+
+if test -n "$sibling_failures"; then
+  echo "sibling runners failed:$sibling_failures" >&2
+  exit 1
+fi
