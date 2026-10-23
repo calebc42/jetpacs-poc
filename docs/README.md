@@ -42,6 +42,7 @@ specification or extension manifest, then run the documented generator.
 | [`SECURITY.md`](SECURITY.md) | Android component exposure, Intent/PendingIntent rules, and security tests |
 | [`PLATFORM-RENTAL-REGISTER.md`](PLATFORM-RENTAL-REGISTER.md) | Platform primitives to reuse instead of rebuilding |
 | [`ONBOARDING-device.md`](ONBOARDING-device.md) | Installing and onboarding the Android/Emacs pair |
+| [`CLOUD-ENVIRONMENT.md`](CLOUD-ENVIRONMENT.md) | Cloud-session environment: attached repositories, allowed hosts, variables, and setup script |
 | [`REWRITE-PLAN.md`](REWRITE-PLAN.md) | Historical W0-W10 milestone map and current owners of those guarantees |
 | [`DECISIONS-wire-growth-model.md`](DECISIONS-wire-growth-model.md) | Informative open/closed wire-vocabulary growth rationale |
 
