@@ -619,6 +619,38 @@ screen already carries."
     (`(:fab . ,items) (jetpacs-chrome--join-global-fab surface n items))
     (_ n)))
 
+(defun jetpacs-chrome--authored-dock-p (node)
+  "Non-nil when NODE's scaffold already authors `:bottom_bar' or `:rail'."
+  (let (authored)
+    (jetpacs-chrome--scaffold-apply
+     node
+     (lambda (s)
+       (setq authored (or (plist-member s :bottom_bar)
+                          (plist-member s :rail)))
+       s))
+    (and authored t)))
+
+(defun jetpacs-chrome--strip-dock-keys (plist)
+  "Return a shallow copy of PLIST without `:bottom_bar' or `:rail'."
+  (let (out)
+    (while plist
+      (let ((k (car plist))
+            (v (cadr plist)))
+        (unless (memq k '(:bottom_bar :rail))
+          (setq out (cons v (cons k out)))))
+      (setq plist (cddr plist)))
+    (nreverse out)))
+
+(defun jetpacs-chrome--reapply-dock (node dock)
+  "Return NODE with its scaffold's injected dock replaced by DOCK."
+  (jetpacs-chrome--scaffold-apply
+   node
+   (lambda (s)
+     (let ((stripped (jetpacs-chrome--strip-dock-keys s)))
+       (if dock
+           (append stripped (list (car dock) (cdr dock)))
+         stripped)))))
+
 (defun jetpacs-chrome--dock-slot (surface)
   "SURFACE\'s dock as (SLOT . NODE), or nil.
 SLOT is `:bottom_bar\' — or `:rail\' when the destinations come from
@@ -924,6 +956,7 @@ snapshot required by SPEC 13.2."
                  (cached (and record (plist-get record :node)))
                  (exposure-capture (and (not cached) (list nil)))
                  (jetpacs-buffer--exposure-capture exposure-capture)
+                 (authored-dock (and cached (plist-get record :authored-dock)))
                  (fail nil)
                  analysis
                  ids
@@ -945,13 +978,27 @@ snapshot required by SPEC 13.2."
                                   (lambda (e)
                                     (jetpacs-shell--note-builder-error
                                      (list :surface surface :screen id) e))))
-                              ;; The identical node passed this per-screen gate
-                              ;; under the identical welcome signature when it
-                              ;; entered the cache.  The shell's final gates
-                              ;; still validate the complete outgoing snapshot.
-                              (setq ids
-                                    (jetpacs-chrome--claim-screen-ids
-                                     node seen (plist-get record :ids)))
+                              (if (and (not authored-dock)
+                                       (not (equal dock
+                                                   (plist-get record :dock))))
+                                  (progn
+                                    (setq node
+                                          (jetpacs-chrome--reapply-dock
+                                           cached dock))
+                                    (setq analysis
+                                          (jetpacs-chrome--gate-view
+                                           surface node))
+                                    (setq ids
+                                          (jetpacs-chrome--claim-screen-ids
+                                           node seen
+                                           (plist-get analysis :ids))))
+                                ;; The identical node passed this per-screen gate
+                                ;; under the identical welcome signature when it
+                                ;; entered the cache.  The shell's final gates
+                                ;; still validate the complete outgoing snapshot.
+                                (setq ids
+                                      (jetpacs-chrome--claim-screen-ids
+                                       node seen (plist-get record :ids))))
                               node)
                           (error (setq fail err) nil))))
               (setq node
@@ -989,15 +1036,14 @@ snapshot required by SPEC 13.2."
                                              (append s
                                                      (list :drawer mine))))))))
                             ;; Adaptive dock; authored bar/rail opts out.
-                            (when dock
+                            (setq authored-dock
+                                  (jetpacs-chrome--authored-dock-p n))
+                            (when (and dock (not authored-dock))
                               (setq n (jetpacs-chrome--scaffold-apply
                                        n
                                        (lambda (s)
-                                         (if (or (plist-member s :bottom_bar)
-                                                 (plist-member s :rail))
-                                             s
-                                           (append s (list (car dock)
-                                                           (cdr dock))))))))
+                                         (append s (list (car dock)
+                                                         (cdr dock)))))))
                             (setq n (jetpacs-chrome--join-app-fab surface id n))
                             (setq n (jetpacs-chrome--join-globals
                                      surface n globals))
@@ -1048,6 +1094,8 @@ snapshot required by SPEC 13.2."
                            :after (jetpacs-chrome--budget-snapshot)
                            :analysis analysis
                            :ids ids
+                           :authored-dock authored-dock
+                           :dock (and (not authored-dock) dock)
                            :exposures
                            (if cached
                                (plist-get record :exposures)
@@ -1280,6 +1328,11 @@ session-teardown and the live-unregister paths sweep."
 
 (setq jetpacs-guest-delegation-function #'jetpacs-chrome--guest-delegate-p)
 
+(defvar jetpacs-chrome--stage-only nil
+  "When non-nil, `jetpacs-chrome-push-screen' stages without pushing.
+Used when a caller stages an intermediate screen immediately before pushing
+the top screen in the same continuation, avoiding an intermediate wire frame.")
+
 (defun jetpacs-chrome-push-screen (surface-or-owner id builder)
   "Push screen ID onto SURFACE's stack and navigate to it.
 ID is a SPEC 4.4 identifier, validated BEFORE any mutation — mint
@@ -1325,18 +1378,19 @@ refused frame is retried by the B8 repush.)"
                                  (cl-remove id rows
                                             :key #'car :test #'equal))
                    jetpacs-chrome--guests))))
-    (if guest-owner
-        ;; The presenting push must not CLAIM the host's surface for
-        ;; the guest (`jetpacs-shell-push' claims under the bound
-        ;; owner): a stolen claim makes `jetpacs-owned-surface-p'
-        ;; answer t for the guest from then on — an UNSCOPED D1 grant
-        ;; where S4 promises a screen-lifetime one, unprefixed
-        ;; re-pushes, and the host's root swept by the guest's
-        ;; teardown.  Bind the owner of record (nil leaves an
-        ;; unclaimed surface unclaimed; `jetpacs--claim' no-ops).
-        (let ((jetpacs-current-owner (jetpacs--owner-of "surface" surface)))
-          (jetpacs-chrome--push-or-undo surface id undo))
-      (jetpacs-chrome--push-or-undo surface id undo))))
+    (unless jetpacs-chrome--stage-only
+      (if guest-owner
+          ;; The presenting push must not CLAIM the host's surface for
+          ;; the guest (`jetpacs-shell-push' claims under the bound
+          ;; owner): a stolen claim makes `jetpacs-owned-surface-p'
+          ;; answer t for the guest from then on — an UNSCOPED D1 grant
+          ;; where S4 promises a screen-lifetime one, unprefixed
+          ;; re-pushes, and the host's root swept by the guest's
+          ;; teardown.  Bind the owner of record (nil leaves an
+          ;; unclaimed surface unclaimed; `jetpacs--claim' no-ops).
+          (let ((jetpacs-current-owner (jetpacs--owner-of "surface" surface)))
+            (jetpacs-chrome--push-or-undo surface id undo))
+        (jetpacs-chrome--push-or-undo surface id undo)))))
 
 (defun jetpacs-chrome-pop-screen (surface-or-owner)
   "Pop SURFACE's stack and navigate to the screen below (Emacs-side

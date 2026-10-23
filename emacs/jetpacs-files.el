@@ -54,6 +54,7 @@
 (require 'jetpacs-buffer)
 (require 'jetpacs-chrome)
 (require 'jetpacs-navigate)
+(require 'jetpacs-apps)
 
 ;;;; Configuration
 
@@ -1796,13 +1797,124 @@ leave the Files surface; nil preserves Files' native offline view switching."
                ;; visited on an unrelated surface handoff.
                (setq jetpacs-files--dir
                      (file-name-as-directory (file-name-directory true)))
-               (jetpacs-chrome-push-screen
-                surface browser-id browser-builder))
-             (jetpacs-files--edit-open true surface mark-pos return-action))))
+               (let ((jetpacs-chrome--stage-only t))
+                 (jetpacs-chrome-push-screen
+                  surface browser-id browser-builder)))
+             (let ((reason (jetpacs-files--edit-open
+                            true surface mark-pos return-action)))
+               (when (and browser-id (eq reason 'not-a-file))
+                 (let ((resolved (jetpacs-shell--resolve-surface surface)))
+                   (jetpacs-chrome--push-quietly
+                    resolved
+                    (caar (gethash resolved jetpacs-chrome--stacks)))))))))
         'accepted)
     (ebp-path-refused
      (jetpacs-shell-notify (format "File refused: %s" (cadr err)) surface)
      'rejected)))
+
+(defconst jetpacs-files-document-return-screen "files-return"
+  "Guest browser screen staged below a cross-surface document handoff.")
+
+(defconst jetpacs-files-directory-return-screen "files-resources"
+  "Guest browser screen staged for a cross-surface directory handoff.")
+
+(defconst jetpacs-files-return-verb "jetpacs.files.return"
+  "Built-in cross-surface Back verb for Files handoffs.")
+
+(defvar jetpacs-files--return-armed nil
+  "Origin surface (`app:...') owning a pending document return from Files, or nil.")
+
+(defun jetpacs-files-surface ()
+  "Return the canonical Files surface ID."
+  (jetpacs-shell-surface-for jetpacs-files-owner))
+
+(defun jetpacs-files--origin-surface (&optional origin-surface)
+  "Resolve ORIGIN-SURFACE or the active cross-surface caller's home surface."
+  (or origin-surface
+      (and (stringp jetpacs-current-owner)
+           (not (equal jetpacs-current-owner jetpacs-files-owner))
+           (jetpacs-shell-surface-for jetpacs-current-owner))
+      (and (stringp jetpacs-apps--current)
+           (not (equal jetpacs-apps--current jetpacs-files-owner))
+           (if-let* ((entry (assoc jetpacs-apps--current
+                                   jetpacs-apps--registry)))
+               (jetpacs-apps--home-surface-id entry)
+             (jetpacs-shell-surface-for jetpacs-apps--current)))))
+
+(defun jetpacs-files-return-action (&optional origin-surface verb)
+  "Return the negotiated cross-surface return action from Files, or nil.
+ORIGIN-SURFACE defaults to the active caller app's home surface.  VERB
+defaults to `jetpacs-files-return-verb'."
+  (when-let* (((jetpacs-feature-advertised-p "action.open_surface" :app))
+              (origin (jetpacs-files--origin-surface origin-surface)))
+    (jetpacs-shell-action-opening-surface
+     (or verb jetpacs-files-return-verb) origin)))
+
+(defun jetpacs-files-return (&optional _args _params)
+  "Return from Files to the caller app's unchanged navigation stack."
+  (let ((target (or (and (stringp jetpacs-files--return-armed)
+                         jetpacs-files--return-armed)
+                    (jetpacs-files--origin-surface))))
+    (setq jetpacs-files--return-armed nil)
+    (when (stringp target)
+      (jetpacs-flow-continue
+       (lambda ()
+         (condition-case err
+             (jetpacs-shell-push target)
+           (error
+            (message "jetpacs-files: return push failed: %s"
+                     (jetpacs-error-label err))))))))
+  'accepted)
+
+(defun jetpacs-files-open-document (path &optional position return-verb)
+  "Open regular document PATH on the Files surface with cross-app return.
+Validates that PATH is a string and optional POSITION is an integer, stages
+`jetpacs-files-document-return-screen' below the document, and arms the
+cross-surface return state when accepted.  Optional RETURN-VERB overrides
+`jetpacs-files-return-verb' in the negotiated return descriptor."
+  (if (or (not (stringp path))
+          (and position (not (integerp position))))
+      'rejected
+    (let* ((origin (jetpacs-files--origin-surface))
+           (status
+            (jetpacs-files-open-path
+             path (jetpacs-files-surface) position
+             jetpacs-files-document-return-screen nil
+             (jetpacs-files-return-action origin return-verb))))
+      (when (eq status 'accepted)
+        (setq jetpacs-files--return-armed (or origin t)))
+      status)))
+
+(defun jetpacs-files--on-view-change (surface view)
+  "Complete cross-surface Files Back handoffs reported as SURFACE and VIEW.
+1. Reaching a guest `<app>-files-return' screen returns to the active app's
+   untouched surface stack.
+2. Reaching Files' root `browser' screen while `jetpacs-files--return-armed'
+   is non-nil (e.g. after a 3-screen reader drill evicted the staged return
+   screen) completes that return once.
+3. Reaching Files' root `browser' screen while the active app's current
+   destination route targets Files (`:open-surface') resets the active app
+   to its declared `:home-route'."
+  (when (and (stringp jetpacs-apps--current)
+             (not (equal jetpacs-apps--current jetpacs-files-owner))
+             (equal surface (jetpacs-files-surface)))
+    (let* ((app jetpacs-apps--current)
+           (route jetpacs-apps--current-route)
+           (dest (and route
+                      (cl-find route (jetpacs-apps-destinations app)
+                               :key (lambda (d) (plist-get d :key))
+                               :test #'equal)))
+           (files-route-p (equal (plist-get dest :open-surface) surface)))
+      (cond
+       ((or (equal view
+                   (jetpacs-chrome-guest-screen-id
+                    app jetpacs-files-document-return-screen))
+            (and jetpacs-files--return-armed
+                 (not files-route-p)
+                 (equal view "browser")))
+        (jetpacs-files-return nil nil))
+       ((and files-route-p (equal view "browser"))
+        (jetpacs-apps-open-home-route app))))))
 
 (with-jetpacs-owner "jetpacs.files"
 
@@ -2149,7 +2261,11 @@ leave the Files surface; nil preserves Files' native offline view switching."
             (ebp-path-refused
              (jetpacs-shell-notify (format "Folder refused: %s" (cadr err))
                                    surface)
-             'rejected))))))))
+             'rejected)))))))
+
+  (jetpacs-defaction "jetpacs.files.return" #'jetpacs-files-return
+    :doc "Return from Files to the originating app's untouched surface stack"
+    :any-surface t))
 
 ;;;; Entry point and unload hygiene
 
@@ -2171,10 +2287,12 @@ file buffer, and it was theirs before the phone ever saw it."
               (buf (plist-get req :buffer)))
     (when (buffer-live-p buf)
       (ebp-sync-detach buf)))
-  (setq jetpacs-files--edit nil)
+  (setq jetpacs-files--edit nil
+        jetpacs-files--return-armed nil)
   (jetpacs-files--invalidate-browse-cache))
 
 (add-hook 'jetpacs-reset-functions #'jetpacs-files-reset)
+(add-hook 'jetpacs-shell-view-change-functions #'jetpacs-files--on-view-change)
 
 (defun jetpacs-files-unload-function ()
   "Unload hygiene: the skin registration and the owner's surfaces.
@@ -2182,9 +2300,12 @@ file buffer, and it was theirs before the phone ever saw it."
 cancels any in-flight scan."
   (setq jetpacs-render-buffer-functions
         (assq-delete-all 'dired-mode jetpacs-render-buffer-functions))
-  (setq jetpacs-files--grep-request nil)
+  (setq jetpacs-files--grep-request nil
+        jetpacs-files--return-armed nil)
   (jetpacs-files--invalidate-browse-cache)
   (remove-hook 'jetpacs-reset-functions #'jetpacs-files-reset)
+  (remove-hook 'jetpacs-shell-view-change-functions
+               #'jetpacs-files--on-view-change)
   (jetpacs-teardown-owner jetpacs-files-owner)
   nil)
 

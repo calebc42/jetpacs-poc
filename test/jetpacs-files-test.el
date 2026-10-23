@@ -2638,5 +2638,70 @@ seeds from a wire-unsafe path — the read fallback hosts it."
             (should (= (length navigated) 1))
             (should (null screens))))))))
 
+(ert-deftest jetpacs-files-cross-surface-handoff-and-return ()
+  "Cross-surface document handoff, return action, and Back observer work for any app."
+  (let ((jetpacs-apps--registry nil)
+        (jetpacs-apps--current "guestapp")
+        (jetpacs-apps--current-route "items")
+        (jetpacs-files--return-armed nil)
+        opened pushed home-opened)
+    (with-jetpacs-owner "guestapp"
+      (jetpacs-defaction "guest.home"
+        (lambda (_args params)
+          (setq home-opened params)
+          'accepted))
+      (jetpacs-defaction "guest.files"
+        (lambda (_args _params) 'accepted)))
+    (unwind-protect
+        (progn
+          (jetpacs-defapp
+           "guestapp" :label "Guest" :surfaces '("guestapp")
+           :home-route "home"
+           :destinations
+           '((:key "home" :label "Home" :verb "guest.home")
+             (:key "items" :label "Items" :verb "guest.home")
+             (:key "files" :label "Files" :verb "guest.files"
+              :open-surface "app:jetpacs.files")))
+          (cl-letf (((symbol-function 'jetpacs-feature-advertised-p)
+                     (lambda (&rest _) t))
+                    ((symbol-function 'jetpacs-files-open-path)
+                     (lambda (path surface &optional pos browser-id fab return-action)
+                       (setq opened (list path surface pos browser-id fab return-action))
+                       'accepted))
+                    ((symbol-function 'jetpacs-flow-continue)
+                     (lambda (fn) (funcall fn)))
+                    ((symbol-function 'jetpacs-shell-push)
+                     (lambda (surface &rest _) (push surface pushed) 1)))
+            (should (eq (jetpacs-files-open-document "/vault/doc.org" 19)
+                        'accepted))
+            (should (equal (seq-take opened 5)
+                           '("/vault/doc.org" "app:jetpacs.files" 19
+                             "files-return" nil)))
+            (should (equal (plist-get (nth 5 opened) :action)
+                           "jetpacs.files.return"))
+            (should (equal (plist-get (nth 5 opened) :open_surface)
+                           "app:guestapp"))
+            (should (equal jetpacs-files--return-armed "app:guestapp"))
+            ;; Evicted guest screen fallback on `browser' returns once and disarms.
+            (jetpacs-files--on-view-change "app:jetpacs.files" "browser")
+            (should (equal pushed '("app:guestapp")))
+            (should-not jetpacs-files--return-armed)
+            (jetpacs-files--on-view-change "app:jetpacs.files" "browser")
+            (should (equal pushed '("app:guestapp")))
+            ;; Guest return screen transition also returns to the origin app.
+            (setq pushed nil)
+            (jetpacs-files--on-view-change
+             "app:jetpacs.files"
+             (jetpacs-chrome-guest-screen-id "guestapp" "files-return"))
+            (should (equal pushed '("app:guestapp")))
+            ;; Cross-surface directory destination Back to `browser' resets to `:home-route'.
+            (setq pushed nil
+                  jetpacs-apps--current-route "files")
+            (jetpacs-files--on-view-change "app:jetpacs.files" "browser")
+            (should (equal home-opened '(:surface "app:guestapp")))
+            (should-not pushed)))
+      (jetpacs-undefaction "guest.home")
+      (jetpacs-undefaction "guest.files"))))
+
 (provide 'jetpacs-files-test)
 ;;; jetpacs-files-test.el ends here

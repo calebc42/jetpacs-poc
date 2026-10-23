@@ -162,6 +162,10 @@ resolved value safe to MAP, and a function or circular cell is not."
         ;; Reuse the wire constructor as the single app-Surface validator.
         ;; It returns a node that is intentionally discarded here.
         (jetpacs-surface-open surface))
+      (when-let* ((screen (plist-get d :screen)))
+        (jetpacs-check-identifier screen "destination :screen"))
+      (when-let* ((prefix (plist-get d :screen-prefix)))
+        (jetpacs-check-identifier prefix "destination :screen-prefix"))
       (when (plist-member d :badge)
         (let ((badge (plist-get d :badge)))
           (unless (or (null badge) (stringp badge) (functionp badge))
@@ -446,6 +450,90 @@ caller can bound any presentation refresh it schedules."
     (setq jetpacs-apps--current id
           jetpacs-apps--current-route route)
     changed))
+
+(defun jetpacs-apps-route-for-screen (id view)
+  "Return app ID's destination `:key' represented by chrome screen VIEW.
+A destination matches when VIEW equals its `:screen' (defaulting to
+`ID-KEY') or starts with its optional `:screen-prefix'.  Transient drill
+screens return nil so the origin destination remains selected."
+  (when (and (stringp id) (stringp view))
+    (cl-loop for dest in (jetpacs-apps-destinations id)
+             for key = (plist-get dest :key)
+             for screen = (or (plist-get dest :screen)
+                              (concat id "-" key))
+             for prefix = (plist-get dest :screen-prefix)
+             when (or (equal view screen)
+                      (and (stringp prefix)
+                           (string-prefix-p prefix view)))
+             return key)))
+
+(defun jetpacs-apps--on-view-change (surface view)
+  "Synchronize the owning app's selected route after a local switch to VIEW.
+Only a route-changing transition schedules a bounded repush; switching
+between a destination and one of its transient drills costs no extra frame."
+  (when-let* ((entry (jetpacs-apps-for-surface surface))
+              (id (car entry))
+              (route (jetpacs-apps-route-for-screen id view)))
+    (when (jetpacs-apps-note-route id route)
+      (jetpacs-shell--schedule-repush surface))))
+
+(defun jetpacs-app-open-destination (app route id builder &optional params)
+  "Open APP's destination ROUTE as peer screen ID via BUILDER.
+PARAMS is the originating action event.  Every Tier-1 destination first
+abandons the previous destination and its drills without presenting the
+root, then pushes its own screen in one update.  When ID is the surface's
+root screen (or `APP-HOME-ROUTE'), chrome's same-ID truncation performs the
+reset in one operation.  Primary destination screens (`APP-ROUTE' or the
+destination's `:screen') suppress the top-bar Back arrow because they are
+peers of the root; prefix drills retain their Back arrow.  Return
+`accepted'."
+  (let* ((entry (assoc app jetpacs-apps--registry))
+         (surface (or (plist-get params :surface)
+                      (jetpacs-flow-surface)
+                      (and entry (jetpacs-apps--home-surface-id entry))
+                      (jetpacs-shell-surface-for app)))
+         (dest (cl-find route (jetpacs-apps-destinations app)
+                        :key (lambda (d) (plist-get d :key))
+                        :test #'equal))
+         (primary-screen (or (plist-get dest :screen)
+                             (concat app "-" route)))
+         (home-route (and entry (plist-get (cdr entry) :home-route)))
+         (home-screen (and home-route (concat app "-" home-route))))
+    (jetpacs-apps-note-route app route)
+    (jetpacs-flow-continue
+     (lambda ()
+       (condition-case err
+           (let ((root-id (or (car (last (jetpacs-chrome-stack surface)))
+                              home-screen)))
+             (unless (equal id root-id)
+               (jetpacs-chrome-reset-screens surface t))
+             (jetpacs-chrome-push-screen
+              surface id
+              (if (equal id primary-screen)
+                  (lambda (_back) (funcall builder nil))
+                builder)))
+         (error (message "%s: %s destination push failed: %s"
+                         app id (jetpacs-error-label err))))))
+    'accepted))
+
+(defun jetpacs-apps-open-home-route (id)
+  "Open app ID's declared `:home-route' on its home surface.
+Used when a cross-surface destination (such as a Files-backed browser)
+backs out to the foreign surface's native root."
+  (when-let* ((entry (and (stringp id) (assoc id jetpacs-apps--registry)))
+              (destinations (jetpacs-apps-destinations id))
+              (home-route
+               (jetpacs-apps--resolved-home-route entry destinations))
+              (dest (cl-find home-route destinations
+                             :key (lambda (d) (plist-get d :key))
+                             :test #'equal))
+              (verb (plist-get dest :verb))
+              (handler (gethash verb jetpacs-action-handlers))
+              (surface (jetpacs-apps--home-surface-id entry)))
+    (let ((jetpacs--device-flow
+           (list :surface surface
+                 :owner (jetpacs--owner-of "action" verb))))
+      (funcall handler nil (list :surface surface)))))
 
 (defun jetpacs-apps--home-surface (entry)
   (car (plist-get (cdr entry) :surfaces)))
@@ -1030,6 +1118,7 @@ dead deep link must never strand an obsolete host screen."
 ;; screen (not merely the surface owner); the resolver above enforces
 ;; the app's declared-surface boundary before returning a node.
 (setq jetpacs-chrome-app-fab-function #'jetpacs-apps-default-fab)
+(add-hook 'jetpacs-shell-view-change-functions #'jetpacs-apps--on-view-change)
 
 (provide 'jetpacs-apps)
 ;;; jetpacs-apps.el ends here

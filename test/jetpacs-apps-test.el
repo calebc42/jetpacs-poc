@@ -931,5 +931,63 @@ destinations through `app.open' `:route'; Apps remains drawer-only."
                               :test #'equal)
                      :selected))))))
 
+(ert-deftest jetpacs-apps-peer-destination-and-route-sync ()
+  "Peer-destination opens and view-change route sync work generically."
+  (jetpacs-apps-test--env
+    (let ((surface "app:prime.main")
+          scheduled)
+      (unwind-protect
+          (progn
+            (jetpacs-chrome-define-root "prime.main" "prime-one"
+                                        (lambda (back)
+                                          (jetpacs-chrome-screen
+                                           "One" (jetpacs-text "one") :back back))
+                                        :required t)
+            (jetpacs-defapp "prime" :label "Prime" :surfaces '("prime.main")
+                            :chrome 'primary :home-route "one"
+                            :destinations
+                            '((:key "one" :label "One" :verb "prime.one"
+                               :screen-prefix "subone-")
+                              (:key "two" :label "Two" :verb "prime.two")))
+            (should (equal (jetpacs-apps-route-for-screen "prime" "prime-one") "one"))
+            (should (equal (jetpacs-apps-route-for-screen "prime" "subone-drill") "one"))
+            (should (equal (jetpacs-apps-route-for-screen "prime" "prime-two") "two"))
+            (should-not (jetpacs-apps-route-for-screen "prime" "prime-detail"))
+            (should (eq (jetpacs-app-open-destination
+                         "prime" "two" "prime-two"
+                         (lambda (back)
+                           (jetpacs-chrome-screen "Two" (jetpacs-text "two")
+                                                  :back back))
+                         (list :surface surface))
+                        'accepted))
+            (should (equal (jetpacs-chrome-stack surface) '("prime-two" "prime-one")))
+            (should (equal jetpacs-apps--current-route "two"))
+            ;; Peer destination suppresses the back arrow.
+            (let* ((built (jetpacs-chrome--build surface))
+                   (two-view (gethash "prime-two" (plist-get built :views)))
+                   (top-bar (plist-get two-view :top_bar)))
+              (should-not (string-search "arrow_back"
+                                         (jetpacs-node->canonical-json top-bar))))
+            ;; Prefix drill preserves its back arrow and replaces the peer slot.
+            (should (eq (jetpacs-app-open-destination
+                         "prime" "one" "subone-a"
+                         (lambda (back)
+                           (jetpacs-chrome-screen "Sub" (jetpacs-text "sub")
+                                                  :back back))
+                         (list :surface surface))
+                        'accepted))
+            (should (equal (jetpacs-chrome-stack surface) '("subone-a" "prime-one")))
+            (should (equal jetpacs-apps--current-route "one"))
+            (cl-letf (((symbol-function 'jetpacs-shell--schedule-repush)
+                       (lambda (s) (push s scheduled))))
+              (jetpacs-apps--on-view-change surface "prime-two")
+              (should (equal jetpacs-apps--current-route "two"))
+              (should (equal scheduled (list surface)))
+              ;; Transient drill does not change route or repush.
+              (jetpacs-apps--on-view-change surface "prime-detail")
+              (should (equal jetpacs-apps--current-route "two"))
+              (should (equal scheduled (list surface)))))
+        (jetpacs-chrome-remove "prime.main")))))
+
 (provide 'jetpacs-apps-test)
 ;;; jetpacs-apps-test.el ends here

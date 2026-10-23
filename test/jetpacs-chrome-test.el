@@ -2233,5 +2233,81 @@ nothing; two flips in one tick coalesce; each surface pushes in isolation."
                            '("app:filesapp" "app:notesapp")))
             (should (null jetpacs-chrome--flip-timer))))))))
 
+(ert-deftest jetpacs-chrome-stage-only-defers-push-to-top-screen ()
+  "Staging a guest screen with `jetpacs-chrome--stage-only' emits one frame
+when the top screen is pushed immediately after."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (jetpacs-chrome-test--define "filesapp" "browser")
+        (setq recs nil)
+        (with-jetpacs-owner "guestapp"
+          (let ((jetpacs-chrome--stage-only t))
+            (should-not
+             (jetpacs-chrome-push-screen
+              "app:filesapp" "files-return"
+              (lambda (back)
+                (jetpacs-chrome-screen "Return" (jetpacs-text "ret")
+                                       :back back))))))
+        (should (null recs))
+        (should (jetpacs-chrome--guest-delegate-p "guestapp" "app:filesapp"))
+        (with-jetpacs-owner "filesapp"
+          (jetpacs-chrome-push-screen
+           "app:filesapp" "edit"
+           (lambda (back)
+             (jetpacs-chrome-screen "Edit" (jetpacs-text "doc")
+                                    :back back))))
+        (should (= 1 (length recs)))
+        (let ((views (plist-get (cadr (car recs)) :views)))
+          (should (= 3 (hash-table-count views)))
+          (should (gethash "edit" views))
+          (should (gethash "guest-guestapp-files-return" views))
+          (should (gethash "browser" views)))))))
+
+(ert-deftest jetpacs-chrome-cached-lower-screens-adopt-updated-dock ()
+  "Cached lower screens adopt an updated surface dock without rebuilding."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (let ((root-builds 0)
+              (selected-route "agenda")
+              (jetpacs-chrome-dock-function nil))
+          (let ((jetpacs-chrome-dock-items-function
+                 (lambda (_surface)
+                   (list (list :label "Agenda" :icon "today"
+                               :selected (equal selected-route "agenda")
+                               :on-tap (jetpacs-action "nav.agenda"))
+                         (list :label "Projects" :icon "folder"
+                               :selected (equal selected-route "projects")
+                               :badge (and (equal selected-route "projects") "3")
+                               :on-tap (jetpacs-action "nav.projects"))))))
+            (with-jetpacs-owner "filesapp"
+              (jetpacs-chrome-define-root
+               "filesapp" "hub"
+               (lambda (_back)
+                 (cl-incf root-builds)
+                 (jetpacs-chrome-screen "Hub" (jetpacs-text "hub")))))
+            (jetpacs-shell-push "app:filesapp")
+            (should (= root-builds 1))
+            (setq selected-route "projects")
+            (with-jetpacs-owner "filesapp"
+              (jetpacs-chrome-push-screen
+               "app:filesapp" "detail"
+               (lambda (back)
+                 (jetpacs-chrome-screen "Detail" (jetpacs-text "detail")
+                                        :back back))))
+            ;; The lower screen's builder was not re-run, yet its cached
+            ;; view carries the updated dock.
+            (should (= root-builds 1))
+            (let* ((views (plist-get (cadr (car recs)) :views))
+                   (hub-view (gethash "hub" views))
+                   (detail-view (gethash "detail" views)))
+              (should (equal (plist-get hub-view :bottom_bar)
+                             (plist-get detail-view :bottom_bar)))
+              (should (string-search
+                       "\"badge\":\"3\""
+                       (jetpacs-node->canonical-json
+                        (plist-get hub-view :bottom_bar)))))))))))
+
 (provide 'jetpacs-chrome-test)
 ;;; jetpacs-chrome-test.el ends here
