@@ -143,6 +143,52 @@ class ChromeBackTest {
     }
 
     @Test
+    fun aCrossSurfaceReturnArrowOwnsTheSystemGesture() {
+        val returnTap = spec("""
+            {"action":"glasspane.files.return","open_surface":"app:glasspane","when_offline":"drop"}""")
+        val view = spec("""
+            {"t":"scaffold","body":{"t":"text","text":"b"},
+             "top_bar":{"t":"row","children":[
+               {"t":"icon_button","icon":"arrow_back",
+                "content_description":"Back",
+                "on_tap":$returnTap}]}}""")
+        assertEquals(returnTap, chromeBackDescriptor(view, surfaceId = "app:jetpacs.files"))
+    }
+
+    @Test
+    fun aNonHomePrimaryDockPeerScreenReturnsToTheHomeTab() {
+        val homeTap = spec("""
+            {"action":"app.open","args":{"app":"glasspane","route":"agenda"},"open_surface":"app:glasspane"}""")
+        val projectsTap = spec("""
+            {"action":"app.open","args":{"app":"glasspane","route":"projects"},"open_surface":"app:glasspane"}""")
+        val railPeer = spec("""
+            {"t":"scaffold","body":{"t":"text","text":"Projects"},
+             "top_bar":{"t":"row","children":[{"t":"text","text":"Projects"}]},
+             "rail":{"t":"navigation_rail","items":[
+               {"label":"Agenda","icon":"event","selected":false,"on_tap":$homeTap},
+               {"label":"Projects","icon":"checklist","selected":true,"on_tap":$projectsTap}]}}""")
+        assertEquals(
+            homeTap,
+            chromeBackDescriptor(railPeer, surfaceId = "app:glasspane", connected = true),
+        )
+        // Offline, a same-surface remote tab switch cannot execute and must
+        // yield to the system back stack instead of trapping the user.
+        assertNull(
+            chromeBackDescriptor(railPeer, surfaceId = "app:glasspane", connected = false),
+        )
+
+        val railHome = spec("""
+            {"t":"scaffold","body":{"t":"text","text":"Agenda"},
+             "top_bar":{"t":"row","children":[{"t":"text","text":"Agenda"}]},
+             "rail":{"t":"navigation_rail","items":[
+               {"label":"Agenda","icon":"event","selected":true,"on_tap":$homeTap},
+               {"label":"Projects","icon":"checklist","selected":false,"on_tap":$projectsTap}]}}""")
+        assertNull(
+            chromeBackDescriptor(railHome, surfaceId = "app:glasspane", connected = true),
+        )
+    }
+
+    @Test
     fun aTippedArrowStillOwnsTheGesture() {
         // The house style wraps bar icons in `jetpacs-tooltip', whose anchor
         // is its first child (the badge shape). A tipped back arrow must not

@@ -30,19 +30,32 @@ fun reconcileJetpacsBackStack(
                 is JetpacsNavKey.Surface ->
                     key.pairingId == pairingId && key.surfaceId in presentAppSurfaces && key != root
             }
-            if (valid && lastOrNull() != key) add(key)
+            if (valid && key !in this) add(key)
         }
     }
 
     return listOf(root) + retainedDestinations
 }
 
-/** Return BACKSTACK with DESTINATION pushed once at the top. */
+/**
+ * Return BACKSTACK with DESTINATION at the top.
+ *
+ * If DESTINATION is already present lower in BACKSTACK (for example when a
+ * cross-surface return arrow or primary-bar tab switches from
+ * `app:jetpacs.files` back to `app:glasspane`), unwind to that existing
+ * entry rather than accumulating alternating duplicate surfaces.
+ */
 fun pushJetpacsDestination(
     backStack: List<JetpacsNavKey>,
     destination: JetpacsNavKey,
-): List<JetpacsNavKey> =
-    if (backStack.lastOrNull() == destination) backStack else backStack + destination
+): List<JetpacsNavKey> {
+    val existingIndex = backStack.indexOf(destination)
+    return if (existingIndex >= 0) {
+        backStack.take(existingIndex + 1)
+    } else {
+        backStack + destination
+    }
+}
 
 /** Execute SPEC 14.2 `surface.open` against the hydrated app-surface cache. */
 fun openPresentJetpacsSurface(

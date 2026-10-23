@@ -662,6 +662,13 @@ class DeviceBridge(
                          secretAttempt: SecretActionAttempt?,
                          onOutcome: (RendererActionOutcome) -> Unit,
                          sourcePath: String? = null) {
+        val forwardedDescriptor =
+            immediateRemoteSurfaceOpenTarget(surface, descriptor, secret, sourceId)
+                ?.let { target ->
+                    runCatching { onOpenSurface(target) }
+                    JsonObject(descriptor - "open_surface")
+                }
+                ?: descriptor
         dispatchExecutor.execute {
             if (secret != null) {
                 if (secretAttempt?.isPending() != true) return@execute
@@ -671,7 +678,7 @@ class DeviceBridge(
                     if (surface.startsWith("dialog:")) {
                         activeEngine?.dispatchDialogSecretAction(
                             surface.removePrefix("dialog:"),
-                            descriptor,
+                            forwardedDescriptor,
                             captured,
                             secret.secretIds,
                             sourceId,
@@ -680,7 +687,7 @@ class DeviceBridge(
                     } else {
                         activeEngine?.dispatchSecretAction(
                             surface,
-                            descriptor,
+                            forwardedDescriptor,
                             captured,
                             secret.secretIds,
                             sourceId,
@@ -699,21 +706,21 @@ class DeviceBridge(
                 // remain usable while a replacement connection is challenged
                 // or syncing. The persisted slot was profile-validated when
                 // accepted, so it does not need a transient session grant.
-                if ("builtin" in descriptor) {
-                    deliverOutcome(onOutcome, executeColdPlatformBuiltin(descriptor))
+                if ("builtin" in forwardedDescriptor) {
+                    deliverOutcome(onOutcome, executeColdPlatformBuiltin(forwardedDescriptor))
                 } else if (activeEngine != null) {
-                    activeEngine.dispatchContextlessAction(descriptor, supplied) { outcome ->
+                    activeEngine.dispatchContextlessAction(forwardedDescriptor, supplied) { outcome ->
                         completeOutcome(onOutcome, outcome)
                     }
                 } else {
                     val args = buildJsonObject {
-                        descriptor.objOrNull("args")?.forEach { (key, item) -> put(key, item) }
+                        forwardedDescriptor.objOrNull("args")?.forEach { (key, item) -> put(key, item) }
                         supplied.forEach { (key, item) -> put(key, item) }
                     }
                     dispatchContextless(
                         queue,
                         CompanionStores.MAX_EVENT_BYTES,
-                        descriptor,
+                        forwardedDescriptor,
                         args,
                         stores.liveSession,
                         callback = { status, error ->
@@ -723,7 +730,7 @@ class DeviceBridge(
                 }
                 return@execute
             }
-            val traceVariant = descriptor.stringOr("builtin") == "variant.switch"
+            val traceVariant = forwardedDescriptor.stringOr("builtin") == "variant.switch"
             if (traceVariant) platform.trace.begin("EBP variant.switch")
             try {
                 if (traceVariant && !surface.startsWith("dialog:")) {
@@ -736,7 +743,7 @@ class DeviceBridge(
                         }
                         if (shouldCommitVariantOffline(activeState)) {
                             when (val result = commitOfflineVariantSwitch(
-                                store, surface, descriptor,
+                                store, surface, forwardedDescriptor,
                                 MAX_INPUT_STATE_BYTES)) {
                                 is OfflineVariantSwitchResult.Applied ->
                                     _variantSelections.update { selections ->
@@ -761,7 +768,7 @@ class DeviceBridge(
                             // engine so a pre-READY occurrence is recorded in
                             // syncingDirty and READY ordering stays intact.
                             activeEngine?.dispatchAction(
-                                surface, descriptor, value, injected, sourceId, sourcePath,
+                                surface, forwardedDescriptor, value, injected, sourceId, sourcePath,
                             ) { outcome -> completeOutcome(onOutcome, outcome) }
                                 ?: deliverOutcome(onOutcome,
                                     rendererNotReadyOutcome())
@@ -778,16 +785,22 @@ class DeviceBridge(
                 // confirmation resumes through the same fork.
                 if (surface.startsWith("dialog:"))
                     activeEngine?.dispatchDialogAction(
-                        surface.removePrefix("dialog:"), descriptor, value,
+                        surface.removePrefix("dialog:"), forwardedDescriptor, value,
                         fields, sourceId,
                     ) { outcome -> completeOutcome(onOutcome, outcome) }
                         ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
                 // SPEC 13.8.5/14.3: the engine injects `item` from the
                 // source node's identity path when it sits in a template.
-                else activeEngine?.dispatchAction(
-                    surface, descriptor, value, injected, sourceId, sourcePath,
+                else if (activeEngine != null) activeEngine.dispatchAction(
+                    surface, forwardedDescriptor, value, injected, sourceId, sourcePath,
                 ) { outcome -> completeOutcome(onOutcome, outcome) }
-                    ?: deliverOutcome(onOutcome, rendererNotReadyOutcome())
+                else {
+                    val target = forwardedDescriptor.stringOr("open_surface")
+                    if (target.isNotEmpty()) {
+                        runCatching { onOpenSurface(target) }
+                    }
+                    deliverOutcome(onOutcome, rendererNotReadyOutcome())
+                }
             } finally {
                 if (traceVariant) platform.trace.end()
             }
@@ -1924,4 +1937,21 @@ internal fun localSurfaceOpenTarget(
             ?.takeIf { it.isString }?.content
     if (member("builtin") != "surface.open") return null
     return member("surface")?.takeIf { it.isNotEmpty() }
+}
+
+/**
+ * The surface a remote action's `open_surface` adjunct should open on the
+ * caller's thread before entering the process actor, or null when the engine
+ * must gate admission first (secrets, field capture, editor hooks, dialogs, or
+ * contextless platform actions).
+ */
+internal fun immediateRemoteSurfaceOpenTarget(
+    surface: String,
+    descriptor: JsonObject,
+    secret: RendererVolatileSecret?,
+    sourceId: String?,
+): String? {
+    if (secret != null || sourceId != null || !surface.startsWith("app:")) return null
+    if ("builtin" in descriptor || "capture_fields" in descriptor) return null
+    return descriptor.stringOr("open_surface").takeIf { it.isNotEmpty() }
 }

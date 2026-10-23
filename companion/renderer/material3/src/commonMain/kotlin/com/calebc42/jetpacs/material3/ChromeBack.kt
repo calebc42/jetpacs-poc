@@ -36,19 +36,109 @@ import kotlinx.serialization.json.JsonObject
  * drops it, and an ENABLED handler that does nothing is strictly worse than
  * the system default it displaced.
  */
-fun chromeBackDescriptor(view: JsonObject): JsonObject? {
+fun chromeBackDescriptor(
+    view: JsonObject,
+    surfaceId: String? = null,
+    connected: Boolean = true,
+): JsonObject? {
     val scaffold = presentedScaffold(view) ?: return null
-    val topBar = ScaffoldMembers.TopBar.read(scaffold) ?: return null
-    val leading = leadingNode(topBar) ?: return null
-    if (leading.stringOr("t") != "icon_button") return null
-    if (IconButtonMembers.Icon.read(leading) != "arrow_back") return null
-    // A spec-disabled arrow is untappable on screen; the gesture must not
-    // out-tap the button it mirrors.
-    if (IconButtonMembers.Enabled.read(leading) == false) return null
-    val onTap = IconButtonMembers.OnTap.read(leading) ?: return null
-    if (onTap.stringOr("builtin") != "view.switch") return null
-    if (onTap.stringOr("view").isEmpty()) return null
-    return onTap
+    val leading = ScaffoldMembers.TopBar.read(scaffold)?.let(::leadingNode)
+    if (leading != null &&
+        leading.stringOr("t") == "icon_button" &&
+        IconButtonMembers.Icon.read(leading) == "arrow_back"
+    ) {
+        // A spec-disabled arrow is untappable on screen; the gesture must not
+        // out-tap the button it mirrors.
+        if (IconButtonMembers.Enabled.read(leading) == false) return null
+        val onTap = IconButtonMembers.OnTap.read(leading) ?: return null
+        return validBackActionDescriptor(onTap, surfaceId, connected)
+    }
+    if (!connected) return null
+    return primaryDockHomeDescriptor(scaffold, surfaceId)
+}
+
+private fun validBackActionDescriptor(
+    onTap: JsonObject,
+    surfaceId: String?,
+    connected: Boolean,
+): JsonObject? = when (onTap.stringOr("builtin")) {
+    "view.switch" -> onTap.takeIf { it.stringOr("view").isNotEmpty() }
+    "surface.open" -> onTap.takeIf { it.stringOr("surface").isNotEmpty() }
+    "" -> {
+        val action = onTap.stringOr("action")
+        val targetSurface = onTap.stringOr("open_surface")
+        when {
+            action.isEmpty() || targetSurface.isEmpty() -> null
+            surfaceId != null && targetSurface == surfaceId && !connected -> null
+            else -> onTap
+        }
+    }
+    else -> null
+}
+
+private data class DockCandidate(
+    val selected: Boolean,
+    val onTap: JsonObject?,
+)
+
+/**
+ * Primary-dock fallback for peer destinations that suppress the top-bar back
+ * arrow while away from the primary app's home tab (Invariant I-14).
+ *
+ * Only a primary `app.open` dock whose first tab is unselected qualifies, and
+ * only when the current surface is either that home surface itself or the
+ * target surface of whichever peer tab is currently selected.
+ */
+private fun primaryDockHomeDescriptor(
+    scaffold: JsonObject,
+    surfaceId: String?,
+): JsonObject? {
+    val candidates = railDockCandidates(scaffold)
+        ?: bottomBarDockCandidates(scaffold)
+        ?: return null
+    if (candidates.size < 2) return null
+    val home = candidates.first()
+    if (home.selected) return null
+    val homeTap = home.onTap ?: return null
+    if (homeTap.stringOr("action") != "app.open") return null
+    val homeSurface = homeTap.stringOr("open_surface")
+    if (homeSurface.isEmpty()) return null
+    val matchesHomeSurface = surfaceId == null || homeSurface == surfaceId
+    val matchesSelectedPeerSurface = surfaceId != null &&
+        candidates.drop(1).any { peer ->
+            peer.selected && peer.onTap?.stringOr("open_surface") == surfaceId
+        }
+    return homeTap.takeIf { matchesHomeSurface || matchesSelectedPeerSurface }
+}
+
+private fun railDockCandidates(scaffold: JsonObject): List<DockCandidate>? {
+    val rail = ScaffoldMembers.Rail.read(scaffold) ?: return null
+    if (rail.stringOr("t") != "navigation_rail") return null
+    val items = rail.arrOrNull("items") ?: return null
+    return items.mapNotNull { raw ->
+        val item = raw as? JsonObject ?: return@mapNotNull null
+        DockCandidate(
+            selected = item.boolOr("selected"),
+            onTap = item.objOrNull("on_tap"),
+        )
+    }
+}
+
+private fun bottomBarDockCandidates(scaffold: JsonObject): List<DockCandidate>? {
+    val bottomBar = ScaffoldMembers.BottomBar.read(scaffold) ?: return null
+    if (bottomBar.stringOr("t") != "row") return null
+    val children = AnyNodeChildren.read(bottomBar) ?: return null
+    if (children.isEmpty() || children.any { it.stringOr("t") != "box" }) return null
+    return children.map { tab ->
+        val column = AnyNodeChildren.read(tab)?.firstOrNull()
+        val indicator = column?.let { AnyNodeChildren.read(it)?.firstOrNull() }
+        val selected = tab.boolOr("selected") ||
+            indicator?.stringOr("bg") == "secondary"
+        DockCandidate(
+            selected = selected,
+            onTap = tab.objOrNull("on_tap"),
+        )
+    }
 }
 
 /** How many presentation wrappers a screen may sit inside, as the host bounds it. */

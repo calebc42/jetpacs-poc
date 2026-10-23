@@ -114,6 +114,32 @@ class JetpacsNavigationPolicyTest {
     }
 
     @Test
+    fun returningToEarlierDestinationUnwindsInsteadOfStackingDuplicates() {
+        val glasspane = JetpacsNavKey.Surface(pairing, "app:glasspane")
+        assertEquals(
+            listOf(catalog, glasspane),
+            pushJetpacsDestination(
+                listOf(catalog, glasspane, surface),
+                glasspane,
+            ),
+        )
+    }
+
+    @Test
+    fun reconcileDeduplicatesNonAdjacentSurfaces() {
+        val glasspane = JetpacsNavKey.Surface(pairing, "app:glasspane")
+        assertEquals(
+            listOf(catalog, glasspane, surface),
+            reconcileJetpacsBackStack(
+                listOf(catalog, glasspane, surface, glasspane),
+                pairing,
+                setOf("app:files", "app:glasspane"),
+                onboardingRequired = false,
+            ),
+        )
+    }
+
+    @Test
     fun surfaceOpenPushesAPresentAppSurface() {
         val apps = JetpacsNavKey.Surface(pairing, "app:jetpacs.app-store")
         assertEquals(

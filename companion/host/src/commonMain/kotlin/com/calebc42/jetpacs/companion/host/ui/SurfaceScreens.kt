@@ -143,7 +143,7 @@ fun SurfaceDestination(
     onRepair: () -> Unit,
 ) {
     Box(Modifier.fillMaxSize()) {
-        SurfaceDocumentHost(surfaceId, surfaceFlow, bridge, onRepair)
+        SurfaceDocumentHost(surfaceId, surfaceFlow, connectedFlow, bridge, onRepair)
         ConnectionStatusHost(surfaceFlow, connectedFlow, onSettings)
     }
 }
@@ -152,10 +152,12 @@ fun SurfaceDestination(
 private fun SurfaceDocumentHost(
     surfaceId: String,
     surfaceFlow: StateFlow<JsonObject?>,
+    connectedFlow: StateFlow<Boolean>,
     bridge: DeviceBridge,
     onRepair: () -> Unit,
 ) {
     val shown by surfaceFlow.collectAsState()
+    val connected by connectedFlow.collectAsState()
     val surfaceIncarnations by
         bridge.surfacePresentationIncarnations.collectAsState()
     when (val spec = shown) {
@@ -170,7 +172,11 @@ private fun SurfaceDocumentHost(
             // An authored in-surface back arrow outranks the platform's back.
             // The descriptor runs through the exact same view.switch path as a
             // tap; when absent, NavDisplay pops to the receiver catalog.
-            val back = chromeBackDescriptor(spec)
+            val back = chromeBackDescriptor(
+                spec,
+                surfaceId = surfaceId,
+                connected = connected,
+            )
             val entryLifecycle by
                 LocalLifecycleOwner.current.lifecycle.currentStateAsState()
             LocalHostUiPlatform.current.BackHandler(
