@@ -921,200 +921,202 @@ every lower view whose entry and budget position are unchanged ships
 its cached node (`jetpacs-chrome--reusable-screens') and only the
 target's builder runs.  The cached views remain in the complete
 snapshot required by SPEC 13.2."
-  (let ((stack (gethash surface jetpacs-chrome--stacks)))
-    (unless stack
-      (error "jetpacs-chrome: no chrome stack for %s" surface))
-    (jetpacs-buffer-with-budget
-      (let* ((seen (make-hash-table :test #'equal))
-             (dock (jetpacs-chrome--dock-slot surface))
-             (drawer (jetpacs-chrome--drawer surface))
-             (globals (jetpacs-chrome--global-slot surface))
-             (gate-signature (jetpacs-chrome--gate-signature))
-             (old-cache (gethash surface jetpacs-chrome--view-cache))
-             ;; Nodes to ship unbuilt: the reusable chain below the target.
-             (old-screens (jetpacs-chrome--reusable-screens
-                           old-cache stack jetpacs-chrome--target-refresh-view
-                           gate-signature))
-             ;; Facts to reuse for a rebuilt screen whose node came out
-             ;; identical: any record built under this welcome signature.
-             (prior-screens (and old-cache
-                                 (equal gate-signature
-                                        (plist-get old-cache :gate-signature))
-                                 (plist-get old-cache :screens)))
-             (new-screens (make-hash-table :test #'equal))
-             analyses views prev-id)
-        (dolist (entry (reverse stack))
-          (let* ((id (car entry))
-                 (back (and prev-id (jetpacs-view-switch prev-id)))
-                 (before (jetpacs-chrome--budget-snapshot))
-                 (budget jetpacs-buffer-budget)
-                 (spans (car-safe budget))
-                 (bytes (cdr-safe budget))
-                 (extra (copy-tree jetpacs-buffer-extra-budget))
-                 (prior-record (and prior-screens (gethash id prior-screens)))
-                 (record (and old-screens (gethash id old-screens)))
-                 (cached (and record (plist-get record :node)))
-                 (exposure-capture (and (not cached) (list nil)))
-                 (jetpacs-buffer--exposure-capture exposure-capture)
-                 (authored-dock (and cached (plist-get record :authored-dock)))
-                 (fail nil)
-                 analysis
-                 ids
-                 node)
-            (if cached
-                (progn
-                  (setq node cached)
-                  (setq analysis (plist-get record :analysis))
-                  (jetpacs-chrome--restore-budget (plist-get record :after))
-                  ;; Restore the exact SPEC 23.1 operations captured while the
-                  ;; view was built.  Walking arbitrary action args here was
-                  ;; both slower and less exact.
-                  (jetpacs-buffer-restore-exposures
-                   (plist-get record :exposures))
-                  (setq node
-                        (condition-case err
-                            (handler-bind
-                                ((error
-                                  (lambda (e)
-                                    (jetpacs-shell--note-builder-error
-                                     (list :surface surface :screen id) e))))
-                              (if (and (not authored-dock)
-                                       (not (equal dock
-                                                   (plist-get record :dock))))
-                                  (progn
-                                    (setq node
-                                          (jetpacs-chrome--reapply-dock
-                                           cached dock))
-                                    (setq analysis
-                                          (jetpacs-chrome--gate-view
-                                           surface node))
-                                    (setq ids
-                                          (jetpacs-chrome--claim-screen-ids
-                                           node seen
-                                           (plist-get analysis :ids))))
-                                ;; The identical node passed this per-screen gate
-                                ;; under the identical welcome signature when it
-                                ;; entered the cache.  The shell's final gates
-                                ;; still validate the complete outgoing snapshot.
-                                (setq ids
-                                      (jetpacs-chrome--claim-screen-ids
-                                       node seen (plist-get record :ids))))
-                              node)
-                          (error (setq fail err) nil))))
-              (setq node
-                    (condition-case err
-                        ;; The recorder seam fires HERE, stack intact — the
-                        ;; catch below unwinds only this screen's crash.
-                        (handler-bind
-                            ((error
-                              (lambda (e)
-                                (jetpacs-shell--note-builder-error
-                                 (list :surface surface :screen id) e))))
-                          (let ((n (jetpacs-chrome--present
-                                    (funcall (cdr entry) back))))
-                            ;; The drawer hangs on every screen that draws
-                            ;; no back arrow: the root, and a peer
-                            ;; destination that declined the stack's back
-                            ;; (a Tier-1 place beside the rail).  A drill
-                            ;; keeps its arrow and gets no hamburger, as
-                            ;; Material's own navigation icon would.
-                            ;; Authored slots always win.  Composition
-                            ;; reaches the scaffold THROUGH an app's
-                            ;; presentation wrapper, so presenting a screen
-                            ;; never costs it the host's chrome.
-                            (when (and drawer
-                                       (not (jetpacs-chrome--shows-back-p n)))
-                              (let ((mine (if back
-                                              (jetpacs-chrome--namespace-ids
-                                               drawer id)
-                                            drawer)))
-                                (setq n (jetpacs-chrome--scaffold-apply
-                                         n
-                                         (lambda (s)
-                                           (if (plist-member s :drawer)
-                                               s
-                                             (append s
-                                                     (list :drawer mine))))))))
-                            ;; Adaptive dock; authored bar/rail opts out.
-                            (setq authored-dock
-                                  (jetpacs-chrome--authored-dock-p n))
-                            (when (and dock (not authored-dock))
-                              (setq n (jetpacs-chrome--scaffold-apply
-                                       n
-                                       (lambda (s)
-                                         (append s (list (car dock)
-                                                         (cdr dock)))))))
-                            (setq n (jetpacs-chrome--join-app-fab surface id n))
-                            (setq n (jetpacs-chrome--join-globals
-                                     surface n globals))
-                            ;; A targeted refresh still runs the visible
-                            ;; builder.  When its authored node is structurally
-                            ;; unchanged under the same gate signature, reuse
-                            ;; its immutable facts instead of allocating a new
-                            ;; full-tree analysis merely to rediscover them.
-                            (if (and prior-record
-                                     (plist-get prior-record :reusable)
-                                     (plist-get prior-record :analysis)
-                                     (equal n (plist-get prior-record :node)))
-                                (progn
-                                  (setq analysis
-                                        (plist-get prior-record :analysis))
-                                  (setq ids
-                                        (jetpacs-chrome--claim-screen-ids
-                                         n seen
-                                         (plist-get prior-record :ids))))
-                              (setq analysis
-                                    (jetpacs-chrome--gate-view surface n))
-                              (setq ids
-                                    (jetpacs-chrome--claim-screen-ids
-                                     n seen (plist-get analysis :ids))))
-                            n))
-                      (error (setq fail err) nil))))
-            (unless (or fail (jetpacs-root-node-p node))
-              (setq fail 'wrong-type-argument)
-              (jetpacs-shell--note-builder-error
-               (list :surface surface :screen id) fail))
-            (when fail
-              ;; A dead screen spent budget it never ships.  Restore both
-              ;; the main and extra aggregate allowances before degrading it.
-              (when (consp budget)
-                (setcar budget spans)
-                (setcdr budget bytes))
-              (setq jetpacs-buffer-extra-budget (copy-tree extra))
-              (message "jetpacs-chrome: screen %s failed to build: %s"
-                       id (jetpacs-error-label fail))
-              (setq node (jetpacs-chrome--error-screen surface id back fail))
-              (setq analysis (jetpacs-shell--analyze-spec node)))
-            (push analysis analyses)
-            (puthash id
-                     (list :entry entry :node node :before before
-                           ;; The neighbour the node's Back descriptor
-                           ;; names; reuse is valid only above the same one.
-                           :below prev-id
-                           :after (jetpacs-chrome--budget-snapshot)
-                           :analysis analysis
-                           :ids ids
-                           :authored-dock authored-dock
-                           :dock (and (not authored-dock) dock)
-                           :exposures
-                           (if cached
-                               (plist-get record :exposures)
-                             (nreverse (car exposure-capture)))
-                           :reusable (null fail))
-                     new-screens)
-            (push (cons id node) views)
-            (setq prev-id id)))
-        (let* ((spec (jetpacs-multi-view (nreverse views) (caar stack)))
-               (analysis
-                (jetpacs-shell--merge-analyses (nreverse analyses))))
-          (when (consp jetpacs-shell--analysis-capture)
-            (setcar jetpacs-shell--analysis-capture (cons spec analysis)))
-          (puthash surface
-                   (list :stack (copy-sequence stack)
-                         :gate-signature gate-signature
-                         :screens new-screens)
-                   jetpacs-chrome--view-cache)
-          spec)))))
+  ;; Every screen builder below runs inside the render: pure.
+  (let ((jetpacs--in-builder t))
+    (let ((stack (gethash surface jetpacs-chrome--stacks)))
+      (unless stack
+        (error "jetpacs-chrome: no chrome stack for %s" surface))
+      (jetpacs-buffer-with-budget
+       (let* ((seen (make-hash-table :test #'equal))
+              (dock (jetpacs-chrome--dock-slot surface))
+              (drawer (jetpacs-chrome--drawer surface))
+              (globals (jetpacs-chrome--global-slot surface))
+              (gate-signature (jetpacs-chrome--gate-signature))
+              (old-cache (gethash surface jetpacs-chrome--view-cache))
+              ;; Nodes to ship unbuilt: the reusable chain below the target.
+              (old-screens (jetpacs-chrome--reusable-screens
+                            old-cache stack jetpacs-chrome--target-refresh-view
+                            gate-signature))
+              ;; Facts to reuse for a rebuilt screen whose node came out
+              ;; identical: any record built under this welcome signature.
+              (prior-screens (and old-cache
+                                  (equal gate-signature
+                                         (plist-get old-cache :gate-signature))
+                                  (plist-get old-cache :screens)))
+              (new-screens (make-hash-table :test #'equal))
+              analyses views prev-id)
+         (dolist (entry (reverse stack))
+           (let* ((id (car entry))
+                  (back (and prev-id (jetpacs-view-switch prev-id)))
+                  (before (jetpacs-chrome--budget-snapshot))
+                  (budget jetpacs-buffer-budget)
+                  (spans (car-safe budget))
+                  (bytes (cdr-safe budget))
+                  (extra (copy-tree jetpacs-buffer-extra-budget))
+                  (prior-record (and prior-screens (gethash id prior-screens)))
+                  (record (and old-screens (gethash id old-screens)))
+                  (cached (and record (plist-get record :node)))
+                  (exposure-capture (and (not cached) (list nil)))
+                  (jetpacs-buffer--exposure-capture exposure-capture)
+                  (authored-dock (and cached (plist-get record :authored-dock)))
+                  (fail nil)
+                  analysis
+                  ids
+                  node)
+             (if cached
+                 (progn
+                   (setq node cached)
+                   (setq analysis (plist-get record :analysis))
+                   (jetpacs-chrome--restore-budget (plist-get record :after))
+                   ;; Restore the exact SPEC 23.1 operations captured while the
+                   ;; view was built.  Walking arbitrary action args here was
+                   ;; both slower and less exact.
+                   (jetpacs-buffer-restore-exposures
+                    (plist-get record :exposures))
+                   (setq node
+                         (condition-case err
+                             (handler-bind
+                                 ((error
+                                   (lambda (e)
+                                     (jetpacs-shell--note-builder-error
+                                      (list :surface surface :screen id) e))))
+                               (if (and (not authored-dock)
+                                        (not (equal dock
+                                                    (plist-get record :dock))))
+                                   (progn
+                                     (setq node
+                                           (jetpacs-chrome--reapply-dock
+                                            cached dock))
+                                     (setq analysis
+                                           (jetpacs-chrome--gate-view
+                                            surface node))
+                                     (setq ids
+                                           (jetpacs-chrome--claim-screen-ids
+                                            node seen
+                                            (plist-get analysis :ids))))
+                                 ;; The identical node passed this per-screen gate
+                                 ;; under the identical welcome signature when it
+                                 ;; entered the cache.  The shell's final gates
+                                 ;; still validate the complete outgoing snapshot.
+                                 (setq ids
+                                       (jetpacs-chrome--claim-screen-ids
+                                        node seen (plist-get record :ids))))
+                               node)
+                           (error (setq fail err) nil))))
+               (setq node
+                     (condition-case err
+                         ;; The recorder seam fires HERE, stack intact — the
+                         ;; catch below unwinds only this screen's crash.
+                         (handler-bind
+                             ((error
+                               (lambda (e)
+                                 (jetpacs-shell--note-builder-error
+                                  (list :surface surface :screen id) e))))
+                           (let ((n (jetpacs-chrome--present
+                                     (funcall (cdr entry) back))))
+                             ;; The drawer hangs on every screen that draws
+                             ;; no back arrow: the root, and a peer
+                             ;; destination that declined the stack's back
+                             ;; (a Tier-1 place beside the rail).  A drill
+                             ;; keeps its arrow and gets no hamburger, as
+                             ;; Material's own navigation icon would.
+                             ;; Authored slots always win.  Composition
+                             ;; reaches the scaffold THROUGH an app's
+                             ;; presentation wrapper, so presenting a screen
+                             ;; never costs it the host's chrome.
+                             (when (and drawer
+                                        (not (jetpacs-chrome--shows-back-p n)))
+                               (let ((mine (if back
+                                               (jetpacs-chrome--namespace-ids
+                                                drawer id)
+                                             drawer)))
+                                 (setq n (jetpacs-chrome--scaffold-apply
+                                          n
+                                          (lambda (s)
+                                            (if (plist-member s :drawer)
+                                                s
+                                              (append s
+                                                      (list :drawer mine))))))))
+                             ;; Adaptive dock; authored bar/rail opts out.
+                             (setq authored-dock
+                                   (jetpacs-chrome--authored-dock-p n))
+                             (when (and dock (not authored-dock))
+                               (setq n (jetpacs-chrome--scaffold-apply
+                                        n
+                                        (lambda (s)
+                                          (append s (list (car dock)
+                                                          (cdr dock)))))))
+                             (setq n (jetpacs-chrome--join-app-fab surface id n))
+                             (setq n (jetpacs-chrome--join-globals
+                                      surface n globals))
+                             ;; A targeted refresh still runs the visible
+                             ;; builder.  When its authored node is structurally
+                             ;; unchanged under the same gate signature, reuse
+                             ;; its immutable facts instead of allocating a new
+                             ;; full-tree analysis merely to rediscover them.
+                             (if (and prior-record
+                                      (plist-get prior-record :reusable)
+                                      (plist-get prior-record :analysis)
+                                      (equal n (plist-get prior-record :node)))
+                                 (progn
+                                   (setq analysis
+                                         (plist-get prior-record :analysis))
+                                   (setq ids
+                                         (jetpacs-chrome--claim-screen-ids
+                                          n seen
+                                          (plist-get prior-record :ids))))
+                               (setq analysis
+                                     (jetpacs-chrome--gate-view surface n))
+                               (setq ids
+                                     (jetpacs-chrome--claim-screen-ids
+                                      n seen (plist-get analysis :ids))))
+                             n))
+                       (error (setq fail err) nil))))
+             (unless (or fail (jetpacs-root-node-p node))
+               (setq fail 'wrong-type-argument)
+               (jetpacs-shell--note-builder-error
+                (list :surface surface :screen id) fail))
+             (when fail
+               ;; A dead screen spent budget it never ships.  Restore both
+               ;; the main and extra aggregate allowances before degrading it.
+               (when (consp budget)
+                 (setcar budget spans)
+                 (setcdr budget bytes))
+               (setq jetpacs-buffer-extra-budget (copy-tree extra))
+               (message "jetpacs-chrome: screen %s failed to build: %s"
+                        id (jetpacs-error-label fail))
+               (setq node (jetpacs-chrome--error-screen surface id back fail))
+               (setq analysis (jetpacs-shell--analyze-spec node)))
+             (push analysis analyses)
+             (puthash id
+                      (list :entry entry :node node :before before
+                            ;; The neighbour the node's Back descriptor
+                            ;; names; reuse is valid only above the same one.
+                            :below prev-id
+                            :after (jetpacs-chrome--budget-snapshot)
+                            :analysis analysis
+                            :ids ids
+                            :authored-dock authored-dock
+                            :dock (and (not authored-dock) dock)
+                            :exposures
+                            (if cached
+                                (plist-get record :exposures)
+                              (nreverse (car exposure-capture)))
+                            :reusable (null fail))
+                      new-screens)
+             (push (cons id node) views)
+             (setq prev-id id)))
+         (let* ((spec (jetpacs-multi-view (nreverse views) (caar stack)))
+                (analysis
+                 (jetpacs-shell--merge-analyses (nreverse analyses))))
+           (when (consp jetpacs-shell--analysis-capture)
+             (setcar jetpacs-shell--analysis-capture (cons spec analysis)))
+           (puthash surface
+                    (list :stack (copy-sequence stack)
+                          :gate-signature gate-signature
+                          :screens new-screens)
+                    jetpacs-chrome--view-cache)
+           spec))))))
 
 (defun jetpacs-chrome-defer-current-view-refresh (surface)
   "Defer a complete SURFACE push rebuilding only its current stack top.
@@ -1353,7 +1355,11 @@ while disconnected — nil is NOT failure: the mutation is kept and the
 next successful push renders it.  Never retry-loop on nil.  (The W10
 sender ceiling does NOT yield nil here: `ebp-client--surface-request'
 claims and returns the revision before the ceiling can refuse; the
-refused frame is retried by the B8 repush.)"
+refused frame is retried by the B8 repush.)
+
+Inside a builder extent it signals `jetpacs-builder-side-effect', before
+any mutation: a render does not navigate."
+  (jetpacs--builder-guard 'jetpacs-chrome-push-screen)
   (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
          ;; S4: pushed by an owner onto a stack it does not own, the
          ;; screen is a sanctioned GUEST — its id is prefixed (two
@@ -1395,7 +1401,9 @@ refused frame is retried by the B8 repush.)"
 (defun jetpacs-chrome-pop-screen (surface-or-owner)
   "Pop SURFACE's stack and navigate to the screen below (Emacs-side
 back — a completed flow returning to its hub; the on-screen arrow never
-calls this).  At the root: idempotent no-op returning nil."
+calls this).  At the root: idempotent no-op returning nil.
+Refused inside a builder extent, like `jetpacs-chrome-push-screen'."
+  (jetpacs--builder-guard 'jetpacs-chrome-pop-screen)
   (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
          (stack (gethash surface jetpacs-chrome--stacks)))
     (when (cdr stack)
@@ -1408,7 +1416,9 @@ Keeps the root cons, so the registered builder survives; the push
 doubles as a hub refresh.  With NO-PUSH, only truncate the stack; the
 caller must arrange presentation, for example by immediately pushing a
 peer screen.  This avoids presenting the root during a destination switch.
-The truncation remains committed if that subsequent push fails."
+The truncation remains committed if that subsequent push fails.
+Refused inside a builder extent, like `jetpacs-chrome-push-screen'."
+  (jetpacs--builder-guard 'jetpacs-chrome-reset-screens)
   (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
          (stack (gethash surface jetpacs-chrome--stacks)))
     (when stack

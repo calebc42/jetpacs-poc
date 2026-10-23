@@ -1922,5 +1922,70 @@ never a buffer-local one, and `jetpacs-remove-hook' drops the claim."
     (should-not jetpacs-floor-test--hook)
     (should-not (jetpacs--owned-names "hook" "hooker"))))
 
+;;;; Builder extents are pure
+
+(defun jetpacs-floor-test--build-recording (builder)
+  "Build BUILDER as a root of app:pure; return (SPEC . CONDITIONS).
+CONDITIONS are the error symbols the builder-error seam saw."
+  (let* ((seen nil)
+         (jetpacs-shell-builder-error-functions
+          (list (lambda (_context err) (push (car-safe err) seen))))
+         (spec (jetpacs-shell--build "app:pure" (list :builder builder))))
+    (cons spec seen)))
+
+(ert-deftest jetpacs-floor-builder-shell-push-is-refused ()
+  "A builder that pushes degrades its own render; the push never runs."
+  (let* ((pushed nil)
+         (result
+          (cl-letf (((symbol-function 'jetpacs-shell--resolve-surface)
+                     (lambda (&rest _) (setq pushed t) "app:other")))
+            (jetpacs-floor-test--build-recording
+             (lambda ()
+               (jetpacs-shell-push "app:other")
+               (jetpacs-text "unreachable"))))))
+    (should (memq 'jetpacs-builder-side-effect (cdr result)))
+    (should-not pushed)
+    (should-not (string-search "unreachable" (format "%S" (car result))))))
+
+(ert-deftest jetpacs-floor-builder-flow-continue-is-refused ()
+  "A builder does not start flows: nothing is scheduled."
+  (let* ((before (length timer-list))
+         (result (jetpacs-floor-test--build-recording
+                  (lambda ()
+                    (jetpacs-flow-continue #'ignore)
+                    (jetpacs-text "unreachable")))))
+    (should (memq 'jetpacs-builder-side-effect (cdr result)))
+    (should (= before (length timer-list)))))
+
+(ert-deftest jetpacs-floor-outside-builder-marker-is-nil ()
+  "The marker is bound by builds only, and a dispatch or a flow
+continuation pumped inside a build does not inherit it."
+  (should-not (jetpacs-in-builder-p))
+  (let (inside)
+    (jetpacs-floor-test--build-recording
+     (lambda () (setq inside (jetpacs-in-builder-p)) (jetpacs-text "x")))
+    (should inside))
+  (should-not (jetpacs-in-builder-p))
+  (jetpacs-floor-test--with-client (client)
+    (let (in-handler)
+      (jetpacs-defaction "pure.tap"
+                         (lambda (_a _p)
+                           (setq in-handler (jetpacs-in-builder-p))
+                           'accepted))
+      (let ((jetpacs--in-builder t))
+        (should (eq (jetpacs--dispatch client '(:action "pure.tap")
+                                       (gethash "pure.tap"
+                                                jetpacs-action-handlers))
+                    'accepted)))
+      (should-not in-handler)
+      (jetpacs-undefaction "pure.tap")))
+  ;; A continuation scheduled outside a build, run from inside one.
+  (let ((ran 'unset) timer)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_time _repeat fn &rest _) (setq timer fn))))
+      (jetpacs-flow-continue (lambda () (setq ran (jetpacs-in-builder-p)))))
+    (let ((jetpacs--in-builder t)) (funcall timer))
+    (should (null ran))))
+
 (provide 'jetpacs-floor-test)
 ;;; jetpacs-floor-test.el ends here

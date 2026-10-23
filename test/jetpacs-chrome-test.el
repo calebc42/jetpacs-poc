@@ -2309,5 +2309,45 @@ when the top screen is pushed immediately after."
                        (jetpacs-node->canonical-json
                         (plist-get hub-view :bottom_bar)))))))))))
 
+;;;; Builder extents are pure
+
+(ert-deftest jetpacs-chrome-builder-push-degrades-the-screen ()
+  "A screen builder that navigates degrades its own screen; the stack is
+unchanged and the recorder sees the refusal."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--recording recs
+      (let* ((seen nil)
+             (jetpacs-shell-builder-error-functions
+              (list (lambda (_context err) (push (car-safe err) seen)))))
+        (jetpacs-chrome-test--define "filesapp" "hub")
+        (jetpacs-chrome-push-screen
+         "filesapp" "detail"
+         (lambda (back)
+           (jetpacs-chrome-push-screen
+            "filesapp" "sneaky"
+            (lambda (_back) (jetpacs-chrome-screen "S" (jetpacs-text "s"))))
+           (jetpacs-chrome-screen "D" (jetpacs-text "d") :back back)))
+        (should (memq 'jetpacs-builder-side-effect seen))
+        (should (equal (jetpacs-chrome-stack "filesapp") '("detail" "hub")))
+        (pcase-let ((`(,_surface ,spec ,_keys) (car recs)))
+          (should (gethash "detail" (plist-get spec :views)))
+          (should-not (gethash "sneaky" (plist-get spec :views))))))))
+
+(ert-deftest jetpacs-chrome-builder-pop-and-reset-are-refused ()
+  "Pop and reset refuse inside a builder extent, before any mutation."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--recording _recs
+      (jetpacs-chrome-test--define "filesapp" "hub")
+      (jetpacs-chrome-push-screen "filesapp" "detail"
+                                  (lambda (back)
+                                    (jetpacs-chrome-screen
+                                     "D" (jetpacs-text "d") :back back)))
+      (let ((jetpacs--in-builder t))
+        (should-error (jetpacs-chrome-pop-screen "filesapp")
+                      :type 'jetpacs-builder-side-effect)
+        (should-error (jetpacs-chrome-reset-screens "filesapp")
+                      :type 'jetpacs-builder-side-effect))
+      (should (equal (jetpacs-chrome-stack "filesapp") '("detail" "hub"))))))
+
 (provide 'jetpacs-chrome-test)
 ;;; jetpacs-chrome-test.el ends here

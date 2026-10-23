@@ -51,11 +51,19 @@
 (add-hook 'jetpacs-teardown-functions #'ebp-org-teardown-owner)
 (add-hook 'jetpacs-reset-functions #'ebp-org-reset)
 
+(defun jetpacs-org--save-guard ()
+  "Refuse an engine deferred save armed inside a builder extent."
+  (jetpacs--builder-guard 'ebp-org-defer-save))
+
+(setq ebp-org-save-guard-function #'jetpacs-org--save-guard)
+
 (defun jetpacs-org-unload-function ()
   "Unload hygiene: take back the registrations, and only those.
 The engine's own tables are `ebp-org-unload-function's business."
   (remove-hook 'jetpacs-teardown-functions #'ebp-org-teardown-owner)
   (remove-hook 'jetpacs-reset-functions #'ebp-org-reset)
+  (when (eq ebp-org-save-guard-function #'jetpacs-org--save-guard)
+    (setq ebp-org-save-guard-function nil))
   nil)
 
 (provide 'jetpacs-org)

@@ -200,7 +200,10 @@ pre-durability rollback."
 Run every Files pre-write transform before `save-buffer', run isolated
 Files after-save hooks after the write, and invalidate the whole Org
 projection cache.  A pre-write failure restores the buffer and aborts
-the disk write; optional post-durability work is isolated."
+the disk write; optional post-durability work is isolated.
+Inside a builder extent it signals `jetpacs-builder-side-effect': a
+render never writes."
+  (jetpacs--builder-guard 'jetpacs-editor-org-save-policy)
   (let ((buffer (or buffer (current-buffer))))
     (unless (buffer-live-p buffer)
       (user-error "Org save target is not a live buffer"))

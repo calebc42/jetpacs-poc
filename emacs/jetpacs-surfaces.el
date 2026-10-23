@@ -631,6 +631,30 @@ diff'; `Info-toc' reads files).  Those stay the caller's judgement."
                 jetpacs--blocking-readers)
        ,@body)))
 
+;;;; Builder extents: renders are pure
+
+(define-error 'jetpacs-builder-side-effect
+  "Side effect refused inside a builder extent")
+
+(defvar jetpacs--in-builder nil
+  "Non-nil while a screen, root, data or stale builder runs.
+Bound by the shell and the chrome kit around every builder call.  A
+builder renders; it never pushes, navigates, continues a flow or saves.
+`jetpacs--builder-guard' turns those calls into a
+`jetpacs-builder-side-effect' signal, which the builder's own catch
+degrades into an error screen while the recorder keeps the backtrace.
+Work a builder wants done later goes through a timer
+\(`jetpacs-buffer-defer-refresh', `run-at-time', `jetpacs-async').")
+
+(defun jetpacs-in-builder-p ()
+  "Non-nil inside a builder extent."
+  jetpacs--in-builder)
+
+(defun jetpacs--builder-guard (what)
+  "Signal `jetpacs-builder-side-effect' for WHAT inside a builder extent."
+  (when jetpacs--in-builder
+    (signal 'jetpacs-builder-side-effect (list what))))
+
 (defun jetpacs-error-label (err)
   "A loggable label for ERR that cannot carry payload data.
 SPEC 23.3 (amendment #74) forbids SMS bodies and senders, call numbers,
@@ -693,7 +717,11 @@ The continuation runs from a timer, therefore OUTSIDE
 the handler (its through-timers guarantee covers only timers pumped
 INSIDE the extent).  That boundary is the design, not a leak: D2 bans
 blocking the DISPATCH, and the continuation is where interaction is
-allowed to resume."
+allowed to resume.
+
+Inside a builder extent it signals `jetpacs-builder-side-effect': a
+render does not start flows."
+  (jetpacs--builder-guard 'jetpacs-flow-continue)
   (let ((flow (or jetpacs--device-flow
                   (and jetpacs--in-action-handler
                        (list :surface
@@ -719,6 +747,10 @@ allowed to resume."
                                  ;; extent is off the stack.
                                  (run-at-time 0.05 nil run)
                                (let ((jetpacs--device-flow flow)
+                                     ;; Not a builder, even when a builder
+                                     ;; pumping process output ran this
+                                     ;; timer inside its extent.
+                                     (jetpacs--in-builder nil)
                                      ;; The OWNER rides the flow too, or D1
                                      ;; dies at the timer boundary: the
                                      ;; dispatch binding ends with the
@@ -832,6 +864,9 @@ logged: amendment #74 puts sensitive trigger data in `args'."
   (ignore client)
   (let ((args (plist-get params :args))
         (jetpacs--in-action-handler t)
+        ;; A re-entrant dispatch (a builder pumping process output) runs
+        ;; a HANDLER, which may push; the builder marker does not reach it.
+        (jetpacs--in-builder nil)
         ;; D1: the handler runs under the owner that REGISTERED it.  A
         ;; plain `let', not `with-jetpacs-owner': that macro errors on
         ;; nil, and nil is the common case (most base actions register

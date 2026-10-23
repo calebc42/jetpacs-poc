@@ -509,7 +509,10 @@ repush or async flush carries no ambient owner of its own."
             ;; below this build — chrome screens, sections, comint —
             ;; joins it, so two renders of one buffer in one document
             ;; route around each other instead of shipping a duplicate.
-            (jetpacs-node-id-claims (make-hash-table :test #'equal)))
+            (jetpacs-node-id-claims (make-hash-table :test #'equal))
+            ;; A render is pure: pushes, navigation, flow continuations
+            ;; and Org saves refuse inside it (`jetpacs--builder-guard').
+            (jetpacs--in-builder t))
         ;; The recorder seam fires HERE, stack intact — after the unwind
         ;; below, a backtrace would show the catch site, not the crash.
         (handler-bind ((error (lambda (e)
@@ -1213,7 +1216,8 @@ A crash signals like a stale builder's: the push is refused, loudly."
   (when-let* ((fn (plist-get entry :data-builder)))
     (let ((jetpacs-current-owner
            (or (plist-get entry :owner)
-               (and (not jetpacs--in-action-handler) jetpacs-current-owner))))
+               (and (not jetpacs--in-action-handler) jetpacs-current-owner)))
+          (jetpacs--in-builder t))
       (handler-bind ((error (lambda (e)
                               (jetpacs-shell--note-builder-error
                                (list :surface surface :phase 'data) e))))
@@ -1461,7 +1465,11 @@ they are resolved here against the document and stripped, so the same
 builders serve either Companion.  The four runtime gates run in order
 (see the Commentary); a gate failure signals — the SPEC 16.2/10.2 sender
 MUSTs are loud, never sanitized.  On any failure a queued
-`jetpacs-shell-notify' snackbar is requeued for the next push."
+`jetpacs-shell-notify' snackbar is requeued for the next push.
+
+Inside a builder extent it signals `jetpacs-builder-side-effect': a
+render never pushes (defer the push with a timer instead)."
+  (jetpacs--builder-guard 'jetpacs-shell-push)
   (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
          (entry (alist-get surface jetpacs-shell--roots nil nil #'equal)))
     (jetpacs-shell--drop-pending surface)
@@ -1517,7 +1525,8 @@ MUSTs are loud, never sanitized.  On any failure a queued
                               ((error (lambda (e)
                                         (jetpacs-shell--note-builder-error
                                          (list :surface surface) e))))
-                            (funcall fn)))))
+                            (let ((jetpacs--in-builder t))
+                              (funcall fn))))))
                    (stale-after-s (or stale-after-s
                                       (plist-get entry :stale-after-s)))
                    (data (or data (jetpacs-shell--build-data surface entry)))

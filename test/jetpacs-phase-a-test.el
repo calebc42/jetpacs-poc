@@ -354,5 +354,33 @@ device: the hub's Eval tab echoed forms and never answered."
         (delete-process p))
       (kill-buffer buf))))
 
+(ert-deftest jetpacs-phase-a-builder-cannot-save-org ()
+  "Inside a builder extent neither the engine's deferred save nor the
+save policy writes; outside one the deferred save arms as before."
+  (require 'jetpacs-org)
+  (require 'jetpacs-editor-org)
+  (let* ((file (make-temp-file "jetpacs-pure" nil ".org" "* A\n"))
+         (buf (find-file-noselect file)))
+    (unwind-protect
+        (with-current-buffer buf
+          (insert "edit ")
+          (let ((jetpacs--in-builder t))
+            (should-error (ebp-org-defer-save)
+                          :type 'jetpacs-builder-side-effect)
+            (should-not (timerp ebp-org--save-timer))
+            (should-error (jetpacs-editor-org-save-policy buf)
+                          :type 'jetpacs-builder-side-effect))
+          (should (buffer-modified-p))
+          (should (equal (with-temp-buffer
+                           (insert-file-contents file) (buffer-string))
+                         "* A\n"))
+          (ebp-org-defer-save)
+          (should (timerp ebp-org--save-timer))
+          (cancel-timer ebp-org--save-timer)
+          (setq ebp-org--save-timer nil))
+      (with-current-buffer buf (set-buffer-modified-p nil))
+      (kill-buffer buf)
+      (delete-file file))))
+
 (provide 'jetpacs-phase-a-test)
 ;;; jetpacs-phase-a-test.el ends here
