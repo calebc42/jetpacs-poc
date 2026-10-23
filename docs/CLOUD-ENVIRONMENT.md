@@ -93,7 +93,7 @@ Attach what the task needs; the minimum sets follow from the dependency gate in
 |---|---|
 | Specification, goldens, contract (`python3 ebp/validate.py`) | `jetpacs-poc`, `ebp-poc` |
 | Companion Kotlin and JVM suites (`:wire:jvmTest`, renderer, `:app`) | `jetpacs-poc`, `ebp-poc`, `ebp-kmp`, `ebp-compose` |
-| Elisp suites (`test/run-tests.sh`) | the four above plus `ebp.el`, `ebp-org`, `grove-native` |
+| Elisp suites (`test/run-tests.sh`) | the four above plus `ebp.el`, `ebp-org`, `bloom-native` |
 | Applet work | add `glasspane`, `orgzly-native`, `harp-native`, `jetpacs-authoring` as the task names them |
 
 A missing checkout is a loud failure, not a silent one: `settings.gradle.kts`

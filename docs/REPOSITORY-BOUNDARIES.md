@@ -25,7 +25,7 @@ Jetpacs                     Room/Nav/platform adapters and Elisp app shell
 `-- hosts independently owned Elisp applets through public APIs
           |
           +-- glasspane
-          +-- grove-native
+          +-- bloom-native
           +-- orgzly-native
           `-- harp-native
 ```
@@ -62,7 +62,7 @@ Paths below are relative to the Jetpacs repository root.
 | Jetpacs module | `jetpacs-component-catalog` | Component catalog/design-lab applet and tests |
 | `glasspane` | `../glasspane` | Personal-information applet, its optional EF theme provider, and tests |
 | `orgzly-native` | `../orgzly-native` | Restored Orgzly Elisp applet, Foundation style profiles and tests |
-| `grove-native` | `../grove-native` | Grove Jetpacs Elisp applet, design presets, workflow guide and tests |
+| `bloom-native` | `../bloom-native` | Bloom (formerly Grove) Jetpacs Elisp applet, design presets, workflow guide and tests |
 | Jetpacs module | `jetpacs-platform-tools` | Read-only platform workbench, CLI, and MCP server |
 | Jetpacs module | `jetpacs-applet-mcp` | Static applet analysis and explicitly trusted launcher tooling |
 
@@ -119,9 +119,12 @@ Generated projections are checked in to their owner and regenerated there.
 Build outputs, `.elc` files, editor backups, rejected patches, and historical
 working-tree copies are not source boundaries merely because they are nearby.
 
-Grove's independent Android implementation remains in `../grove/`. Its Jetpacs
-implementation and relevant Git history were extracted into `../grove-native/`;
-runtime `grove-*` features and the `grove` app identity remain unchanged.
+Bloom's (formerly Grove's) independent Android implementation remains in
+`../grove/`. Its Jetpacs implementation and relevant Git history were extracted
+into what is now `../bloom-native/`. When upstream renamed the app to Bloom,
+the applet followed in full: `bloom-*` features, the `bloom` app identity,
+`bloom.*` actions and `app:bloom` surfaces, with obsolete `grove-*` option
+aliases for migration.
 
 `../harp-native` restores the archived Harp Personal Health Record applet as an
 independent sibling. Its Org schema adapter and health workflows remain Elisp;

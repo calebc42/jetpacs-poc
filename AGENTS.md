@@ -30,7 +30,7 @@ and applet dependencies are sibling repositories under
 | `poc/v1`, `poc/v2`, `poc/v3-pre-split` tags in this repository | Immutable older POC snapshots and reusable implementation evidence | Reuse or adapt their code as useful; do not move or modify the snapshot tags |
 | `../ebp/`, `../ebp.el/`, `../ebp-kmp/`, `../ebp-compose/`, `../ebp-org/` | Independent EBP repositories | Use `../ebp/` as the sole POC specification authority |
 | `../glasspane/` | Sibling applet source | Follow the applet authoring contract below |
-| `../grove-native/` | Grove Jetpacs applet and tests | Read its local `AGENTS.md`; the Android reference app lives in `../grove/` |
+| `../bloom-native/` | Bloom (formerly Grove) Jetpacs applet and tests | Read its local `AGENTS.md`; the Android reference app lives in `../grove/` |
 | `../jetpacs-authoring/` | Shared Elisp authoring and source-inspection repository | Read its local `AGENTS.md` before changing it |
 | `jetpacs-automations/` | Optional automation runtime and applet module | Read its local `AGENTS.md` before changing it |
 | `jetpacs-components/` | Foundation components and styles module | Read its local `AGENTS.md` before changing it |

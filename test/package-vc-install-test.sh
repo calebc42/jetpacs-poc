@@ -71,11 +71,11 @@ emacs -Q --batch -L "$DEPENDENCIES" --eval '
                  (featurep (quote jetpacs-packaged-apps))
                  (equal (plist-get (car jetpacs-app-store-packaged-apps) :name)
                         "glasspane.el")
-                 (member "grove.el"
+                 (member "bloom.el"
                          (mapcar (lambda (entry) (plist-get entry :name))
                                  jetpacs-app-store-packaged-apps))
                  (not (featurep (quote glasspane)))
-                 (not (featurep (quote grove)))
+                 (not (featurep (quote bloom)))
                  (not (file-exists-p spike-elc)))
       (error "Jetpacs package installation contract failed: %S"
              (list :jetpacs (featurep (quote jetpacs))
@@ -86,6 +86,6 @@ emacs -Q --batch -L "$DEPENDENCIES" --eval '
                    :manifest (featurep (quote jetpacs-packaged-apps))
                    :catalog jetpacs-app-store-packaged-apps
                    :glasspane-loaded (featurep (quote glasspane))
-                   :grove-loaded (featurep (quote grove))
+                   :bloom-loaded (featurep (quote bloom))
                    :spike-elc (file-exists-p spike-elc)))))
   (princ "package-vc-install-test: clean checkout installs and requires Jetpacs\n"))'

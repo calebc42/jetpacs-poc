@@ -72,7 +72,7 @@ abstract class StageOnboardingAssets : DefaultTask() {
     abstract val glasspaneDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
-    abstract val groveDir: org.gradle.api.file.DirectoryProperty
+    abstract val bloomDir: org.gradle.api.file.DirectoryProperty
 
     @get:org.gradle.api.tasks.InputDirectory
     abstract val orgzlyDir: org.gradle.api.file.DirectoryProperty
@@ -169,7 +169,7 @@ abstract class StageOnboardingAssets : DefaultTask() {
             File(apps, "jetpacs-component-catalog"),
         )
         copyElispSources(glasspaneDir.get().asFile, File(apps, "glasspane"))
-        copyElispSources(groveDir.get().asFile, File(apps, "grove"))
+        copyElispSources(bloomDir.get().asFile, File(apps, "bloom"))
         copyElispSources(orgzlyDir.get().asFile, File(apps, "orgzly"))
         copyElispSources(harpDir.get().asFile, File(apps, "harp"))
         copyDistribution(orgDir.get().asFile, File(payload, "org"))
@@ -205,7 +205,7 @@ androidComponents {
             jetpacsAutomationsDir.set(rootProject.file("../jetpacs-automations/lisp"))
             jetpacsComponentCatalogDir.set(rootProject.file("../jetpacs-component-catalog/lisp"))
             glasspaneDir.set(repositoriesRoot.resolve("glasspane"))
-            groveDir.set(repositoriesRoot.resolve("grove-native/elisp"))
+            bloomDir.set(repositoriesRoot.resolve("bloom-native/elisp"))
             orgzlyDir.set(repositoriesRoot.resolve("orgzly-native/emacs/apps/orgzly"))
             harpDir.set(repositoriesRoot.resolve("harp-native/emacs/apps/harp"))
             orgDir.set(repo.dir("org"))

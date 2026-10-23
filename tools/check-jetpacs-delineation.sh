@@ -1,7 +1,7 @@
 #!/bin/sh
 # Jetpacs delineation guard: EVERY emacs/jetpacs-*.el loads alone, in a
 # process of its own with only EBP and Jetpacs on the load path, and leaves
-# no downstream app (Glasspane, Grove, Orgzly, Harp) symbol, face, error,
+# no downstream app (Glasspane, Bloom, Orgzly, Harp) symbol, face, error,
 # custom group or feature behind.  The textual layering guard
 # (tools/check-layering.sh) reads source; this one proves the require
 # closure.  A glob with an asserted count, so a new module is guarded the

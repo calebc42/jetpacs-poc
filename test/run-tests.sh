@@ -16,7 +16,7 @@ JETPACS_AUTHORING_DIR=${JETPACS_AUTHORING_DIR:-"$repositories_root/jetpacs-autho
 JETPACS_AUTOMATIONS_DIR=${JETPACS_AUTOMATIONS_DIR:-"$jetpacs_root/jetpacs-automations"}
 JETPACS_COMPONENT_CATALOG_DIR=${JETPACS_COMPONENT_CATALOG_DIR:-"$jetpacs_root/jetpacs-component-catalog"}
 GLASSPANE_DIR=${GLASSPANE_DIR:-"$repositories_root/glasspane"}
-GROVE_DIR=${GROVE_DIR:-"$repositories_root/grove-native"}
+BLOOM_DIR=${BLOOM_DIR:-"$repositories_root/bloom-native"}
 export EBP_SPEC_DIR EBP_EL_DIR EBP_ORG_DIR EBP_KMP_DIR EBP_COMPOSE_DIR
 export JETPACS_COMPONENTS_DIR JETPACS_AUTHORING_DIR
 export JETPACS_AUTOMATIONS_DIR JETPACS_COMPONENT_CATALOG_DIR
@@ -28,7 +28,7 @@ EBP_WEBSOCKET_DIR=${EBP_WEBSOCKET_DIR:-"$repositories_root/emacs/emacs-websocket
 export EBP_WEBSOCKET_DIR
 ORGZLY_DIR=${ORGZLY_DIR:-"$repositories_root/orgzly-native"}
 HARP_DIR=${HARP_DIR:-"$repositories_root/harp-native"}
-export GROVE_DIR ORGZLY_DIR HARP_DIR
+export BLOOM_DIR ORGZLY_DIR HARP_DIR
 
 for dependency in \
   "$EBP_SPEC_DIR/contract.json" \
@@ -37,7 +37,7 @@ for dependency in \
   "$EBP_KMP_DIR/wire/build.gradle.kts" \
   "$EBP_COMPOSE_DIR/renderer/model/build.gradle.kts" \
   "$EBP_WEBSOCKET_DIR/websocket.el" \
-  "$GROVE_DIR/elisp/grove.el"; do
+  "$BLOOM_DIR/elisp/bloom.el"; do
   test -r "$dependency" || {
     echo "workspace dependency missing: $dependency" >&2
     exit 2
@@ -63,7 +63,7 @@ emacs() {
     -L "$JETPACS_AUTOMATIONS_DIR/lisp" \
     -L "$JETPACS_COMPONENT_CATALOG_DIR/lisp" \
     -L "$GLASSPANE_DIR" \
-    -L "$GROVE_DIR/elisp" "$@"
+    -L "$BLOOM_DIR/elisp" "$@"
 }
 
 # Upstream, extension and downstream owners gate their own source.  Their
@@ -592,10 +592,10 @@ run_sibling material3 "$jetpacs_root/test/material3/run-tests.sh"
 run_sibling jetpacs-components "$JETPACS_COMPONENTS_DIR/test/run-tests.sh"
 run_sibling jetpacs-automations "$JETPACS_AUTOMATIONS_DIR/test/run-tests.sh"
 run_sibling jetpacs-component-catalog "$JETPACS_COMPONENT_CATALOG_DIR/test/run-tests.sh"
-run_sibling grove env JETPACS_ROOT="$jetpacs_root" \
+run_sibling bloom env JETPACS_ROOT="$jetpacs_root" \
   EBP_EL_ROOT="$EBP_EL_DIR" EBP_ORG_ROOT="$EBP_ORG_DIR" \
   JETPACS_COMPONENTS_ROOT="$JETPACS_COMPONENTS_DIR" \
-  "$GROVE_DIR/test-elisp/run-tests.sh"
+  "$BLOOM_DIR/test-elisp/run-tests.sh"
 run_sibling orgzly env JETPACS_ROOT="$jetpacs_root" "$ORGZLY_DIR/test/run-tests.sh"
 run_sibling harp env JETPACS_ROOT="$jetpacs_root" "$HARP_DIR/test/run-tests.sh"
 run_sibling glasspane env JETPACS_ROOT="$jetpacs_root" \

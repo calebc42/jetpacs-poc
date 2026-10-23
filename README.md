@@ -86,7 +86,7 @@ affected conformance tests before treating the implementation as compliant.
 
 ## Layout
 
-This checkout lives at `~/workspace/jetpacs-poc/`. EBP, Glasspane, Grove Native, and the independent
+This checkout lives at `~/workspace/jetpacs-poc/`. EBP, Glasspane, Bloom Native, and the independent
 Jetpacs authoring library are sibling repositories in `~/workspace/`.
 `jetpacs-components/`, `jetpacs-automations/`, `jetpacs-platform-tools/`,
 `jetpacs-applet-mcp/`, and `jetpacs-component-catalog/` are included here.

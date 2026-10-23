@@ -56,10 +56,10 @@
           (should entry)
           (should (eq (plist-get entry :feature) 'glasspane))
           (should (equal (plist-get entry :app-id) "glasspane")))
-        (let ((entry (jetpacs-app-store--packaged-entry "grove.el")))
+        (let ((entry (jetpacs-app-store--packaged-entry "bloom.el")))
           (should entry)
-          (should (eq (plist-get entry :feature) 'grove))
-          (should (equal (plist-get entry :app-id) "grove")))
+          (should (eq (plist-get entry :feature) 'bloom))
+          (should (equal (plist-get entry :app-id) "bloom")))
         (let ((entry (jetpacs-app-store--packaged-entry "orgzly.el")))
           (should entry)
           (should (eq (plist-get entry :feature) 'orgzly))
@@ -73,9 +73,9 @@
         (should-not (featurep 'orgzly))
         (should-not (assoc "orgzly" jetpacs-apps--registry))
         (should-not (featurep 'glasspane))
-        (should-not (featurep 'grove))
+        (should-not (featurep 'bloom))
         (should-not (assoc "glasspane" jetpacs-apps--registry))
-        (should-not (assoc "grove" jetpacs-apps--registry))
+        (should-not (assoc "bloom" jetpacs-apps--registry))
         (should (equal jetpacs-install-root
                        (expand-file-name "jetpacs/" user-emacs-directory)))
         (should (equal jetpacs-vault-directory jetpacs-entry-test--vault))
@@ -135,7 +135,7 @@
       (should (= hubs 1)))))
 
 (ert-deftest jetpacs-entry-start-requests-widget-surfaces ()
-  "The packaged dialer negotiates the target used by Grove's widget roots."
+  "The packaged dialer negotiates the target used by Bloom's widget roots."
   (let (connect-args)
     (cl-letf (((symbol-function 'jetpacs-connect)
                (lambda (&rest args)

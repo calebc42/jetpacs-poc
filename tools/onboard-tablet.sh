@@ -636,11 +636,11 @@ $payload/examples/python $payload/bootstrap" \
       "Jetpacs Component Catalog"
     stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/glasspane" \
       "$payload/emacs/apps/glasspane" "Jetpacs"
-    # Mirrors the Companion's StageOnboardingAssets task: Grove is the second
+    # Mirrors the Companion's StageOnboardingAssets task: Bloom is the second
     # packaged applet named by emacs/apps/packaged-apps and must ship with
     # the tree, or Manage Apps offers an entry whose feature cannot load.
-    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/grove-native/elisp" \
-      "$payload/emacs/apps/grove" "Grove"
+    stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/bloom-native/elisp" \
+      "$payload/emacs/apps/bloom" "Bloom"
     stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/orgzly-native/emacs/apps/orgzly" \
       "$payload/emacs/apps/orgzly" "Orgzly"
     stage_elisp_tree "$JETPACS_REPOSITORIES_ROOT/harp-native/emacs/apps/harp" \

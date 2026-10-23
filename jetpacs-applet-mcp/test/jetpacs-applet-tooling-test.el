@@ -625,7 +625,7 @@ the exact shape; the MCP entry point renders both and refuses unknown types."
             (should (equal (mapcar (lambda (e) (plist-get e :id))
                                    (append (plist-get data :extensions) nil))
                            '("jetpacs.material3" "jetpacs.components" "jetpacs.design")))
-            (should (seq-find (lambda (a) (equal (plist-get a :id) "grove"))
+            (should (seq-find (lambda (a) (equal (plist-get a :id) "bloom"))
                               (plist-get data :applets)))
             (should-not (plist-member data :last_profile)))
           (with-temp-file file

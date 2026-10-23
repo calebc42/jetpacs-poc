@@ -14,15 +14,16 @@ remains the research and hand-rewrite repository.
 | `~/workspace/ebp-org/` | `calebc42/ebp-org` | Reusable Org integration |
 | `~/workspace/glasspane/` | `calebc42/glasspane` | Glasspane applet |
 | `~/workspace/jetpacs-authoring/` | `calebc42/jetpacs-authoring` | Shared Elisp authoring and inspection |
-| `~/workspace/grove-native/` | `calebc42/grove-native` | Grove Elisp applet |
+| `~/workspace/bloom-native/` | `calebc42/grove-native` | Bloom (formerly Grove) Elisp applet |
 | `~/workspace/orgzly-native/` | `calebc42/orgzly-native` | Orgzly Elisp applet |
 | `~/workspace/harp-native/` | `calebc42/harp-native` | Harp Elisp applet |
 | `~/workspace/jetpacs/` | `calebc42/jetpacs` | Separate hand rewrite |
 
 The initial migration assembled eleven POC repositories: the three existing GitHub projects plus
 eight additional repositories. Grove's Elisp implementation was subsequently extracted into the additional
-`~/workspace/grove-native/` repository; the original `~/workspace/grove/` keeps
-the Android app. See `../grove-native/README.md` relative to the POC root.
+`~/workspace/grove-native/` repository, since renamed `~/workspace/bloom-native/`
+after upstream renamed the app to Bloom; the original `~/workspace/grove/` keeps
+the Android app. See `../bloom-native/README.md` relative to the POC root.
 The future hand rewrite uses `calebc42/jetpacs`.
 The developer tools and Material 3 remain inside `jetpacs-poc`; they do not need
 separate remotes.

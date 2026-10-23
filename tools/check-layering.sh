@@ -18,7 +18,7 @@ set -eu
 cd "$(dirname "$0")/.."
 dir=${JETPACS_LAYERING_DIR:-emacs}
 allowlist=$(pwd)/tools/third-party-allowlist.txt
-apps='glasspane|grove|orgzly|harp'
+apps='glasspane|bloom|orgzly|harp'
 status=0
 
 if grep -n -E "\(require '($apps)([[:space:])]|$)" "$dir"/*.el; then

@@ -22,14 +22,14 @@
          :app-id "glasspane"
          :register glasspane-register
          :unregister glasspane-unregister)
-        (:name "grove.el"
-         :label "Grove"
-         :icon "forest"
+        (:name "bloom.el"
+         :label "Bloom"
+         :icon "local_florist"
          :summary "Notebooks, editing, search, agenda, capture, and widgets powered by Emacs Org"
-         :feature grove
-         :app-id "grove"
-         :register grove-register
-         :unregister grove-unregister)
+         :feature bloom
+         :app-id "bloom"
+         :register bloom-register
+         :unregister bloom-unregister)
         (:name "orgzly.el"
          :label "Orgzly"
          :icon "book"
