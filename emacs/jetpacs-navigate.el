@@ -84,6 +84,11 @@ sweeps it with the rest of the owner's state."
 
 (add-hook 'jetpacs-teardown-functions #'jetpacs-navigate--on-teardown)
 
+;; A drill host registered for a surface its owner does not hold is not in
+;; `jetpacs-teardown-surfaces'; the ledger sweeps it by name.
+(jetpacs-define-claim-disposer
+ "drill-host" (lambda (surface) (remhash surface jetpacs-navigate--drill-hosts)))
+
 (defun jetpacs-navigate--screen-builder (name &optional position)
   "A nullary builder closing over buffer NAME and optional POSITION.
 It never closes over the buffer object —

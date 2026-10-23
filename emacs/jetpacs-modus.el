@@ -46,7 +46,8 @@ belong here only when their themes implement the Modus semantic palette API.")
 (defun jetpacs-modus-unregister-theme-provider (builder)
   "Remove every Theme-screen provider row registered with BUILDER."
   (setq jetpacs-modus-theme-provider-links
-        (cl-remove builder jetpacs-modus-theme-provider-links :key #'cadr)))
+        (cl-remove builder jetpacs-modus-theme-provider-links :key #'cadr))
+  (jetpacs--unclaim "theme-provider" builder))
 
 (defun jetpacs-modus-register-theme-provider (order builder)
   "Register Modus-family provider row BUILDER at numeric ORDER.
@@ -63,7 +64,11 @@ attribute the row to the downstream app that supplies it."
                           (cons builder
                                 (bound-and-true-p jetpacs-current-owner)))
                     jetpacs-modus-theme-provider-links)
-              (lambda (a b) (< (car a) (car b))))))
+              (lambda (a b) (< (car a) (car b)))))
+  (jetpacs--claim "theme-provider" builder))
+
+(jetpacs-define-claim-disposer "theme-provider"
+                               #'jetpacs-modus-unregister-theme-provider)
 
 (defun jetpacs-modus--theme-provider-nodes ()
   "Build the registered Modus-family provider rows in display order."

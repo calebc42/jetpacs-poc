@@ -207,6 +207,139 @@ requeued, not silently lost.  Fails against the callback-less remove."
       (jetpacs-teardown-owner "alpha")
       (should (equal seen '("alpha" nil))))))
 
+;;;; The teardown ledger
+
+(defvar jetpacs-teardown-test--hook nil
+  "A scratch hook for the ledger tests.")
+
+(defvar jetpacs-teardown-test--flag nil
+  "A scratch setting for the ledger tests.")
+
+(ert-deftest jetpacs-teardown-sweeps-every-ledgered-kind ()
+  "Every registration made under an owner is gone after its teardown, and
+an ownerless registration in the same registries survives."
+  (require 'jetpacs-apps)
+  (require 'jetpacs-settings)
+  (require 'jetpacs-reader)
+  (require 'jetpacs-editor)
+  (require 'jetpacs-navigate)
+  (let ((jetpacs-apps--registry nil) (jetpacs-apps--current nil)
+        (jetpacs-teardown-test--hook nil)
+        (jetpacs-reader--adapters nil) (jetpacs-reader--displaced nil)
+        (jetpacs-editor--adapters nil) (jetpacs-editor--displaced nil)
+        (jetpacs-render-buffer-functions nil)
+        (jetpacs-settings-registry nil) (jetpacs-settings-hub-entries nil)
+        (jetpacs-settings-links nil)
+        (link (lambda () '(:t "text" :text "link"))))
+    (unwind-protect
+        (progn
+          (jetpacs-reader-register 'stock :predicate #'ignore :render #'ignore)
+          (with-jetpacs-owner "alpha"
+            (jetpacs-add-hook 'jetpacs-teardown-test--hook #'ignore)
+            (jetpacs-reader-register 'alpha-r :predicate #'ignore
+                                     :render #'ignore)
+            (jetpacs-editor-register 'alpha-e :predicate #'ignore)
+            (jetpacs-render-buffer-register 'alpha-test-mode #'ignore)
+            (jetpacs-settings-register-section
+             "Alpha" (list (list 'jetpacs-teardown-test--flag :label "Flag")))
+            (jetpacs-settings-register-hub-entry "alpha" :order 1
+                                                 :title "Alpha")
+            (jetpacs-settings-add-link 10 link)
+            (jetpacs-navigate-register-drill-host "app:elsewhere" #'ignore))
+          (jetpacs-defapp "alpha" :surfaces '("alpha"))
+          (dolist (kind (remove "theme-provider" jetpacs-teardown-kind-order))
+            (should (jetpacs--owned-names kind "alpha")))
+          (jetpacs-teardown-owner "alpha")
+          (dolist (kind jetpacs-teardown-kind-order)
+            (should-not (jetpacs--owned-names kind "alpha")))
+          (should-not jetpacs-teardown-test--hook)
+          (should (equal (mapcar #'jetpacs-reader-adapter-id
+                                 jetpacs-reader--adapters)
+                         '(stock)))
+          (should-not jetpacs-editor--adapters)
+          (should-not jetpacs-render-buffer-functions)
+          (should-not jetpacs-settings-registry)
+          (should-not jetpacs-settings-hub-entries)
+          (should-not jetpacs-settings-links)
+          (should-not (gethash "app:elsewhere" jetpacs-navigate--drill-hosts))
+          (should-not (assoc "alpha" jetpacs-apps--registry))
+          ;; The sweep is idempotent.
+          (jetpacs-teardown-owner "alpha"))
+      (jetpacs-teardown-owner "alpha")
+      (jetpacs-test-reset-state))))
+
+(ert-deftest jetpacs-teardown-own-teardown-hook-runs-then-leaves ()
+  "An owner's own `jetpacs-teardown-functions' member runs once for that
+owner, then leaves with the rest of its ledger."
+  (let* ((seen nil)
+         (fn (lambda (owner) (push owner seen))))
+    (unwind-protect
+        (progn
+          (with-jetpacs-owner "alpha"
+            (jetpacs-add-hook 'jetpacs-teardown-functions fn))
+          (jetpacs-teardown-owner "alpha")
+          (should (equal seen '("alpha")))
+          (should-not (memq fn jetpacs-teardown-functions))
+          (should-not (jetpacs--owned-names "hook" "alpha"))
+          (jetpacs-teardown-owner "alpha")
+          (should (equal seen '("alpha"))))
+      (remove-hook 'jetpacs-teardown-functions fn)
+      (jetpacs-test-reset-state))))
+
+(ert-deftest jetpacs-teardown-displaced-adapter-is-restored ()
+  "An owner replacing the stock adapter gives the slot back at teardown,
+in the same position; an ownerless reassertion takes the slot back from
+an owner outright."
+  (require 'jetpacs-reader)
+  (let ((jetpacs-reader--adapters nil) (jetpacs-reader--displaced nil))
+    (unwind-protect
+        (progn
+          (jetpacs-reader-register 'org :predicate #'ignore :render #'car)
+          (jetpacs-reader-register 'other :predicate #'ignore :render #'ignore)
+          (with-jetpacs-owner "beta"
+            (jetpacs-reader-register 'org :predicate #'ignore :render #'cdr))
+          (should (eq (jetpacs-reader-adapter-render
+                       (car jetpacs-reader--adapters))
+                      #'cdr))
+          (jetpacs-teardown-owner "beta")
+          (should (equal (mapcar #'jetpacs-reader-adapter-id
+                                 jetpacs-reader--adapters)
+                         '(org other)))
+          (should (eq (jetpacs-reader-adapter-render
+                       (car jetpacs-reader--adapters))
+                      #'car))
+          (should-not (jetpacs--owner-of "reader-adapter" 'org))
+          (with-jetpacs-owner "beta"
+            (jetpacs-reader-register 'org :predicate #'ignore :render #'cdr))
+          (jetpacs-reader-register 'org :predicate #'ignore :render #'car)
+          (should-not (jetpacs--owner-of "reader-adapter" 'org))
+          (jetpacs-teardown-owner "beta")
+          (should (equal (mapcar #'jetpacs-reader-adapter-id
+                                 jetpacs-reader--adapters)
+                         '(org other))))
+      (jetpacs-teardown-owner "beta")
+      (jetpacs-test-reset-state))))
+
+(ert-deftest jetpacs-teardown-apps-unregister-is-the-whole-sweep ()
+  "`jetpacs-apps-unregister' alone removes the app's actions, root and
+registry entry."
+  (require 'jetpacs-apps)
+  (let ((jetpacs-apps--registry nil) (jetpacs-apps--current nil))
+    (unwind-protect
+        (progn
+          (jetpacs-teardown-test--setup-owner "gamma")
+          (jetpacs-defapp "gamma" :surfaces '("gamma"))
+          (should (gethash "gamma.tap" jetpacs-action-handlers))
+          (jetpacs-apps-unregister "gamma")
+          (should-not (gethash "gamma.tap" jetpacs-action-handlers))
+          (should-not (alist-get "app:gamma" jetpacs-shell--roots
+                                 nil nil #'equal))
+          (should-not (assoc "gamma" jetpacs-apps--registry))
+          (should-not (jetpacs--owned-names "app" "gamma")))
+      (jetpacs-teardown-owner "gamma")
+      (setq jetpacs-shell--pending-removals nil)
+      (jetpacs-test-reset-state))))
+
 (ert-deftest jetpacs-teardown-live-loopback-remove-on-wire ()
   "The tombstone genuinely hits the wire through the real handshake."
   (require 'ebp-wire-test)

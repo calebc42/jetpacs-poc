@@ -339,19 +339,26 @@ The live-reload verb: under D1 every redefinition without this leaves a
 visible orphaned surface on the device.  Sweeps, in load-bearing order
 — local registries FIRST, wire LAST, so a debounced repush firing
 re-entrantly inside a blocked send finds no root and no-ops instead of
-resurrecting the surface above its tombstone: actions (the dispatch
-shim then rejects racing events), async loaders (a late settle is
-inert), then per surface: state subscriptions before the wire call,
+resurrecting the surface above its tombstone: the ledger
+\(`jetpacs-teardown-kind-order': hooks added with `jetpacs-add-hook',
+reader and editor adapters, render skins, theme providers, settings
+links, hub entries and sections, drill hosts, the app registry entry —
+each kind through the disposer its module registered), actions (the
+dispatch shim then rejects racing events), async loaders (a late settle
+is inert), then per surface: state subscriptions before the wire call,
 the tombstone itself, then the applied-revision and current-view
-residue.  Wire failures requeue for the next barrier and never signal;
-a second call is an idempotent cheap no-op.
+residue, and finally `jetpacs-teardown-functions' (the owner's own
+members of that hook run once more, then leave).  Wire failures requeue
+for the next barrier and never signal; a second call is an idempotent
+cheap no-op.
 
 Scope notes: registrations made OUTSIDE `with-jetpacs-owner' carry no
 attribution and are not swept.  Tombstones persist until revocation
 (SPEC 13.3) — which is why a surface the client cannot know about
 (never pushed, no revision floor) gets a local unclaim only, never a
-gratuitous permanent tombstone.  An in-flight bridged dialog is NOT
-cancelled: it is unattributed single-flight, and its continuation
+gratuitous permanent tombstone.  An owner's dialog held in
+`jetpacs-dialog-slot-show' is abandoned by the dialog module's teardown
+member; an in-flight bridged prompt is unattributed single-flight and
 degrades safely (a rootless push returns nil, its re-armed actions are
 already gone).  ebp's input-draft mirror keeps the removed surface's
 drafts until the Companion republishes — pass `:reset-input-ids' on a
@@ -361,6 +368,21 @@ re-registering push when that matters."
   (unless (jetpacs-valid-owner-p owner)
     (error "jetpacs: invalid owner %S (a D1 owner name, not a surface id)"
            owner))
+  ;; The ledger first: hooks, adapters, settings rows and the app entry.
+  ;; The owner's own `jetpacs-teardown-functions' members stay until that
+  ;; hook has run for this owner, then leave with the rest.
+  (let ((late (cl-loop for name in (jetpacs--owned-names "hook" owner)
+                       when (eq (car name) 'jetpacs-teardown-functions)
+                       collect (cons "hook" name))))
+    (jetpacs--dispose-owner-claims owner late)
+    (jetpacs-teardown-owner--sweep owner)
+    (dolist (entry late)
+      (jetpacs-remove-hook (cadr entry) (cddr entry))))
+  owner)
+
+(defun jetpacs-teardown-owner--sweep (owner)
+  "The action, async and per-surface half of `jetpacs-teardown-owner'.
+Ends by running `jetpacs-teardown-functions' for OWNER."
   (dolist (name (jetpacs--owned-names "action" owner))
     (jetpacs-undefaction name))
   (jetpacs-async-clear-owner owner)

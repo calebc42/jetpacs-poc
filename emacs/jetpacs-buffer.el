@@ -1176,8 +1176,22 @@ entry falls through to the generic `jetpacs-buffer-render'.  Derived
 modes match their nearest registered ancestor; first match wins.")
 
 (defun jetpacs-render-buffer-register (mode fn)
-  "Register FN as the Tier-1 renderer skin for MODE."
-  (setf (alist-get mode jetpacs-render-buffer-functions) fn))
+  "Register FN as the Tier-1 renderer skin for MODE.
+Under `with-jetpacs-owner' the skin is ledgered, so the owner's
+teardown removes it."
+  (setf (alist-get mode jetpacs-render-buffer-functions) fn)
+  (jetpacs--claim "render-buffer" mode)
+  fn)
+
+(defun jetpacs-render-buffer-unregister (mode)
+  "Remove the Tier-1 renderer skin registered for MODE."
+  (setq jetpacs-render-buffer-functions
+        (assq-delete-all mode jetpacs-render-buffer-functions))
+  (jetpacs--unclaim "render-buffer" mode)
+  mode)
+
+(jetpacs-define-claim-disposer "render-buffer"
+                               #'jetpacs-render-buffer-unregister)
 
 (defun jetpacs-render-buffer (&optional buffer)
   "Render BUFFER via its registered skin, else the generic renderer.

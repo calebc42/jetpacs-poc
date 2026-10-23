@@ -989,5 +989,21 @@ destinations through `app.open' `:route'; Apps remains drawer-only."
               (should (equal scheduled (list surface)))))
         (jetpacs-chrome-remove "prime.main")))))
 
+(ert-deftest jetpacs-apps-defapp-claims-itself-and-rejects-bad-ids ()
+  "An app is attributed to itself whatever owner is ambient, a non-owner
+id is refused at registration, and unregistering drops the claim."
+  (jetpacs-apps-test--env
+    (jetpacs-defapp "claimer" :surfaces '("claimer"))
+    (should (equal (jetpacs--owner-of "app" "claimer") "claimer"))
+    (with-jetpacs-owner "someone-else"
+      (jetpacs-defapp "claimer2" :surfaces '("claimer2")))
+    (should (equal (jetpacs--owner-of "app" "claimer2") "claimer2"))
+    (should-error (jetpacs-defapp "has:colon"))
+    (should-error (jetpacs-defapp "has space"))
+    (jetpacs-apps-unregister "claimer")
+    (jetpacs-apps-unregister "claimer2")
+    (should-not (jetpacs--owner-of "app" "claimer"))
+    (should-not (assoc "claimer2" jetpacs-apps--registry))))
+
 (provide 'jetpacs-apps-test)
 ;;; jetpacs-apps-test.el ends here

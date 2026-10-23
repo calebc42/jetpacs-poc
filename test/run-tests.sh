@@ -282,6 +282,9 @@ emacs -Q --batch -L emacs -l test/jetpacs-transient-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-package-browser-test.el \
   -f ert-run-tests-batch-and-exit
 
+emacs -Q --batch -L emacs -l test/jetpacs-dialog-slot-test.el \
+  -f ert-run-tests-batch-and-exit
+
 emacs -Q --batch -L emacs -l test/jetpacs-settings-test.el \
   -f ert-run-tests-batch-and-exit
 

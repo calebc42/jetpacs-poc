@@ -317,7 +317,7 @@ todo.delete falls back to the stock sequence on last-delete."
                          (:startgrouptag) ("Area") (:grouptags)
                          ("House") (:endgrouptag)))
         (org-todo-keywords '((sequence "TODO" "|" "DONE")))
-        (jetpacs-settings--dialog nil)
+        (_slot (jetpacs-dialog-slot-reset))
         (saved nil) (continuations nil))
     (cl-letf (((symbol-function 'jetpacs-settings-save-variable)
                (lambda (sym val)

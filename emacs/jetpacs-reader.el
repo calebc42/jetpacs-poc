@@ -39,6 +39,12 @@ reader/editor switch."
 (defvar jetpacs-reader--adapters nil
   "Ordered list of registered `jetpacs-reader-adapter' objects.")
 
+(defvar jetpacs-reader--displaced nil
+  "Alist of ID -> (ADAPTER . OWNER) an owned registration displaced.
+When an owner replaces adapter ID that someone else held (often the
+ownerless stock adapter), the old one waits here and
+`jetpacs-reader-unregister' puts it back in the same slot.")
+
 (defvar jetpacs-reader--state (make-hash-table :test #'equal)
   "Canonical path to adapter-owned state plist.")
 
@@ -55,7 +61,11 @@ reader/editor switch."
 (cl-defun jetpacs-reader-register (id &key predicate render actions transition)
   "Register or replace reader adapter ID.
 PREDICATE and RENDER are required functions; ACTIONS is optional.
-Registration order is stable when replacing an existing ID."
+Registration order is stable when replacing an existing ID.  Under
+`with-jetpacs-owner' the adapter is ledgered, so the owner's teardown
+removes it; replacing another holder's adapter keeps that adapter aside
+and `jetpacs-reader-unregister' restores it.  An ownerless registration
+takes the slot back from any owner."
   (unless (symbolp id)
     (error "jetpacs-reader-register: ID must be a symbol"))
   (unless (functionp predicate)
@@ -70,19 +80,41 @@ Registration order is stable when replacing an existing ID."
                   :id id :predicate predicate :render render
                   :actions actions :transition transition))
         (cell (cl-find id jetpacs-reader--adapters
-                       :key #'jetpacs-reader-adapter-id)))
+                       :key #'jetpacs-reader-adapter-id))
+        (prior-owner (jetpacs--owner-of "reader-adapter" id)))
+    (cond
+     ((and cell jetpacs-current-owner
+           (not (equal prior-owner jetpacs-current-owner)))
+      (setf (alist-get id jetpacs-reader--displaced) (cons cell prior-owner)))
+     ((and (null jetpacs-current-owner) prior-owner)
+      (jetpacs--unclaim "reader-adapter" id)
+      (setf (alist-get id jetpacs-reader--displaced nil 'remove) nil)))
     (if cell
         (setf (car (memq cell jetpacs-reader--adapters)) adapter)
       (setq jetpacs-reader--adapters
             (append jetpacs-reader--adapters (list adapter))))
+    (jetpacs--claim "reader-adapter" id)
     id))
 
 (defun jetpacs-reader-unregister (id)
-  "Remove reader adapter ID."
-  (setq jetpacs-reader--adapters
-        (cl-delete id jetpacs-reader--adapters
-                   :key #'jetpacs-reader-adapter-id))
+  "Remove reader adapter ID, restoring any adapter it displaced."
+  (let ((displaced (alist-get id jetpacs-reader--displaced))
+        (cell (cl-find id jetpacs-reader--adapters
+                       :key #'jetpacs-reader-adapter-id)))
+    (jetpacs--unclaim "reader-adapter" id)
+    (setf (alist-get id jetpacs-reader--displaced nil 'remove) nil)
+    (if (and displaced cell)
+        (progn
+          (setf (car (memq cell jetpacs-reader--adapters)) (car displaced))
+          (when (cdr displaced)
+            (let ((jetpacs-current-owner (cdr displaced)))
+              (jetpacs--claim "reader-adapter" id))))
+      (setq jetpacs-reader--adapters
+            (cl-delete id jetpacs-reader--adapters
+                       :key #'jetpacs-reader-adapter-id))))
   id)
+
+(jetpacs-define-claim-disposer "reader-adapter" #'jetpacs-reader-unregister)
 
 (defun jetpacs-reader-adapter-for (path)
   "Return the first adapter accepting PATH, isolating bad predicates."

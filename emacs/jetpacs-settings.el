@@ -36,6 +36,7 @@
 (require 'jetpacs-surfaces)
 (require 'jetpacs-shell)
 (require 'jetpacs-chrome)
+(require 'jetpacs-dialog-slot)
 
 (defconst jetpacs-settings-surface "jetpacs.settings"
   "The settings root surface (owner and surface name).")
@@ -58,12 +59,14 @@ KEY is a string identifier.  PLIST contains :order (integer),
   (setf (alist-get key jetpacs-settings-hub-entries nil nil #'equal) plist)
   (setq jetpacs-settings-hub-entries
         (cl-sort jetpacs-settings-hub-entries #'<
-                 :key (lambda (x) (or (plist-get (cdr x) :order) 50)))))
+                 :key (lambda (x) (or (plist-get (cdr x) :order) 50))))
+  (jetpacs--claim "settings-hub" key))
 
 (defun jetpacs-settings-remove-hub-entry (key)
   "Remove a hub entry."
   (setq jetpacs-settings-hub-entries
-        (cl-remove key jetpacs-settings-hub-entries :key #'car :test #'equal)))
+        (cl-remove key jetpacs-settings-hub-entries :key #'car :test #'equal))
+  (jetpacs--unclaim "settings-hub" key))
 
 ;;;; Registry
 
@@ -78,11 +81,17 @@ belong to registration, not to rendering."
       (jetpacs-settings-watch-toggle
        (car entry)
        (concat "setting/" (symbol-name (car entry)))
-       (plist-get (cdr entry) :after-set)))))
+       (plist-get (cdr entry) :after-set))))
+  (jetpacs--claim "settings-section" title))
 
 (defun jetpacs-settings-remove-section (title)
-  "Remove settings section TITLE."
-  (setf (alist-get title jetpacs-settings-registry nil 'remove #'equal) nil))
+  "Remove settings section TITLE and the switch handlers it installed."
+  (dolist (entry (alist-get title jetpacs-settings-registry nil nil #'equal))
+    (unless (plist-get (cdr entry) :render)
+      (jetpacs-on-state-change-remove
+       (concat "setting/" (symbol-name (car entry))))))
+  (setf (alist-get title jetpacs-settings-registry nil 'remove #'equal) nil)
+  (jetpacs--unclaim "settings-section" title))
 
 (defun jetpacs-settings--entry (sym)
   "SYM's registry entry (SYMBOL . PLIST), or nil when not exposed."
@@ -318,7 +327,8 @@ owner for the app-identity layer to filter once it exists."
                           (cons builder
                                 (bound-and-true-p jetpacs-current-owner)))
                     jetpacs-settings-links)
-              (lambda (a b) (< (car a) (car b))))))
+              (lambda (a b) (< (car a) (car b)))))
+  (jetpacs--claim "settings-link" builder))
 
 (defun jetpacs-settings-remove-link (builder)
   "Remove every settings satellite link registered with BUILDER.
@@ -326,7 +336,15 @@ Safe before registration and after prior removal.  Removing every
 match makes an add-after-remove registration idempotent even when an
 older caller accidentally registered the same builder more than once."
   (setq jetpacs-settings-links
-        (cl-remove builder jetpacs-settings-links :key #'cadr)))
+        (cl-remove builder jetpacs-settings-links :key #'cadr))
+  (jetpacs--unclaim "settings-link" builder))
+
+(jetpacs-define-claim-disposer "settings-section"
+                               #'jetpacs-settings-remove-section)
+(jetpacs-define-claim-disposer "settings-hub"
+                               #'jetpacs-settings-remove-hub-entry)
+(jetpacs-define-claim-disposer "settings-link"
+                               #'jetpacs-settings-remove-link)
 
 (defun jetpacs-settings-sections ()
   "The settings body: registry sections, then the satellite links."
@@ -393,60 +411,24 @@ older caller accidentally registered the same builder more than once."
 ;; event carries no `:surface', SPEC 14.4).  Promoted so app writers do not
 ;; reach across modules into a private slot.
 
-(defvar jetpacs-settings--dialog nil
-  "The live settings dialog, (:request-id ID :params PARAMS), or nil.
-PARAMS are the OPENING event's — the refresh a dialog-context Save
-needs is the surface the dialog was opened from.")
+(defconst jetpacs-settings-dialog-owner "jetpacs.settings"
+  "The dialog-slot owner every settings editor dialog shares.")
 
 (defun jetpacs-settings-dialog-params ()
   "The opening event's params of the live settings dialog, or nil."
-  (plist-get jetpacs-settings--dialog :params))
+  (jetpacs-dialog-slot-params jetpacs-settings-dialog-owner))
 
 (defun jetpacs-settings-dialog-close ()
-  "Retire the live settings dialog (the S3 handler-side dismissal).
-`ebp-client-abandon' sends rpc.cancel; the Companion concludes the
-dialog with error 1301, which the show callback treats as a no-op."
-  (let ((sheet jetpacs-settings--dialog))
-    (setq jetpacs-settings--dialog nil)
-    (when-let* ((client (jetpacs-client))
-                (request-id (plist-get sheet :request-id)))
-      (ignore-errors (ebp-client-abandon client request-id)))))
+  "Retire the live settings dialog (the S3 handler-side dismissal)."
+  (jetpacs-dialog-slot-close jetpacs-settings-dialog-owner))
 
 (cl-defun jetpacs-settings-show-dialog (id spec &key params on-submit)
-  "Show SPEC as dialog ID; stash the request for handler-side abandon.
-ON-SUBMIT, when given, receives the conclusion's `:fields' plist —
-the `jetpacs-dialog-submit' route; dialogs whose Save is a remote
-action instead conclude through `jetpacs-settings-dialog-close' in
-that action's handler."
-  (when-let* ((client (jetpacs-client)))
-    ;; The slot holds ONE request and this is its only writer, so a
-    ;; still-live prior dialog is abandoned here rather than orphaned
-    ;; (its device dialog would otherwise linger with no way back to
-    ;; it), and each callback clears only its own id: the first show's
-    ;; 1301 must not clear the second show's slot, or the Save handler
-    ;; finds no request to close and loses the origin params.  CELL
-    ;; carries the id into the callback, which cannot close over
-    ;; REQUEST-ID — the show that returns it is that binding's init.
-    (jetpacs-settings-dialog-close)
-    (let* ((cell (list nil))
-           (request-id
-            (ebp-client-dialog-show
-             client id spec
-             :callback
-             (lambda (status result _error)
-               ;; Dismissal and the abandon's 1301 both land here.
-               (when (equal (plist-get jetpacs-settings--dialog
-                                       :request-id)
-                            (car cell))
-                 (setq jetpacs-settings--dialog nil))
-               ;; Outside the identity guard: a submitted conclusion
-               ;; runs its handler whoever owns the slot by then.
-               (when (and on-submit (equal status "submitted"))
-                 (funcall on-submit (plist-get result :fields)))))))
-      (when request-id
-        (setcar cell request-id)
-        (setq jetpacs-settings--dialog
-              (list :request-id request-id :params params))))))
+  "Show SPEC as dialog ID in the settings dialog slot.
+PARAMS and ON-SUBMIT have their `jetpacs-dialog-slot-show' meanings:
+dialogs whose Save is a remote action conclude through
+`jetpacs-settings-dialog-close' in that action's handler."
+  (jetpacs-dialog-slot-show id spec :owner jetpacs-settings-dialog-owner
+                            :params params :on-submit on-submit))
 
 ;;;; Actions and state handlers
 

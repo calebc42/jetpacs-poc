@@ -36,6 +36,11 @@ the path and synchronized buffer."
 (defvar jetpacs-editor--adapters nil
   "Ordered list of registered `jetpacs-editor-adapter' objects.")
 
+(defvar jetpacs-editor--displaced nil
+  "Alist of ID -> (ADAPTER . OWNER) an owned registration displaced.
+See `jetpacs-reader--displaced'; the editor registry follows the same
+rule.")
+
 (defvar jetpacs-editor--installed nil
   "Non-nil while the editor host is attached to Files.")
 
@@ -43,7 +48,9 @@ the path and synchronized buffer."
     (id &key predicate setup body toolbar actions fab before-save after-save)
   "Register or replace editor adapter ID.
 PREDICATE is required.  BEFORE-SAVE receives (PATH BUFFER); each other
-non-nil extension function receives the edited PATH."
+non-nil extension function receives the edited PATH.  Ownership follows
+`jetpacs-reader-register': ledgered under `with-jetpacs-owner', a
+displaced holder restored by `jetpacs-editor-unregister'."
   (unless (symbolp id)
     (error "jetpacs-editor-register: ID must be a symbol"))
   (unless (functionp predicate)
@@ -61,19 +68,41 @@ non-nil extension function receives the edited PATH."
                   :before-save before-save
                   :after-save after-save))
         (cell (cl-find id jetpacs-editor--adapters
-                       :key #'jetpacs-editor-adapter-id)))
+                       :key #'jetpacs-editor-adapter-id))
+        (prior-owner (jetpacs--owner-of "editor-adapter" id)))
+    (cond
+     ((and cell jetpacs-current-owner
+           (not (equal prior-owner jetpacs-current-owner)))
+      (setf (alist-get id jetpacs-editor--displaced) (cons cell prior-owner)))
+     ((and (null jetpacs-current-owner) prior-owner)
+      (jetpacs--unclaim "editor-adapter" id)
+      (setf (alist-get id jetpacs-editor--displaced nil 'remove) nil)))
     (if cell
         (setf (car (memq cell jetpacs-editor--adapters)) adapter)
       (setq jetpacs-editor--adapters
             (append jetpacs-editor--adapters (list adapter))))
+    (jetpacs--claim "editor-adapter" id)
     id))
 
 (defun jetpacs-editor-unregister (id)
-  "Remove editor adapter ID."
-  (setq jetpacs-editor--adapters
-        (cl-delete id jetpacs-editor--adapters
-                   :key #'jetpacs-editor-adapter-id))
+  "Remove editor adapter ID, restoring any adapter it displaced."
+  (let ((displaced (alist-get id jetpacs-editor--displaced))
+        (cell (cl-find id jetpacs-editor--adapters
+                       :key #'jetpacs-editor-adapter-id)))
+    (jetpacs--unclaim "editor-adapter" id)
+    (setf (alist-get id jetpacs-editor--displaced nil 'remove) nil)
+    (if (and displaced cell)
+        (progn
+          (setf (car (memq cell jetpacs-editor--adapters)) (car displaced))
+          (when (cdr displaced)
+            (let ((jetpacs-current-owner (cdr displaced)))
+              (jetpacs--claim "editor-adapter" id))))
+      (setq jetpacs-editor--adapters
+            (cl-delete id jetpacs-editor--adapters
+                       :key #'jetpacs-editor-adapter-id))))
   id)
+
+(jetpacs-define-claim-disposer "editor-adapter" #'jetpacs-editor-unregister)
 
 (defun jetpacs-editor-adapters-for (path)
   "Return adapters accepting PATH, isolating bad predicates."

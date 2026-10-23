@@ -1765,5 +1765,43 @@ it re-sends at every 10.3 barrier forever.  Transient errors requeue."
     (should (member "app:flaky" jetpacs-shell--pending-removals))
     (setq jetpacs-shell--pending-removals nil)))
 
+(ert-deftest jetpacs-floor-claim-disposer-runs-isolated ()
+  "A failing disposer costs only its own entry: the sweep goes on, and
+every claim of the owner is dropped."
+  (let ((jetpacs-teardown-kind-order '("zzz-broken" "zzz-fine"))
+        (disposed nil))
+    (unwind-protect
+        (progn
+          (jetpacs-define-claim-disposer "zzz-broken"
+                                         (lambda (_name) (error "boom")))
+          (jetpacs-define-claim-disposer "zzz-fine"
+                                         (lambda (name) (push name disposed)))
+          (with-jetpacs-owner "eps"
+            (jetpacs--claim "zzz-broken" "a")
+            (jetpacs--claim "zzz-fine" "b"))
+          (jetpacs--dispose-owner-claims "eps")
+          (should (equal disposed '("b")))
+          (should-not (jetpacs--owner-of "zzz-broken" "a"))
+          (should-not (jetpacs--owner-of "zzz-fine" "b")))
+      (remhash "zzz-broken" jetpacs--claim-disposers)
+      (remhash "zzz-fine" jetpacs--claim-disposers)
+      (jetpacs--unclaim "zzz-broken" "a")
+      (jetpacs--unclaim "zzz-fine" "b"))))
+
+(ert-deftest jetpacs-floor-add-hook-is-ledgered-only-globally ()
+  "`jetpacs-add-hook' claims a global addition under the current owner,
+never a buffer-local one, and `jetpacs-remove-hook' drops the claim."
+  (defvar jetpacs-floor-test--hook nil)
+  (let ((jetpacs-floor-test--hook nil))
+    (with-jetpacs-owner "hooker"
+      (jetpacs-add-hook 'jetpacs-floor-test--hook #'ignore)
+      (with-temp-buffer
+        (jetpacs-add-hook 'jetpacs-floor-test--hook #'identity nil t)))
+    (should (equal (jetpacs--owned-names "hook" "hooker")
+                   (list (cons 'jetpacs-floor-test--hook #'ignore))))
+    (jetpacs-remove-hook 'jetpacs-floor-test--hook #'ignore)
+    (should-not jetpacs-floor-test--hook)
+    (should-not (jetpacs--owned-names "hook" "hooker"))))
+
 (provide 'jetpacs-floor-test)
 ;;; jetpacs-floor-test.el ends here

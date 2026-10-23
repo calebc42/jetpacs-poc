@@ -216,8 +216,8 @@ do not require callers to mutate the foundation registry themselves."
 first's late conclusion (the abandon's 1301) must not clear the LIVE
 slot, a dismissal clears it, and a submitted conclusion routes its
 captured fields to ON-SUBMIT whoever owns the slot by then."
-  (let ((jetpacs-settings--dialog nil)
-        (ids '("req-1" "req-2")) (abandoned nil) (shown nil))
+  (jetpacs-dialog-slot-reset)
+  (let ((ids '("req-1" "req-2")) (abandoned nil) (shown nil))
     (cl-letf (((symbol-function 'jetpacs-client) (lambda () 'fake))
               ((symbol-function 'ebp-client-abandon)
                (lambda (_c id) (push id abandoned)))
@@ -229,17 +229,17 @@ captured fields to ON-SUBMIT whoever owns the slot by then."
       (jetpacs-settings-show-dialog "d" nil :params '(:surface "s2"))
       (let ((first-callback (cadr shown))) ; SHOWN is push-ordered
         (should (equal abandoned '("req-1")))
-        (should (equal (plist-get jetpacs-settings--dialog :request-id)
-                       "req-2"))
+        (should (jetpacs-dialog-slot-live-p jetpacs-settings-dialog-owner))
         (funcall first-callback "error" nil '(:code 1301))
-        (should (equal (plist-get jetpacs-settings--dialog :request-id)
-                       "req-2"))
+        (should (jetpacs-dialog-slot-live-p jetpacs-settings-dialog-owner))
         (should (equal (jetpacs-settings-dialog-params)
                        '(:surface "s2")))
         (funcall (car shown) "dismissed" nil nil)
-        (should-not jetpacs-settings--dialog))))
+        (should-not (jetpacs-dialog-slot-live-p
+                     jetpacs-settings-dialog-owner)))))
   ;; The on-submit route: fields flow out of the conclusion.
-  (let ((jetpacs-settings--dialog nil) (got nil) (cb nil))
+  (jetpacs-dialog-slot-reset)
+  (let ((got nil) (cb nil))
     (cl-letf (((symbol-function 'jetpacs-client) (lambda () 'fake))
               ((symbol-function 'ebp-client-abandon) #'ignore)
               ((symbol-function 'ebp-client-dialog-show)
@@ -250,6 +250,31 @@ captured fields to ON-SUBMIT whoever owns the slot by then."
        "d" nil :on-submit (lambda (fields) (setq got fields)))
       (funcall cb "submitted" '(:fields (:name "x")) nil)
       (should (equal got '(:name "x"))))))
+
+(defvar jetpacs-settings-test--flag nil
+  "A scratch boolean for the section-removal test.")
+
+(defun jetpacs-settings-test--subscribed-p (id)
+  "Non-nil when some surface holds a state subscription for exactly ID."
+  (let (found)
+    (maphash (lambda (key _fn) (when (equal (cdr key) id) (setq found t)))
+             jetpacs--state-handlers)
+    found))
+
+(ert-deftest jetpacs-settings-remove-section-clears-toggle-subscriptions ()
+  "Removing a section drops the switch handlers its registration installed,
+and an owned section is claimed until then."
+  (let ((jetpacs-settings-registry nil)
+        (id "setting/jetpacs-settings-test--flag"))
+    (with-jetpacs-owner "sectionapp"
+      (jetpacs-settings-register-section
+       "Tmp" '((jetpacs-settings-test--flag :label "Flag"))))
+    (should (jetpacs-settings-test--subscribed-p id))
+    (should (equal (jetpacs--owner-of "settings-section" "Tmp") "sectionapp"))
+    (jetpacs-settings-remove-section "Tmp")
+    (should-not (jetpacs-settings-test--subscribed-p id))
+    (should-not (jetpacs--owner-of "settings-section" "Tmp"))
+    (should-not jetpacs-settings-registry)))
 
 (provide 'jetpacs-settings-test)
 ;;; jetpacs-settings-test.el ends here

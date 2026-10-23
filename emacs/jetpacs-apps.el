@@ -294,6 +294,9 @@ missing renderer contract.  Offline builders retain the richer-form behavior.
 Returns ID."
   (unless (and (stringp id) (not (string-empty-p id)))
     (error "jetpacs-defapp: id must be a non-empty string"))
+  (unless (jetpacs-valid-owner-p id)
+    (error "jetpacs-defapp: id %S must be a D1 owner name (it names the surface app:ID)"
+           id))
   (unless (memq chrome '(nil standalone primary))
     (error "jetpacs-defapp: :chrome must be nil, standalone, or primary, got %S"
            chrome))
@@ -324,6 +327,10 @@ Returns ID."
         (sort jetpacs-apps--registry
               (lambda (a b) (< (plist-get (cdr a) :order)
                                (plist-get (cdr b) :order)))))
+  ;; An app is attributed to itself whatever owner is ambient (D1: the app
+  ;; id IS the owner), so its teardown removes the registry entry too.
+  (let ((jetpacs-current-owner id))
+    (jetpacs--claim "app" id))
   id)
 
 (defun jetpacs-apps-required-extensions (id)
@@ -371,12 +378,25 @@ provider that drops or malforms its declared home leaves the root unselected."
                   :test #'equal)
          route)))
 
-(defun jetpacs-apps-unregister (id)
-  "Remove app ID; the current app falls back to none."
+(defun jetpacs-apps--forget (id)
+  "Remove app ID's registry entry; the current app falls back to none."
   (setf (alist-get id jetpacs-apps--registry nil 'remove #'equal) nil)
   (when (equal jetpacs-apps--current id)
     (setq jetpacs-apps--current nil
           jetpacs-apps--current-route nil)))
+
+(defun jetpacs-apps-unregister (id)
+  "Unregister app ID and tear down everything attributed to it.
+This is the whole of an app's unregister: `jetpacs-teardown-owner'
+removes its actions, chrome roots, ledgered hooks, adapters, settings
+rows, dialog slot and registry entry.  An app keeps only the resets of
+its own private state.  An ID that is not a valid owner name (never
+claimable) just leaves the registry."
+  (when (jetpacs-valid-owner-p id)
+    (jetpacs-teardown-owner id))
+  (jetpacs-apps--forget id))
+
+(jetpacs-define-claim-disposer "app" #'jetpacs-apps--forget)
 
 (defun jetpacs-apps-current ()
   "The current app's registry entry (ID . PLIST), or nil.

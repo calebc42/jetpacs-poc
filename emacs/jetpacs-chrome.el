@@ -1433,7 +1433,12 @@ live-unregister path arrives here, not through session teardown."
     (when (stringp surface-or-owner)
       (unless (string-search ":" surface-or-owner)
         (jetpacs-chrome-sweep-guests surface-or-owner)))
-    (jetpacs-shell-remove-root surface)))
+    ;; A root already removed and tombstoned (the owner's teardown ran
+    ;; first, as `jetpacs-apps-unregister' does) must not be tombstoned on
+    ;; the wire a second time.
+    (when (or (alist-get surface jetpacs-shell--roots nil nil #'equal)
+              (not (gethash surface jetpacs-shell--tombstoned)))
+      (jetpacs-shell-remove-root surface))))
 
 ;;;; Stack <-> device sync (the shell's view.switched, subscribed)
 

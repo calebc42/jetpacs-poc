@@ -169,6 +169,69 @@ No-op (no record) when no owner is bound."
   (remhash (cons kind name) jetpacs--registrations)
   (remhash (cons kind name) jetpacs--claim-sites))
 
+;;;; The teardown ledger
+;;
+;; Every registry an owner can write into claims its entries under a KIND,
+;; and registers a disposer for that KIND.  `jetpacs-teardown-owner' then
+;; sweeps them all, so an app's unregister is one call and a sloppy app
+;; cannot leak a hook, an adapter, a settings row or its app entry.  The
+;; floor names no registry: each module registers its own disposer at load.
+
+(defvar jetpacs--claim-disposers (make-hash-table :test #'equal)
+  "Map of KIND -> function of NAME that removes that registration.
+A disposer undoes the registry entry only; the attribution record is
+dropped by `jetpacs--dispose-owner-claims'.")
+
+(defun jetpacs-define-claim-disposer (kind fn)
+  "Register FN (a function of NAME) as the disposer for claims of KIND."
+  (puthash kind fn jetpacs--claim-disposers))
+
+(defconst jetpacs-teardown-kind-order
+  '("hook" "reader-adapter" "editor-adapter" "render-buffer"
+    "theme-provider" "settings-link" "settings-hub" "settings-section"
+    "drill-host" "app")
+  "Ledger kinds `jetpacs-teardown-owner' disposes, in this order.
+Hooks go first, so no app hook fires into a half-removed registry; the
+app's registry entry goes last.  `action' and `surface' keep their own
+dedicated sweeps.")
+
+(defun jetpacs--dispose-owner-claims (owner &optional skip)
+  "Dispose every ledgered claim of OWNER, kind by kind.
+Each disposer runs isolated: a failure is logged by error symbol and the
+sweep continues.  SKIP is a list of (KIND . NAME) pairs left in place.
+A claim is dropped only while OWNER still holds it, because a disposer
+may hand the name back to an earlier owner (a displaced adapter)."
+  (dolist (kind jetpacs-teardown-kind-order)
+    (dolist (name (jetpacs--owned-names kind owner))
+      (unless (member (cons kind name) skip)
+        (when-let* ((fn (gethash kind jetpacs--claim-disposers)))
+          (condition-case err
+              (funcall fn name)
+            (error
+             (message "jetpacs: teardown of %s %S for %s failed: %s"
+                      kind name owner (jetpacs-error-label err)))))
+        (when (equal (jetpacs--owner-of kind name) owner)
+          (jetpacs--unclaim kind name))))))
+
+(defun jetpacs-add-hook (hook fn &optional depth local)
+  "Add FN to HOOK like `add-hook', ledgered under the current owner.
+DEPTH and LOCAL have their `add-hook' meanings.  A global addition made
+under `with-jetpacs-owner' is removed by `jetpacs-teardown-owner'; a
+buffer-local one belongs to its buffer and is not ledgered."
+  (add-hook hook fn depth local)
+  (unless local (jetpacs--claim "hook" (cons hook fn)))
+  fn)
+
+(defun jetpacs-remove-hook (hook fn &optional local)
+  "Remove FN from HOOK like `remove-hook', and drop its ledger record.
+LOCAL has its `remove-hook' meaning."
+  (remove-hook hook fn local)
+  (unless local (jetpacs--unclaim "hook" (cons hook fn)))
+  fn)
+
+(jetpacs-define-claim-disposer
+ "hook" (lambda (name) (remove-hook (car name) (cdr name))))
+
 ;;;; The client handle (single-client floor, decision Q1)
 
 (defvar jetpacs-action-handlers (make-hash-table :test #'equal)
@@ -1286,6 +1349,16 @@ Restricted to SURFACE when given, otherwise across every surface."
                (when (and (string-prefix-p prefix (cdr key))
                           (or (null surface) (equal (car key) surface)))
                  (push key dead)))
+             jetpacs--state-handlers)
+    (dolist (key dead) (remhash key jetpacs--state-handlers))))
+
+(defun jetpacs-on-state-change-remove (id)
+  "Drop every state subscription for exactly ID, on any surface.
+Unlike the prefix sweep of `jetpacs-on-state-change-clear', a sibling
+id that merely starts with ID is left alone."
+  (let (dead)
+    (maphash (lambda (key _fn)
+               (when (equal (cdr key) id) (push key dead)))
              jetpacs--state-handlers)
     (dolist (key dead) (remhash key jetpacs--state-handlers))))
 
