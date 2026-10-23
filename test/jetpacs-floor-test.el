@@ -1533,13 +1533,14 @@ they are back."
                    '(:args ((:name value :type "text" :required t)
                             (:name date :type "date"))
                      :doc "Append text to the current journal day."
-                     :any-surface nil)))
+                     :any-surface nil :strict nil)))
     ;; A global verb reports the flag alongside its schema.
     (with-jetpacs-owner "journal"
       (jetpacs-defaction "journal.toggle" (lambda (_a _p) 'accepted)
                          :any-surface t :doc "Flip the journal view."))
     (should (equal (jetpacs-action-schema "journal.toggle")
-                   '(:args nil :doc "Flip the journal view." :any-surface t)))
+                   '(:args nil :doc "Flip the journal view." :any-surface t
+                     :strict nil)))
     ;; An unregistered name is nil — distinguishable from a registered
     ;; action that simply declared nothing.
     (should-not (jetpacs-action-schema "journal.nothing-here"))
@@ -1591,7 +1592,7 @@ Nothing about it reaches the wire — the replay is the ALLOWLIST."
       (should (gethash "journal.capture" (ebp-client-actions next)))
       (should (equal (jetpacs-action-schema "journal.capture")
                      '(:args ((:name value :type "text" :required t))
-                       :doc "Append text." :any-surface nil))))
+                       :doc "Append text." :any-surface nil :strict nil))))
     (jetpacs-undefaction "journal.capture")))
 
 (ert-deftest jetpacs-floor-schemaless-registration-still-dispatches ()
@@ -1605,7 +1606,7 @@ follows."
     (let ((runs 0))
       (jetpacs-defaction "plain.tap" (lambda (_a _p) (cl-incf runs) 'accepted))
       (should (equal (jetpacs-action-schema "plain.tap")
-                     '(:args nil :doc nil :any-surface nil)))
+                     '(:args nil :doc nil :any-surface nil :strict nil)))
       (should (eq (jetpacs--dispatch client '(:action "plain.tap")
                                      (gethash "plain.tap"
                                               jetpacs-action-handlers))
@@ -1620,6 +1621,124 @@ follows."
       (should-not (plist-get (jetpacs-action-schema "plain.tap") :doc))
       (jetpacs-undefaction "plain.tap")
       (should-not (jetpacs-action-schema "plain.tap")))))
+
+;;;; Strict schemas gate dispatch (opt-in `:strict t')
+
+(defmacro jetpacs-floor-test--strict (client spec &rest body)
+  "Register `strict.tap' with arg SPEC, :strict, and run BODY.
+Inside BODY, `seen' holds the args the handler last received (or
+`unset'), and (tap ARGS) dispatches an event carrying ARGS."
+  (declare (indent 2))
+  `(let ((seen 'unset)
+         (warning-minimum-log-level :emergency))
+     (jetpacs-defaction "strict.tap"
+                        (lambda (a _p) (setq seen a) 'accepted)
+                        :args ,spec :strict t)
+     (unwind-protect
+         (cl-flet ((tap (args)
+                     (jetpacs--dispatch ,client
+                                        (list :action "strict.tap" :args args)
+                                        (gethash "strict.tap"
+                                                 jetpacs-action-handlers))))
+           ,@body)
+       (jetpacs-undefaction "strict.tap"))))
+
+(ert-deftest jetpacs-floor-strict-action-rejects-missing-required ()
+  "A required arg absent or null is refused before the handler runs."
+  (jetpacs-floor-test--with-client (client)
+    (jetpacs-floor-test--strict client '((:name path :type "text" :required t)
+                                         (:name note :type "text"))
+      (should (eq (tap '(:note "x")) 'rejected))
+      (should (eq (tap '(:path nil)) 'rejected))
+      (should (eq seen 'unset))
+      (should (eq (tap '(:path "/a.org")) 'accepted))
+      (should (equal seen '(:path "/a.org")))
+      (should (eq (jetpacs--dispatch client '(:action "strict.tap"
+                                              :args [1 2])
+                                     (gethash "strict.tap"
+                                              jetpacs-action-handlers))
+                  'rejected)))))
+
+(ert-deftest jetpacs-floor-strict-action-rejects-wrong-type ()
+  "Text, enum and ref must be strings; number must be a number."
+  (jetpacs-floor-test--with-client (client)
+    (jetpacs-floor-test--strict client '((:name a :type "text")
+                                         (:name b :type "enum")
+                                         (:name c :type "ref")
+                                         (:name n :type "number"))
+      (should (eq (tap '(:a 7)) 'rejected))
+      (should (eq (tap '(:b (:x 1))) 'rejected))
+      (should (eq (tap '(:c [1])) 'rejected))
+      (should (eq (tap '(:n "3")) 'rejected))
+      (should (eq seen 'unset))
+      (should (eq (tap '(:a "t" :b "e" :c "r" :n 2.5)) 'accepted))
+      (should (equal seen '(:a "t" :b "e" :c "r" :n 2.5))))))
+
+(ert-deftest jetpacs-floor-strict-action-coerces-integral-number ()
+  "JSON 3.0 reaches the handler as 3, in a copy; the event is untouched."
+  (jetpacs-floor-test--with-client (client)
+    (jetpacs-floor-test--strict client '((:name page :type "number"))
+      (let ((args (list :page 3.0 :extra "kept")))
+        (should (eq (tap args) 'accepted))
+        (should (equal seen '(:page 3 :extra "kept")))
+        (should (integerp (plist-get seen :page)))
+        (should (equal args '(:page 3.0 :extra "kept")))))))
+
+(ert-deftest jetpacs-floor-strict-bool-and-date-shapes ()
+  "Bool is t or `:json-false'; date starts YYYY-MM-DD."
+  (jetpacs-floor-test--with-client (client)
+    (jetpacs-floor-test--strict client '((:name on :type "bool")
+                                         (:name day :type "date"))
+      (should (eq (tap '(:on t)) 'accepted))
+      (should (eq (tap '(:on :json-false)) 'accepted))
+      (should (eq (tap '(:on "yes")) 'rejected))
+      (should (eq (tap '(:on 1)) 'rejected))
+      (should (eq (tap '(:day "2026-10-23")) 'accepted))
+      (should (eq (tap '(:day "2026-10-23T09:00")) 'accepted))
+      (should (eq (tap '(:day "Oct 23")) 'rejected))
+      (should (eq (tap '(:day 20261023)) 'rejected))
+      ;; A cleared date field: no date, so it passes unless required.
+      (should (eq (tap '(:day "")) 'accepted)))
+    (jetpacs-floor-test--strict client '((:name day :type "date" :required t))
+      (should (eq (tap '(:day "")) 'rejected)))))
+
+(ert-deftest jetpacs-floor-strict-unknown-type-passes ()
+  "An app-minted type is unchecked; only presence is enforced."
+  (jetpacs-floor-test--with-client (client)
+    (jetpacs-floor-test--strict client
+        '((:name recipe :type "grocy-recipe-ref" :required t)
+          (:name loose))
+      (should (eq (tap '(:recipe (:id 4) :loose [1])) 'accepted))
+      (should (eq (tap '(:loose 1)) 'rejected)))))
+
+(ert-deftest jetpacs-floor-non-strict-schema-never-gates ()
+  "Without :strict the schema is introspection only."
+  (jetpacs-floor-test--with-client (client)
+    (let ((seen 'unset))
+      (jetpacs-defaction "loose.tap" (lambda (a _p) (setq seen a) 'accepted)
+                         :args '((:name path :type "text" :required t)))
+      (should (eq (jetpacs--dispatch client '(:action "loose.tap"
+                                              :args (:path 7))
+                                     (gethash "loose.tap"
+                                              jetpacs-action-handlers))
+                  'accepted))
+      (should (equal seen '(:path 7)))
+      (jetpacs-undefaction "loose.tap"))))
+
+(ert-deftest jetpacs-floor-strict-without-args-is-a-registration-error ()
+  "Strict with nothing to check is a code bug, refused atomically."
+  (jetpacs-floor-test--with-client (_client)
+    (should-error (jetpacs-defaction "strict.empty" (lambda (_a _p) 'accepted)
+                                     :strict t :doc "Nothing declared."))
+    (should-not (gethash "strict.empty" jetpacs-action-handlers))
+    (jetpacs-defaction "strict.full" (lambda (_a _p) 'accepted)
+                       :strict t :args '((:name x :type "text")))
+    (should (plist-get (jetpacs-action-schema "strict.full") :strict))
+    ;; Re-registering without the flag drops it.
+    (jetpacs-defaction "strict.full" (lambda (_a _p) 'accepted)
+                       :args '((:name x :type "text")))
+    (should-not (plist-get (jetpacs-action-schema "strict.full") :strict))
+    (jetpacs-undefaction "strict.full")))
 
 
 ;;;; E2e: hook isolation and the per-surface snackbar

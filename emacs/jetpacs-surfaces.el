@@ -816,6 +816,7 @@ Returns the timer."
                      (funcall fn))))))
 
 (defvar jetpacs--any-surface-actions)   ; the global-verb table, defined below
+(defvar jetpacs--action-schemas)        ; the schema table, defined below
 (defvar jetpacs-guest-delegation-function) ; the S4 seam, defined below
 
 (cl-defun jetpacs--dispatch (client params fn)
@@ -890,6 +891,23 @@ logged: amendment #74 puts sensitive trigger data in `args'."
                  event-surface)
          :warning)
         (cl-return-from jetpacs--dispatch 'rejected)))
+    ;; Strict schema gate (opt-in per action): a malformed event is
+    ;; refused BEFORE the handler sees it, so the handler may read its
+    ;; declared args as the declared types.  Only the arg NAME and the
+    ;; reason are logged, never the value (amendment #74).
+    (let ((schema (gethash (plist-get params :action)
+                           jetpacs--action-schemas)))
+      (when (plist-get schema :strict)
+        (let ((checked (jetpacs--check-strict-args
+                        args (plist-get schema :args))))
+          (unless (car checked)
+            (display-warning
+             'jetpacs
+             (format "action %s refused: %s (strict :args)"
+                     (plist-get params :action) (cdr checked))
+             :warning)
+            (cl-return-from jetpacs--dispatch 'rejected))
+          (setq args (cdr checked)))))
     (condition-case err
         (pcase (jetpacs-with-no-prompts (funcall fn args params))
           ((and status (or 'accepted 'stale 'rejected)) status)
@@ -958,12 +976,13 @@ owns ZERO surfaces, any surface may render its button) declares the
 exception EXPLICITLY rather than having the gate infer it.")
 
 (defvar jetpacs--action-schemas (make-hash-table :test #'equal)
-  "Action name -> (:args ARGS :doc DOC), the INTROSPECTION record.
+  "Action name -> (:args ARGS :doc DOC :strict BOOL), the schema record.
 A sibling table, like `jetpacs--any-surface-actions' — deliberately not
 folded into `jetpacs-action-handlers', whose value is the bare handler
 function that `jetpacs--action-shim' funcalls at dispatch and that every
-suite in the tree `gethash'es directly.  Metadata never gates dispatch,
-so it must not sit in the path that does.
+suite in the tree `gethash'es directly.  Only an action registered
+`:strict' has its ARGS checked at dispatch (`jetpacs--dispatch'); for
+every other action the record is introspection only.
 
 Read it through `jetpacs-action-schema'.  EMACS-SIDE ONLY: nothing here
 reaches the wire — SPEC 14 advertises an action by NAME and the phone
@@ -1007,9 +1026,67 @@ authority on a vocabulary it has no stake in."
         (error "jetpacs: action %s arg %s :required must be t or nil, got %S"
                name (plist-get arg :name) required)))))
 
+(defun jetpacs--arg-key (name)
+  "The event `:args' plist key for the schema arg NAME (a symbol)."
+  (intern (concat ":" (symbol-name name))))
+
+(defun jetpacs--check-strict-args (args schema)
+  "Check the event ARGS against the arg SCHEMA of a `:strict' action.
+Return (t . ARGS2) when they conform, ARGS2 being ARGS or a fresh copy
+with integral floats truncated to integers for \"number\" args; return
+\(nil . REASON) otherwise, REASON naming the arg but never its value.
+A declared arg absent or null (or a \"date\" sent as the empty string,
+what a cleared date field sends) fails only when `:required'.  The typed
+checks: \"text\", \"enum\" and \"ref\" are strings; \"date\" starts
+YYYY-MM-DD; \"bool\" is t, nil or `:json-false'; \"number\" is a number.
+Any other `:type' is unchecked (the vocabulary stays open).  Args the
+schema does not declare pass through untouched."
+  (catch 'fail
+    (unless (and (proper-list-p args) (cl-evenp (length args)))
+      (throw 'fail (cons nil "args is not a plist")))
+    (let ((out args) copied)
+      (dolist (arg schema)
+        (let* ((name (plist-get arg :name))
+               (key (jetpacs--arg-key name))
+               (value (plist-get out key)))
+          (cond
+           ;; A cleared date field sends "": no date, not a malformed one.
+           ((or (null value)
+                (and (equal value "") (equal (plist-get arg :type) "date")))
+            (when (plist-get arg :required)
+              (throw 'fail (cons nil (format "required arg %s is missing"
+                                             name)))))
+           (t
+            (pcase (plist-get arg :type)
+              ((or "text" "enum" "ref")
+               (unless (stringp value)
+                 (throw 'fail (cons nil (format "arg %s is not a string"
+                                                name)))))
+              ("date"
+               (unless (and (stringp value)
+                            (string-match-p
+                             "\\`[0-9]\\{4\\}-[0-9]\\{2\\}-[0-9]\\{2\\}"
+                             value))
+                 (throw 'fail (cons nil (format "arg %s is not a date"
+                                                name)))))
+              ("bool"
+               (unless (memq value '(t :json-false))
+                 (throw 'fail (cons nil (format "arg %s is not a boolean"
+                                                name)))))
+              ("number"
+               (unless (numberp value)
+                 (throw 'fail (cons nil (format "arg %s is not a number"
+                                                name))))
+               (when (and (floatp value) (= value (ffloor value)))
+                 (unless copied
+                   (setq out (copy-sequence out) copied t))
+                 (setq out (plist-put out key (truncate value))))))))))
+      (cons t out))))
+
 (defun jetpacs-action-schema (name)
   "The introspection record for the registered action NAME, or nil.
-A plist (:args ARGS :doc DOC :any-surface BOOL); nil for a name nothing
+A plist (:args ARGS :doc DOC :any-surface BOOL :strict BOOL); nil for a
+name nothing
 has registered, which is how a caller tells \"no such action\" from \"an
 action that declared no schema\" (the latter answers with nil :args and
 nil :doc).  See `jetpacs-defaction' for the shape of ARGS."
@@ -1017,9 +1094,10 @@ nil :doc).  See `jetpacs-defaction' for the shape of ARGS."
     (let ((schema (gethash name jetpacs--action-schemas)))
       (list :args (plist-get schema :args)
             :doc (plist-get schema :doc)
-            :any-surface (and (gethash name jetpacs--any-surface-actions) t)))))
+            :any-surface (and (gethash name jetpacs--any-surface-actions) t)
+            :strict (and (plist-get schema :strict) t)))))
 
-(cl-defun jetpacs-defaction (name fn &key any-surface args doc)
+(cl-defun jetpacs-defaction (name fn &key any-surface args doc strict)
   "Register FN as the handler for the remote action NAME; returns NAME.
 A function, not a macro: FN is a value, `(lambda (args params) ...)'.
 ARGS is the event's `:args' plist (jsonrpc decode: nested keyword
@@ -1057,10 +1135,22 @@ VOCABULARY stays OPEN: poc-v1's set (\"text\" \"number\" \"enum\" \"date\"
 \"ref\" \"bool\") is a convention, not a closed enum, because the thing
 that interprets a type is the editor the app itself authors.
 
-Metadata NEVER gates dispatch — a schemaless registration is as valid
-as it ever was, and a re-registration that omits ARGS and DOC CLEARS
-the stale ones, the same rule ANY-SURFACE follows.  Nothing here
-crosses the wire; read it back with `jetpacs-action-schema'."
+STRICT non-nil makes ARGS a dispatch gate: an event whose args do not
+conform is answered `rejected' before FN runs, so FN may trust the
+declared types.  The checks (`jetpacs--check-strict-args'): a
+`:required' arg must be present and non-null; \"text\", \"enum\" and
+\"ref\" are strings; \"date\" starts YYYY-MM-DD (or is empty, meaning
+none); \"bool\" is t or
+`:json-false'; \"number\" is a number, and an integral float (JSON
+3.0) reaches FN as an integer.  Other types are unchecked.  STRICT
+without ARGS is a registration error.  Strict is opt-in today; the
+default is meant to flip once every app declares accurate schemas.
+
+Without STRICT, metadata never gates dispatch — a schemaless
+registration is as valid as it ever was, and a re-registration that
+omits ARGS and DOC CLEARS the stale ones, the same rule ANY-SURFACE
+follows.  Nothing here crosses the wire; read it back with
+`jetpacs-action-schema'."
   (unless (and (stringp name) (string-search "." name)
                (string-match-p "\\`[A-Za-z0-9][A-Za-z0-9._:/-]*\\'" name)
                (<= (string-bytes name) 128))
@@ -1073,13 +1163,16 @@ crosses the wire; read it back with `jetpacs-action-schema'."
   (jetpacs--check-action-args name args)
   (when (and doc (not (stringp doc)))
     (error "jetpacs: action %s :doc must be a string, got %S" name doc))
+  (when (and strict (null args))
+    (error "jetpacs: action %s is :strict but declares no :args" name))
   (jetpacs--claim "action" name)
   (puthash name fn jetpacs-action-handlers)
   (if any-surface
       (puthash name t jetpacs--any-surface-actions)
     (remhash name jetpacs--any-surface-actions))
   (if (or args doc)
-      (puthash name (list :args args :doc doc) jetpacs--action-schemas)
+      (puthash name (list :args args :doc doc :strict (and strict t))
+               jetpacs--action-schemas)
     (remhash name jetpacs--action-schemas))
   (when jetpacs--client
     (ebp-client-register-action jetpacs--client name
