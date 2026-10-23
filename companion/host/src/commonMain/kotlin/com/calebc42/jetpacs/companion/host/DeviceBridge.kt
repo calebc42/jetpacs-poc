@@ -36,6 +36,7 @@ import com.calebc42.ebp.wire.SafeAdmissionEvidence
 import com.calebc42.ebp.wire.ScalarPos
 import com.calebc42.ebp.wire.SessionState
 import com.calebc42.ebp.wire.SurfaceStore
+import com.calebc42.ebp.wire.UnsafeAdmissionReason
 import com.calebc42.ebp.wire.Utf16Pos
 import com.calebc42.ebp.wire.VARIANT_SAVE_FAILURE_MESSAGE
 import com.calebc42.ebp.wire.dispatchContextless
@@ -956,17 +957,41 @@ class DeviceBridge(
             ActionAdmissionOutcome.LocallyCompleted ->
                 RendererActionOutcome.LocallyCompleted
         }
-        if (rendered is RendererActionOutcome.NotAdmitted)
+        if (rendered is RendererActionOutcome.NotAdmitted) {
             rendered.error?.let {
                 onQueueProblem(it.stringOr("message", "queue error"))
             }
+        }
         return rendered
+    }
+
+    /** When the last offline-drop notice was shown, for throttling. */
+    @Volatile private var lastOfflineDropNoticeMs = 0L
+
+    /**
+     * SPEC 15.1 discards a `drop` action while no READY session exists, and
+     * with no engine at all nothing can even be queued, so a tap on Save or
+     * any other control would otherwise do nothing at all.
+     * Say so, at most once per [OFFLINE_DROP_NOTICE_INTERVAL_MS] so a run of
+     * taps does not stack toasts.
+     */
+    private fun noticeOfflineDrop() {
+        val now = System.currentTimeMillis()
+        if (now - lastOfflineDropNoticeMs < OFFLINE_DROP_NOTICE_INTERVAL_MS) return
+        lastOfflineDropNoticeMs = now
+        onToast(OFFLINE_DROP_NOTICE)
     }
 
     private fun deliverOutcome(
         callback: (RendererActionOutcome) -> Unit,
         outcome: RendererActionOutcome,
     ) {
+        if (outcome is RendererActionOutcome.NotAdmitted &&
+            (outcome.reason == UnsafeAdmissionReason.OfflineDrop ||
+                outcome.reason == UnsafeAdmissionReason.NotReady)
+        ) {
+            noticeOfflineDrop()
+        }
         platform.uiExecutor.execute { callback(outcome) }
     }
 
@@ -1955,3 +1980,9 @@ internal fun immediateRemoteSurfaceOpenTarget(
     if ("builtin" in descriptor || "capture_fields" in descriptor) return null
     return descriptor.stringOr("open_surface").takeIf { it.isNotEmpty() }
 }
+
+/** The notice a dropped offline tap shows: nothing reached Emacs. */
+internal const val OFFLINE_DROP_NOTICE = "Emacs is offline. Nothing was saved or sent."
+
+/** The shortest gap between two offline-drop notices. */
+internal const val OFFLINE_DROP_NOTICE_INTERVAL_MS = 2_000L
