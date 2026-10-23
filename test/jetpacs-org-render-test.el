@@ -1281,5 +1281,28 @@ list and the FAB whose descriptor was minted WITH its record."
                   "/tmp/note.orgx_archive" nil))
     (should-not (jetpacs-org-render--org-path-p path))))
 
+(ert-deftest jetpacs-org-render-encrypt-saves-through-the-policy ()
+  "Encrypting an entry saves now, through `ebp-org-file-save-function'."
+  (let* ((file (make-temp-file "jetpacs-render-crypt" nil ".org" "* A\n"))
+         (buf (find-file-noselect file))
+         (saved nil)
+         (ebp-org-file-save-function
+          (lambda (b)
+            (push b saved)
+            (with-current-buffer b (set-buffer-modified-p nil)))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'org-encrypt-entry)
+                   (lambda () (insert "-----BEGIN PGP MESSAGE-----\n")))
+                  ((symbol-function 'jetpacs-event-stale-p) #'ignore)
+                  ((symbol-function 'jetpacs-buffer-defer-refresh) #'ignore)
+                  ((symbol-function 'jetpacs-shell-notify) #'ignore))
+          (should (eq (jetpacs-org-render--encrypt
+                       (list :buffer (buffer-name buf)) '(:surface "app:x"))
+                      'accepted))
+          (should (equal saved (list buf))))
+      (with-current-buffer buf (set-buffer-modified-p nil))
+      (kill-buffer buf)
+      (delete-file file))))
+
 (provide 'jetpacs-org-render-test)
 ;;; jetpacs-org-render-test.el ends here

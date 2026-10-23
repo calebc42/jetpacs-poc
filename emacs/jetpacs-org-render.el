@@ -1498,7 +1498,8 @@ acceptance; only the view refresh is deferred."
             (progn
               (org-encrypt-entry)
               (ebp-org-cache-invalidate)
-              (when buffer-file-name (ebp-org-defer-save))
+              (when buffer-file-name
+                (funcall ebp-org-file-save-function (current-buffer)))
               (jetpacs-buffer-defer-refresh (plist-get params :surface))
               (jetpacs-shell-notify "Encrypted entry" (plist-get params :surface))
               'accepted)

@@ -120,5 +120,31 @@ defined afterwards; this file never owned either of them."
     (add-hook 'jetpacs-teardown-functions #'ebp-org-teardown-owner)
     (add-hook 'jetpacs-reset-functions #'ebp-org-reset)))
 
+(ert-deftest jetpacs-write-path-no-stray-save-buffer ()
+  "Every Org write in the foundation goes through the save policy.
+The Org modules, the Org reader and the Org editor never call
+`save-buffer' or Org's save-all, except the ONE `save-buffer' inside
+`jetpacs-editor-org-save-policy' itself; everything else funcalls
+`ebp-org-file-save-function' or defers to the engine, whose timer
+calls the same function."
+  (let* ((dir (file-name-directory (locate-library "jetpacs-org.el" t)))
+         (files (append (directory-files dir t "\\`jetpacs-org-.*\\.el\\'")
+                        (list (expand-file-name "jetpacs-reader-org.el" dir)
+                              (expand-file-name "jetpacs-editor-org.el" dir)))))
+    (should (> (length files) 10))
+    (dolist (file files)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (let ((saves (how-many "(save-buffer\\_>" (point-min) (point-max)))
+              (save-all (how-many "org-save-all-org-buffers"
+                                  (point-min) (point-max))))
+          (should (equal (list (file-name-nondirectory file) save-all)
+                         (list (file-name-nondirectory file) 0)))
+          (should (equal (list (file-name-nondirectory file) saves)
+                         (list (file-name-nondirectory file)
+                               (if (string-suffix-p "jetpacs-editor-org.el"
+                                                    file)
+                                   1 0)))))))))
+
 (provide 'jetpacs-org-test)
 ;;; jetpacs-org-test.el ends here

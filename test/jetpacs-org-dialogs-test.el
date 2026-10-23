@@ -608,11 +608,37 @@ and buffers are settled afterward."
                    (lambda (&rest _)
                      (interactive)
                      (setq refiled-at (cons (buffer-name)
-                                            (org-get-heading t t t t)))))
-                  ((symbol-function 'org-save-all-org-buffers) #'ignore))
+                                            (org-get-heading t t t t))))))
           (jetpacs-org-dialogs--sheet-dispatch
            ref buf "refile" jetpacs-org-dialogs-test--params)
           (should (equal (cdr refiled-at) "Parent")))))))
+
+(ert-deftest jetpacs-org-dialogs-refile-saves-through-the-policy ()
+  "Every buffer refile dirtied is saved by `ebp-org-file-save-function',
+never by Org's save-all."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        jetpacs-org-dialogs-test--sheet-fixture
+      (let* ((buf (jetpacs-org-dialogs-test--buffer f))
+             (ref (jetpacs-org-dialogs-test--ref buf "Parent"))
+             (saved nil)
+             (ebp-org-file-save-function
+              (lambda (b)
+                (push b saved)
+                (with-current-buffer b (set-buffer-modified-p nil)))))
+        (cl-letf (((symbol-function 'jetpacs-flow-begin)
+                   (lambda (_surface fn) (funcall fn)))
+                  ((symbol-function 'jetpacs-dialog-can-bridge-p)
+                   (lambda () t))
+                  ((symbol-function 'org-refile)
+                   (lambda (&rest _)
+                     (interactive)
+                     (insert "moved")))
+                  ((symbol-function 'org-save-all-org-buffers)
+                   (lambda (&rest _) (error "Bypassed the save policy"))))
+          (jetpacs-org-dialogs--sheet-dispatch
+           ref buf "refile" jetpacs-org-dialogs-test--params)
+          (should (equal saved (list buf))))))))
 
 ;;;; The tap handlers
 

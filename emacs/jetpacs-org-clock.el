@@ -143,15 +143,22 @@ depth-90 READY phase, after durable replay has settled."
 
 ;;;; Durable handlers
 
-(defun jetpacs-org-clock--defer-save (buffer)
-  "Safely defer saving Org clock mutations in BUFFER.
-The buffer-local crypt hook rides `ebp-org-defer-save''s later plain
-`save-buffer', closing the path that would otherwise persist a decrypted
-Org Crypt entry in cleartext."
+(defun jetpacs-org-clock--save (buffer)
+  "Save Org clock mutations in BUFFER through the save policy.
+The buffer-local crypt hook rides the policy's `save-buffer', closing
+the path that would otherwise persist a decrypted Org Crypt entry in
+cleartext.  The clock change is already made, so a refused save falls
+back to the engine's deferred save (the same policy, retried when idle)
+rather than turning a done clock-out into a rejected event."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (add-hook 'before-save-hook #'org-encrypt-entries nil t)
-      (ebp-org-defer-save))))
+      (condition-case err
+          (funcall ebp-org-file-save-function buffer)
+        (error
+         (message "jetpacs-org-clock: save deferred: %s"
+                  (jetpacs-error-label err))
+         (ebp-org-defer-save))))))
 
 (defun jetpacs-org-clock--on-out (_args _params)
   "Stop the running clock and return its durable dispatch status."
@@ -160,7 +167,7 @@ Org Crypt entry in cleartext."
     (let ((buffer (and (markerp org-clock-marker)
                        (marker-buffer org-clock-marker))))
       (org-clock-out)
-      (jetpacs-org-clock--defer-save buffer)
+      (jetpacs-org-clock--save buffer)
       'accepted)))
 
 (defun jetpacs-org-clock--on-switch (_args _params)
@@ -172,7 +179,7 @@ Org Crypt entry in cleartext."
   (condition-case err
       (progn
         (org-clock-in-last)
-        (jetpacs-org-clock--defer-save
+        (jetpacs-org-clock--save
          (and (markerp org-clock-marker)
               (marker-buffer org-clock-marker)))
         'accepted)

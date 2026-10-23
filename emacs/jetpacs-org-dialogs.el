@@ -758,7 +758,8 @@ BUF keys the dialog id and PARAMS name the surface to refresh."
                           (when (re-search-forward "^[  ]*#\+CATEGORY:" nil t)
                             (ignore-errors (org-element-at-point)))))
                        (ebp-org-cache-invalidate)
-                       (when buffer-file-name (with-current-buffer buf (ebp-org-defer-save)))
+                       (when buffer-file-name
+                         (funcall ebp-org-file-save-function buf))
                        (jetpacs-shell-notify "File properties saved"
                                              (plist-get params :surface))
                        (jetpacs-org-dialogs--refresh params))
@@ -1179,7 +1180,8 @@ snackbar, the stale-tap ethic."
                            (memq (char-after beg) '(?\s ?\n nil)))
                   (delete-char -1))))
              (ebp-org-cache-invalidate)
-             (when buffer-file-name (ebp-org-defer-save)))))))))
+             (when buffer-file-name
+               (funcall ebp-org-file-save-function buf)))))))))
 
 ;;;; The log-note dialog (the base docstring's promised follow-up)
 
@@ -1233,11 +1235,20 @@ Reads `ebp-org-toggle-todo-cancelled-note' (the JA-5e engine seam)."
 
 ;;;; Refile — the one bridged command
 
+(defun jetpacs-org-dialogs--save-dirty-org-buffers (&optional save)
+  "Save every modified Org file buffer through SAVE.
+SAVE is a function of the buffer, default `ebp-org-file-save-function'.
+For an edit like refile that may dirty buffers the caller never sees."
+  (let ((save (or save ebp-org-file-save-function)))
+    (dolist (buffer (org-buffer-list 'files t))
+      (when (buffer-modified-p buffer)
+        (funcall save buffer)))))
+
 (defun jetpacs-org-dialogs--refile (ref params)
   "Run `org-refile' at REF under the device flow; its `completing-read'
-bridges to the device picker.  Saving afterward is org's own answer —
-`org-save-all-org-buffers' — because refile touches a target buffer
-this module never sees."
+bridges to the device picker.  Refile touches a target buffer this
+module never sees, so every dirty Org buffer is saved afterward, each
+through the save policy."
   (jetpacs-org-dialogs--with-prompting
    (lambda ()
      (let ((m (ebp-org-resolve-ref ref)))
@@ -1248,7 +1259,7 @@ this module never sees."
               (call-interactively #'org-refile)))
          (set-marker m nil)))
      (ebp-org-cache-invalidate)
-     (org-save-all-org-buffers)
+     (jetpacs-org-dialogs--save-dirty-org-buffers)
      (jetpacs-org-dialogs--notify "Refiled" params)
      (jetpacs-org-dialogs--refresh params))
    params))
@@ -1501,9 +1512,7 @@ projection memo stale."
   (unless save
     (require 'jetpacs-editor-org)
     (setq save #'jetpacs-editor-org-save-policy))
-  (dolist (buffer (org-buffer-list 'files t))
-    (when (buffer-modified-p buffer)
-      (funcall save buffer))))
+  (jetpacs-org-dialogs--save-dirty-org-buffers save))
 
 ;;;; The verbs
 

@@ -86,6 +86,25 @@ here; the foundation names none of them."
       (should (string-search "changed"
                              (jetpacs-editor-org-test--file-string file))))))
 
+(ert-deftest jetpacs-editor-org-deferred-save-runs-the-policy ()
+  "The engine's deferred save writes through the installed policy, so
+its after-save hooks run for a timer-driven save too."
+  (jetpacs-editor-org-test--with-file file "* Before\n"
+    (let ((buffer (find-file-noselect file))
+          (ebp-org-file-save-function #'jetpacs-editor-org-save-policy)
+          saved)
+      (with-current-buffer buffer
+        (goto-char (point-max))
+        (insert "deferred\n"))
+      (let ((jetpacs-files-before-buffer-save-hook nil)
+            (jetpacs-files-after-save-hook
+             (list (lambda (path) (setq saved path)))))
+        (ebp-org--save-now buffer))
+      (should (equal saved (file-truename file)))
+      (should-not (buffer-modified-p buffer))
+      (should (string-search "deferred"
+                             (jetpacs-editor-org-test--file-string file))))))
+
 (ert-deftest jetpacs-editor-org-save-policy-isolates-after-save-hook-errors ()
   "A failing after-save hook is post-durability: the completed write keeps
 its verdict, the cache still drops once, and the error stays local."

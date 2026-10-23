@@ -48,14 +48,16 @@
             (should (equal (jetpacs-org-mode--agenda-items 'day) fixture))
             (should (equal (glasspane-org-agenda-items 'day) fixture))
             (should (= calls 1))
-            ;; Clearing Glasspane's namespace cannot evict the canonical
-            ;; projection; clearing Org Mode's namespace must do so.
-            (ebp-org-cache-invalidate 'glasspane)
+            ;; Invalidation is whole-table: any namespace named, or
+            ;; none, evicts the canonical projection.
             (glasspane-org-agenda-items 'day)
             (should (= calls 1))
-            (ebp-org-cache-invalidate 'org-mode)
+            (ebp-org-cache-invalidate 'glasspane)
             (glasspane-org-agenda-items 'day)
-            (should (= calls 2))))
+            (should (= calls 2))
+            (ebp-org-cache-invalidate)
+            (glasspane-org-agenda-items 'day)
+            (should (= calls 3))))
       (ebp-org-cache-invalidate))))
 
 (ert-deftest jetpacs-org-search-projection-uses-native-text-and-match-modes ()
@@ -313,7 +315,7 @@ The vault is the only org root and the only agenda file."
 
 (ert-deftest jetpacs-org-mode-todo-items-sweep-shape-and-memo ()
   "The built-in TODO sweep answers the one item shape over the given
-files (or the agenda scope), and memoises under `org-mode' only."
+files (or the agenda scope), and memoises it."
   (jetpacs-org-reminders-test--with-vault file
       "#+TITLE: Tasks\n\n* TODO Water the garden :home:\n** Sub\n* TODO Call the bank\nSCHEDULED: <2026-08-16 Sun>\n* Reference notes\n"
     (let ((items (jetpacs-org-mode-todo-items (list file))))
@@ -340,8 +342,8 @@ files (or the agenda scope), and memoises under `org-mode' only."
          (should (equal (alist-get 'headline item) "Call the bank"))
          (should (equal (alist-get 'todo item) "TODO"))
          (should (= (alist-get 'pos item) (point))))))
-    ;; Memoised in the Org Mode namespace: a foreign namespace's drop
-    ;; cannot evict it, the owning namespace's drop must.
+    ;; Memoised: a repeat call hits; any invalidation (whole-table, the
+    ;; namespace argument is ignored) evicts it.
     (let ((calls 0))
       (cl-letf (((symbol-function 'jetpacs-org-mode--todo-items-1)
                  (lambda (&rest _) (cl-incf calls) '(fixture))))
@@ -350,9 +352,6 @@ files (or the agenda scope), and memoises under `org-mode' only."
         (jetpacs-org-mode-todo-items (list file))
         (should (= calls 1))
         (ebp-org-cache-invalidate 'other-app)
-        (jetpacs-org-mode-todo-items (list file))
-        (should (= calls 1))
-        (ebp-org-cache-invalidate 'org-mode)
         (jetpacs-org-mode-todo-items (list file))
         (should (= calls 2))))))
 
