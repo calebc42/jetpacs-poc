@@ -44,10 +44,8 @@ The search itself is performed by Org's agenda search commands; this bound
 limits the neutral records retained for downstream applets."
   :type '(integer 1 512) :group 'jetpacs-org)
 
-(defvar jetpacs-org-reminders-enabled nil
-  "Non-nil when the canonical Org reminder pipeline is enabled.
-The default stays nil so the device owner can be changed only by the
-ordered, durable-set cutover ceremony.")
+(defvar jetpacs-org-reminders-enabled t
+  "Non-nil when the canonical Org reminder pipeline is enabled.")
 
 (defvar jetpacs-org-reminders--last-reminders 'unset
   "Last reminder set confirmed by the Companion.")
@@ -434,6 +432,12 @@ while every returned row is rechecked against the canonical agenda scope."
              "\\`\\([0-9]\\{1,2\\}\\):\\([0-9]\\{2\\}\\)" text)
         (format "%02d:%s" (string-to-number (match-string 1 text))
                 (match-string 2 text))))))
+
+(defalias 'jetpacs-org-reminders-item-hm
+  #'jetpacs-org-reminders--item-hm
+  "Normalize an agenda item's raw `time' property to HH:MM, or nil.
+Public: downstream cards render the same clock text the reminder
+projection alarms on.")
 
 (defun jetpacs-org-reminders--reminder-id (name)
   "Return a stable SPEC identifier under the Org Mode owner for NAME."

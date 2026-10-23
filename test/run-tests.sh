@@ -391,11 +391,6 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-org-structure-test.el \
   -f ert-run-tests-batch-and-exit
 
-# Vulpea arm (Tier-1 staging — jetpacs-org-vulpea.el, never required by
-# base): synthetic-struct accessor semantics + index-evaluable routing.
-emacs -Q --batch -L emacs -l test/jetpacs-org-vulpea-test.el \
-  -f ert-run-tests-batch-and-exit
-
 # JA-5b exit gate: the org render skin — the golden, native-upgrade
 # budget charging (A2 cells, frame bytes), data:-URI images through the
 # root allowlist, the span-action arms, the org_parser trap fixture,
@@ -409,9 +404,9 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-render-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-mode-app-test.el \
   -f ert-run-tests-batch-and-exit
 
-# GR-6b save-policy seam: encryption-abort rollback, optional Vulpea,
-# whole-cache coherence, EBP seam ownership, the additive downstream editor
-# adapter, and SRS durability inside the engine form.
+# GR-6b save-policy seam: encryption-abort rollback, isolated after-save
+# hooks, whole-cache coherence, EBP seam ownership, the additive downstream
+# editor adapter, and SRS durability inside the engine form.
 emacs -Q --batch -L emacs -L "$GLASSPANE_DIR" \
   -l test/jetpacs-editor-org-test.el \
   -f ert-run-tests-batch-and-exit

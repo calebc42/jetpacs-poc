@@ -108,9 +108,7 @@ seam, and the empty state."
       (should (equal (plist-get body :t) "empty_state")))))
 
 (ert-deftest jetpacs-org-outline-never-loaded-by-base ()
-  "Loading every base module must not drag the staging view in —
-the vulpea precedent, pinned."
-  (should-not (featurep 'jetpacs-org-vulpea))  ; the precedent holds too
+  "Loading every base module must not drag the staging view in."
   (let ((loaded (mapcar (lambda (f) (format "%s" f)) features)))
     (ignore loaded)
     ;; This suite required it explicitly; the pin is that NO base

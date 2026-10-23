@@ -5,7 +5,7 @@
 ;;; Commentary:
 
 ;; Pins the native Org save-policy seam and its downstream adoption:
-;; encryption abort rollback, optional Vulpea indexing, whole-cache
+;; encryption abort rollback, isolated after-save hooks, whole-cache
 ;; invalidation, EBP save-function ownership, Glasspane's additive editor
 ;; adapter, and SRS durability inside the engine failure boundary.
 
@@ -63,53 +63,50 @@
           (should (equal (jetpacs-editor-org-test--file-string file)
                          "* Secret\nold cipher\n")))))))
 
-(ert-deftest jetpacs-editor-org-save-policy-refreshes-present-vulpea ()
-  "A successful save refreshes present Vulpea and drops the whole cache."
+(ert-deftest jetpacs-editor-org-save-policy-runs-after-save-hooks ()
+  "A successful save runs the after-save hooks with the durable path, then
+drops the whole cache.  Downstream indexers (such as a note index) attach
+here; the foundation names none of them."
   (jetpacs-editor-org-test--with-file file "* Before\n"
     (let ((buffer (find-file-noselect file))
-          indexed invalidated)
+          saved invalidated)
       (with-current-buffer buffer
         (goto-char (point-max))
         (insert "changed\n"))
-      (let ((jetpacs-files-before-buffer-save-hook nil))
-        (cl-letf (((symbol-function 'vulpea-db-update-file)
-                   (lambda (path) (setq indexed path)))
-                  ((symbol-function 'ebp-org-cache-invalidate)
+      (let ((jetpacs-files-before-buffer-save-hook nil)
+            (jetpacs-files-after-save-hook
+             (list (lambda (path) (setq saved path)))))
+        (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
                    (lambda (&optional namespace)
                      (push namespace invalidated))))
           (should (jetpacs-editor-org-save-policy buffer))))
-      (should (equal indexed (file-truename file)))
+      (should (equal saved (file-truename file)))
       (should (equal invalidated '(nil)))
       (should-not (buffer-modified-p buffer))
       (should (string-search "changed"
                              (jetpacs-editor-org-test--file-string file))))))
 
-(ert-deftest jetpacs-editor-org-save-policy-is-vulpea-optional ()
-  "The same durable policy works when the downstream package is absent."
+(ert-deftest jetpacs-editor-org-save-policy-isolates-after-save-hook-errors ()
+  "A failing after-save hook is post-durability: the completed write keeps
+its verdict, the cache still drops once, and the error stays local."
   (jetpacs-editor-org-test--with-file file "* Before\n"
     (let ((buffer (find-file-noselect file))
-          (old-function (and (fboundp 'vulpea-db-update-file)
-                             (symbol-function 'vulpea-db-update-file)))
           (invalidations 0))
-      (unwind-protect
-          (progn
-            (fmakunbound 'vulpea-db-update-file)
-            (should-not (fboundp 'vulpea-db-update-file))
-            (with-current-buffer buffer
-              (goto-char (point-max))
-              (insert "without vulpea\n"))
-            (let ((jetpacs-files-before-buffer-save-hook nil))
-              (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
-                         (lambda (&optional _namespace)
-                           (cl-incf invalidations))))
-                (should (jetpacs-editor-org-save-policy buffer))))
-            (should (= invalidations 1))
-            (should (string-search
-                     "without vulpea"
-                     (jetpacs-editor-org-test--file-string file))))
-        (if old-function
-            (fset 'vulpea-db-update-file old-function)
-          (fmakunbound 'vulpea-db-update-file))))))
+      (with-current-buffer buffer
+        (goto-char (point-max))
+        (insert "without indexer\n"))
+      (let ((jetpacs-files-before-buffer-save-hook nil)
+            (jetpacs-files-after-save-hook
+             (list (lambda (_path) (error "indexer down")))))
+        (cl-letf (((symbol-function 'ebp-org-cache-invalidate)
+                   (lambda (&optional _namespace)
+                     (cl-incf invalidations))))
+          (should (jetpacs-editor-org-save-policy buffer))))
+      (should (= invalidations 1))
+      (should-not (buffer-modified-p buffer))
+      (should (string-search
+               "without indexer"
+               (jetpacs-editor-org-test--file-string file))))))
 
 (ert-deftest jetpacs-editor-org-save-policy-busts-org-mode-memo ()
   "A downstream funnel save evicts an `org-mode' memo before its next read."

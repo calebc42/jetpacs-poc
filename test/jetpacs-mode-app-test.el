@@ -772,32 +772,6 @@
       (with-current-buffer buffer
         (should (equal (buffer-string) "* One\nfirst"))))))
 
-(ert-deftest jetpacs-org-mode-reminders-filter-time-and-deduplicate ()
-  "Timed Agenda rows become alarms; duplicate schedule/deadline rows do not."
-  (let* ((now (encode-time 0 0 12 14 8 2026))
-         (items
-          (list
-           '((headline . "Meeting") (file . "/vault/a.org") (pos . 42)
-             (time . "13:30......") (date . "2026-08-14")
-             (type . "scheduled"))
-           '((headline . "Meeting") (file . "/vault/a.org") (pos . 42)
-             (time . "13:30......") (date . "2026-08-14")
-             (type . "deadline"))
-           '((headline . "Date only") (file . "/vault/a.org") (pos . 90)
-             (time) (date . "2026-08-14") (type . "scheduled"))
-           '((headline . "Too late") (file . "/vault/b.org") (pos . 7)
-             (time . "13:30") (date . "2026-08-15")
-             (type . "scheduled")))))
-    (cl-letf (((symbol-function 'jetpacs-org-mode--agenda-items)
-               (lambda (_span &optional _start-day) items)))
-      (let ((reminders (jetpacs-org-mode--upcoming-reminders 24 now)))
-        (should (= 1 (length reminders)))
-        (should (equal (plist-get (car reminders) :title) "Meeting"))
-        (should (equal (plist-get (car reminders) :body)
-                       "13:30 · scheduled"))
-        (should (string-match-p "\\`org-rem-[[:xdigit:]]\\{20\\}\\'"
-                                (plist-get (car reminders) :id)))))))
-
 (ert-deftest jetpacs-org-mode-seeds-manual-and-inbox-without-overwrite ()
   "The complete manual bundle lands once and user edits always win."
   (let ((org-directory (make-temp-file "jetpacs-org-seed-" t)))
@@ -890,27 +864,8 @@
                   jetpacs-files-editor-toolbar-functions))
     (should (gethash "org-mode.capture" jetpacs-action-handlers))
     (should (gethash "org-mode.open-seed" jetpacs-action-handlers))
-    ;; GR-0: the unverified inline pipeline defaults off.  A dedicated
-    ;; owner takes over only after the device cutover ceremony.
-    (should-not (memq #'jetpacs-org-mode--sync-reminders
-                      jetpacs-shell-after-push-hook))))
-
-(ert-deftest jetpacs-org-mode-legacy-reminder-hook-is-always-inert ()
-  "GR-3 never installs the legacy reminder hook, even if its flag is true."
-  (unwind-protect
-      (progn
-        (jetpacs-org-mode-unregister)
-        (let ((jetpacs-org-mode-reminders-enabled nil))
-          (jetpacs-org-mode-register)
-          (should-not (memq #'jetpacs-org-mode--sync-reminders
-                            jetpacs-shell-after-push-hook))
-          (jetpacs-org-mode-unregister))
-        (let ((jetpacs-org-mode-reminders-enabled t))
-          (jetpacs-org-mode-register)
-          (should-not (memq #'jetpacs-org-mode--sync-reminders
-                            jetpacs-shell-after-push-hook))))
-    (jetpacs-org-mode-unregister)
-    (jetpacs-org-mode-register)))
+    (should (memq #'jetpacs-org-reminders--sync-reminders
+                  jetpacs-shell-after-push-hook))))
 
 (provide 'jetpacs-mode-app-test)
 ;;; jetpacs-mode-app-test.el ends here

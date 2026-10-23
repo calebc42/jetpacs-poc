@@ -54,15 +54,6 @@
 (defvar jetpacs-org-mode--registered nil
   "Non-nil while the Org Mode app is registered.")
 
-(defvar jetpacs-org-mode-reminders-enabled nil
-  "Non-nil when the legacy inline Org Mode reminder hook is enabled.
-This pipeline has no device history and stays disabled while reminder
-ownership moves to the dedicated Org reminder module.  Keep the flag
-until that cutover's rollback window closes.")
-
-(defvar jetpacs-org-mode--last-reminders 'unset
-  "Last reminder set confirmed by the Companion.")
-
 (defconst jetpacs-org-mode--asset-directory
   (let* ((library (or load-file-name (locate-library "jetpacs-org-mode")))
          (base (and library (file-name-directory library))))
@@ -133,78 +124,6 @@ Return the paths plist from `jetpacs-org-mode-seed-paths', or nil."
      (message "jetpacs-org-mode: seed failed: %s"
               (jetpacs-error-label err))
      nil)))
-
-;;;; Legacy inline agenda reminders (inert until GR-9 removal)
-
-(defun jetpacs-org-mode--item-hour-minute (raw)
-  "Normalize Org Agenda RAW time-grid text to HH:MM, or nil."
-  (when (stringp raw)
-    (let ((text (string-trim raw)))
-      (when (string-match
-             "\\`\\([0-9]\\{1,2\\}\\):\\([0-9]\\{2\\}\\)" text)
-        (format "%02d:%s" (string-to-number (match-string 1 text))
-                (match-string 2 text))))))
-
-(defun jetpacs-org-mode--upcoming-reminders (&optional horizon-hours now)
-  "Return timed Org Agenda reminders within HORIZON-HOURS of NOW.
-NOW is an Emacs time value and defaults to `current-time'."
-  (let* ((hours (or horizon-hours jetpacs-org-reminders-horizon-hours))
-         (horizon (* hours 3600))
-         (now-seconds (float-time (or now (current-time))))
-         (days (max 1 (1+ (ceiling (/ hours 24.0)))))
-         reminders
-         seen)
-    (dolist (item (jetpacs-org-mode--agenda-items days nil))
-      (when-let* ((date (alist-get 'date item))
-                  (hm (jetpacs-org-mode--item-hour-minute
-                       (alist-get 'time item))))
-        (let ((at (float-time
-                   (org-time-string-to-time (concat date " " hm)))))
-          (when (and (> at now-seconds) (< (- at now-seconds) horizon))
-            (let* ((identity
-                    (format "%sT%s|%s|%s" date hm
-                            (or (alist-get 'file item) "")
-                            (or (alist-get 'pos item) 0)))
-                   (id (format "org-rem-%s"
-                               (substring (sha1 identity) 0 20))))
-              ;; A heading scheduled and deadlined for the same instant
-              ;; appears twice in Org Agenda but must create one alarm.
-              (unless (member id seen)
-                (push id seen)
-                (push
-                 (list :id id
-                       :at_ms (truncate (* at 1000))
-                       :title (or (alist-get 'headline item)
-                                  "Org reminder")
-                       :body (concat hm
-                                     (when-let* ((type
-                                                 (alist-get 'type item)))
-                                       (concat " · " type))))
-                 reminders)))))))
-    (nreverse reminders)))
-
-(defun jetpacs-org-mode--sync-reminders ()
-  "Synchronize recurring Org Agenda alarms after a successful push."
-  (when (and (jetpacs-connected-p)
-             (jetpacs-granted-p "reminders.owner"))
-    (let ((reminders
-           (condition-case err
-               (jetpacs-org-mode--upcoming-reminders)
-             (error
-              (message "jetpacs-org-mode: reminder scan failed: %s"
-                       (jetpacs-error-label err))
-              nil))))
-      (unless (equal reminders jetpacs-org-mode--last-reminders)
-        (condition-case err
-            (jetpacs-reminders-set
-             reminders :owner jetpacs-org-mode-owner
-             :callback
-             (lambda (_count error)
-               (unless error
-                 (setq jetpacs-org-mode--last-reminders reminders))))
-          (error
-           (message "jetpacs-org-mode: reminder sync failed: %s"
-                    (jetpacs-error-label err))))))))
 
 (defun jetpacs-org-mode--surface (owner)
   "Return OWNER's negotiated surface name."
@@ -317,10 +236,6 @@ document-host selection, and content publication in Emacs."
 
 (defun jetpacs-org-mode-register ()
   "Register the Org adapters, root surface, and app identity."
-  ;; GR-3 makes this legacy hook inert under every value of its retained
-  ;; rollback-window flag, including a live reload over GR-0 code.
-  (remove-hook 'jetpacs-shell-after-push-hook
-               #'jetpacs-org-mode--sync-reminders)
   (jetpacs-org-reminders-register)
   (jetpacs-org-capture-register)
   (jetpacs-org-clock-register)
@@ -349,14 +264,11 @@ document-host selection, and content publication in Emacs."
 
 (defun jetpacs-org-mode-unregister ()
   "Unregister the Org Mode app and its mode adapters."
-  (remove-hook 'jetpacs-shell-after-push-hook
-               #'jetpacs-org-mode--sync-reminders)
   (jetpacs-org-reminders-unregister)
   (jetpacs-org-capture-unregister)
   (jetpacs-org-clock-unregister)
   (when jetpacs-org-mode--registered
     (setq jetpacs-org-mode--registered nil)
-    (setq jetpacs-org-mode--last-reminders 'unset)
     (jetpacs-undefaction "org-mode.open-seed")
     (jetpacs-apps-unregister jetpacs-org-mode-owner)
     (jetpacs-chrome-remove jetpacs-org-mode-owner)

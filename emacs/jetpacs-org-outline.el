@@ -3,13 +3,12 @@
 ;;; Commentary:
 
 ;; The card-list VIEW over the base outline extraction (poc 2566-2642)
-;; — Tier-1 STAGING, the `jetpacs-org-vulpea.el' precedent: never
-;; required by any base module, migrating to the app repo when its
-;; Tier-1 rung lands.  Under the ratified split the extraction
-;; (jetpacs-org.el, JA-5a A3) is org fact; a heading list styled as
-;; tappable cards is opinion — the Orgro-benchmarked BASE experience is
-;; the folded document itself, and this Orgzly-shaped list belongs to
-;; the app layer.
+;; — Tier-1 STAGING: never required by any base module, migrating to
+;; the app repo when its Tier-1 rung lands.  Under the ratified split
+;; the extraction (jetpacs-org.el, JA-5a A3) is org fact; a heading
+;; list styled as tappable cards is opinion — the Orgro-benchmarked
+;; BASE experience is the folded document itself, and this
+;; Orgzly-shaped list belongs to the app layer.
 ;;
 ;; A non-buffer render mints its OWN 23.1 records (the JC-2
 ;; discipline): each card exposes its heading position for

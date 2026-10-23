@@ -8,11 +8,11 @@
 (require 'glasspane)
 
 (ert-deftest jetpacs-org-reminders-owner-and-rollout-defaults ()
-  "The canonical pipeline owns org-mode and remains opt-in at merge."
+  "The canonical pipeline owns org-mode and is enabled by default."
   (should (equal jetpacs-org-reminders-owner "org-mode"))
   (should (custom-variable-p 'jetpacs-org-reminders-horizon-hours))
   (should (= (default-value 'jetpacs-org-reminders-horizon-hours) 24))
-  (should-not (default-value 'jetpacs-org-reminders-enabled)))
+  (should (default-value 'jetpacs-org-reminders-enabled)))
 
 (ert-deftest jetpacs-org-reminders-agenda-extractor-is-shared-and-memoised ()
   "Glasspane delegates to the one extractor cached under org-mode."
@@ -270,49 +270,24 @@
                  :at_ms 42 :title "Existing")))))))
 
 (ert-deftest jetpacs-org-reminders-hook-singleton-across-all-flags ()
-  "Every three-pipeline flag combination selects at most one live hook."
-  (let ((hooks (list #'jetpacs-org-reminders--sync-reminders
-                     #'jetpacs-org-mode--sync-reminders
-                     #'glasspane-agenda--sync-reminders)))
-    (cl-labels
-        ((live-hooks ()
-           (cl-remove-if-not
-            (lambda (hook) (memq hook jetpacs-shell-after-push-hook))
-            hooks))
-         (clear-reminder-hooks ()
-           (jetpacs-org-reminders-unregister)
-           (glasspane-agenda-unregister)
-           (remove-hook 'jetpacs-shell-after-push-hook
-                        #'jetpacs-org-mode--sync-reminders)))
-      (unwind-protect
-          (dolist (new '(nil t))
-            (dolist (legacy '(nil t))
-              (dolist (glass '(nil t))
-                (clear-reminder-hooks)
-                (let ((jetpacs-org-reminders-enabled new)
-                      (jetpacs-org-mode-reminders-enabled legacy)
-                      (glasspane-agenda-reminders-enabled glass))
-                  ;; Exercise the actual composition-root registration order.
-                  (jetpacs-org-mode-register)
-                  (glasspane-agenda-register)
-                  (let ((live (live-hooks)))
-                    (should-not
-                     (memq #'jetpacs-org-mode--sync-reminders live))
-                    (should (<= (length live) 1))
-                    (should
-                     (equal live
-                            (cond
-                             (new
-                              (list
-                               #'jetpacs-org-reminders--sync-reminders))
-                             (glass
-                              (list #'glasspane-agenda--sync-reminders))))))))))
-        (clear-reminder-hooks)
-        (let ((jetpacs-org-reminders-enabled nil)
-              (jetpacs-org-mode-reminders-enabled nil)
-              (glasspane-agenda-reminders-enabled t))
+  "The canonical Org reminder hook is the sole reminder hook."
+  (unwind-protect
+      (progn
+        (jetpacs-org-reminders-unregister)
+        (let ((jetpacs-org-reminders-enabled nil))
           (jetpacs-org-mode-register)
-          (glasspane-agenda-register))))))
+          (glasspane-agenda-register)
+          (should-not (memq #'jetpacs-org-reminders--sync-reminders
+                            jetpacs-shell-after-push-hook)))
+        (let ((jetpacs-org-reminders-enabled t))
+          (jetpacs-org-mode-register)
+          (glasspane-agenda-register)
+          (should (memq #'jetpacs-org-reminders--sync-reminders
+                        jetpacs-shell-after-push-hook))))
+    (jetpacs-org-reminders-unregister)
+    (let ((jetpacs-org-reminders-enabled t))
+      (jetpacs-org-mode-register)
+      (glasspane-agenda-register))))
 
 (provide 'jetpacs-org-reminders-test)
 ;;; jetpacs-org-reminders-test.el ends here

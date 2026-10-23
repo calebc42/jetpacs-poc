@@ -37,8 +37,6 @@
 (defvar jetpacs-editor-org--previous-file-save-function nil
   "The `ebp-org-file-save-function' displaced by the Org adapter.")
 
-(declare-function vulpea-db-update-file "ext:vulpea-db-extract" (file))
-
 (defun jetpacs-editor-org--synced-p ()
   "Whether the Files builder is authoring a synchronized editor."
   (and (plist-get jetpacs-files-editor-context :document) t))
@@ -194,23 +192,11 @@ pre-durability rollback."
            (set-buffer-modified-p original-modified))
          (signal (car err) (cdr err)))))))
 
-(defun jetpacs-editor-org--refresh-vulpea (file)
-  "Synchronously refresh FILE in Vulpea when its optional API is present.
-Index maintenance is post-durability: a broken optional package is
-reported locally but cannot turn a completed write into a rejected
-device receipt."
-  (when (and (stringp file) (fboundp 'vulpea-db-update-file))
-    (condition-case err
-        (vulpea-db-update-file file)
-      (error
-       (message "jetpacs-editor-org: vulpea refresh failed: %s"
-                (error-message-string err))))))
-
 ;;;###autoload
 (defun jetpacs-editor-org-save-policy (&optional buffer)
   "Synchronously and safely save BUFFER, defaulting to the current buffer.
-Run every Files pre-write transform before `save-buffer', refresh the
-optional Vulpea index after the write, and invalidate the whole Org
+Run every Files pre-write transform before `save-buffer', run isolated
+Files after-save hooks after the write, and invalidate the whole Org
 projection cache.  A pre-write failure restores the buffer and aborts
 the disk write; optional post-durability work is isolated."
   (let ((buffer (or buffer (current-buffer))))
@@ -224,10 +210,10 @@ the disk write; optional post-durability work is isolated."
         (jetpacs-editor-org--run-prewrite true buffer)
         (save-buffer)
         ;; Capture the file before optional callbacks: the durable save
-        ;; is complete, and neither indexing nor cache cleanup may revise
-        ;; that verdict.
+        ;; is complete, and neither post-save hooks nor cache cleanup may
+        ;; revise that verdict.
         (unwind-protect
-            (jetpacs-editor-org--refresh-vulpea true)
+            (jetpacs-run-isolated 'jetpacs-files-after-save-hook true)
           (ebp-org-cache-invalidate)))))
   t)
 
