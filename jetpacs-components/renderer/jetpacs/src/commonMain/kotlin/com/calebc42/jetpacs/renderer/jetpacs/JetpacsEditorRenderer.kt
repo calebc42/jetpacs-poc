@@ -14,6 +14,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.liveRegion
@@ -71,7 +72,7 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
         val syntaxOverrides = remember(designScope, themeRoles) {
             JetpacsSyntaxOverrides.from(designScope, themeRoles)
         }
-        val outputTransformation = remember(
+        val annotationTransformation = remember(
             document,
             presentation.syntax,
             syntaxColors,
@@ -91,6 +92,13 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
             } else {
                 presentation.syntax?.let { JetpacsSyntaxOutputTransformation(it, syntaxColors) }
             }
+        }
+        // The field keeps ONE transformation for its whole life: a new
+        // instance per annotation epoch restarted the keyboard after every
+        // keystroke. The projection itself still changes through state.
+        val latestTransformation = rememberUpdatedState(annotationTransformation)
+        val outputTransformation = remember(document) {
+            JetpacsLiveAnnotationOutputTransformation { latestTransformation.value }
         }
         val value = binding.controller.snapshot()
         val collapsedSelection = value.selectionStartUtf16 == value.selectionEndUtf16
