@@ -3,7 +3,9 @@ package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.sp
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -45,6 +47,29 @@ class JetpacsDesignTextStyleTest {
         assertEquals(FontWeight(600), resolved.fontWeight)
         assertEquals(Color(0xFF112233), resolved.color)
         assertEquals(fallback.letterSpacing, resolved.letterSpacing)
+    }
+
+    @Test
+    fun italicAndDecorationPropertiesOverlayTheFallback() {
+        val properties = mapOf(
+            DesignProperty.Italic to DesignValue.BooleanValue(true),
+            DesignProperty.Underline to DesignValue.BooleanValue(true),
+            DesignProperty.StrikeThrough to DesignValue.BooleanValue(true),
+        )
+        val resolved = fallback.withDesignTextProperties(properties, roles)
+        assertEquals(FontStyle.Italic, resolved.fontStyle)
+        assertEquals(
+            TextDecoration.combine(listOf(TextDecoration.Underline, TextDecoration.LineThrough)),
+            resolved.textDecoration,
+        )
+
+        val cleared = fallback.copy(textDecoration = TextDecoration.Underline)
+            .withDesignTextProperties(
+                mapOf(DesignProperty.Underline to DesignValue.BooleanValue(false)),
+                roles,
+            )
+        assertEquals(TextDecoration.None, cleared.textDecoration)
+        assertNull(designTextDecoration(emptyMap()))
     }
 
     @Test

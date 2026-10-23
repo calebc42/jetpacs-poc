@@ -51,6 +51,16 @@ presentation. Named glyphs come from the
 Canonical icon buttons honor `tonal` with the theme's selected surface; removing
 that variant restores the plain icon face on the next authored snapshot.
 
+The `editor.syntax.<role>` slots restyle a synchronized editor's
+`fontify.show` runs, one slot per EBP syntax role. A bound slot overlays the
+role's palette style with the color, background, weight, `italic`,
+`underline` and `strike_through` it authors. A heading run that carries a
+`level` (EBP amendment #199) also stacks `editor.syntax.heading-N` on top.
+The baseline binds every syntax slot to an empty style, so the palette
+stands until an app binds one. The three text-decoration properties apply
+wherever text properties do, so a `text.*` slot or a styled program can also
+italicize, underline or strike through text.
+
 `jetpacs.list_item` is the row primitive: leading, a flexible
 overline/title/subtitle column, one trailing node, taps and both swipe
 sides. It is flat unless a profile binds `list-item.container` to a surface

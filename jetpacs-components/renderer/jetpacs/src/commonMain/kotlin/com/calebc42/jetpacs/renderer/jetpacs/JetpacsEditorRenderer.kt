@@ -66,11 +66,17 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                 hint = componentColors.mutedContent,
             )
         }
+        val designScope = LocalDesignScope.current
+        val themeRoles = JetpacsTheme.roles
+        val syntaxOverrides = remember(designScope, themeRoles) {
+            JetpacsSyntaxOverrides.from(designScope, themeRoles)
+        }
         val outputTransformation = remember(
             document,
             presentation.syntax,
             syntaxColors,
             diagnosticColors,
+            syntaxOverrides,
             annotations?.epoch,
         ) {
             if (document != null) {
@@ -80,6 +86,7 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                     presentation.syntax.orEmpty(),
                     syntaxColors,
                     diagnosticColors,
+                    syntaxOverrides,
                 )
             } else {
                 presentation.syntax?.let { JetpacsSyntaxOutputTransformation(it, syntaxColors) }

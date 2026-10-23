@@ -30,10 +30,13 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import com.calebc42.ebp.renderer.compose.ComposeChromeStyles
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -126,6 +129,14 @@ private fun StyleScope.applyDesignProperties(
                 // small buttons onto `jetpacs.pressable` instead of Action.
                 if (value.boolean()) fillWidth()
             }
+            DesignProperty.Italic ->
+                fontStyle(if (value.boolean()) FontStyle.Italic else FontStyle.Normal)
+            // One decoration carries both lines, so the pair is applied once,
+            // at whichever of the two the loop reaches first.
+            DesignProperty.Underline -> designTextDecoration(properties)?.let(::textDecoration)
+            DesignProperty.StrikeThrough -> if (DesignProperty.Underline !in properties) {
+                designTextDecoration(properties)?.let(::textDecoration)
+            }
         }
     }
 }
@@ -138,7 +149,29 @@ private val textProperties = setOf(
     DesignProperty.FontFamily,
     DesignProperty.FontWeight,
     DesignProperty.TextAlign,
+    DesignProperty.Italic,
+    DesignProperty.Underline,
+    DesignProperty.StrikeThrough,
 )
+
+/**
+ * The decoration authored by `underline` and `strike_through`, or null when
+ * neither is present. An explicit `false` for both yields
+ * [TextDecoration.None], which clears an inherited decoration.
+ */
+internal fun designTextDecoration(
+    properties: Map<DesignProperty, DesignValue>,
+): TextDecoration? {
+    val underline = properties[DesignProperty.Underline] as? DesignValue.BooleanValue
+    val strike = properties[DesignProperty.StrikeThrough] as? DesignValue.BooleanValue
+    if (underline == null && strike == null) return null
+    return TextDecoration.combine(
+        listOfNotNull(
+            TextDecoration.Underline.takeIf { underline?.value == true },
+            TextDecoration.LineThrough.takeIf { strike?.value == true },
+        ),
+    )
+}
 
 private fun DesignMotion.animationSpec(): AnimationSpec<Float> = when (easing) {
     DesignEasing.Linear -> tween(durationMillis, easing = LinearEasing)
@@ -173,7 +206,7 @@ internal fun resolvedDesignTextStyle(
 /**
  * Overlay authored text properties on [this] fallback text style.
  *
- * Only the seven text-bearing design properties participate; layout and draw
+ * Only the ten text-bearing design properties participate; layout and draw
  * properties belong to the Foundation Style applied through modifiers. Pure
  * so text resolution can be unit-tested without a composition.
  */
@@ -196,6 +229,10 @@ internal fun TextStyle.withDesignTextProperties(
         FontWeight(it.fontWeight())
     } ?: fontWeight,
     textAlign = properties[DesignProperty.TextAlign]?.textAlign() ?: textAlign,
+    fontStyle = (properties[DesignProperty.Italic] as? DesignValue.BooleanValue)?.let {
+        if (it.value) FontStyle.Italic else FontStyle.Normal
+    } ?: fontStyle,
+    textDecoration = designTextDecoration(properties) ?: textDecoration,
 )
 
 /**
@@ -254,6 +291,45 @@ internal fun CompiledDesignScope.composeChromeStyles(
         snackbarShape = snackbar?.shape(),
     )
     return styles.takeUnless { it.isEmpty }
+}
+
+/**
+ * Resolve one `editor.syntax.*` slot of [this] scope into the span style the
+ * editor overlays on a fontify run, or null when it is unbound or empty.
+ */
+internal fun CompiledDesignScope.resolvedSyntaxSpanStyle(
+    slot: DesignComponentStyleSlot,
+    roles: JetpacsThemeRoles,
+): SpanStyle? = componentStyle(slot)?.resolve()?.properties
+    ?.takeIf { it.isNotEmpty() }
+    ?.let { designSyntaxSpanStyle(it, roles) }
+    ?.takeIf { it != SpanStyle() }
+
+/**
+ * The span-level part of a resolved syntax slot: text color, background,
+ * weight, italic, and decoration. Layout properties have no meaning inside a
+ * run and are ignored.
+ */
+internal fun designSyntaxSpanStyle(
+    properties: Map<DesignProperty, DesignValue>,
+    roles: JetpacsThemeRoles,
+): SpanStyle {
+    fun color(property: DesignProperty): Color = when (val value = properties[property]) {
+        is DesignValue.ColorValue -> Color(value.argb)
+        is DesignValue.ThemeRoleValue -> roles[value.value]
+        else -> Color.Unspecified
+    }
+    return SpanStyle(
+        color = color(DesignProperty.ContentColor),
+        background = color(DesignProperty.BackgroundColor),
+        fontWeight = properties[DesignProperty.FontWeight]?.let {
+            FontWeight((it as DesignValue.FontWeightValue).value)
+        },
+        fontStyle = (properties[DesignProperty.Italic] as? DesignValue.BooleanValue)?.let {
+            if (it.value) FontStyle.Italic else FontStyle.Normal
+        },
+        textDecoration = designTextDecoration(properties),
+    )
 }
 
 /**

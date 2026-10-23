@@ -66,6 +66,15 @@
     "editor.toolbar" "editor.toolbar-item" "editor.sync-status"
     "editor.completion-list" "editor.completion-item"
     "editor.candidate-document" "editor.tooling-status"
+    "editor.syntax.comment" "editor.syntax.string" "editor.syntax.keyword"
+    "editor.syntax.function" "editor.syntax.constant" "editor.syntax.variable"
+    "editor.syntax.type" "editor.syntax.number" "editor.syntax.operator"
+    "editor.syntax.preprocessor" "editor.syntax.heading" "editor.syntax.link"
+    "editor.syntax.todo" "editor.syntax.done" "editor.syntax.tag"
+    "editor.syntax.heading-1" "editor.syntax.heading-2"
+    "editor.syntax.heading-3" "editor.syntax.heading-4"
+    "editor.syntax.heading-5" "editor.syntax.heading-6"
+    "editor.syntax.heading-7" "editor.syntax.heading-8"
     "chrome.tab-label" "chrome.tab-indicator"
     "chrome.rail-label" "chrome.rail-indicator"
     "chrome.drawer" "chrome.snackbar")
@@ -96,7 +105,10 @@
     ("font_family" . "font-family")
     ("font_weight" . "font-weight")
     ("text_align" . "text-align")
-    ("fill_width" . "boolean"))
+    ("fill_width" . "boolean")
+    ("italic" . "boolean")
+    ("underline" . "boolean")
+    ("strike_through" . "boolean"))
   "Property names paired with their direct value kinds.
 Public so an editor can offer only the values a property accepts.")
 

@@ -35,8 +35,15 @@ data class JetpacsDiagnosticColors(
     }
 }
 
-/** Resolve one fixed contract syntax role through the Jetpacs palette. */
-internal fun jetpacsRoleStyle(role: String, colors: JetpacsSyntaxColors): SpanStyle? =
+/**
+ * Resolve one fixed contract syntax role through the Jetpacs palette. A
+ * `heading` run's [level] (SPEC 19.5) picks its colour from the depth cycle.
+ */
+internal fun jetpacsRoleStyle(
+    role: String,
+    colors: JetpacsSyntaxColors,
+    level: Int? = null,
+): SpanStyle? =
     when (role) {
         "comment" -> SpanStyle(color = colors.comment, fontStyle = FontStyle.Italic)
         "string" -> SpanStyle(color = colors.string)
@@ -48,13 +55,90 @@ internal fun jetpacsRoleStyle(role: String, colors: JetpacsSyntaxColors): SpanSt
         "number" -> SpanStyle(color = colors.number)
         "operator" -> SpanStyle(color = colors.preprocessor)
         "preprocessor" -> SpanStyle(color = colors.preprocessor)
-        "heading" -> SpanStyle(color = colors.heading.first(), fontWeight = FontWeight.Bold)
+        "heading" -> SpanStyle(
+            color = colors.heading[((level ?: 1) - 1).mod(colors.heading.size)],
+            fontWeight = FontWeight.Bold,
+        )
         "link" -> SpanStyle(color = colors.link, textDecoration = TextDecoration.Underline)
         "todo" -> SpanStyle(color = colors.todo, fontWeight = FontWeight.Bold)
         "done" -> SpanStyle(color = colors.done, fontWeight = FontWeight.Bold)
         "tag" -> SpanStyle(color = colors.tag)
         else -> null
     }
+
+/**
+ * A design scope's `editor.syntax.*` bindings, resolved to span styles.
+ *
+ * Each bound slot overlays the palette style of its role: the properties it
+ * authors win and the rest keep the role's default. A `heading` run with a
+ * level stacks `editor.syntax.heading-N` over `editor.syntax.heading`, so a
+ * level slot need only author what differs by depth. Unbound and empty slots
+ * leave the palette untouched, so a scope without syntax bindings, such as
+ * the baseline's, renders exactly as before.
+ */
+@InternalJetpacsRendererApi
+data class JetpacsSyntaxOverrides(
+    val byRole: Map<String, SpanStyle>,
+    val byHeadingLevel: Map<Int, SpanStyle>,
+) {
+    /** The run's palette style with any bound override merged on top. */
+    fun style(role: String, level: Int?, colors: JetpacsSyntaxColors): SpanStyle? {
+        val base = jetpacsRoleStyle(role, colors, level) ?: return null
+        val levelOverride = level?.takeIf { role == "heading" }?.let(byHeadingLevel::get)
+        return base.merge(byRole[role]).merge(levelOverride)
+    }
+
+    companion object {
+        val None = JetpacsSyntaxOverrides(emptyMap(), emptyMap())
+
+        private val roleSlots = mapOf(
+            "comment" to DesignComponentStyleSlot.EditorSyntaxComment,
+            "string" to DesignComponentStyleSlot.EditorSyntaxString,
+            "keyword" to DesignComponentStyleSlot.EditorSyntaxKeyword,
+            "function" to DesignComponentStyleSlot.EditorSyntaxFunction,
+            "constant" to DesignComponentStyleSlot.EditorSyntaxConstant,
+            "variable" to DesignComponentStyleSlot.EditorSyntaxVariable,
+            "type" to DesignComponentStyleSlot.EditorSyntaxType,
+            "number" to DesignComponentStyleSlot.EditorSyntaxNumber,
+            "operator" to DesignComponentStyleSlot.EditorSyntaxOperator,
+            "preprocessor" to DesignComponentStyleSlot.EditorSyntaxPreprocessor,
+            "heading" to DesignComponentStyleSlot.EditorSyntaxHeading,
+            "link" to DesignComponentStyleSlot.EditorSyntaxLink,
+            "todo" to DesignComponentStyleSlot.EditorSyntaxTodo,
+            "done" to DesignComponentStyleSlot.EditorSyntaxDone,
+            "tag" to DesignComponentStyleSlot.EditorSyntaxTag,
+        )
+
+        private val headingSlots = mapOf(
+            1 to DesignComponentStyleSlot.EditorSyntaxHeading1,
+            2 to DesignComponentStyleSlot.EditorSyntaxHeading2,
+            3 to DesignComponentStyleSlot.EditorSyntaxHeading3,
+            4 to DesignComponentStyleSlot.EditorSyntaxHeading4,
+            5 to DesignComponentStyleSlot.EditorSyntaxHeading5,
+            6 to DesignComponentStyleSlot.EditorSyntaxHeading6,
+            7 to DesignComponentStyleSlot.EditorSyntaxHeading7,
+            8 to DesignComponentStyleSlot.EditorSyntaxHeading8,
+        )
+
+        /** Resolve [scope]'s syntax bindings; [None] when nothing is bound. */
+        internal fun from(
+            scope: CompiledDesignScope?,
+            roles: JetpacsThemeRoles,
+        ): JetpacsSyntaxOverrides {
+            if (scope == null) return None
+            fun resolve(slot: DesignComponentStyleSlot): SpanStyle? =
+                scope.resolvedSyntaxSpanStyle(slot, roles)
+            val byRole = roleSlots.mapNotNull { (role, slot) ->
+                resolve(slot)?.let { role to it }
+            }.toMap()
+            val byLevel = headingSlots.mapNotNull { (level, slot) ->
+                resolve(slot)?.let { level to it }
+            }.toMap()
+            return if (byRole.isEmpty() && byLevel.isEmpty()) None
+            else JetpacsSyntaxOverrides(byRole, byLevel)
+        }
+    }
+}
 
 /** Jetpacs diagnostic underline and bounded severity wash. */
 internal fun jetpacsDiagnosticStyle(
@@ -78,13 +162,14 @@ class JetpacsAnnotationOutputTransformation(
     private val language: String,
     private val colors: JetpacsSyntaxColors,
     private val diagnosticColors: JetpacsDiagnosticColors,
+    private val overrides: JetpacsSyntaxOverrides = JetpacsSyntaxOverrides.None,
 ) : OutputTransformation {
     override fun TextFieldBuffer.transformOutput() {
         val source = asCharSequence().toString()
         val authoritative = currentFontifyRuns(fontify, source)
         if (authoritative != null) {
             authoritative.forEach { run ->
-                jetpacsRoleStyle(run.role, colors)?.let { style ->
+                overrides.style(run.role, run.level, colors)?.let { style ->
                     val start = run.start.coerceIn(0, source.length)
                     val end = run.end.coerceIn(start, source.length)
                     if (end > start) addStyle(style, start, end)

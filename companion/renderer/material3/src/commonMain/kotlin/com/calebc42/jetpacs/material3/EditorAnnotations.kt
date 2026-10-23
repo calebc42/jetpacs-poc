@@ -24,8 +24,11 @@ val SYNTAX_ROLES = listOf(
     "todo", "done", "tag",
 )
 
-/** Resolve one protocol role to Material presentation, ignoring unknown roles. */
-fun roleStyle(role: String, colors: SyntaxColors): SpanStyle? = when (role) {
+/**
+ * Resolve one protocol role to Material presentation, ignoring unknown roles.
+ * A `heading` run's [level] (SPEC 19.5) picks its colour from the depth cycle.
+ */
+fun roleStyle(role: String, colors: SyntaxColors, level: Int? = null): SpanStyle? = when (role) {
     "comment" -> SpanStyle(color = colors.comment, fontStyle = FontStyle.Italic)
     "string" -> SpanStyle(color = colors.string)
     "keyword" -> SpanStyle(color = colors.keyword, fontWeight = FontWeight.Bold)
@@ -36,7 +39,10 @@ fun roleStyle(role: String, colors: SyntaxColors): SpanStyle? = when (role) {
     "number" -> SpanStyle(color = colors.number)
     "operator" -> SpanStyle(color = colors.operator)
     "preprocessor" -> SpanStyle(color = colors.meta)
-    "heading" -> SpanStyle(color = colors.heading.first(), fontWeight = FontWeight.Bold)
+    "heading" -> SpanStyle(
+        color = colors.heading[((level ?: 1) - 1).mod(colors.heading.size)],
+        fontWeight = FontWeight.Bold,
+    )
     "link" -> SpanStyle(color = colors.link, textDecoration = TextDecoration.Underline)
     "todo" -> SpanStyle(color = colors.todo, fontWeight = FontWeight.Bold)
     "done" -> SpanStyle(color = colors.done, fontWeight = FontWeight.Bold)
@@ -104,7 +110,7 @@ fun annotationSpans(
     val runs = currentFontifyRuns(fontify, source)
     if (runs != null) {
         for (run in runs) {
-            val style = roleStyle(run.role, colors) ?: continue
+            val style = roleStyle(run.role, colors, run.level) ?: continue
             val start = run.start.coerceIn(0, length)
             val end = run.end.coerceIn(start, length)
             if (end > start) output += AnnotatedString.Range(style, start, end)
