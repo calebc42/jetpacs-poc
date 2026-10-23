@@ -21,11 +21,11 @@
   (should (eq (symbol-function 'jetpacs-org-mode-agenda-scope)
               'jetpacs-org-mode--agenda-scope))
   (should (eq (symbol-function 'glasspane-org--agenda-scope)
-              'jetpacs-org-mode--agenda-scope))
+              'jetpacs-org-mode-agenda-scope))
   (should (eq (symbol-function 'glasspane-org-agenda-scope)
               'jetpacs-org-mode-agenda-scope))
   (should (eq (symbol-function 'glasspane-org-agenda-items)
-              'jetpacs-org-mode--agenda-items))
+              'jetpacs-org-mode-agenda-items))
   (should (eq (symbol-function 'glasspane-org--agenda-items-1)
               'jetpacs-org-mode--agenda-items-1))
   (let ((org-agenda-files nil)
@@ -414,6 +414,65 @@ file outside the roots."
           (should (= walks 1)))))
     (should-not (jetpacs-org-mode-file-tag-group-index "/nonexistent/x.org" "area"))
     (should-not (jetpacs-org-mode-file-tag-group-index file ""))))
+
+(ert-deftest jetpacs-org-tokenize-filters-caps-and-attaches ()
+  "Allowed refs get a tap token (and an archive token from OWNER-SET in
+ARCHIVE-OWNER's scope); a ref outside the roots stays untappable; the
+set is capped; an owner is required."
+  (jetpacs-org-reminders-test--with-vault file "* TODO A\n* TODO B\n"
+    (unwind-protect
+        (let* ((inside (list (cons 'ref (list :file file :pos 1
+                                              :headline "A"))))
+               (outside (list (cons 'ref (list :file "/elsewhere/x.org"
+                                               :pos 1 :headline "X"))))
+               (out (jetpacs-org-tokenize (list inside outside) "t-set"
+                                          :owner "alpha"
+                                          :archive-owner "beta")))
+          (should (stringp (alist-get 'token (car out))))
+          (should (stringp (alist-get 'archive-token (car out))))
+          (should (ebp-org-token-ref (alist-get 'token (car out))
+                                     :owner "alpha"))
+          (should (ebp-org-token-ref (alist-get 'archive-token (car out))
+                                     :owner "beta"))
+          (should (eq (cadr out) outside))
+          ;; Tap only: no archive cell.
+          (let ((tap (jetpacs-org-tokenize (list inside) "t-tap"
+                                           :owner "alpha")))
+            (should (alist-get 'token (car tap)))
+            (should-not (assq 'archive-token (car tap))))
+          ;; Capped at the per-set maximum.
+          (let* ((ebp-org-token-set-max 1)
+                 (both (jetpacs-org-tokenize (list inside (copy-tree inside))
+                                             "t-cap" :owner "alpha")))
+            (should (assq 'token (car both)))
+            (should-not (assq 'token (cadr both))))
+          (should-error (jetpacs-org-tokenize nil "t-none")))
+      (ebp-org-reset))))
+
+(ert-deftest jetpacs-org-agenda-formatters-are-the-glasspane-shapes ()
+  "The lifted formatters answer what Glasspane's cards rendered, and
+Glasspane's names are now the foundation's."
+  (should (equal (jetpacs-org-agenda-item-meta
+                  '((extra . "Scheduled:") (file . "/v/work.org")) nil)
+                 "work.org"))
+  (should (equal (jetpacs-org-agenda-item-meta
+                  '((extra . "Sched. 3x:") (file . "/v/work.org")) nil)
+                 "Sched. 3x · work.org"))
+  (should (equal (jetpacs-org-agenda-item-meta '((file . "/v/a.org")) "09:30")
+                 "09:30 · a.org"))
+  (should (equal (jetpacs-org-agenda-type-icon "past-scheduled")
+                 '("history" . "error")))
+  (should (equal (jetpacs-org-agenda-type-icon "upcoming-deadline")
+                 '("flag")))
+  (should-not (jetpacs-org-agenda-type-icon "timestamp"))
+  (should (equal (jetpacs-org-agenda-type-label "upcoming-deadline")
+                 "deadline soon"))
+  (should-not (jetpacs-org-agenda-type-label "block"))
+  (when (require 'glasspane-agenda nil t)
+    (should (eq (symbol-function 'glasspane-agenda-type-icon)
+                'jetpacs-org-agenda-type-icon))
+    (should (eq (symbol-function 'glasspane-agenda-widget-item-meta)
+                'jetpacs-org-agenda-item-meta))))
 
 (provide 'jetpacs-org-reminders-test)
 ;;; jetpacs-org-reminders-test.el ends here

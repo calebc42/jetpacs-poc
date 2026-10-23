@@ -1885,6 +1885,40 @@ cross-surface return state when accepted.  Optional RETURN-VERB overrides
         (setq jetpacs-files--return-armed (or origin t)))
       status)))
 
+(defun jetpacs-files--on-open-document (args params)
+  "Open ARGS' `:path' at optional `:position' as a cross-app document.
+The ownerless twin of an app's own document verb: any app's surface may
+render its button (`jetpacs-files-document-action').  PARAMS answer
+`stale' for a stale event; `jetpacs-files-open-document' revalidates the
+path against the effective roots."
+  (if (jetpacs-event-stale-p params)
+      'stale
+    (jetpacs-files-open-document (plist-get args :path)
+                                 (plist-get args :position))))
+
+(defun jetpacs-files-document-action (path &optional position)
+  "The action opening document PATH (at optional POSITION) in Files.
+Any app may render it: the verb is ownerless, the same occurrence
+presents the Files surface on a Companion that negotiates
+`action.open_surface', and Files arranges the return to the app.  The
+handler never trusts PATH because it came from a rendered row; it is
+revalidated against the effective roots.  nil unless PATH is a string."
+  (and (stringp path)
+       (jetpacs-shell-action-opening-surface
+        "jetpacs.files.open-document" (jetpacs-files-surface)
+        :args (if position
+                  (list :path path :position position)
+                (list :path path)))))
+
+;; Ownerless on purpose: an owned verb is refused from every surface but
+;; its owner's (SPEC 14.4 / D1), and this one is rendered by other apps.
+(jetpacs-defaction "jetpacs.files.open-document"
+                   #'jetpacs-files--on-open-document
+                   :doc "Open a document in Files and return to the app"
+                   :strict t
+                   :args '((:name path :type "text" :required t)
+                           (:name position :type "number")))
+
 (defun jetpacs-files--on-view-change (surface view)
   "Complete cross-surface Files Back handoffs reported as SURFACE and VIEW.
 1. Reaching a guest `<app>-files-return' screen returns to the active app's

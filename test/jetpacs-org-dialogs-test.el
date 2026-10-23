@@ -1467,5 +1467,74 @@ modified Org file buffer — source and target alike."
               (with-current-buffer buffer (set-buffer-modified-p nil))
               (kill-buffer buffer))))))))
 
+;;;; File properties
+
+(ert-deftest jetpacs-org-dialogs-update-keyword-inserts-after-title ()
+  "An existing keyword is replaced in place; a new one lands after
+#+TITLE; an empty value removes the line."
+  (with-temp-buffer
+    (insert "#+TITLE: Old\n#+AUTHOR: Me\n* Heading\n")
+    (jetpacs-org-dialogs--update-keyword "TITLE" "New")
+    (jetpacs-org-dialogs--update-keyword "CATEGORY" "cat")
+    (jetpacs-org-dialogs--update-keyword "AUTHOR" "")
+    (should (equal (buffer-string)
+                   "#+TITLE: New\n#+CATEGORY: cat\n* Heading\n"))
+    (jetpacs-org-dialogs--update-keyword "CATEGORY" "dog")
+    (should (equal (buffer-string)
+                   "#+TITLE: New\n#+CATEGORY: dog\n* Heading\n"))))
+
+(ert-deftest jetpacs-org-dialogs-file-properties-spec-passes-dialog-profile ()
+  "The show sends one spec through the foundation's slot, it passes the
+dialog profile, and its Save is the ownerless strict save verb."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f
+        "#+TITLE: Doc\n#+FILETAGS: :a:b:\n#+TODO: TODO NEXT | DONE\n* H\n"
+      (jetpacs-org-dialogs--show-file-properties
+       f jetpacs-org-dialogs-test--params)
+      (should (= 1 (length jetpacs-org-dialogs-test--shown)))
+      (let* ((spec (plist-get (car jetpacs-org-dialogs-test--shown) :spec))
+             (json (jetpacs-node->canonical-json spec)))
+        (should (jetpacs-check-profile spec 'dialog))
+        (should (string-search "jetpacs.org.file-properties.save" json))
+        (should (string-search "TODO, NEXT" json)))
+      (should (jetpacs-dialog-slot-live-p jetpacs-org-dialogs-owner))
+      (should (plist-get (jetpacs-action-schema
+                          "jetpacs.org.file-properties.save")
+                         :strict))
+      (should-not (jetpacs--owner-of "action"
+                                     "jetpacs.org.file-properties.save")))))
+
+(ert-deftest jetpacs-org-dialogs-file-properties-save-replaces-keywords ()
+  "Save rewrites the keywords in place (one #+TITLE line afterwards),
+durably, then closes the slot; no fields or a path outside the roots
+rejects."
+  (jetpacs-org-dialogs-test--with-env
+    (jetpacs-org-dialogs-test--with-file f "#+TITLE: Old\n* H\n"
+      (let ((save (gethash "jetpacs.org.file-properties.save"
+                           jetpacs-action-handlers))
+            (disk (lambda () (with-temp-buffer (insert-file-contents f)
+                                               (buffer-string)))))
+        (cl-letf (((symbol-function 'jetpacs-buffer-defer-refresh) #'ignore))
+          (jetpacs-org-dialogs--show-file-properties
+           f jetpacs-org-dialogs-test--params)
+          (should (eq (funcall save (list :path f)
+                               '(:fields (:file-prop-title "Renamed"
+                                          :file-prop-category "cat"
+                                          :file-prop-tags ["x" "y"])))
+                      'accepted))
+          (should (equal (funcall disk)
+                         "#+TITLE: Renamed\n#+CATEGORY: cat\n#+FILETAGS: :x:y:\n* H\n"))
+          (should (= 1 (with-temp-buffer (insert (funcall disk))
+                                         (how-many "^#\\+TITLE:"
+                                                   (point-min) (point-max)))))
+          (should-not (jetpacs-dialog-slot-live-p jetpacs-org-dialogs-owner))
+          (should (eq (funcall save (list :path f) nil) 'rejected))
+          (should (eq (funcall save '(:path "/elsewhere/x.org")
+                               '(:fields (:file-prop-title "No")))
+                      'rejected))
+          (should (eq (funcall save (list :path (concat f ".txt"))
+                               '(:fields (:file-prop-title "No")))
+                      'rejected)))))))
+
 (provide 'jetpacs-org-dialogs-test)
 ;;; jetpacs-org-dialogs-test.el ends here

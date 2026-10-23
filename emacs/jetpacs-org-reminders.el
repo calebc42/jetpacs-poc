@@ -624,6 +624,90 @@ does not cover settings changes.  A refused or vanished FILE answers nil."
 Public: downstream cards render the same clock text the reminder
 projection alarms on.")
 
+;;;; Agenda item formatters (the shared card's vocabulary)
+
+(defun jetpacs-org-agenda-item-meta (it hm)
+  "Compose the compact metadata line for agenda item IT.
+Leads with the time HM or the agenda's own qualifier (\"Sched. 3x\",
+\"In 3 d.\", \"2 d. ago\"), then the file name — the Orgzly-style
+second row.  A bare \"Scheduled\"/\"Deadline\" qualifier restates what
+the row's type icon already says, so it is dropped."
+  (let* ((extra (alist-get 'extra it))
+         (extra (and (stringp extra)
+                     (replace-regexp-in-string
+                      "[ \t]+" " "
+                      (string-trim (replace-regexp-in-string
+                                    ":[ \t]*\\'" "" (string-trim extra))))))
+         (extra (and extra (not (member extra '("" "Scheduled" "Deadline")))
+                     extra))
+         (file (alist-get 'file it)))
+    (string-join (delq nil (list (or hm extra)
+                                 (and file (file-name-nondirectory file))))
+                 " · ")))
+
+(defun jetpacs-org-agenda-type-icon (type)
+  "Return (ICON . COLOR) for an agenda item TYPE string (color may be nil)."
+  (cond
+   ((null type) nil)
+   ((string-match-p "past-scheduled" type) '("history" . "error"))
+   ((string-match-p "deadline" type) '("flag" . nil))
+   ((string-match-p "scheduled" type) '("schedule" . nil))
+   (t nil)))
+
+(defun jetpacs-org-agenda-type-label (type)
+  "Short human label for an agenda item TYPE string, or nil to omit."
+  (pcase type
+    ("past-scheduled" "overdue")
+    ("upcoming-deadline" "deadline soon")
+    ("deadline" "deadline")
+    ("scheduled" "scheduled")
+    (_ nil)))
+
+;;;; Token minting for item lists
+
+(cl-defun jetpacs-org-tokenize (items set &key owner archive-owner)
+  "ITEMS with a `token' cell attached, minted as one bulk SET for OWNER.
+OWNER is required: tokens are scoped to the app that resolves them.
+With ARCHIVE-OWNER, each item also gets an `archive-token' from the set
+\"OWNER-SET\" in ARCHIVE-OWNER's scope, for a verb that resolves only
+that owner's tokens (the foundation's `jetpacs.org.archive').
+
+Refs whose file left the Org roots would signal at mint time (the
+engine's policy-at-mint rule), so they are filtered first: the item
+still renders, just untappable.  So is any overflow past
+`ebp-org-token-set-max'.  Minted even when ITEMS is empty, because the
+replace sweep on SET is what retires the previous render's tokens,
+which is also why one screen at a time may use a given SET."
+  (unless (and (stringp owner) (not (string-empty-p owner)))
+    (error "jetpacs-org-tokenize: an :owner is required"))
+  (let* ((mintable (cl-remove-if-not
+                    (lambda (it)
+                      (let ((f (plist-get (alist-get 'ref it) :file)))
+                        (and (stringp f) (not (string-empty-p f))
+                             (ebp-org-file-allowed-p f))))
+                    items))
+         (mintable (seq-take mintable ebp-org-token-set-max))
+         (refs (mapcar (lambda (it) (alist-get 'ref it)) mintable))
+         (taps (ebp-org-ref-tokens refs :set set :owner owner))
+         (archives (and archive-owner
+                        (ebp-org-ref-tokens refs :set (concat owner "-" set)
+                                            :owner archive-owner)))
+         (table (make-hash-table :test #'eq)))
+    (cl-loop for it in mintable
+             for tap in taps
+             for rest = archives then (cdr rest)
+             do (puthash it (cons tap (car rest)) table))
+    (mapcar (lambda (it)
+              (let ((cell (gethash it table)))
+                (cond
+                 ((null cell) it)
+                 (archive-owner
+                  (append (list (cons 'token (car cell))
+                                (cons 'archive-token (cdr cell)))
+                          it))
+                 (t (cons (cons 'token (car cell)) it)))))
+            items)))
+
 (defun jetpacs-org-reminders--reminder-id (name)
   "Return a stable SPEC identifier under the Org Mode owner for NAME."
   (let* ((safe (replace-regexp-in-string "[^A-Za-z0-9._:/-]" "-" name))

@@ -2349,5 +2349,46 @@ unchanged and the recorder sees the refusal."
                       :type 'jetpacs-builder-side-effect))
       (should (equal (jetpacs-chrome-stack "filesapp") '("detail" "hub"))))))
 
+;;;; Screen idioms
+
+(ert-deftest jetpacs-chrome-leave-pops-top-else-repushes ()
+  "Leave pops when the screen is on top, else repushes the surface."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--recording recs
+      (jetpacs-chrome-test--define "filesapp" "hub")
+      (jetpacs-chrome-push-screen "filesapp" "detail"
+                                  (lambda (back)
+                                    (jetpacs-chrome-screen
+                                     "D" (jetpacs-text "d") :back back)))
+      (jetpacs-chrome-leave "filesapp" "elsewhere")
+      (should (equal (jetpacs-chrome-stack "filesapp") '("detail" "hub")))
+      (should (= 2 (length recs)))
+      (jetpacs-chrome-leave "filesapp" "detail")
+      (should (equal (jetpacs-chrome-stack "filesapp") '("hub")))
+      (should (= 3 (length recs))))))
+
+(ert-deftest jetpacs-chrome-push-screen-later-catches-a-refused-gate ()
+  "The deferred push runs from the continuation, and a push the gates
+refuse is logged there instead of signalling out of a timer."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--recording _recs
+      (jetpacs-chrome-test--define "filesapp" "hub")
+      (let ((scheduled nil))
+        (cl-letf (((symbol-function 'jetpacs-flow-continue)
+                   (lambda (fn) (push fn scheduled))))
+          (jetpacs-chrome-push-screen-later
+           "filesapp" "detail"
+           (lambda (back)
+             (jetpacs-chrome-screen "D" (jetpacs-text "d") :back back)))
+          (jetpacs-chrome-push-screen-later
+           "filesapp" "bad id with spaces"
+           (lambda (_back) (jetpacs-chrome-screen "B" (jetpacs-text "b")))))
+        (should (equal (jetpacs-chrome-stack "filesapp") '("hub")))
+        (should (= 2 (length scheduled)))
+        (let ((inhibit-message t))
+          (dolist (fn (reverse scheduled)) (funcall fn)))
+        (should (equal (jetpacs-chrome-stack "filesapp")
+                       '("detail" "hub")))))))
+
 (provide 'jetpacs-chrome-test)
 ;;; jetpacs-chrome-test.el ends here

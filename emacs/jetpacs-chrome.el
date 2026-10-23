@@ -1432,6 +1432,39 @@ Refused inside a builder extent, like `jetpacs-chrome-push-screen'."
   (mapcar #'car (gethash (jetpacs-shell--resolve-surface surface-or-owner)
                          jetpacs-chrome--stacks)))
 
+;;;; Screen idioms: the deferred push and the leave
+
+(defun jetpacs-chrome-push-screen-caught (surface-or-owner id builder)
+  "Push screen ID with BUILDER, logging a refused push instead of signalling.
+`jetpacs-chrome-push-screen' re-signals a gate failure, and a signal in
+a timer or continuation is a backtrace with nobody in front of it.
+Return the claimed revision, or nil when disconnected or refused."
+  (condition-case err
+      (jetpacs-chrome-push-screen surface-or-owner id builder)
+    (error (message "jetpacs-chrome: push of %s failed: %s"
+                    id (jetpacs-error-label err))
+           nil)))
+
+(defun jetpacs-chrome-push-screen-later (surface-or-owner id builder)
+  "Push screen ID with BUILDER onto SURFACE-OR-OWNER from a continuation.
+The way an action handler navigates (D2): the push runs outside the
+dispatch extent through `jetpacs-flow-continue', keeping the flow's
+identity, and a refused push is logged by
+`jetpacs-chrome-push-screen-caught'.  Fired from screen ID itself, the
+push replaces it in place (a duplicate id truncates the stack)."
+  (jetpacs-flow-continue
+   (lambda () (jetpacs-chrome-push-screen-caught surface-or-owner id builder))))
+
+(defun jetpacs-chrome-leave (surface-or-owner id)
+  "Leave screen ID on SURFACE-OR-OWNER after the thing it showed went away.
+Pop when ID is on top (the deletion or move landed from it); otherwise
+repush the surface, so whatever screen shows it re-renders.  Call it
+outside the dispatch extent; a refused repush is ignored."
+  (let ((surface (jetpacs-shell--resolve-surface surface-or-owner)))
+    (if (equal (car (jetpacs-chrome-stack surface)) id)
+        (jetpacs-chrome-pop-screen surface)
+      (ignore-errors (jetpacs-shell-push surface)))))
+
 (defun jetpacs-chrome-remove (surface-or-owner)
   "Drop SURFACE's stack and tombstone the surface.
 Also sweeps the owner's GUEST screens off foreign stacks (S4): the

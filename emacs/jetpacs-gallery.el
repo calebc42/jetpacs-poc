@@ -151,20 +151,12 @@ v1 authored bare y-lists; v3 series carry ChartPoint objects (T3)."
 
 (defun jetpacs-gallery--push-screen (params)
   "Defer-push the gallery onto PARAMS' surface (D2); `accepted'.
-A deferred `jetpacs-chrome-push-screen' must catch its own re-signal
-or a refused gate dies in a timer.  Fired FROM the gallery, the push
-replaces in place (stack-insert truncates on a duplicate id)."
-  (let ((surface (or (plist-get params :surface)
-                     (jetpacs-shell-surface-for
-                      jetpacs-settings-surface))))
-    (jetpacs-flow-continue
-     (lambda ()
-       (condition-case err
-           (jetpacs-chrome-push-screen surface "jetpacs-gallery"
-                                       #'jetpacs-gallery-screen)
-         (error (message "jetpacs-gallery: push failed: %s"
-                         (jetpacs-error-label err))))))
-    'accepted))
+Fired FROM the gallery, the push replaces in place."
+  (jetpacs-chrome-push-screen-later
+   (or (plist-get params :surface)
+       (jetpacs-shell-surface-for jetpacs-settings-surface))
+   "jetpacs-gallery" #'jetpacs-gallery-screen)
+  'accepted)
 
 (defun jetpacs-gallery--on-open (_args params)
   "Push the gallery onto the tapped surface."

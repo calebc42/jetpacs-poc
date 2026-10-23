@@ -2703,5 +2703,49 @@ seeds from a wire-unsafe path — the read fallback hosts it."
       (jetpacs-undefaction "guest.home")
       (jetpacs-undefaction "guest.files"))))
 
+(ert-deftest jetpacs-files-open-document-action-routes-through-open-document ()
+  "The document action names the ownerless strict verb, which any app's
+surface may dispatch, and which opens through `jetpacs-files-open-document'."
+  (let ((opened nil)
+        (warning-minimum-log-level :emergency)
+        (handler (gethash "jetpacs.files.open-document"
+                          jetpacs-action-handlers)))
+    (should handler)
+    (should-not (jetpacs--owner-of "action" "jetpacs.files.open-document"))
+    (cl-letf (((symbol-function 'jetpacs-feature-advertised-p)
+               (lambda (&rest _) t))
+              ((symbol-function 'jetpacs-event-stale-p) #'ignore)
+              ((symbol-function 'jetpacs-files-open-document)
+               (lambda (path &optional position _verb)
+                 (setq opened (list path position))
+                 'accepted)))
+      (let ((action (jetpacs-files-document-action "/vault/doc.org" 7)))
+        (should (equal (plist-get action :action)
+                       "jetpacs.files.open-document"))
+        (should (equal (plist-get action :open_surface) "app:jetpacs.files"))
+        (should (equal (plist-get action :args)
+                       '(:path "/vault/doc.org" :position 7))))
+      (should (equal (plist-get (plist-get (jetpacs-files-document-action
+                                            "/vault/a.org")
+                                           :args)
+                                :path)
+                     "/vault/a.org"))
+      (should-not (jetpacs-files-document-action nil))
+      ;; From another app's surface; JSON 7.0 arrives as the integer 7.
+      (should (eq (jetpacs--dispatch
+                   nil '(:action "jetpacs.files.open-document"
+                         :surface "app:someapp"
+                         :args (:path "/vault/doc.org" :position 7.0))
+                   handler)
+                  'accepted))
+      (should (equal opened '("/vault/doc.org" 7)))
+      (setq opened nil)
+      (should (eq (jetpacs--dispatch
+                   nil '(:action "jetpacs.files.open-document"
+                         :args (:position 3))
+                   handler)
+                  'rejected))
+      (should-not opened))))
+
 (provide 'jetpacs-files-test)
 ;;; jetpacs-files-test.el ends here

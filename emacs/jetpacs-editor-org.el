@@ -159,6 +159,17 @@ subtree and records its Emacs-owned splice identity for the save gate."
      "post_add"
      (jetpacs-org-add-heading-descriptor buf)
      :content-description "Add heading")))
+(defun jetpacs-editor-org--actions (path)
+  "The editor's top-bar actions for Org PATH: the file-properties dialog.
+One emitter for every app: an app adapter composing over this one must
+not emit its own, or the button doubles."
+  (when (jetpacs-reader-org-path-p path)
+    (list (jetpacs-icon-button
+           "tune"
+           (jetpacs-action "jetpacs.org.file-properties.show"
+                           :args (list :path path))
+           :content-description "File properties"))))
+
 (defun jetpacs-editor-org--before-save (_path buffer)
   "Re-encrypt decrypted Org Crypt entries in BUFFER before Files writes."
   (with-current-buffer buffer
@@ -437,6 +448,7 @@ allowlist and makes the built-in before-save scan retain the entry."
      :body #'jetpacs-editor-org--body
      :toolbar #'jetpacs-editor-org--toolbar
      :fab #'jetpacs-editor-org--fab
+     :actions #'jetpacs-editor-org--actions
      :before-save #'jetpacs-editor-org--before-save
      :after-save #'jetpacs-editor-org--after-save)
     (jetpacs-defaction "jetpacs.editor.org.save-narrowed"

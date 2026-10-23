@@ -178,7 +178,8 @@ nothing of the editor: the Org modules require it without a cycle."
       (jetpacs-editor-org-unregister))))
 
 (ert-deftest jetpacs-editor-org-glasspane-adapter-is-additive ()
-  "Glasspane appends only its action and post-save contribution."
+  "Glasspane appends only its post-save contribution: the stock adapter
+keeps every slot, and emits the file-properties button itself."
   (require 'glasspane-detail)
   (let ((jetpacs-editor--adapters nil)
         indexed)
@@ -197,8 +198,7 @@ nothing of the editor: the Org modules require it without a cycle."
                                   :key #'jetpacs-editor-adapter-id)))
             (should adapter)
             (should (jetpacs-editor-adapter-predicate adapter))
-            (should (eq (jetpacs-editor-adapter-actions adapter)
-                        #'glasspane-detail--editor-actions))
+            (should-not (jetpacs-editor-adapter-actions adapter))
             (should (eq (jetpacs-editor-adapter-after-save adapter)
                         #'glasspane-org-vulpea-refresh-file))
             (should-not (jetpacs-editor-adapter-setup adapter))
@@ -211,7 +211,7 @@ nothing of the editor: the Org modules require it without a cycle."
                               (jetpacs-editor--files-actions
                                "/tmp/notes.org")))))
             (should (string-search "fixture.stock" json))
-            (should (string-search "files.properties.show" json)))
+            (should-not (string-search "files.properties.show" json)))
           (cl-letf (((symbol-function 'vulpea-db-update-file)
                      (lambda (path) (setq indexed path))))
             (jetpacs-editor--files-after-save "/tmp/notes.org"))

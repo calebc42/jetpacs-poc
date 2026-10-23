@@ -231,12 +231,9 @@ below us in the same document), so the view verb is re-exposed here."
   "Push NAME's screen onto our stack; call only from a continuation."
   (let ((id (jetpacs-wire-id "buf" name)))
     (puthash id name jetpacs-emacs-ui--screens)
-    (condition-case err
-        (jetpacs-chrome-push-screen
-         jetpacs-emacs-ui-owner id
-         (lambda (back) (jetpacs-emacs-ui--buffer-screen name back)))
-      (error (message "jetpacs-emacs-ui: buffer screen push failed: %s"
-                      (jetpacs-error-label err))))))
+    (jetpacs-chrome-push-screen-caught
+     jetpacs-emacs-ui-owner id
+     (lambda (back) (jetpacs-emacs-ui--buffer-screen name back)))))
 
 ;; --- The Messages screen -----------------------------------------------------
 

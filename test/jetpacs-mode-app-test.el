@@ -877,5 +877,14 @@ whatever was loaded first: no per-path view-mode table remains."
   (should-not (boundp 'jetpacs-org-render--files-mode))
   (should-not (fboundp 'jetpacs-org-render--files-body)))
 
+(ert-deftest jetpacs-mode-app-editor-org-emits-file-properties-action ()
+  "The Org editor adapter is the one emitter of the file-properties
+button, for Org paths only."
+  (let ((actions (jetpacs-editor-org--actions "/v/notes.org")))
+    (should (= 1 (length actions)))
+    (should (string-search "jetpacs.org.file-properties.show"
+                           (jetpacs-node->canonical-json (car actions)))))
+  (should-not (jetpacs-editor-org--actions "/v/notes.txt")))
+
 (provide 'jetpacs-mode-app-test)
 ;;; jetpacs-mode-app-test.el ends here

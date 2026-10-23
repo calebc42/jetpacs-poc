@@ -50,6 +50,7 @@
 (require 'jetpacs-buffer)
 (require 'jetpacs-shell)
 (require 'jetpacs-dialog)
+(require 'jetpacs-dialog-slot)
 (require 'jetpacs-navigate)
 (require 'jetpacs-org-settings)         ; file-property tag candidates
 (require 'jetpacs-org-save)
@@ -621,6 +622,12 @@ BUF keys the dialog id and PARAMS name the surface to refresh."
 
 
 ;;;; The file-properties dialog
+;;
+;; A pure spec builder, a writer, a show through the owner's dialog slot,
+;; and the ownerless Save verb.  The dialog's Save captures every field
+;; and echoes it back in its own event, so no state round-trips; the
+;; slot keeps the opening event's params, because a dialog-context Save
+;; carries no `:surface' (SPEC 14.4) to refresh.
 
 (defconst jetpacs-org-dialogs--file-prop-fields
   '("file-prop-title" "file-prop-category" "file-prop-tags"
@@ -629,150 +636,101 @@ BUF keys the dialog id and PARAMS name the surface to refresh."
     "file-prop-startup" "file-prop-archive")
   "The captured field ids of the file-properties dialog, in save order.")
 
-(defun jetpacs-org-dialogs--show-file-properties (file params)
-  "The whole-file keyword editor."
-  (when-let* ((client (jetpacs-client)))
-    (condition-case err
-        (let* ((buf (or (get-file-buffer file) (find-file-noselect file t)))
-               (kwds (with-current-buffer buf
-                       (org-collect-keywords
-                        '("TITLE" "CATEGORY" "FILETAGS" "TODO" "SEQ_TODO"
-                          "TYP_TODO" "STARTUP" "AUTHOR" "EMAIL" "DATE"
-                          "ARCHIVE"))))
-               (get (lambda (k) (car (alist-get k kwds nil nil #'equal))))
-               (filetags-str (funcall get "FILETAGS"))
-               (filetags (when filetags-str
-                           (split-string filetags-str ":" t "[  
+(defun jetpacs-org-dialogs--org-path-p (path)
+  "Non-nil when PATH names an Org file, archives included."
+  (and (stringp path)
+       (let ((case-fold-search t))
+         (string-match-p "\\.org\\(_archive\\)?\\'" path))))
 
-]+")))
-               (available (cl-remove-duplicates
-                           (append filetags (jetpacs-org-settings-tag-options))
-                           :test #'equal :from-end t))
-               (todo-str (or (funcall get "TODO")
-                             (funcall get "SEQ_TODO")
-                             (funcall get "TYP_TODO")))
-               (todo-parts (and todo-str (split-string todo-str "|")))
-               (todo-active (if todo-parts
-                                (string-join (split-string (car todo-parts)
-                                                           "[   ]+" t)
-                                             ", ")
-                              ""))
-               (todo-finished (if (and todo-parts (cadr todo-parts))
-                                  (string-join (split-string (cadr todo-parts)
-                                                             "[         ]+" t)
-                                               ", ")
-                                "")))
-          (ebp-client-dialog-show
-           client
-           (jetpacs-org-dialogs--id "file-props" buf 0)
-           (apply #'jetpacs-column
-                  (jetpacs-text "File properties" :style "title")
-                  (jetpacs-text (file-name-nondirectory file) :style "caption")
-                  (jetpacs-text-input "file-prop-title" :label "Title"
-                                      :value (or (funcall get "TITLE") "")
-                                      :single-line t)
-                  (jetpacs-text-input "file-prop-category" :label "Category"
-                                      :value (or (funcall get "CATEGORY") "")
-                                      :single-line t)
-                  (jetpacs-text "File tags" :style "caption")
-                  (jetpacs-enum-list "file-prop-tags"
-                                     (mapcar (lambda (tg) (jetpacs-enum-option tg tg))
-                                             available)
-                                     :value (cl-remove-duplicates filetags
-                                                                  :test #'equal)
-                                     :multi-select t :allow-add t)
-                  (jetpacs-text "TODO sequence" :style "caption")
-                  (jetpacs-text-input "file-prop-todo-active" :label "Active states"
-                                      :value todo-active :single-line t)
-                  (jetpacs-text-input "file-prop-todo-finished"
-                                      :label "Finished states"
-                                      :value todo-finished :single-line t)
-                  (jetpacs-text "Metadata" :style "caption")
-                  (jetpacs-text-input "file-prop-author" :label "Author"
-                                      :value (or (funcall get "AUTHOR") "")
-                                      :single-line t)
-                  (jetpacs-text-input "file-prop-email" :label "Email"
-                                      :value (or (funcall get "EMAIL") "")
-                                      :single-line t)
-                  (jetpacs-text-input "file-prop-date" :label "Date"
-                                      :value (or (funcall get "DATE") "")
-                                      :single-line t)
-                  (jetpacs-text "Options" :style "caption")
-                  (jetpacs-text-input "file-prop-startup" :label "Startup"
-                                      :value (or (funcall get "STARTUP") "")
-                                      :single-line t)
-                  (jetpacs-text-input "file-prop-archive" :label "Archive"
-                                      :value (or (funcall get "ARCHIVE") "")
-                                      :single-line t)
-                  (jetpacs-row
-                   (jetpacs-spacer :weight 1)
-                   (jetpacs-button "Cancel" (jetpacs-dialog-dismiss) :variant "text")
-                   (jetpacs-spacer :width 8)
-                   (jetpacs-button "Save"
-                                   (jetpacs-dialog-submit
-                                    :value "save" :capture-fields
-                                    jetpacs-org-dialogs--file-prop-fields)))
-                  (list :spacing 8))
-           :callback
-           (lambda (status result _error)
-             (when (and (equal status "submitted")
-                        (equal (plist-get result :value) "save"))
-               (let ((fields (plist-get result :fields)))
-                 (condition-case err
-                     (let* ((fget (lambda (k) (let ((v (plist-get fields k)))
-                                                (and (stringp v) v))))
-                            (tags (jetpacs-org-dialogs--field-strings
-                                   (plist-get fields :file-prop-tags)))
-                            (join-states
-                             (lambda (s)
-                               (when (stringp s)
-                                 (let ((words (split-string s "[        ]*,[    ]*" t)))
-                                   (when words (string-join words " "))))))
-                            (active (funcall join-states
-                                             (funcall fget :file-prop-todo-active)))
-                            (finished (funcall join-states
-                                               (funcall fget :file-prop-todo-finished)))
-                            (todo-str (if (and active finished)
-                                          (concat active " | " finished)
-                                        (or active finished))))
-                       (with-current-buffer buf
-                         (org-with-wide-buffer
-                          (jetpacs-org-dialogs--update-keyword
-                           "TITLE" (funcall fget :file-prop-title))
-                          (jetpacs-org-dialogs--update-keyword
-                           "FILETAGS" (when tags
-                                        (concat ":" (string-join tags ":") ":")))
-                          (jetpacs-org-dialogs--update-keyword
-                           "CATEGORY" (funcall fget :file-prop-category))
-                          (jetpacs-org-dialogs--update-keyword "TODO" todo-str)
-                          (jetpacs-org-dialogs--update-keyword
-                           "STARTUP" (funcall fget :file-prop-startup))
-                          (jetpacs-org-dialogs--update-keyword
-                           "AUTHOR" (funcall fget :file-prop-author))
-                          (jetpacs-org-dialogs--update-keyword
-                           "EMAIL" (funcall fget :file-prop-email))
-                          (jetpacs-org-dialogs--update-keyword
-                           "DATE" (funcall fget :file-prop-date))
-                          (jetpacs-org-dialogs--update-keyword
-                           "ARCHIVE" (funcall fget :file-prop-archive))
-                          (goto-char (point-min))
-                          (when (re-search-forward "^[  ]*#\+CATEGORY:" nil t)
-                            (ignore-errors (org-element-at-point)))))
-                       (ebp-org-cache-invalidate)
-                       (when buffer-file-name
-                         (funcall ebp-org-file-save-function buf))
-                       (jetpacs-shell-notify "File properties saved"
-                                             (plist-get params :surface))
-                       (jetpacs-org-dialogs--refresh params))
-                   (error (jetpacs-org-dialogs--notify
-                           (jetpacs-error-label err) params))))))))
-      (error (jetpacs-org-dialogs--notify
-              (jetpacs-error-label err) params)))))
+(defun jetpacs-org-dialogs--file-buffer (file)
+  "FILE's live buffer, visiting it quietly when needed."
+  (or (get-file-buffer file) (find-file-noselect file t)))
+
+(defun jetpacs-org-dialogs--file-properties-spec (file)
+  "The file-properties editor for FILE, seeded from its keywords.
+Pure: it reads FILE's buffer and mutates nothing.  Save is the ownerless
+`jetpacs.org.file-properties.save', capturing every field."
+  (let* ((buf (jetpacs-org-dialogs--file-buffer file))
+         (kwds (with-current-buffer buf
+                 (org-collect-keywords
+                  '("TITLE" "CATEGORY" "FILETAGS" "TODO" "SEQ_TODO"
+                    "TYP_TODO" "STARTUP" "AUTHOR" "EMAIL" "DATE"
+                    "ARCHIVE"))))
+         (get (lambda (k) (car (alist-get k kwds nil nil #'equal))))
+         (filetags-str (funcall get "FILETAGS"))
+         (filetags (when filetags-str
+                     (split-string filetags-str ":" t "[ \t\n\r]+")))
+         (available (cl-remove-duplicates
+                     (append filetags (jetpacs-org-settings-tag-options))
+                     :test #'equal :from-end t))
+         (todo-str (or (funcall get "TODO")
+                       (funcall get "SEQ_TODO")
+                       (funcall get "TYP_TODO")))
+         (todo-parts (and todo-str (split-string todo-str "|")))
+         (todo-active (if todo-parts
+                          (string-join (split-string (car todo-parts)
+                                                     "[ \t]+" t)
+                                       ", ")
+                        ""))
+         (todo-finished (if (and todo-parts (cadr todo-parts))
+                            (string-join (split-string (cadr todo-parts)
+                                                       "[ \t]+" t)
+                                         ", ")
+                          "")))
+    (jetpacs-column
+     (jetpacs-text "File properties" :style "title")
+     (jetpacs-text (file-name-nondirectory file) :style "caption")
+     (jetpacs-text-input "file-prop-title" :label "Title"
+                         :value (or (funcall get "TITLE") "")
+                         :single-line t)
+     (jetpacs-text-input "file-prop-category" :label "Category"
+                         :value (or (funcall get "CATEGORY") "")
+                         :single-line t)
+     (jetpacs-text "File tags" :style "caption")
+     (jetpacs-enum-list "file-prop-tags"
+                        (mapcar (lambda (tg) (jetpacs-enum-option tg tg))
+                                available)
+                        :value (cl-remove-duplicates filetags :test #'equal)
+                        :multi-select t :allow-add t)
+     (jetpacs-text "TODO sequence" :style "caption")
+     (jetpacs-text-input "file-prop-todo-active" :label "Active states"
+                         :value todo-active :single-line t)
+     (jetpacs-text-input "file-prop-todo-finished" :label "Finished states"
+                         :value todo-finished :single-line t)
+     (jetpacs-text "Metadata" :style "caption")
+     (jetpacs-text-input "file-prop-author" :label "Author"
+                         :value (or (funcall get "AUTHOR") "")
+                         :single-line t)
+     (jetpacs-text-input "file-prop-email" :label "Email"
+                         :value (or (funcall get "EMAIL") "")
+                         :single-line t)
+     (jetpacs-text-input "file-prop-date" :label "Date"
+                         :value (or (funcall get "DATE") "")
+                         :single-line t)
+     (jetpacs-text "Options" :style "caption")
+     (jetpacs-text-input "file-prop-startup" :label "Startup"
+                         :value (or (funcall get "STARTUP") "")
+                         :single-line t)
+     (jetpacs-text-input "file-prop-archive" :label "Archive"
+                         :value (or (funcall get "ARCHIVE") "")
+                         :single-line t)
+     (jetpacs-row
+      (jetpacs-spacer :weight 1)
+      (jetpacs-button "Cancel" (jetpacs-dialog-dismiss) :variant "text")
+      (jetpacs-spacer :width 8)
+      (jetpacs-button "Save"
+                      (jetpacs-action
+                       "jetpacs.org.file-properties.save"
+                       :args (list :path file)
+                       :capture-fields jetpacs-org-dialogs--file-prop-fields)))
+     :spacing 8)))
 
 (defun jetpacs-org-dialogs--update-keyword (kwd val)
-  "Set, replace, or (VAL empty/nil) remove #+KWD in the current buffer."
+  "Set, replace, or (VAL empty/nil) remove #+KWD in the current buffer.
+Point discipline is the caller's `org-with-wide-buffer'; an inserted
+non-TITLE keyword lands after an existing #+TITLE line."
   (goto-char (point-min))
-  (if (re-search-forward (format "^[    ]*#\+%s:[       ]*\(.*\)$"
+  (if (re-search-forward (format "^[ \t]*#\\+%s:[ \t]*\\(.*\\)$"
                                  (regexp-quote kwd))
                          nil t)
       (if (and val (not (string-empty-p val)))
@@ -782,21 +740,123 @@ BUF keys the dialog id and PARAMS name the surface to refresh."
     (when (and val (not (string-empty-p val)))
       (goto-char (point-min))
       (unless (equal kwd "TITLE")
-        (when (re-search-forward "^[    ]*#\+TITLE:.*$" nil t)
+        (when (re-search-forward "^[ \t]*#\\+TITLE:.*$" nil t)
           (forward-line 1)))
-      (insert (format "#+%s: %s
-" kwd val)))))
+      (insert (format "#+%s: %s\n" kwd val)))))
+
+(defun jetpacs-org-dialogs--write-file-properties (buf fields)
+  "Write the captured dialog FIELDS into BUF's file keywords, durably.
+FIELDS is the Save event's `:fields' plist.  Ends with a whole-cache
+invalidation and a save through `ebp-org-file-save-function'."
+  (let* ((fget (lambda (k) (let ((v (plist-get fields k)))
+                             (and (stringp v) v))))
+         (tags (jetpacs-org-dialogs--field-strings
+                (plist-get fields :file-prop-tags)))
+         (join-states
+          (lambda (s)
+            (when (stringp s)
+              (let ((words (split-string s "[ \t]*,[ \t]*" t)))
+                (when words (string-join words " "))))))
+         (active (funcall join-states (funcall fget :file-prop-todo-active)))
+         (finished (funcall join-states
+                            (funcall fget :file-prop-todo-finished)))
+         (todo-str (if (and active finished)
+                       (concat active " | " finished)
+                     (or active finished))))
+    (with-current-buffer buf
+      (org-with-wide-buffer
+       (jetpacs-org-dialogs--update-keyword
+        "TITLE" (funcall fget :file-prop-title))
+       (jetpacs-org-dialogs--update-keyword
+        "FILETAGS" (when tags (concat ":" (string-join tags ":") ":")))
+       (jetpacs-org-dialogs--update-keyword
+        "CATEGORY" (funcall fget :file-prop-category))
+       (jetpacs-org-dialogs--update-keyword "TODO" todo-str)
+       (jetpacs-org-dialogs--update-keyword
+        "STARTUP" (funcall fget :file-prop-startup))
+       (jetpacs-org-dialogs--update-keyword
+        "AUTHOR" (funcall fget :file-prop-author))
+       (jetpacs-org-dialogs--update-keyword
+        "EMAIL" (funcall fget :file-prop-email))
+       (jetpacs-org-dialogs--update-keyword
+        "DATE" (funcall fget :file-prop-date))
+       (jetpacs-org-dialogs--update-keyword
+        "ARCHIVE" (funcall fget :file-prop-archive))
+       ;; Stock Emacs 30.1's org-element.elc mis-compiles
+       ;; `org-element--get-category's cache-miss arm into a CALL of the
+       ;; `org-element-with-disabled-cache' macro: once a fresh #+CATEGORY
+       ;; line exists outside the element cache, the next `org-get-tags'
+       ;; in this buffer dies with invalid-function.  Priming the line
+       ;; into the cache keeps every later render on the good arm.
+       (goto-char (point-min))
+       (when (re-search-forward "^[ \t]*#\\+CATEGORY:" nil t)
+         (ignore-errors (org-element-at-point)))))
+    (ebp-org-cache-invalidate)
+    (funcall ebp-org-file-save-function buf)))
+
+(defun jetpacs-org-dialogs--show-file-properties (file params)
+  "Show FILE's property editor in `jetpacs-org-dialogs-owner''s slot.
+PARAMS are the opening event's, kept for the Save's refresh."
+  (condition-case err
+      (jetpacs-dialog-slot-show
+       (jetpacs-org-dialogs--id "file-props"
+                                (jetpacs-org-dialogs--file-buffer file) 0)
+       (jetpacs-org-dialogs--file-properties-spec file)
+       :owner jetpacs-org-dialogs-owner :params params)
+    (error (jetpacs-org-dialogs--notify (jetpacs-error-label err) params))))
 
 (defun jetpacs-org-dialogs--on-file-properties-show (args params)
-  "Open the file-properties editor dialog."
+  "Open the file-properties editor dialog for ARGS' `:path'.
+PARAMS are the opening event's."
   (let ((path (plist-get args :path)))
     (cond
-     ((not (and (stringp path) (ebp-org-file-allowed-p path))) 'rejected)
+     ((not (and (jetpacs-org-dialogs--org-path-p path)
+                (ebp-org-file-allowed-p path)))
+      'rejected)
      ((null (jetpacs-client)) 'rejected)
      (t
       (jetpacs-flow-continue
        (lambda () (jetpacs-org-dialogs--show-file-properties path params)))
       'accepted))))
+
+(defun jetpacs-org-dialogs--on-file-properties-save (args params)
+  "Write PARAMS' captured `:fields' as ARGS' `:path' file keywords.
+`accepted' only once the save is durable.  A path that is not an
+allowed, writable Org file rejects, and so does an event with no fields."
+  (let ((path (plist-get args :path))
+        (fields (plist-get params :fields)))
+    (cond
+     ((not (and (jetpacs-org-dialogs--org-path-p path)
+                (ebp-org-file-allowed-p path)
+                (file-writable-p path)))
+      'rejected)
+     ((not (and (consp fields) (keywordp (car fields)))) 'rejected)
+     (t
+      (condition-case err
+          (progn
+            (jetpacs-org-dialogs--write-file-properties
+             (jetpacs-org-dialogs--file-buffer path) fields)
+            ;; The Save arrives in dialog context (no :surface): refresh
+            ;; where the dialog was opened, then retire it.
+            (let ((origin (or (jetpacs-dialog-slot-params
+                               jetpacs-org-dialogs-owner)
+                              params)))
+              (jetpacs-dialog-slot-close jetpacs-org-dialogs-owner)
+              (jetpacs-org-dialogs--notify "File properties saved" origin)
+              (jetpacs-org-dialogs--refresh origin))
+            'accepted)
+        (error (message "jetpacs-org-dialogs: file properties save failed: %s"
+                        (jetpacs-error-label err))
+               'rejected))))))
+
+;; Public names for the two handlers, so an app whose older screens
+;; emitted its own verb names can alias them without a private call.
+(defalias 'jetpacs-org-file-properties-show
+  #'jetpacs-org-dialogs--on-file-properties-show
+  "Handle a file-properties show event: (ARGS PARAMS), ARGS' `:path'.")
+(defalias 'jetpacs-org-file-properties-save
+  #'jetpacs-org-dialogs--on-file-properties-save
+  "Handle a file-properties save event: (ARGS PARAMS), ARGS' `:path'.")
 
 ;;;; The timestamp editor (poc 2031-2266 rebuilt: one-shot dialogs, sessions)
 ;;
@@ -1678,8 +1738,15 @@ completed archive — and the spent sheet is abandoned."
 ;; whatever surface drilled into it, and the sheet/archive must answer
 ;; there.  Tokens carry their own owner scope.
 (jetpacs-defaction "jetpacs.org.file-properties.show"
-                     #'jetpacs-org-dialogs--on-file-properties-show
-                     :doc "Open the file-properties dialog")
+                   #'jetpacs-org-dialogs--on-file-properties-show
+                   :doc "Open the file-properties dialog"
+                   :strict t
+                   :args '((:name path :type "text" :required t)))
+(jetpacs-defaction "jetpacs.org.file-properties.save"
+                   #'jetpacs-org-dialogs--on-file-properties-save
+                   :doc "Write the captured file keywords"
+                   :strict t
+                   :args '((:name path :type "text" :required t)))
   (jetpacs-defaction "jetpacs.org.footnote"
                    #'jetpacs-org-dialogs--footnote-action)
 (jetpacs-defaction "jetpacs.org.heading"
@@ -1719,6 +1786,7 @@ completed archive — and the spent sheet is abandoned."
   (remove-hook 'jetpacs-reset-functions #'jetpacs-org-dialogs-reset)
   (jetpacs-undefaction "jetpacs.org.footnote")
   (jetpacs-undefaction "jetpacs.org.file-properties.show")
+  (jetpacs-undefaction "jetpacs.org.file-properties.save")
   (jetpacs-undefaction "jetpacs.org.heading")
   (jetpacs-undefaction "jetpacs.org.archive")
   (jetpacs-undefaction "jetpacs.org.timestamp")

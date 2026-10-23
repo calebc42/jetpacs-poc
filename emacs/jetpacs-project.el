@@ -254,12 +254,7 @@ stack's companion-local `view.switch', where the hand-rolled
 
 (defun jetpacs-project--push (id builder)
   "Push a sub-screen, deferred and caught (the push-screen rule)."
-  (jetpacs-flow-continue
-   (lambda ()
-     (condition-case err
-         (jetpacs-chrome-push-screen jetpacs-project-surface id builder)
-       (error (message "jetpacs-project: %s push failed: %s"
-                       id (jetpacs-error-label err)))))))
+  (jetpacs-chrome-push-screen-later jetpacs-project-surface id builder))
 
 ;;;; Actions
 

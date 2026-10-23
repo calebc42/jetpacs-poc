@@ -249,16 +249,10 @@ Return (CHANGED . VECTOR), recursively searching branches."
 
 (defun jetpacs-automations--open-detail (key surface)
   "Open draft KEY on SURFACE outside the current dispatch extent."
-  (jetpacs-flow-continue
-   (lambda ()
-     (condition-case err
-         (jetpacs-chrome-push-screen
-          surface
-          (format "automation-%s" (substring (secure-hash 'sha256 key) 0 12))
-          (lambda (back) (jetpacs-automations--detail-screen key back)))
-       (error
-        (message "jetpacs-automations: open failed: %s"
-                 (jetpacs-error-label err)))))))
+  (jetpacs-chrome-push-screen-later
+   surface
+   (format "automation-%s" (substring (secure-hash 'sha256 key) 0 12))
+   (lambda (back) (jetpacs-automations--detail-screen key back))))
 
 (defun jetpacs-automations--on-open (args params)
   "Open saved recipe from ARGS."
