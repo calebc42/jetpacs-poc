@@ -38,7 +38,9 @@
 (require 'subr-x)
 (require 'org)
 (require 'org-archive)
+(require 'org-refile)
 (require 'ebp-org)
+(require 'jetpacs-dates)                ; relative planning dates
 (require 'jetpacs-org)                  ; NOT the engine: the shim, for its load
                                         ; effect — it registers the engine's token
                                         ; sweep on `jetpacs-teardown-functions'
@@ -1313,6 +1315,195 @@ and newline-flattened — a multi-line title would smuggle structure."
       (jetpacs-flow-continue
        (lambda () (jetpacs-org-dialogs--add-heading-flow buf params)))
       'accepted))))
+
+;;;; Ref-addressed heading mutations (the built-in cores behind token verbs)
+;;
+;; A downstream app addresses headings through its own opaque tokens
+;; (SPEC 23.1).  Once a token resolves to a ref, everything below is
+;; vanilla Org on the heading at point: the funnel that resolves, runs,
+;; saves and classifies, and the mutation bodies its direct-argument
+;; verbs run — set/cycle TODO, planning, priority, tags, delete,
+;; duplicate, a logbook note, properties, refile.  The app keeps only
+;; what it owns: token scope, notification text, and the refresh.
+
+(declare-function jetpacs-editor-org-save-policy "jetpacs-editor-org"
+                  (&optional buffer))
+
+(defun jetpacs-org-heading-at-ref (ref fn &optional save)
+  "Resolve REF and run FN with point at its heading; a SPEC 14.4 status.
+
+  nil REF                  -> `stale'    (a swept token: the list moved)
+  `ebp-org-refused'        -> `rejected' (file policy — permanent)
+  `ebp-org-unresolved'     -> `stale'    (heading gone or ambiguous)
+  any other signal         -> `rejected' (the mutation did not land)
+  FN returned              -> `accepted' (effect durable, see below)
+
+With SAVE nil the memo table is dropped whole — a heading mutation stales
+every consumer's projection, not one app's.  SAVE t saves the buffer
+synchronously through `jetpacs-editor-org-save-policy'; a function SAVE
+is called with the buffer and owns the save instead (the seam for an
+app's own funnel).  Deliberately NOT `ebp-org-with-mutation': the engine
+defers saves to an idle timer, which leaves the file not-yet-on-disk for
+flows that read it back immediately (capture finalize, offline-queue
+replay).  The raw error stays in *Messages*; the wire never carries it
+\(SPEC 23.3)."
+  (if (null ref)
+      'stale
+    (condition-case err
+        (let ((marker (ebp-org-resolve-ref ref)))
+          (unwind-protect
+              (with-current-buffer (marker-buffer marker)
+                (org-with-wide-buffer
+                 (goto-char marker)
+                 (funcall fn))
+                (cond
+                 ((functionp save) (funcall save (current-buffer)))
+                 (save
+                  (require 'jetpacs-editor-org)
+                  (jetpacs-editor-org-save-policy (current-buffer)))
+                 (t (ebp-org-cache-invalidate))))
+            (set-marker marker nil))
+          'accepted)
+      (ebp-org-refused 'rejected)
+      (ebp-org-unresolved 'stale)
+      (error
+       (message "jetpacs-org: heading mutation failed: %s"
+                (jetpacs-error-label err))
+       'rejected))))
+
+(defun jetpacs-org-heading-location (ref)
+  "Resolve REF to (BUFFER FILE POSITION), releasing its marker.
+Signals exactly as `ebp-org-resolve-ref' does."
+  (let ((marker (ebp-org-resolve-ref ref)))
+    (unwind-protect
+        (list (marker-buffer marker)
+              (buffer-file-name (marker-buffer marker))
+              (marker-position marker))
+      (set-marker marker nil))))
+
+(defun jetpacs-org-heading-set-todo (state)
+  "Set the heading at point's TODO keyword to STATE; \"\" clears it."
+  (org-todo (if (string-empty-p state) 'none state)))
+
+(defun jetpacs-org-heading-cycle-todo ()
+  "Cycle the heading at point through its TODO sequence, skipping the
+empty state; return the new keyword."
+  (org-todo)
+  (unless (org-get-todo-state) (org-todo))
+  (org-get-todo-state))
+
+(defun jetpacs-org-ts-time-range (ts)
+  "Return the HH:MM or HH:MM-HH:MM range inside org timestamp TS, or nil.
+Org's own hyphenated form, so the result can be handed back to
+`org-schedule' unchanged; `ebp-org-ts-time' returns the start alone."
+  (when (and (stringp ts)
+             (string-match (concat "\\([0-9]\\{1,2\\}:[0-9]\\{2\\}\\)"
+                                   "\\(?:-\\([0-9]\\{1,2\\}:[0-9]\\{2\\}\\)\\)?")
+                           ts))
+    (let ((start (match-string 1 ts))
+          (end (match-string 2 ts)))
+      (if end (concat start "-" end) start))))
+
+(defun jetpacs-org-relative-date (today when)
+  "The ISO date that WHEN (\"+0d\", \"+1d\", \"+1w\") names from ISO TODAY.
+Nil for any other spelling."
+  (when (and (stringp when)
+             (string-match "\\`\\+\\([0-9]+\\)\\([dw]\\)\\'" when))
+    (jetpacs-dates-shift today (string-to-number (match-string 1 when))
+                         (if (equal (match-string 2 when) "w") 'week 'day))))
+
+(defun jetpacs-org-heading-set-planning (which date)
+  "Move the heading at point's WHICH stamp to ISO DATE.
+WHICH is \"SCHEDULED\" or \"DEADLINE\".  A moved stamp keeps its time of
+day, repeater and delay cookie: only the day changes.  Org rebuilds the
+stamp from the date it is given and re-attaches the old repeater and
+delay itself; the time of day survives only when handed back."
+  (let* ((setter (if (equal which "DEADLINE") #'org-deadline #'org-schedule))
+         (time (jetpacs-org-ts-time-range (org-entry-get nil which))))
+    (funcall setter nil
+             (if (and time (ebp-org-ts-date date))
+                 (concat date " " time)
+               date))))
+
+(defun jetpacs-org-heading-clear-planning (which)
+  "Remove the heading at point's WHICH stamp (\"SCHEDULED\"/\"DEADLINE\")."
+  (funcall (if (equal which "DEADLINE") #'org-deadline #'org-schedule) '(4)))
+
+(defun jetpacs-org-heading-set-priority (value)
+  "Set the heading at point's priority to VALUE's letter; \"\" removes it."
+  (if (string-empty-p value)
+      (org-priority 'remove)
+    (org-priority (string-to-char (upcase value)))))
+
+(defun jetpacs-org-tags-valid-p (tags)
+  "Non-nil when TAGS (a list or vector) holds only Org-charset tag strings.
+Device-injected strings are 23.1 input: each member must be in Org's own
+tag charset or a write must refuse whole."
+  (and (or (vectorp tags) (proper-list-p tags))
+       (cl-every (lambda (tag)
+                   (and (stringp tag)
+                        (string-match-p "\\`[[:alnum:]_@#%]+\\'" tag)))
+                 (append tags nil))))
+
+(defun jetpacs-org-heading-set-tags (tags)
+  "Replace the heading at point's local tags with TAGS, a list of strings."
+  (org-set-tags tags))
+
+(defun jetpacs-org-heading-delete-subtree ()
+  "Delete the subtree at point outright (the caller confirmed)."
+  (delete-region (point) (progn (org-end-of-subtree t t) (point))))
+
+(defun jetpacs-org-heading-duplicate-subtree ()
+  "Copy the subtree at point and insert it right after itself."
+  (let ((subtree (buffer-substring-no-properties
+                  (point)
+                  (save-excursion (org-end-of-subtree t t) (point)))))
+    (org-end-of-subtree t t)
+    (unless (bolp) (insert "\n"))
+    (insert subtree)))
+
+(defun jetpacs-org-heading-insert-note (note)
+  "Insert NOTE where org-log says notes belong, in Org's own format."
+  (let ((org-log-into-drawer t))
+    (goto-char (org-log-beginning t))
+    (insert (format "- Note taken on %s \\\\\n  %s\n"
+                    (format-time-string (org-time-stamp-format t t))
+                    (replace-regexp-in-string "\n" "\n  " note)))))
+
+(defun jetpacs-org-property-name-valid-p (name)
+  "Non-nil when NAME can be an Org property key (no colons or blanks)."
+  (and (stringp name)
+       (not (string-empty-p name))
+       (not (string-match-p "[: \t]" name))))
+
+(defun jetpacs-org-heading-set-property (name value)
+  "Set property NAME at point to VALUE; an empty VALUE deletes it."
+  (if (string-empty-p value)
+      (org-delete-property name)
+    (org-set-property name value)))
+
+(defun jetpacs-org-heading-refile-targets ()
+  "Org's refile targets for the heading at point.
+Falls back to the agenda files, three levels deep, when the user
+configured no `org-refile-targets'."
+  (let ((org-refile-targets
+         (or org-refile-targets '((org-agenda-files :maxlevel . 3)))))
+    (org-refile-get-targets)))
+
+(defun jetpacs-org-heading-refile (target &optional save)
+  "Refile the subtree at point to TARGET, then save every dirty Org buffer.
+TARGET is an `org-refile-get-targets' entry.  Refile may dirty both
+source and target, so every modified Org file buffer goes through SAVE
+\(a function of the buffer; default `jetpacs-editor-org-save-policy') —
+neither side may bypass Org Crypt or leave another namespace's
+projection memo stale."
+  (org-refile nil nil target)
+  (unless save
+    (require 'jetpacs-editor-org)
+    (setq save #'jetpacs-editor-org-save-policy))
+  (dolist (buffer (org-buffer-list 'files t))
+    (when (buffer-modified-p buffer)
+      (funcall save buffer))))
 
 ;;;; The verbs
 

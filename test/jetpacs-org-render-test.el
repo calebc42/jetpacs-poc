@@ -767,7 +767,7 @@ whole content extent, not the first char."
 
 (ert-deftest jetpacs-org-render-checkbox-effect-and-cookie-update ()
   "An exposed checkbox tap toggles the box, updates the parent cookie
-through org itself, and the deferred save lands the change on disk."
+through org itself, and the change is on disk before `accepted'."
   (jetpacs-org-render-test--with-file f
       "* Tasks [/]\n- [ ] one\n- [X] two\n"
     (let* ((buf (jetpacs-org-render-test--buffer f))
@@ -794,6 +794,76 @@ through org itself, and the deferred save lands the change on disk."
         (insert-file-contents f)
         (goto-char (point-min))
         (should (search-forward "- [X] one" nil t))))))
+
+(ert-deftest jetpacs-org-render-checkbox-tick-state-and-synchronous-save ()
+  "A `:tick' binds the gesture to the rendered snapshot (a later edit answers
+`stale'), `:state' \"indeterminate\" marks in progress idempotently, the
+record names the item, a live region toggles only its own item, and a
+refused write rolls back to `rejected'."
+  (jetpacs-org-render-test--with-file f "* Tasks [0/2]\n- [ ] One\n- [ ] Two\n"
+    (let* ((buf (jetpacs-org-render-test--buffer f))
+           (name (buffer-name buf))
+           (pos (with-current-buffer buf
+                  (goto-char (point-min))
+                  (search-forward "[ ] One")
+                  (match-beginning 0))))
+      (cl-flet ((disk () (with-temp-buffer (insert-file-contents f) (buffer-string)))
+                (tap (&rest extra)
+                  (jetpacs-org-render buf)
+                  (jetpacs-org-render--checkbox
+                   (append (list :buffer name :pos pos
+                                 :tick (with-current-buffer buf
+                                         (buffer-chars-modified-tick)))
+                           extra)
+                   jetpacs-org-render-test--params)))
+        (with-current-buffer buf
+          (let ((record (jetpacs-org-render-checkbox-record pos)))
+            (should (= pos (plist-get record :pos)))
+            (should (equal (plist-get record :state) "off"))
+            (should (equal (plist-get record :label) "One"))
+            (should (equal (plist-get record :bullet) "-"))
+            (should (= 0 (plist-get record :indent))))
+          (should-not (jetpacs-org-render-checkbox-record (point-min))))
+        ;; Shape: a non-integer tick or an unknown state rejects.
+        (should (eq 'rejected (jetpacs-org-render--checkbox
+                               (list :buffer name :pos pos :tick "1")
+                               jetpacs-org-render-test--params)))
+        (should (eq 'rejected (jetpacs-org-render--checkbox
+                               (list :buffer name :pos pos :state "on")
+                               jetpacs-org-render-test--params)))
+        ;; A live region must not toggle the second item too.
+        (with-current-buffer buf
+          (set-mark (point-max))
+          (setq mark-active t))
+        (should (eq 'accepted (tap)))
+        (should (string-search "- [X] One" (disk)))
+        (should (string-search "- [ ] Two" (disk)))
+        (should (string-search "[1/2]" (disk)))
+        (should-not (buffer-modified-p buf))
+        (should (eq 'accepted (tap :state "indeterminate")))
+        (should (string-search "- [-] One" (disk)))
+        ;; Idempotent: already in progress stays in progress.
+        (should (eq 'accepted (tap :state "indeterminate")))
+        (should (string-search "- [-] One" (disk)))
+        (should (eq 'accepted (tap)))
+        (should (string-search "- [X] One" (disk)))
+        ;; A refused write rolls the toggle back.
+        (let ((before (with-current-buffer buf (buffer-string))))
+          (require 'jetpacs-editor-org)
+          (cl-letf (((symbol-function 'jetpacs-editor-org-save-policy)
+                     (lambda (&rest _) (error "Write refused"))))
+            (should (eq 'rejected (tap))))
+          (should (equal before (with-current-buffer buf (buffer-string))))
+          (should (equal before (disk))))
+        ;; A stale tick: the snapshot moved on since render.
+        (jetpacs-org-render buf)
+        (let ((tick (with-current-buffer buf (buffer-chars-modified-tick))))
+          (with-current-buffer buf
+            (goto-char (point-max))
+            (insert "Changed after render.\n"))
+          (should (eq 'stale (jetpacs-org-render--checkbox
+                              (list :buffer name :pos pos :tick tick)
+                              jetpacs-org-render-test--params))))))))
 
 (ert-deftest jetpacs-org-render-checkbox-stale-when-moved ()
   "An armed position that no longer holds a checkbox answers `stale' —
@@ -1115,26 +1185,41 @@ no `:command' ops, one-level menus only, and op-plist long-presses."
 
 (require 'jetpacs-files)   ; fires the with-eval-after-load wiring
 
+(defmacro jetpacs-org-render-test--without-reader (&rest body)
+  "Run BODY with the reusable reader host absent, as the legacy seams assume.
+`jetpacs-org-render-rendered-p' defers to `jetpacs-reader-active-p' the
+moment that host is loaded, and any verb that saves through the Org
+policy loads it mid-suite; the pre-mode-app seams under test here are
+the arm taken WITHOUT it."
+  (declare (indent 0))
+  `(let ((definition (and (fboundp 'jetpacs-reader-active-p)
+                          (symbol-function 'jetpacs-reader-active-p))))
+     (unwind-protect
+         (progn (fmakunbound 'jetpacs-reader-active-p) ,@body)
+       (when definition (fset 'jetpacs-reader-active-p definition)))))
+
 (ert-deftest jetpacs-org-render-files-body-rendered-and-plain ()
   "The body seam renders org files by default, passes in plain mode,
 ignores non-org paths — and never pushes during a build."
   (jetpacs-org-render-test--with-file f "* H\nbody\n"
-    (unwind-protect
-        (cl-letf (((symbol-function 'jetpacs-shell-push)
-                   (lambda (&rest _) (error "a seam builder pushed"))))
-          (let ((node (jetpacs-org-render--files-body f)))
-            (should node)
-            (should (equal (plist-get node :t) "column")))
-          (puthash f 'plain jetpacs-org-render--files-mode)
-          (should-not (jetpacs-org-render--files-body f))
-          (should-not (jetpacs-org-render--files-body "/tmp/x.txt")))
-      (clrhash jetpacs-org-render--files-mode))))
+    (jetpacs-org-render-test--without-reader
+      (unwind-protect
+          (cl-letf (((symbol-function 'jetpacs-shell-push)
+                     (lambda (&rest _) (error "a seam builder pushed"))))
+            (let ((node (jetpacs-org-render--files-body f)))
+              (should node)
+              (should (equal (plist-get node :t) "column")))
+            (puthash f 'plain jetpacs-org-render--files-mode)
+            (should-not (jetpacs-org-render--files-body f))
+            (should-not (jetpacs-org-render--files-body "/tmp/x.txt")))
+        (clrhash jetpacs-org-render--files-mode)))))
 
 (ert-deftest jetpacs-org-render-files-view-mode-toggle ()
   "The actions seam offers the toggle; the verb flips the mode and
 rejects non-org paths."
   (jetpacs-org-render-test--with-file f "* H\n"
-    (unwind-protect
+    (jetpacs-org-render-test--without-reader
+     (unwind-protect
         (progn
           (let ((actions (jetpacs-org-render--files-actions f)))
             (should (= 1 (length actions)))
@@ -1162,7 +1247,7 @@ rejects non-org paths."
                       (jetpacs-org-render--view-mode
                        '(:path "/etc/passwd.txt")
                        '(:surface "app:jetpacs.files")))))
-      (clrhash jetpacs-org-render--files-mode))))
+      (clrhash jetpacs-org-render--files-mode)))))
 
 (ert-deftest jetpacs-org-render-files-toolbar-and-fab-seams ()
   "The chained single-function seams answer for org paths: the toolbar

@@ -753,6 +753,32 @@ item's text — counts."
                 (and beg (>= pos beg) (< pos end)
                      (cons beg end)))))))
 
+(defun jetpacs-org-render-checkbox-record (pos)
+  "Return the real Org checkbox item whose box begins at POS, or nil.
+Org's item parser excludes lookalikes in source blocks and other prose.
+The plist carries :pos (the bracket), :label-start, :state (\"on\",
+\"off\" or \"indeterminate\"), :label, :bullet and :indent — what a
+native checkbox node needs, and what the checkbox verb re-verifies."
+  (save-excursion
+    (goto-char pos)
+    (when (org-at-item-checkbox-p)
+      (let* ((beg (match-beginning 1))
+             (end (match-end 1))
+             (element (org-element-at-point beg)))
+        (when (eq (org-element-type element) 'item)
+          (list :pos beg
+                :label-start (save-excursion
+                               (goto-char end)
+                               (skip-chars-forward " \t")
+                               (point))
+                :state (pcase (org-element-property :checkbox element)
+                         ('on "on") ('trans "indeterminate") (_ "off"))
+                :label (string-trim-left
+                        (buffer-substring-no-properties
+                         end (line-end-position)))
+                :bullet (string-trim (org-element-property :bullet element))
+                :indent (current-indentation)))))))
+
 (defun jetpacs-org-render--footnote-definition-at (pos)
   "Footnote definition facts when POS is on its leading [fn:LABEL]."
   (save-excursion
@@ -1274,12 +1300,25 @@ to the pure Tier-0 render."
 ;; effect, synchronous, then the deferred re-push of the tap's surface.
 
 (defun jetpacs-org-render--checkbox (args params)
-  "Toggle the checkbox at the tapped position; SPEC 14.4 status."
+  "Toggle (or set) the checkbox at the tapped position; SPEC 14.4 status.
+ARGS may carry a `:tick' — the source buffer's modification tick at
+render, binding the gesture to that snapshot: a mismatch, or a file
+changed on disk since, answers `stale'.  A `:state' of \"indeterminate\"
+marks the item in progress instead of toggling (idempotent when it
+already is).  Org owns the transition and the statistics cookies.  A
+file-visiting buffer saves synchronously through the Org save policy
+before `accepted'; a failed write rolls the change back and answers
+`rejected'."
   (let* ((name (plist-get args :buffer))
          (pos (plist-get args :pos))
+         (tick (plist-get args :tick))
+         (state (plist-get args :state))
          (buf (and (stringp name) (get-buffer name))))
     (cond
-     ((not (and buf (integerp pos))) 'rejected)
+     ((not (and buf (integerp pos)
+                (or (null tick) (integerp tick))
+                (member state '(nil "indeterminate"))))
+      'rejected)
      ((jetpacs-event-stale-p params) 'stale)
      ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.checkbox"))
       'rejected)
@@ -1288,14 +1327,35 @@ to the pure Tier-0 render."
         (org-with-wide-buffer
          ;; Re-verify before mutating: a stale surface must never strike
          ;; arbitrary text (the position may have rotted since render).
-         (if (not (jetpacs-org-render--checkbox-at pos))
-             'stale
-           (goto-char pos)
-           (org-toggle-checkbox)     ; statistics cookies update via org
-           (ebp-org-cache-invalidate)
-           (when buffer-file-name (ebp-org-defer-save))
-           (jetpacs-buffer-defer-refresh (plist-get params :surface))
-           'accepted)))))))
+         (cond
+          ((or (not (jetpacs-org-render--checkbox-at pos))
+               (and tick (/= tick (buffer-chars-modified-tick)))
+               (and tick buffer-file-name
+                    (not (verify-visited-file-modtime buf))))
+           'stale)
+          (t
+           (condition-case err
+               (let ((record (jetpacs-org-render-checkbox-record pos)))
+                 (save-excursion
+                   (goto-char pos)
+                   ;; A live region must not toggle its whole span.
+                   (let ((mark-active nil))
+                     (atomic-change-group
+                       (unless (equal state (plist-get record :state))
+                         (org-toggle-checkbox
+                          (when (equal state "indeterminate") '(16))))
+                       (when buffer-file-name
+                         ;; Load at action time to avoid the
+                         ;; reader/editor cycle.
+                         (require 'jetpacs-editor-org)
+                         (jetpacs-editor-org-save-policy buf)))))
+                 (ebp-org-cache-invalidate)
+                 (jetpacs-buffer-defer-refresh (plist-get params :surface))
+                 'accepted)
+             (error
+              (message "jetpacs-org-render: checkbox failed: %s"
+                       (jetpacs-error-label err))
+              'rejected))))))))))
 
 (defun jetpacs-org-render--widen (args params)
   "Widen the narrowed buffer the render offered the affordance for."

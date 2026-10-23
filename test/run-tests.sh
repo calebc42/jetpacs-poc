@@ -440,6 +440,13 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-dialogs-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-org-table-test.el \
   -f ert-run-tests-batch-and-exit
 
+# The reader's inline editors (moved up from the downstream app): the
+# source draft, the Babel call argument draft and execute, and the
+# footnote dialog — snapshot freshness, failed-write rollback, no
+# evaluation outside the explicit Play, ownerless verbs.
+emacs -Q --batch -L emacs -l test/jetpacs-reader-org-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JA-5g exit gate: the habits screen — the windowed graph with rotten
 # habits skipped, the one-canvas strip's A2 spend, the durable Done
 # with the prompt hazard loud, token honesty, and the grep pin keeping

@@ -1270,5 +1270,176 @@ no longer wipes uncommitted repeater edits."
             (should (equal (plist-get fresh :rep-n) "2"))
             (should (equal (plist-get fresh :rep-unit) "m"))))))))
 
+
+;;;; Ref-addressed heading mutations (the token verbs' built-in cores)
+
+(ert-deftest jetpacs-org-heading-at-ref-classifies-statuses ()
+  "The funnel: no ref -> stale, refused -> rejected, unresolved -> stale,
+success -> accepted with the whole memo dropped (or the save function
+run), a signal from the body -> rejected, never accepted."
+  ;; The funnel loads the save policy lazily; load it first so the stub
+  ;; below is not clobbered by that load.
+  (require 'jetpacs-editor-org)
+  (should (eq (jetpacs-org-heading-at-ref nil #'ignore) 'stale))
+  (let ((ref '(:id nil :file "/vault/tasks.org" :pos 1 :headline "H")))
+    (cl-letf (((symbol-function 'ebp-org-resolve-ref)
+               (lambda (_) (signal 'ebp-org-refused nil))))
+      (should (eq (jetpacs-org-heading-at-ref ref #'ignore) 'rejected)))
+    (cl-letf (((symbol-function 'ebp-org-resolve-ref)
+               (lambda (_) (signal 'ebp-org-unresolved nil))))
+      (should (eq (jetpacs-org-heading-at-ref ref #'ignore) 'stale)))
+    (with-temp-buffer
+      (org-mode)
+      (insert "* Heading\n")
+      (let ((m (copy-marker (point-min)))
+            (at nil) (invalidated nil) (saved nil))
+        (cl-letf (((symbol-function 'ebp-org-resolve-ref)
+                   (lambda (_) (copy-marker m)))
+                  ((symbol-function 'ebp-org-cache-invalidate)
+                   (lambda (&optional ns) (push ns invalidated)))
+                  ((symbol-function 'jetpacs-editor-org-save-policy)
+                   (lambda (&optional buffer) (push (cons 'policy buffer) saved))))
+          (should (eq (jetpacs-org-heading-at-ref
+                       ref (lambda () (setq at (point))))
+                      'accepted))
+          (should (equal at (point-min)))
+          (should (equal invalidated '(nil)))
+          (should-not saved)
+          (should (eq (jetpacs-org-heading-at-ref ref #'ignore t) 'accepted))
+          (should (equal saved (list (cons 'policy (current-buffer)))))
+          (should (eq (jetpacs-org-heading-at-ref
+                       ref #'ignore
+                       (lambda (buffer) (push (cons 'app buffer) saved)))
+                      'accepted))
+          (should (equal (car saved) (cons 'app (current-buffer))))
+          (should (eq (jetpacs-org-heading-at-ref
+                       ref (lambda () (error "boom")))
+                      'rejected)))))))
+
+(ert-deftest jetpacs-org-heading-mutation-cores ()
+  "Each core is vanilla Org on the heading at point: planning that keeps
+the time of day and repeater, TODO set/cycle, priority, tags, note,
+properties, duplicate and delete."
+  (with-temp-buffer
+    (org-mode)
+    (insert "* Task\nSCHEDULED: <2026-08-14 Fri 13:30-14:00 +1w>\nbody\n"
+            "* Next\n")
+    (let ((org-todo-keywords '((sequence "TODO" "NEXT" "|" "DONE")))
+          (org-log-done nil)
+          (org-log-into-drawer nil))
+      (org-mode-restart)
+      (goto-char (point-min))
+      ;; Planning: the day moves, time of day and repeater survive.
+      (jetpacs-org-heading-set-planning "SCHEDULED" "2026-08-20")
+      (should (equal (org-entry-get nil "SCHEDULED")
+                     "<2026-08-20 Thu 13:30-14:00 +1w>"))
+      (jetpacs-org-heading-set-planning "DEADLINE" "2026-09-01")
+      (should (equal (org-entry-get nil "DEADLINE") "<2026-09-01 Tue>"))
+      ;; Clear the repeating stamp before cycling: a repeater would make
+      ;; Org's auto-repeat reset DONE straight back to TODO.
+      (jetpacs-org-heading-clear-planning "SCHEDULED")
+      (should-not (org-entry-get nil "SCHEDULED"))
+      (should (org-entry-get nil "DEADLINE"))
+      ;; TODO: set, clear, cycle (skipping the empty state).
+      (jetpacs-org-heading-set-todo "NEXT")
+      (should (equal (org-get-todo-state) "NEXT"))
+      (jetpacs-org-heading-set-todo "")
+      (should-not (org-get-todo-state))
+      (should (equal (jetpacs-org-heading-cycle-todo) "TODO"))
+      (should (equal (jetpacs-org-heading-cycle-todo) "NEXT"))
+      (should (equal (jetpacs-org-heading-cycle-todo) "DONE"))
+      ;; Cycling past DONE lands on TODO again, never on the empty state.
+      (should (equal (jetpacs-org-heading-cycle-todo) "TODO"))
+      ;; Priority.
+      (jetpacs-org-heading-set-priority "b")
+      (should (string-search "[#B]" (org-get-heading)))
+      (jetpacs-org-heading-set-priority "")
+      (should-not (string-search "[#" (org-get-heading)))
+      ;; Tags: validity then write.
+      (should (jetpacs-org-tags-valid-p '("home" "work_1" "@ctx")))
+      (should (jetpacs-org-tags-valid-p ["home"]))
+      (should-not (jetpacs-org-tags-valid-p '("has space")))
+      (should-not (jetpacs-org-tags-valid-p '(42)))
+      (should-not (jetpacs-org-tags-valid-p "home"))
+      (jetpacs-org-heading-set-tags '("home" "work"))
+      (should (equal (org-get-tags nil t) '("home" "work")))
+      ;; Properties.
+      (should (jetpacs-org-property-name-valid-p "EFFORT"))
+      (should-not (jetpacs-org-property-name-valid-p "HAS SPACE"))
+      (should-not (jetpacs-org-property-name-valid-p "A:B"))
+      (should-not (jetpacs-org-property-name-valid-p ""))
+      (jetpacs-org-heading-set-property "EFFORT" "2h")
+      (should (equal (org-entry-get nil "EFFORT") "2h"))
+      (jetpacs-org-heading-set-property "EFFORT" "")
+      (should-not (org-entry-get nil "EFFORT"))
+      ;; A logbook note in Org's own format, inside a drawer.
+      (jetpacs-org-heading-insert-note "two\nlines")
+      (let ((text (buffer-string)))
+        (should (string-search ":LOGBOOK:\n- Note taken on [" text))
+        (should (string-search "] \\\\\n  two\n  lines\n:END:" text)))
+      ;; Duplicate inserts the copy right after the subtree; delete removes it.
+      (goto-char (point-min))
+      (jetpacs-org-heading-duplicate-subtree)
+      (goto-char (point-min))
+      (should (= 2 (count-matches "^\\* TODO Task")))
+      (should (= 1 (count-matches "^\\* Next")))
+      (goto-char (point-min))
+      (org-forward-heading-same-level 1)
+      (should (looking-at "\\* TODO Task"))
+      (jetpacs-org-heading-delete-subtree)
+      (goto-char (point-min))
+      (should (= 1 (count-matches "^\\* TODO Task")))
+      (should (= 1 (count-matches "^\\* Next"))))))
+
+(ert-deftest jetpacs-org-heading-date-helpers ()
+  "The pure helpers behind planning edits."
+  (should (equal (jetpacs-org-ts-time-range "<2026-08-14 Fri 13:30-14:00>")
+                 "13:30-14:00"))
+  (should (equal (jetpacs-org-ts-time-range "<2026-08-14 Fri 9:05 +1w>") "9:05"))
+  (should-not (jetpacs-org-ts-time-range "<2026-08-14 Fri>"))
+  (should-not (jetpacs-org-ts-time-range nil))
+  (should (equal (jetpacs-org-relative-date "2026-08-14" "+0d") "2026-08-14"))
+  (should (equal (jetpacs-org-relative-date "2026-08-14" "+3d") "2026-08-17"))
+  (should (equal (jetpacs-org-relative-date "2026-08-14" "+1w") "2026-08-21"))
+  (should-not (jetpacs-org-relative-date "2026-08-14" "tomorrow"))
+  (should-not (jetpacs-org-relative-date "2026-08-14" nil)))
+
+(ert-deftest jetpacs-org-heading-refile-saves-every-dirty-buffer ()
+  "Refile moves the subtree to the chosen target and runs SAVE over each
+modified Org file buffer — source and target alike."
+  (jetpacs-org-dialogs-test--with-file source "* Move me\nbody\n* Stay\n"
+    (let* ((target-file (expand-file-name "target.org" dir))
+           (org-refile-targets nil)
+           (org-agenda-files (list target-file))
+           saved)
+      (with-temp-file target-file (insert "* Inbox\n"))
+      (let ((src (find-file-noselect source))
+            (dst (find-file-noselect target-file)))
+        (unwind-protect
+            (with-current-buffer src
+              (org-mode)
+              (goto-char (point-min))
+              (let ((targets (jetpacs-org-heading-refile-targets)))
+                (should (cl-find "Inbox" targets :key #'car :test #'string-search))
+                (jetpacs-org-heading-refile
+                 (cl-find "Inbox" targets :key #'car :test #'string-search)
+                 (lambda (buffer)
+                   (push buffer saved)
+                   (with-current-buffer buffer (save-buffer)))))
+              (should (= 2 (length saved)))
+              (should (memq src saved))
+              (should (memq dst saved))
+              (with-temp-buffer
+                (insert-file-contents target-file)
+                (should (string-search "** Move me\nbody" (buffer-string))))
+              (with-temp-buffer
+                (insert-file-contents source)
+                (should-not (string-search "Move me" (buffer-string)))
+                (should (string-search "* Stay" (buffer-string)))))
+          (dolist (buffer (list src dst))
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer (set-buffer-modified-p nil))
+              (kill-buffer buffer))))))))
+
 (provide 'jetpacs-org-dialogs-test)
 ;;; jetpacs-org-dialogs-test.el ends here
