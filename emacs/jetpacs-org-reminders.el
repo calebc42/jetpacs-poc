@@ -6,10 +6,12 @@
 ;;; Commentary:
 
 ;; The one Org agenda/search extraction and device-reminder pipeline owned by
-;; the Org Mode app.  Downstream screens may consume the neutral projections,
-;; but extraction, search, and reminder delivery remain native Org machinery.
-;; Registration is explicit from `jetpacs-org-mode', and the rollout flag is
-;; deliberately independent of the inert legacy inline pipeline's flag.
+;; the Org Mode app, plus the canonical built-in heading extractions beside
+;; it: the TODO sweep, the heading item shape, the tag vocabulary, and the
+;; `[ :startgroup ... :endgroup ]' tag-group index.  Downstream screens may
+;; consume the neutral projections, but extraction, search, and reminder
+;; delivery remain native Org machinery.  Registration is explicit from
+;; `jetpacs-org-mode'.
 
 ;;; Code:
 
@@ -421,6 +423,189 @@ while every returned row is rechecked against the canonical agenda scope."
           (when-let* ((buffer (get-buffer jetpacs-org-mode--agenda-buffer)))
             (kill-buffer buffer)))
         (nreverse items)))))
+
+;;;; Canonical heading extraction (built-in Org, memoised under org-mode)
+
+(defun jetpacs-org-mode-heading-item-at ()
+  "Build a heading item alist for the org entry at point.
+The one item shape every foundation extraction answers
+\(headline/todo/priority/tags/scheduled/deadline/level/file/pos/ref).
+Public: downstream search and scan builders mint their items here so
+every card shares one shape."
+  (let* ((components (org-heading-components))
+         (todo (nth 2 components))
+         (priority (nth 3 components))
+         (headline (nth 4 components))
+         (tags (org-get-tags))
+         (scheduled (org-entry-get (point) "SCHEDULED"))
+         (deadline  (org-entry-get (point) "DEADLINE")))
+    `((headline . ,headline)
+      (todo . ,todo)
+      (priority . ,(if priority (char-to-string priority) nil))
+      (tags . ,(vconcat tags))
+      (scheduled . ,scheduled)
+      (deadline  . ,deadline)
+      (level . ,(nth 0 components))
+      (file . ,(buffer-file-name))
+      (pos . ,(point))
+      (ref . ,(ebp-org-ref-at-point)))))
+
+(defun jetpacs-org-mode--todo-items-1 (files)
+  "Uncached worker for `jetpacs-org-mode-todo-items'."
+  (let ((scope (or files (jetpacs-org-mode--agenda-scope)))
+        items)
+    (when scope
+      (ebp-org--with-clamped-io
+        (org-map-entries
+         (lambda ()
+           (when (nth 2 (org-heading-components))
+             (push (jetpacs-org-mode-heading-item-at) items)))
+         "TODO<>\"\"" scope)))
+    (nreverse items)))
+
+(defun jetpacs-org-mode-todo-items (&optional files)
+  "Extract every heading carrying a TODO keyword from FILES.
+FILES defaults to the canonical local agenda scope.  The sweep is
+`org-map-entries' over the files themselves and runs under the D2 IO
+clamp; results are memoised in the Org Mode namespace, so
+`ebp-org-cache-invalidate' with no namespace (or with `org-mode')
+evicts them.  Downstream apps with a note index of their own may answer
+the whole-vault case from it and fall through here otherwise."
+  (ebp-org-with-cache 'org-mode (list 'todos files)
+    (jetpacs-org-mode--todo-items-1 files)))
+
+(defun jetpacs-org-mode-all-tags ()
+  "Sorted tag vocabulary for a query builder.
+Combines `org-tag-alist' (the configured vocabulary) with every tag
+actually used in the canonical agenda scope.  Memoised in the Org Mode
+namespace."
+  (ebp-org-with-cache 'org-mode (list 'all-tags)
+    (let ((tags nil))
+      (dolist (entry org-tag-alist)
+        (let ((tg (if (consp entry) (car entry) entry)))
+          (when (stringp tg) (push tg tags))))
+      ;; Explicit scope: passed nil, the table falls back to the
+      ;; `org-agenda-files' FUNCTION (P1-5/P1-7); the sweep visits
+      ;; every file, so it runs clamped.
+      (let ((files (jetpacs-org-mode--agenda-scope)))
+        (when files
+          (ebp-org--with-clamped-io
+            (dolist (entry (org-global-tags-completion-table files))
+              (when (stringp (car entry)) (push (car entry) tags))))))
+      (sort (delete-dups tags) #'string-lessp))))
+
+;;;; Tag groups (built-in `[ :startgroup ... :endgroup ]' vocabulary)
+
+(defun jetpacs-org-mode-tag-strings (tags)
+  "Return TAGS as distinct, non-empty strings without text properties.
+Item `tags' vectors still carry Org's propertized `org-get-tags' output;
+the foundation's tag-group readers already answer clean strings."
+  (let ((values (cond
+                 ((vectorp tags) (append tags nil))
+                 ((listp tags) (copy-sequence tags))
+                 ((stringp tags) (list tags)))))
+    (delete-dups
+     (delq nil
+           (mapcar
+            (lambda (tag)
+              (when (stringp tag)
+                (let ((clean (string-trim
+                              (substring-no-properties tag))))
+                  (unless (string-empty-p clean) clean))))
+            values)))))
+
+(defun jetpacs-org-mode-tag-group (groups name)
+  "Return the group named NAME in GROUPS, ignoring case.
+GROUPS is vocabulary from `ebp-org-tag-groups' or the `:groups' field of
+`ebp-org-tag-groups-at'.  Return the first matching declaration, preserving
+Org's persistent-before-file precedence, or nil when NAME is absent."
+  (and (stringp name)
+       (cl-find-if
+        (lambda (group)
+          (let ((candidate (plist-get group :name)))
+            (and (stringp candidate)
+                 (string-equal-ignore-case candidate name))))
+        groups)))
+
+(defun jetpacs-org-mode--tag-settings-here ()
+  "Snapshot the current buffer's tag inputs missing from the EBP cache stamp.
+Org owns `org-current-tag-alist': its normal settings refresh rebuilds that
+vocabulary.  Include both that vocabulary and its configuration inputs, so
+settings refreshes and buffer-local inheritance exclusions invalidate cached
+membership without needing a text edit or manual cache invalidation."
+  (copy-tree
+   (list org-tag-alist org-tag-persistent-alist org-current-tag-alist
+         org-file-tags org-tags-exclude-from-inheritance
+         org-use-tag-inheritance)))
+
+(defun jetpacs-org-mode-tag-settings-stamp (files)
+  "Snapshot global and visited-buffer tag settings for FILES.
+The EBP cache already stamps file contents and buffer edits; tag vocabulary
+and inheritance exclusions may change without either.  Copy these inputs
+so later in-place customization cannot mutate an existing cache key."
+  (list (jetpacs-org-mode--tag-settings-here)
+        (mapcar
+         (lambda (file)
+           (cons file
+                 (when-let* ((buffer (find-buffer-visiting file)))
+                   (with-current-buffer buffer
+                     (and (derived-mode-p 'org-mode)
+                          (jetpacs-org-mode--tag-settings-here))))))
+         files)))
+
+(defun jetpacs-org-mode-file-tag-group-index (file group &optional inherit)
+  "Return FILE's effective tag GROUP members and heading memberships.
+The per-file memo every group consumer shares, so a first paint pays one
+walk per file per generation.  The memoised result is a plist with
+`:members' in declaration order, `:file-tags' as the members carried by
+the file's own `#+FILETAGS' (so a file with no headings still belongs),
+and `:positions' as an alist from heading point to the members inherited
+there.  With INHERIT non-nil, file tags and parent tags count even when
+`org-use-tag-inheritance' narrows agenda display
+\(`org-tags-exclude-from-inheritance' still applies); nil follows Org's
+configured inheritance.  Cache identity includes the buffer's tag
+vocabulary, exclusions and INHERIT because the EBP cache's content stamp
+does not cover settings changes.  A refused or vanished FILE answers nil."
+  (when (and (stringp file) (stringp group)
+             (not (string-empty-p group)))
+    (condition-case nil
+        (let ((true (ebp-org--check-file file)))
+          (ebp-org--with-clamped-io
+            (with-current-buffer (find-file-noselect true t)
+              (unless (derived-mode-p 'org-mode) (org-mode))
+              (org-with-wide-buffer
+               (let ((org-use-tag-inheritance
+                      (or inherit org-use-tag-inheritance)))
+                 (ebp-org-with-cache 'org-mode
+                     (list 'tag-group-index true group (and inherit t)
+                           (buffer-chars-modified-tick)
+                           (jetpacs-org-mode--tag-settings-here))
+                   (let* ((members
+                           (plist-get
+                            (jetpacs-org-mode-tag-group
+                             (ebp-org-tag-groups) group)
+                            :tags))
+                          (file-tags (jetpacs-org-mode-tag-strings
+                                      org-file-tags))
+                          positions)
+                     (org-map-entries
+                      (lambda ()
+                        (let ((membership (ebp-org-tag-groups-at (point))))
+                          (push
+                           (cons (point)
+                                 (plist-get
+                                  (jetpacs-org-mode-tag-group
+                                   (plist-get membership :groups) group)
+                                  :members))
+                           positions)))
+                      nil 'file)
+                     (list :members members
+                           :file-tags (cl-remove-if-not
+                                       (lambda (member)
+                                         (member member file-tags))
+                                       members)
+                           :positions (nreverse positions)))))))))
+      (error nil))))
 
 ;;;; Reminder projection and ownership
 

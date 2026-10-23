@@ -11,8 +11,10 @@
 ;; Org Crypt re-encryption before a real buffer save, and cache
 ;; invalidation after a durable Files save.  It also owns the public
 ;; synchronous Org save policy used by engine mutations: pre-write
-;; transforms, durable save, optional Vulpea refresh, and whole-cache
-;; invalidation remain one foundation operation.
+;; transforms, durable save, post-save hooks, and whole-cache
+;; invalidation remain one foundation operation — and, on top of it,
+;; the freshness-checked subtree splice (`jetpacs-editor-org-fresh-splice')
+;; a heading editor commits through.
 ;;
 ;; Commands use the existing SPEC 17.7 `edit.command' path.  They run in
 ;; the attached Org buffer at the device caret and pass through
@@ -350,6 +352,117 @@ write restores the buffer byte-for-byte and then signals."
 (defun jetpacs-editor-org--after-save (_path)
   "Invalidate memoized Org projections after a durable Files save."
   (ebp-org-cache-invalidate))
+
+;;;; The fresh subtree splice (a heading editor's commit)
+
+(define-error 'jetpacs-editor-org-splice-refused
+  "Refused a stale or unsafe subtree splice" 'user-error)
+
+(defun jetpacs-editor-org-mtime-stamp (path)
+  "Return PATH's opaque microsecond modification stamp, or nil.
+The value is compared only with another value from this function; it is
+never parsed or exposed as a path-bearing identity."
+  (when-let* ((mtime (file-attribute-modification-time
+                      (file-attributes path))))
+    (format-time-string "%s.%6N" mtime)))
+
+(defun jetpacs-editor-org--splice-refuse (message)
+  "Refuse a subtree splice with user-facing MESSAGE."
+  (signal 'jetpacs-editor-org-splice-refused (list message)))
+
+(defun jetpacs-editor-org--synced-edit-p (path)
+  "Whether PATH is the live document in Files' synchronized editor."
+  (let ((current (jetpacs-files-current-edit-path))
+        (context (jetpacs-files-current-edit-context)))
+    (and current
+         (equal (file-truename current) (file-truename path))
+         (plist-get context :document)
+         (plist-get context :editor-id)
+         (buffer-live-p (plist-get context :buffer)))))
+
+(defun jetpacs-editor-org-fresh-splice (ref value stamp beg end tick)
+  "Replace REF's subtree with VALUE after validating open-time facts.
+STAMP, BEG, END, and TICK are the scalar snapshot minted when the editor
+opened (`jetpacs-editor-org-mtime-stamp', the subtree bounds, and
+`buffer-chars-modified-tick').  The target is re-resolved from REF,
+including its Org ID, but the write proceeds only when disk mtime,
+subtree bounds, and buffer tick still match that snapshot; a file open
+in Files' synchronized editor is refused outright.  The save runs
+through `jetpacs-editor-org-save-policy'.  Any failure before durability
+restores the visiting buffer's full text and modified state.  Signals
+`jetpacs-editor-org-splice-refused' with a user-facing message, or the
+engine's own `ebp-org-refused' / `ebp-org-unresolved'.  Return a freshly
+anchored ref."
+  (unless (and (stringp value)
+               (string-match-p "\\`\\*+\\(?:[ \t]\\|$\\)" value))
+    (jetpacs-editor-org--splice-refuse "Heading must start with Org stars"))
+  (when (> (string-bytes value) jetpacs-files-max-bytes)
+    (jetpacs-editor-org--splice-refuse "Heading is too large to save"))
+  ;; Check disk identity before resolving the ref.  Resolution may visit or
+  ;; consult the already-visiting buffer; doing it first would let Emacs ask
+  ;; whether to edit a buffer whose file changed externally, violating D2.
+  (let ((true (ebp-org--check-file (plist-get ref :file))))
+    (when (jetpacs-editor-org--synced-edit-p true)
+      (jetpacs-editor-org--splice-refuse "file is open in the synced editor"))
+    (unless (equal stamp (jetpacs-editor-org-mtime-stamp true))
+      (jetpacs-editor-org--splice-refuse "File changed on disk — not saved"))
+    (unless (file-writable-p true)
+      (jetpacs-editor-org--splice-refuse "File is not writable"))
+    (let ((marker (ebp-org-resolve-ref ref)))
+      (unwind-protect
+          (with-current-buffer (marker-buffer marker)
+            (org-with-wide-buffer
+             (goto-char marker)
+             (org-back-to-heading t)
+             (let ((current-beg (point))
+                   (current-end (save-excursion
+                                  (org-end-of-subtree t t)
+                                  (point))))
+               (unless (and (integerp beg) (integerp end) (integerp tick)
+                            (= current-beg beg) (= current-end end)
+                            (= (buffer-chars-modified-tick) tick))
+                 (jetpacs-editor-org--splice-refuse
+                  "Heading changed in Emacs — not saved"))
+               (let* ((original-beg (point-min))
+                      (original-end (point-max))
+                      (original-point (point))
+                      (original-modified (buffer-modified-p))
+                      (original-full
+                       (buffer-substring-no-properties
+                        (point-min) (point-max)))
+                      (changed nil)
+                      (durable nil)
+                      new-ref)
+                 (unwind-protect
+                     (progn
+                       (setq changed t)
+                       (delete-region current-beg current-end)
+                       (goto-char current-beg)
+                       (insert value)
+                       ;; Do not glue the following heading to a value
+                       ;; whose final newline was omitted by the client.
+                       (unless (or (bolp) (eobp)) (insert "\n"))
+                       (goto-char current-beg)
+                       (setq new-ref (ebp-org-ref-at-point))
+                       (when (> (string-bytes
+                                 (buffer-substring-no-properties
+                                  (point-min) (point-max)))
+                                jetpacs-files-max-bytes)
+                         (jetpacs-editor-org--splice-refuse
+                          "Edited file exceeds the save limit"))
+                       (jetpacs-editor-org-save-policy (current-buffer))
+                       (setq durable t)
+                       new-ref)
+                   (when (and changed (not durable))
+                     (let ((inhibit-read-only t))
+                       (widen)
+                       (delete-region (point-min) (point-max))
+                       (insert original-full)
+                       (narrow-to-region original-beg original-end)
+                       (goto-char
+                        (min (max original-point (point-min)) (point-max)))
+                       (set-buffer-modified-p original-modified))))))))
+        (set-marker marker nil)))))
 
 ;;;###autoload
 (defun jetpacs-editor-org-encrypt-entry ()

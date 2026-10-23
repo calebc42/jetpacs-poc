@@ -10,10 +10,13 @@
 ;; downstream PKM app used to register — Org Workflow, Org Agenda, Org
 ;; Editing & Display, User Defaults, Calendar & Location, and the
 ;; reader's two Reader rows — are foundation content, because every
-;; symbol in them is a built-in or foundation defcustom.  Only the babel
-;; timeout was app opinion; it stays with the app.  `jetpacs-' prefix by
-;; the 2026-08-06 naming rule: this module renders companion widgets
-;; (through jetpacs-settings) and writes a floor registry.
+;; symbol in them is a built-in or foundation defcustom.  The Babel run
+;; timeout joined them when the table/Babel verbs moved into the
+;; foundation (jetpacs-org-table.el): the option is defined HERE so the
+;; Settings screen can always resolve its row, and consumed there.
+;; `jetpacs-' prefix by the 2026-08-06 naming rule: this module renders
+;; companion widgets (through jetpacs-settings) and writes a floor
+;; registry.
 ;;
 ;; Registration happens at LOAD, never behind an app's register gate —
 ;; the device/init.el curated-block rule: a queued toggle can replay
@@ -49,6 +52,17 @@
 (require 'jetpacs-shell)
 (require 'jetpacs-chrome)
 (require 'jetpacs-settings)
+
+;;;; Foundation Org options surfaced below
+
+(defcustom jetpacs-org-babel-timeout 30
+  "Seconds before a device-triggered Babel execution is abandoned.
+Best-effort: the timer can't interrupt a synchronous subprocess
+mid-call, but it fires between process reads and stops a runaway
+block from wedging the bridge forever.  Consumed by the table/Babel
+verbs (jetpacs-org-table.el); surfaced in the Org Editing & Display
+section below."
+  :type 'natnum :group 'jetpacs-org)
 
 ;;;; The after-set seam
 
@@ -95,7 +109,9 @@ the notes file is where phone capture lands, so both bust the memo."
                  (org-entry 'org-startup-indented "Indent to outline level")
                  (org-entry 'org-hide-emphasis-markers
                             "Hide emphasis markers")
-                 (org-entry 'org-return-follows-link "Enter follows links")))
+                 (org-entry 'org-return-follows-link "Enter follows links")
+                 ;; Plain: the timeout feeds no memoised extraction.
+                 (plain 'jetpacs-org-babel-timeout "Babel run timeout (s)")))
      (cons "User Defaults"
            (list (plain 'user-full-name "Author (Name)")
                  (plain 'user-mail-address "Email")))
@@ -180,6 +196,48 @@ Public: downstream task-filter chips may build from it too."
         (unless (string-equal w "|")
           (push (jetpacs-org-settings--bare-keyword w) kws))))
     (nreverse kws)))
+
+(defun jetpacs-org-settings--file-todo-keywords (file)
+  "Return FILE's effective TODO keywords without trusting another buffer.
+File-local `#+TODO' lines are read in FILE's own visiting buffer, under
+the org roots policy and the D2 IO clamp; a refused or vanished file
+answers nil.  Memoised under the `org-mode' namespace."
+  (when (stringp file)
+    (ebp-org-with-cache 'org-mode (list 'workflow-todo-keywords file)
+      (condition-case nil
+          (let ((true (ebp-org--check-file file)))
+            (ebp-org--with-clamped-io
+              (with-current-buffer (find-file-noselect true t)
+                (unless (derived-mode-p 'org-mode) (org-mode))
+                (copy-sequence org-todo-keywords-1))))
+        (error nil)))))
+
+(defun jetpacs-org-settings-workflow-keywords (items)
+  "Return the stable workflow keywords represented by Org ITEMS.
+File-local `#+TODO' sequences come first, then the global keywords, then any
+keyword an item carries that neither source declares.  ITEMS need only carry
+`file' and `todo' alist fields — the shape every foundation heading
+extraction answers.  Public: downstream workflow rails and group-by
+controls build their keyword order from it."
+  (let ((files (sort (delete-dups
+                      (cl-remove-if-not
+                       #'stringp
+                       (mapcar (lambda (item) (alist-get 'file item)) items)))
+                     #'string-lessp))
+        keywords)
+    (cl-labels ((add (keyword)
+                  (when (and (stringp keyword)
+                             (not (string-empty-p keyword))
+                             (not (member keyword keywords)))
+                    (setq keywords (append keywords (list keyword))))))
+      (dolist (file files)
+        (dolist (keyword (jetpacs-org-settings--file-todo-keywords file))
+          (add keyword)))
+      (dolist (keyword (jetpacs-org-settings-global-todo-keywords))
+        (add keyword))
+      (dolist (item items)
+        (add (alist-get 'todo item))))
+    keywords))
 
 (defun jetpacs-org-settings--split-todo-sequence (seq)
   "Split `org-todo-keywords' entry SEQ into (ACTIVE . FINISHED) lists.

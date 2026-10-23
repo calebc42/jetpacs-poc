@@ -289,5 +289,132 @@
       (jetpacs-org-mode-register)
       (glasspane-agenda-register))))
 
+(defmacro jetpacs-org-reminders-test--with-vault (file content &rest body)
+  "Bind FILE to a fresh vault's tasks.org holding CONTENT around BODY.
+The vault is the only org root and the only agenda file."
+  (declare (indent 2))
+  `(let* ((vault (file-truename (make-temp-file "jetpacs-extract" t)))
+          (,file (expand-file-name "tasks.org" vault))
+          (org-agenda-files (list ,file))
+          (ebp-org-roots (list vault)))
+     (unwind-protect
+         (progn
+           (with-temp-file ,file (insert ,content))
+           (ebp-org-cache-invalidate)
+           ,@body)
+       (ebp-org-cache-invalidate)
+       (dolist (buffer (buffer-list))
+         (when-let* ((name (buffer-file-name buffer))
+                     ((string-prefix-p (file-name-as-directory vault)
+                                       (file-truename name))))
+           (with-current-buffer buffer (set-buffer-modified-p nil))
+           (kill-buffer buffer)))
+       (delete-directory vault t))))
+
+(ert-deftest jetpacs-org-mode-todo-items-sweep-shape-and-memo ()
+  "The built-in TODO sweep answers the one item shape over the given
+files (or the agenda scope), and memoises under `org-mode' only."
+  (jetpacs-org-reminders-test--with-vault file
+      "#+TITLE: Tasks\n\n* TODO Water the garden :home:\n** Sub\n* TODO Call the bank\nSCHEDULED: <2026-08-16 Sun>\n* Reference notes\n"
+    (let ((items (jetpacs-org-mode-todo-items (list file))))
+      (should (equal (mapcar (lambda (it) (alist-get 'headline it)) items)
+                     '("Water the garden" "Call the bank")))
+      (let ((first (car items)) (second (cadr items)))
+        (should (equal (alist-get 'todo first) "TODO"))
+        (should (equal (append (alist-get 'tags first) nil) '("home")))
+        (should (= 1 (alist-get 'level first)))
+        (should (equal (alist-get 'file first) file))
+        (should (integerp (alist-get 'pos first)))
+        (should (equal (plist-get (alist-get 'ref first) :headline)
+                       "Water the garden"))
+        (should (equal (alist-get 'scheduled second) "<2026-08-16 Sun>"))))
+    ;; Nil FILES means the canonical agenda scope.
+    (should (= 2 (length (jetpacs-org-mode-todo-items))))
+    ;; The same shape at point.
+    (with-current-buffer (find-file-noselect file)
+      (org-with-wide-buffer
+       (goto-char (point-min))
+       (re-search-forward "Call the bank")
+       (org-back-to-heading t)
+       (let ((item (jetpacs-org-mode-heading-item-at)))
+         (should (equal (alist-get 'headline item) "Call the bank"))
+         (should (equal (alist-get 'todo item) "TODO"))
+         (should (= (alist-get 'pos item) (point))))))
+    ;; Memoised in the Org Mode namespace: a foreign namespace's drop
+    ;; cannot evict it, the owning namespace's drop must.
+    (let ((calls 0))
+      (cl-letf (((symbol-function 'jetpacs-org-mode--todo-items-1)
+                 (lambda (&rest _) (cl-incf calls) '(fixture))))
+        (ebp-org-cache-invalidate)
+        (should (equal (jetpacs-org-mode-todo-items (list file)) '(fixture)))
+        (jetpacs-org-mode-todo-items (list file))
+        (should (= calls 1))
+        (ebp-org-cache-invalidate 'other-app)
+        (jetpacs-org-mode-todo-items (list file))
+        (should (= calls 1))
+        (ebp-org-cache-invalidate 'org-mode)
+        (jetpacs-org-mode-todo-items (list file))
+        (should (= calls 2))))))
+
+(ert-deftest jetpacs-org-mode-all-tags-joins-vocabulary-and-files ()
+  "The tag vocabulary is `org-tag-alist' plus every tag used in the
+agenda scope, sorted and deduplicated."
+  (jetpacs-org-reminders-test--with-vault file
+      "* TODO Water :home:\n* Note :zulu:work:\n"
+    (let ((org-tag-alist '(("alpha" . ?a) "zulu" (:startgroup) (:endgroup))))
+      (should (equal (jetpacs-org-mode-all-tags)
+                     '("alpha" "home" "work" "zulu"))))))
+
+(ert-deftest jetpacs-org-mode-tag-strings-and-tag-group ()
+  "Propertized tag vectors clean to distinct strings; group lookup is
+case-insensitive and keeps declaration precedence."
+  (should (equal (jetpacs-org-mode-tag-strings
+                  (vector (propertize "home" 'inherited t) " work " "" "home"))
+                 '("home" "work")))
+  (should (equal (jetpacs-org-mode-tag-strings "solo") '("solo")))
+  (should-not (jetpacs-org-mode-tag-strings nil))
+  (let ((groups '((:name "Area" :tags ("home" "work"))
+                  (:name "area" :tags ("other")))))
+    (should (equal (plist-get (jetpacs-org-mode-tag-group groups "AREA") :tags)
+                   '("home" "work")))
+    (should-not (jetpacs-org-mode-tag-group groups "missing"))
+    (should-not (jetpacs-org-mode-tag-group groups nil))))
+
+(ert-deftest jetpacs-org-mode-file-tag-group-index-honors-inherit ()
+  "The per-file group index walks the file once per generation, keys its
+memo on the INHERIT policy and the tag settings, and answers nil for a
+file outside the roots."
+  (jetpacs-org-reminders-test--with-vault file
+      "#+TAGS: [ area : home work ]\n#+FILETAGS: :home:\n* Parent :work:\n** Child\n* Loose :misc:\n"
+    (let ((org-use-tag-inheritance nil))
+      (let ((plain (jetpacs-org-mode-file-tag-group-index file "area"))
+            (inherited (jetpacs-org-mode-file-tag-group-index file "area" t)))
+        (should (equal (plist-get plain :members) '("home" "work")))
+        (should (equal (plist-get plain :file-tags) '("home")))
+        (should (equal (plist-get inherited :file-tags) '("home")))
+        ;; Without inheritance only the local tag counts; with the PARA
+        ;; rule the file tag and the parent's tag reach the child.
+        (let ((positions (plist-get plain :positions))
+              (positions+ (plist-get inherited :positions)))
+          (should (= 3 (length positions)))
+          (should (equal (cdr (nth 0 positions)) '("work")))
+          (should-not (cdr (nth 1 positions)))
+          (should (equal (cdr (nth 0 positions+)) '("home" "work")))
+          (should (equal (cdr (nth 1 positions+)) '("home" "work")))
+          (should (equal (cdr (nth 2 positions+)) '("home")))))
+      ;; Memo: one walk per (file, group, policy) generation.
+      (let ((walks 0))
+        (cl-letf (((symbol-function 'org-map-entries)
+                   (lambda (&rest _) (cl-incf walks) nil)))
+          (jetpacs-org-mode-file-tag-group-index file "area")
+          (jetpacs-org-mode-file-tag-group-index file "area" t)
+          (should (= walks 0))
+          (ebp-org-cache-invalidate 'org-mode)
+          (jetpacs-org-mode-file-tag-group-index file "area")
+          (jetpacs-org-mode-file-tag-group-index file "area")
+          (should (= walks 1)))))
+    (should-not (jetpacs-org-mode-file-tag-group-index "/nonexistent/x.org" "area"))
+    (should-not (jetpacs-org-mode-file-tag-group-index file ""))))
+
 (provide 'jetpacs-org-reminders-test)
 ;;; jetpacs-org-reminders-test.el ends here

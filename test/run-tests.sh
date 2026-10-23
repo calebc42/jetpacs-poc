@@ -433,6 +433,13 @@ emacs -Q --batch -L emacs -L "$GLASSPANE_DIR" \
 emacs -Q --batch -L emacs -l test/jetpacs-org-dialogs-test.el \
   -f ert-run-tests-batch-and-exit
 
+# The table/Babel verbs (moved up from the downstream app): the mutation
+# funnel's durability and #+TBLFM recalculation, the D2 prompting arms'
+# headless refusal, Babel's timeout/decline/disable arms, and the editable
+# table node's exposure-route descriptors.
+emacs -Q --batch -L emacs -l test/jetpacs-org-table-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JA-5g exit gate: the habits screen — the windowed graph with rotten
 # habits skipped, the one-canvas strip's A2 spend, the durable Done
 # with the prompt hazard loud, token honesty, and the grep pin keeping

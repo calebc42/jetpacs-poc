@@ -22,21 +22,25 @@
     ("Org Agenda" org-agenda-span org-deadline-warning-days
      org-extend-today-until)
     ("Org Editing & Display" org-startup-folded org-startup-indented
-     org-hide-emphasis-markers org-return-follows-link)
+     org-hide-emphasis-markers org-return-follows-link
+     jetpacs-org-babel-timeout)
     ("User Defaults" user-full-name user-mail-address)
     ("Calendar & Location" calendar-week-start-day calendar-latitude
      calendar-longitude)
     ("Reader" ebp-org-outline-show-deadline ebp-org-outline-show-clocked))
   "Every moved section with its full entry list, in registration order.
-The identity rows (\"User Defaults\") are the only bare ones; every
-other entry must carry the foundation memo-buster.")
+The identity rows (\"User Defaults\") and the Babel run timeout (it feeds
+no memoised extraction) are the only bare ones; every other entry must
+carry the foundation memo-buster.")
 
 (ert-deftest jetpacs-org-settings-sections-register-at-load ()
   "The require above (= boot) registered every moved section whole:
 each title present with exactly its entries, org/calendar rows wired
-to the foundation after-set, identity rows bare — and neither app
-opinion (`glasspane-babel-timeout' stayed app-side) nor the v1 ghost
-(`jetpacs-dialog-style') leaked into foundation content."
+to the foundation after-set, identity rows bare — and the v1 ghost
+\(`jetpacs-dialog-style') never leaked into foundation content.  The
+Babel run timeout is foundation content now (it followed the
+table/Babel verbs up from the downstream app) and rides Org Editing &
+Display as a plain row."
   (dolist (spec jetpacs-org-settings-test--expected)
     (let* ((title (car spec))
            (entries (alist-get title jetpacs-settings-registry
@@ -45,12 +49,15 @@ opinion (`glasspane-babel-timeout' stayed app-side) nor the v1 ghost
       (should (equal (mapcar #'car entries) (cdr spec)))
       (dolist (entry entries)
         (should (stringp (plist-get (cdr entry) :label)))
-        (if (equal title "User Defaults")
+        (if (or (equal title "User Defaults")
+                (eq (car entry) 'jetpacs-org-babel-timeout))
             (should-not (plist-get (cdr entry) :after-set))
           (should (eq (plist-get (cdr entry) :after-set)
                       #'jetpacs-org-settings-after-set))))))
+  (should (custom-variable-p 'jetpacs-org-babel-timeout))
+  (should (= 30 (default-value 'jetpacs-org-babel-timeout)))
   (let ((sections (jetpacs-org-settings-sections)))
-    (dolist (ghost '(glasspane-babel-timeout jetpacs-dialog-style))
+    (dolist (ghost '(jetpacs-dialog-style))
       (should-not (cl-some (lambda (sec) (assq ghost (cdr sec)))
                            sections))))
   ;; The plan's verify clause: `org-default-notes-file' renders — its
@@ -375,6 +382,40 @@ todo.delete falls back to the stock sequence on last-delete."
         (should (eq (run "jetpacs.org.todo.delete" '(:index 0)) 'accepted))
         (should (equal (default-value 'org-todo-keywords)
                        '((sequence "TODO" "|" "DONE"))))))))
+
+(ert-deftest jetpacs-org-settings-workflow-keywords-order ()
+  "File-local `#+TODO' sequences lead, then the global keywords, then
+any keyword an item carries that neither declared; duplicates collapse
+and a refused or absent file contributes nothing."
+  (let* ((vault (file-truename (make-temp-file "jetpacs-workflow" t)))
+         (file (expand-file-name "flow.org" vault))
+         (ebp-org-roots (list vault))
+         (org-todo-keywords '((sequence "TODO" "|" "DONE"))))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "#+TODO: NEXT WAITING | FINISHED\n"
+                    "* NEXT a\n* WAITING b\n"))
+          (ebp-org-cache-invalidate)
+          (should (equal (jetpacs-org-settings--file-todo-keywords file)
+                         '("NEXT" "WAITING" "FINISHED")))
+          (should-not (jetpacs-org-settings--file-todo-keywords
+                       (expand-file-name "missing.org" vault)))
+          (should (equal (jetpacs-org-settings-workflow-keywords
+                          `(((file . ,file) (todo . "NEXT"))
+                            ((file . ,file) (todo . "ODD"))
+                            ((todo . "TODO"))
+                            ((todo . "ODD"))))
+                         '("NEXT" "WAITING" "FINISHED" "TODO" "DONE" "ODD")))
+          ;; Items alone: the global vocabulary first, then their own.
+          (should (equal (jetpacs-org-settings-workflow-keywords
+                          '(((todo . "LATER"))))
+                         '("TODO" "DONE" "LATER"))))
+      (ebp-org-cache-invalidate)
+      (when-let* ((buffer (get-file-buffer file)))
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer))
+      (delete-directory vault t))))
 
 (provide 'jetpacs-org-settings-test)
 ;;; jetpacs-org-settings-test.el ends here

@@ -268,5 +268,92 @@ its verdict, the cache still drops once, and the error stays local."
                            '(rate policy advance refresh))))
         (set-marker marker nil)))))
 
+(defmacro jetpacs-editor-org-test--with-splice-vault (file buffer &rest body)
+  "Bind FILE (a two-heading fixture under its own org root) and BUFFER."
+  (declare (indent 2))
+  `(let* ((vault (file-truename (make-temp-file "jetpacs-splice" t)))
+          (,file (expand-file-name "tasks.org" vault))
+          (ebp-org-roots (list vault))
+          (jetpacs-files-before-buffer-save-hook nil)
+          (jetpacs-files-after-save-hook nil)
+          ,buffer)
+     (unwind-protect
+         (progn
+           (with-temp-file ,file
+             (insert "* Stable\n:PROPERTIES:\n:ID: stable-id\n:END:\nold\n"
+                     "* Neighbor\nkeep\n"))
+           (setq ,buffer (find-file-noselect ,file))
+           ,@body)
+       (when (buffer-live-p ,buffer)
+         (with-current-buffer ,buffer (set-buffer-modified-p nil))
+         (kill-buffer ,buffer))
+       (delete-directory vault t))))
+
+(ert-deftest jetpacs-editor-org-fresh-splice-commits-then-refuses-stale ()
+  "A matching snapshot splices the subtree durably and returns a fresh
+ref; the spent snapshot, a starless value and a foreign owner's file
+refuse with the splice condition and leave the file alone."
+  (jetpacs-editor-org-test--with-splice-vault file buffer
+    (let (ref beg end tick stamp)
+      (with-current-buffer buffer
+        (org-with-wide-buffer
+         (goto-char (point-min))
+         (setq ref (ebp-org-ref-at-point)
+               beg (point)
+               end (save-excursion (org-end-of-subtree t t) (point))
+               tick (buffer-chars-modified-tick)
+               stamp (jetpacs-editor-org-mtime-stamp file))))
+      (should (stringp stamp))
+      (should-error (jetpacs-editor-org-fresh-splice
+                     ref "no stars" stamp beg end tick)
+                    :type 'jetpacs-editor-org-splice-refused)
+      (let ((new-ref (jetpacs-editor-org-fresh-splice
+                      ref
+                      (concat "* Changed\n:PROPERTIES:\n:ID: stable-id\n"
+                              ":END:\nnew")
+                      stamp beg end tick)))
+        (should (equal (plist-get new-ref :headline) "Changed"))
+        (should (equal (plist-get new-ref :id) "stable-id")))
+      (should-not (buffer-modified-p buffer))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (should (string-search "* Changed" (buffer-string)))
+        ;; The omitted final newline never glued the neighbor on.
+        (should (string-search "new\n* Neighbor\nkeep" (buffer-string)))
+        (should-not (string-search "* Stable" (buffer-string))))
+      ;; The snapshot is spent: disk and buffer moved on.
+      (should-error (jetpacs-editor-org-fresh-splice
+                     ref "* Again\n" stamp beg end tick)
+                    :type 'jetpacs-editor-org-splice-refused)
+      (with-temp-buffer
+        (insert-file-contents file)
+        (should-not (string-search "* Again" (buffer-string)))))))
+
+(ert-deftest jetpacs-editor-org-fresh-splice-restores-before-durability ()
+  "A failed pre-write hook leaves neither speculative bytes nor dirt."
+  (jetpacs-editor-org-test--with-splice-vault file buffer
+    (with-current-buffer buffer
+      (org-with-wide-buffer
+       (goto-char (point-min))
+       (let* ((ref (ebp-org-ref-at-point))
+              (beg (point))
+              (end (save-excursion (org-end-of-subtree t t) (point)))
+              (tick (buffer-chars-modified-tick))
+              (stamp (jetpacs-editor-org-mtime-stamp file))
+              (original (buffer-string))
+              (jetpacs-files-before-buffer-save-hook
+               (list (lambda (&rest _) (error "encryption failed")))))
+         (should-error
+          (jetpacs-editor-org-fresh-splice
+           ref
+           (concat "* Changed\n:PROPERTIES:\n:ID: stable-id\n:END:\nnew\n")
+           stamp beg end tick))
+         (should (equal (buffer-string) original))
+         (should-not (buffer-modified-p)))))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (should (string-search "* Stable" (buffer-string)))
+      (should-not (string-search "* Changed" (buffer-string))))))
+
 (provide 'jetpacs-editor-org-test)
 ;;; jetpacs-editor-org-test.el ends here

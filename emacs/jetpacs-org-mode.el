@@ -9,9 +9,10 @@
 ;; reader/editor hosts know nothing about Org; the two Org adapters rent
 ;; built-in Org behavior; this file registers them together, gives the
 ;; experience app identity and navigation, and composes the existing
-;; Files and Habits surfaces.  Capture and recurring agenda reminders
-;; live here because they belong to the Org app as a whole, not to one
-;; document presentation.  Org itself resolves document links; the Org
+;; Files and Habits surfaces.  Capture, recurring agenda reminders and
+;; the table/Babel verbs live here because they belong to the Org app as
+;; a whole, not to one document presentation.  Org itself resolves
+;; document links; the Org
 ;; reader then reuses Files' existing `edit' screen for same-file targets
 ;; and routes other files back through Files.  Link navigation therefore
 ;; retains the document's top bar, FAB, path policy, and synchronized editor
@@ -41,6 +42,7 @@
 (require 'jetpacs-org-reminders)
 (require 'jetpacs-org-capture)
 (require 'jetpacs-org-clock)
+(require 'jetpacs-org-table)
 
 (defconst jetpacs-org-mode-owner "org-mode"
   "Owner and app id for the Org Mode app.")
