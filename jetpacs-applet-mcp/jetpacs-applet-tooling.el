@@ -2794,16 +2794,26 @@ DEFINITIONS is the scan's list of (NAME-STRING . FORM)."
               (setq changed t))))))
     registering))
 
+(defun jetpacs-applet-tooling--test-file-p (path)
+  "Non-nil when PATH is an ERT suite, named *-test.el.
+Not every file under test/: a fixture applet there is still an applet."
+  (string-match-p "-test\\.el\\'" path))
+
 (defun jetpacs-applet-tooling--register-at-load-issues (scans definitions)
   "Issues for SCANS' top-level forms that register when the file loads.
 A top-level call to a registering definition among DEFINITIONS is an
 error: `require' must only load, and the Apps screen or the trusted
 launcher calls the register function.  A registrar called directly at
-top level, outside any definition, is a warning."
+top level, outside any definition, is a warning.  Test suites are
+exempt: registering the app under test is their setup, not the app's
+load."
   (let ((registering (jetpacs-applet-tooling--registering-definitions
                       definitions))
         issues)
-    (dolist (scan scans)
+    (dolist (scan (seq-remove (lambda (scan)
+                                (jetpacs-applet-tooling--test-file-p
+                                 (plist-get scan :path)))
+                              scans))
       (dolist (record (plist-get scan :records))
         (let ((form (plist-get record :form)))
           (when (and (consp form) (symbolp (car form))

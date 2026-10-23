@@ -259,6 +259,10 @@ without it (the reference hello) passes; a test's own registrations, inside
              "\\[ERROR\\] applet.register-at-load .*atload.el:[0-9]+ — Top-level (atload-register)"
              bad))
     (should-not (string-match-p "register-at-load" good)))
+  ;; An ERT suite registering the app under test is setup, not load.
+  (should (jetpacs-applet-tooling--test-file-p "glasspane/test/glasspane-test.el"))
+  (should-not (jetpacs-applet-tooling--test-file-p
+               "jetpacs-applet-mcp/test/fixtures/lifecycle/at-load/atload.el"))
   (let ((definitions
          '(("a-register" . (defun a-register () (b-setup)))
            ("b-setup" . (defun b-setup ()
