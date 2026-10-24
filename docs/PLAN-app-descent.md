@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Sections 1–3 landed on branch `app-descent`.
+Status: plan, 2026-10-23. Sections 1–4 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -124,15 +124,27 @@ Bloom addresses headings by notebook/heading ids rather than tokens (and
 its toggle carries its own repeater rule), and Orgzly does not load
 ebp-org, which the heading cores require.
 
-## Section 4 — revision-checked subtree writes (~100 lines in Bloom)
+## Section 4 — revision-checked subtree writes (landed)
 
-Teach `jetpacs-editor-org-fresh-splice` (and `jetpacs-org-heading-at-ref`) an
-optional `:revision` check via `ebp-org-subtree-revision`, answering `stale`.
-Replace `bloom-document--live-subtree`, `--replace-subtree`,
-`write-subtree`, and the repeated checks in the save/planning handlers and
-`bloom-structure--context`. First unify Bloom's two hash computations
-(string vs buffer region; they can differ on non-ASCII). Harp's
-`harp-write--replace-subtree` gains a check it lacks today.
+- `jetpacs-editor-org-splice (beg end value)` is the shared write core:
+  replace the region, guard the trailing newline and size limit, save
+  through `jetpacs-org-save-policy`, and restore text, narrowing, point and
+  modified flag on a failure before durability. The restore runs outside
+  `save-restriction`, since putting the whole text back collapses the
+  markers a narrowed restriction is saved as.
+- `jetpacs-editor-org-fresh-splice` keeps its stamp/bounds/tick and
+  synced-editor checks and calls the core.
+- `jetpacs-editor-org-revision-splice (ref value revision)` writes only
+  while `ebp-org-subtree-revision` still answers REVISION, else `stale`.
+- Bloom: `bloom-document--live-subtree` and `--replace-subtree` are gone;
+  the document write, the planning save and the edit autosave all use
+  `ebp-org-subtree-revision`. The document revision was a hash of the
+  subtree string while the outline's was a hash of the buffer region;
+  they differed on CRLF files. Both are now the region hash, and a test
+  pins it on a CRLF file.
+- Harp: `harp-write--replace-subtree` had callers only under `legacy/`;
+  deleted. The live Harp writes edit in place and were never the
+  unchecked whole-subtree replace the survey worried about.
 
 ## Section 5 — link presenter
 

@@ -383,5 +383,59 @@ refuse with the splice condition and leave the file alone."
       (should (string-search "* Stable" (buffer-string)))
       (should-not (string-search "* Changed" (buffer-string))))))
 
+(ert-deftest jetpacs-editor-org-revision-splice-commits-then-answers-stale ()
+  "A live revision splices durably; the spent revision answers `stale'
+and writes nothing; an edit in Emacs since reading also spends it."
+  (jetpacs-editor-org-test--with-splice-vault file buffer
+    (let* ((ref (with-current-buffer buffer
+                  (org-with-wide-buffer
+                   (goto-char (point-min)) (ebp-org-ref-at-point))))
+           (revision (ebp-org-subtree-revision ref))
+           (new-ref (jetpacs-editor-org-revision-splice
+                     ref "* Changed\n:PROPERTIES:\n:ID: stable-id\n:END:\nnew"
+                     revision)))
+      (should (equal (plist-get new-ref :headline) "Changed"))
+      (should-not (buffer-modified-p buffer))
+      (should (eq (jetpacs-editor-org-revision-splice
+                   new-ref "* Again\n" revision)
+                  'stale))
+      (let ((fresh (ebp-org-subtree-revision new-ref)))
+        (with-current-buffer buffer
+          (org-with-wide-buffer
+           (goto-char (point-min))
+           (end-of-line)
+           (insert " edited")
+           (set-buffer-modified-p nil)))
+        (should (eq (jetpacs-editor-org-revision-splice
+                     new-ref "* Again\n" fresh)
+                    'stale)))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (should (string-search "new\n* Neighbor\nkeep" (buffer-string)))
+        (should-not (string-search "Again" (buffer-string)))))))
+
+(ert-deftest jetpacs-editor-org-splice-restores-narrowing-before-durability ()
+  "A failed save restores text, the caller's narrowing, point and the
+modified flag, even though the whole text was put back."
+  (jetpacs-editor-org-test--with-splice-vault file buffer
+    (with-current-buffer buffer
+      (let ((original (save-restriction (widen) (buffer-string)))
+            (jetpacs-files-before-buffer-save-hook
+             (list (lambda (&rest _) (error "encryption failed"))))
+            beg end)
+        (goto-char (point-min))
+        (setq beg (point)
+              end (save-excursion (org-end-of-subtree t t) (point)))
+        (re-search-forward "^\\* Neighbor")
+        (narrow-to-region (line-beginning-position) (point-max))
+        (goto-char (point-max))
+        (let ((narrowed (cons (point-min) (point-max)))
+              (here (point)))
+          (should-error (jetpacs-editor-org-splice beg end "* Changed\n"))
+          (should (equal (cons (point-min) (point-max)) narrowed))
+          (should (= (point) here))
+          (should (equal (save-restriction (widen) (buffer-string)) original))
+          (should-not (buffer-modified-p)))))))
+
 (provide 'jetpacs-editor-org-test)
 ;;; jetpacs-editor-org-test.el ends here

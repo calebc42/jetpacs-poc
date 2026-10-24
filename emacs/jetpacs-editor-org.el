@@ -344,6 +344,86 @@ never parsed or exposed as a path-bearing identity."
          (plist-get context :editor-id)
          (buffer-live-p (plist-get context :buffer)))))
 
+(defun jetpacs-editor-org-splice (beg end value)
+  "Replace BEG..END in the current Org buffer with VALUE; save durably.
+BEG and END are positions in the widened buffer, normally a subtree's
+bounds.  When text follows and VALUE lacks a final newline one is added,
+so the next heading is never glued on.  The save runs through
+`jetpacs-org-save-policy'.  Any failure before durability restores the
+buffer's full text, restriction, point and modified flag, then signals
+on; an edit that would push the file past `jetpacs-files-max-bytes'
+signals `jetpacs-editor-org-splice-refused'.  Bounds outside the buffer
+signal `ebp-org-unresolved'.  Return a fresh ref for the heading VALUE
+starts with.  The caller owns every freshness check."
+  (let ((original-beg (point-min))
+        (original-end (point-max))
+        (original-point (point))
+        (original-modified (buffer-modified-p))
+        (original-full (save-restriction
+                         (widen)
+                         (buffer-substring-no-properties
+                          (point-min) (point-max))))
+        (changed nil)
+        (durable nil))
+    ;; The restore runs outside `save-restriction': replacing the whole
+    ;; text collapses the markers a narrowed restriction is saved as.
+    (unwind-protect
+        (save-restriction
+          (widen)
+          (unless (and (integerp beg) (integerp end)
+                       (<= (point-min) beg end (point-max)))
+            (signal 'ebp-org-unresolved (list 'subtree-bounds)))
+          (let ((inhibit-read-only t)
+                new-ref)
+            (setq changed t)
+            (delete-region beg end)
+            (goto-char beg)
+            (insert value)
+            (unless (or (bolp) (eobp)) (insert "\n"))
+            (goto-char beg)
+            (setq new-ref (ebp-org-ref-at-point))
+            (when (> (string-bytes (buffer-substring-no-properties
+                                    (point-min) (point-max)))
+                     jetpacs-files-max-bytes)
+              (jetpacs-editor-org--splice-refuse
+               "Edited file exceeds the save limit"))
+            (jetpacs-org-save-policy (current-buffer))
+            (setq durable t)
+            new-ref))
+      (when (and changed (not durable))
+        (let ((inhibit-read-only t)
+              (buffer-undo-list t))
+          (widen)
+          (delete-region (point-min) (point-max))
+          (insert original-full)
+          (narrow-to-region original-beg original-end)
+          (goto-char (min (max original-point (point-min)) (point-max)))
+          (set-buffer-modified-p original-modified))))))
+
+(defun jetpacs-editor-org-revision-splice (ref value revision)
+  "Replace REF's subtree with VALUE while it still matches REVISION.
+REVISION is what `ebp-org-subtree-revision' answered when the editor
+read the subtree; any change since, in the file or in Emacs, makes the
+live revision differ.  Return the symbol `stale' then, without writing;
+otherwise splice through `jetpacs-editor-org-splice' and return its
+fresh ref.  Signals as `ebp-org-resolve-ref' and the splice do."
+  (if (not (equal revision (ebp-org-subtree-revision ref)))
+      'stale
+    (let ((marker (ebp-org-resolve-ref ref)))
+      (unwind-protect
+          (with-current-buffer (marker-buffer marker)
+            (pcase-let ((`(,beg . ,end)
+                         (save-excursion
+                           (save-restriction
+                             (widen)
+                             (goto-char marker)
+                             (org-back-to-heading t)
+                             (cons (point)
+                                   (progn (org-end-of-subtree t t)
+                                          (point)))))))
+              (jetpacs-editor-org-splice beg end value)))
+        (set-marker marker nil)))))
+
 (defun jetpacs-editor-org-fresh-splice (ref value stamp beg end tick)
   "Replace REF's subtree with VALUE after validating open-time facts.
 STAMP, BEG, END, and TICK are the scalar snapshot minted when the editor
@@ -387,45 +467,7 @@ anchored ref."
                             (= (buffer-chars-modified-tick) tick))
                  (jetpacs-editor-org--splice-refuse
                   "Heading changed in Emacs — not saved"))
-               (let* ((original-beg (point-min))
-                      (original-end (point-max))
-                      (original-point (point))
-                      (original-modified (buffer-modified-p))
-                      (original-full
-                       (buffer-substring-no-properties
-                        (point-min) (point-max)))
-                      (changed nil)
-                      (durable nil)
-                      new-ref)
-                 (unwind-protect
-                     (progn
-                       (setq changed t)
-                       (delete-region current-beg current-end)
-                       (goto-char current-beg)
-                       (insert value)
-                       ;; Do not glue the following heading to a value
-                       ;; whose final newline was omitted by the client.
-                       (unless (or (bolp) (eobp)) (insert "\n"))
-                       (goto-char current-beg)
-                       (setq new-ref (ebp-org-ref-at-point))
-                       (when (> (string-bytes
-                                 (buffer-substring-no-properties
-                                  (point-min) (point-max)))
-                                jetpacs-files-max-bytes)
-                         (jetpacs-editor-org--splice-refuse
-                          "Edited file exceeds the save limit"))
-                       (jetpacs-org-save-policy (current-buffer))
-                       (setq durable t)
-                       new-ref)
-                   (when (and changed (not durable))
-                     (let ((inhibit-read-only t))
-                       (widen)
-                       (delete-region (point-min) (point-max))
-                       (insert original-full)
-                       (narrow-to-region original-beg original-end)
-                       (goto-char
-                        (min (max original-point (point-min)) (point-max)))
-                       (set-buffer-modified-p original-modified))))))))
+               (jetpacs-editor-org-splice current-beg current-end value))))
         (set-marker marker nil)))))
 
 ;;;###autoload
