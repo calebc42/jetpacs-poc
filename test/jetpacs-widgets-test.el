@@ -1493,6 +1493,22 @@ Undocumented until now, which is why callers reached for
     (should (string-suffix-p (substring (sha1 "*shell /ssh:host:*") 0 8)
                              id))))
 
+(ert-deftest jetpacs-widgets/opaque-id-is-the-persisted-formula ()
+  "Byte-identical to the formulas apps persisted before the helper existed:
+a string hashes as is, any other object as its full printed form."
+  (should (equal (jetpacs-opaque-id "bloom-notebook-" "/v/inbox.org")
+                 (concat "bloom-notebook-"
+                         (substring (secure-hash 'sha256 "/v/inbox.org")
+                                    0 32))))
+  (let ((entry (list "k" "Key" (make-list 30 'x))))
+    (should (equal (let ((print-length 3) (print-level 1))
+                     (jetpacs-opaque-id "view-" entry))
+                   (concat "view-"
+                           (substring (secure-hash
+                                       'sha256 (format "%S" entry))
+                                      0 32)))))
+  (should (= (length (jetpacs-opaque-id "h-" "x" 24)) 26)))
+
 (ert-deftest jetpacs-widgets/wire-id-collisions-and-stability ()
   ;; Sanitize-lossiness kept apart by the hash of the ORIGINAL.
   (should-not (equal (jetpacs-wire-id "x" "*shell*")

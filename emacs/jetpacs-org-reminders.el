@@ -22,6 +22,7 @@
 (require 'org)
 (require 'org-agenda)
 (require 'ebp-org)
+(require 'jetpacs-widgets)               ; jetpacs-opaque-id
 
 (defvar jetpacs-shell-after-push-hook)
 (declare-function jetpacs-connected-p "jetpacs-surfaces" ())
@@ -261,11 +262,7 @@ CONTEXTUAL-KEYS contains commands whose meaning depends on the desktop buffer."
 
 (defun jetpacs-org-mode--custom-view-id (entry)
   "Return a stable opaque saved-view id for custom agenda ENTRY."
-  (let ((print-length nil)
-        (print-level nil)
-        (print-circle t))
-    (concat "org-custom-view-"
-            (substring (secure-hash 'sha256 (prin1-to-string entry)) 0 32))))
+  (jetpacs-opaque-id "org-custom-view-" entry))
 
 (defun jetpacs-org-mode--custom-view-label (entry)
   "Return a bounded display label for custom agenda ENTRY."

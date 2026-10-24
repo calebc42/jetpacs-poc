@@ -250,6 +250,20 @@ the coming files editor ids / witheditor state ids / hosts buffers."
                                       (max 0 (- 118 (length prefix)))))))
     (format "%s-%s-%s" prefix stem hash)))
 
+(defun jetpacs-opaque-id (prefix identity &optional length)
+  "PREFIX followed by LENGTH hex digits (default 32) of IDENTITY's SHA-256.
+For ids that must not reveal what they name (paths, headings, queries)
+yet stay stable across renders and sessions, so they can be persisted.
+IDENTITY is a string, or any object, printed in full with
+`prin1-to-string' (no length or level limits, shared structure marked)."
+  (let ((text (if (stringp identity)
+                  identity
+                (let ((print-length nil)
+                      (print-level nil)
+                      (print-circle t))
+                  (prin1-to-string identity)))))
+    (concat prefix (substring (secure-hash 'sha256 text) 0 (or length 32)))))
+
 (defun jetpacs-require-string (s what)
   "Signal an error unless S is a string; WHAT names the field.  Returns S.
 A `jetpacs-ref' passes: the resolved value is typed at materialization."

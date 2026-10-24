@@ -1175,7 +1175,7 @@ and PUSHES in BODY's scope."
       (jetpacs-files-test--with-ops
           (:read-string (lambda (&rest _) "sub/evil"))
         (jetpacs-files--op-rename f "app:jetpacs.files")
-        (should (equal (car notes) "Name can't contain '/'")))
+        (should (equal (car notes) "Name must be one file name, without '/'")))
       ;; C-g (rpc.cancel on device) is a clean cancel.
       (jetpacs-files-test--with-ops
           (:read-string (lambda (&rest _) (signal 'quit nil)))
@@ -1257,7 +1257,7 @@ and PUSHES in BODY's scope."
     (jetpacs-files-test--with-ops
         (:read-string (lambda (&rest _) "../evil"))
       (jetpacs-files--op-new root "app:jetpacs.files")
-      (should (equal (car notes) "Name can't contain '/'")))
+      (should (equal (car notes) "Name must be one file name, without '/'")))
     ;; Exists-refusal.
     (jetpacs-files-test--with-ops
         (:read-string (lambda (&rest _) "n.org")
@@ -2746,6 +2746,15 @@ surface may dispatch, and which opens through `jetpacs-files-open-document'."
                    handler)
                   'rejected))
       (should-not opened))))
+
+(ert-deftest jetpacs-files-segment-p-accepts-one-printable-name ()
+  "One printable segment within the byte limit; anything else is refused."
+  (dolist (name '("notes.org" "Ünïcode name" ".hidden" "a\\b"))
+    (should (jetpacs-files-segment-p name)))
+  (dolist (name (list nil "" "  " "a/b" "/abs" "." ".." "tab\there"
+                      "new\nline" (make-string 256 ?a)
+                      (make-string 128 ?é)))
+    (should-not (jetpacs-files-segment-p name))))
 
 (provide 'jetpacs-files-test)
 ;;; jetpacs-files-test.el ends here

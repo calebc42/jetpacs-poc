@@ -1505,6 +1505,18 @@ an explicit nil is containment-only on both sides."
     (concat (file-name-as-directory (jetpacs-files--check parent nil))
             (file-name-nondirectory dfn))))
 
+(defun jetpacs-files-segment-p (name)
+  "Non-nil when NAME is one printable path segment a file can be named.
+Not blank, no directory separator, not \".\" or \"..\", no control
+characters, and at most 255 bytes.  A name check only: whether the entry
+may be created is still `jetpacs-files-create''s root policy."
+  (and (stringp name)
+       (not (string-blank-p name))
+       (equal name (file-name-nondirectory name))
+       (not (member name '("." "..")))
+       (not (string-match-p "[[:cntrl:]]" name))
+       (<= (string-bytes name) 255)))
+
 (defun jetpacs-files-create (path &optional directory)
   "Create a new empty file or DIRECTORY at root-scoped PATH.
 PATH must be absent and its parent must already be an authorized directory.
@@ -1582,8 +1594,9 @@ link — rename(2) — never followed."
     (cond
      ((string-empty-p new)
       (jetpacs-shell-notify "Rename cancelled" surface))
-     ((string-search "/" new)
-      (jetpacs-shell-notify "Name can't contain '/'" surface))
+     ((not (jetpacs-files-segment-p new))
+      (jetpacs-shell-notify "Name must be one file name, without '/'"
+                            surface))
      (t
       (condition-case err
           (let* ((src (jetpacs-files--check-op path))
@@ -1701,8 +1714,9 @@ Runs inside a device flow."
      ((string-empty-p name)
       (jetpacs-shell-notify "Create cancelled" surface))
      ;; Single segment only: traversal never even reaches the guard.
-     ((string-search "/" name)
-      (jetpacs-shell-notify "Name can't contain '/'" surface))
+     ((not (jetpacs-files-segment-p name))
+      (jetpacs-shell-notify "Name must be one file name, without '/'"
+                            surface))
      (t
       (let ((kind (condition-case nil
                       (completing-read "Create: " '("File" "Folder") nil t)
