@@ -15,19 +15,11 @@
   (should (default-value 'jetpacs-org-reminders-enabled)))
 
 (ert-deftest jetpacs-org-reminders-agenda-extractor-is-shared-and-memoised ()
-  "Glasspane delegates to the one extractor cached under org-mode."
+  "Apps share the one extractor cached under org-mode."
   (should (eq (symbol-function 'jetpacs-org-mode-agenda-items)
               'jetpacs-org-mode--agenda-items))
   (should (eq (symbol-function 'jetpacs-org-mode-agenda-scope)
               'jetpacs-org-mode--agenda-scope))
-  (should (eq (symbol-function 'glasspane-org--agenda-scope)
-              'jetpacs-org-mode-agenda-scope))
-  (should (eq (symbol-function 'glasspane-org-agenda-scope)
-              'jetpacs-org-mode-agenda-scope))
-  (should (eq (symbol-function 'glasspane-org-agenda-items)
-              'jetpacs-org-mode-agenda-items))
-  (should (eq (symbol-function 'glasspane-org--agenda-items-1)
-              'jetpacs-org-mode--agenda-items-1))
   (let ((org-agenda-files nil)
         (calls 0)
         (fixture '(((headline . "Rich")
@@ -46,17 +38,17 @@
                        (cl-incf calls)
                        fixture)))
             (should (equal (jetpacs-org-mode--agenda-items 'day) fixture))
-            (should (equal (glasspane-org-agenda-items 'day) fixture))
+            (should (equal (jetpacs-org-mode-agenda-items 'day) fixture))
             (should (= calls 1))
             ;; Invalidation is whole-table: any namespace named, or
             ;; none, evicts the canonical projection.
-            (glasspane-org-agenda-items 'day)
+            (jetpacs-org-mode-agenda-items 'day)
             (should (= calls 1))
             (ebp-org-cache-invalidate 'glasspane)
-            (glasspane-org-agenda-items 'day)
+            (jetpacs-org-mode-agenda-items 'day)
             (should (= calls 2))
             (ebp-org-cache-invalidate)
-            (glasspane-org-agenda-items 'day)
+            (jetpacs-org-mode-agenda-items 'day)
             (should (= calls 3))))
       (ebp-org-cache-invalidate))))
 
@@ -450,8 +442,7 @@ set is capped; an owner is required."
       (ebp-org-reset))))
 
 (ert-deftest jetpacs-org-agenda-formatters-are-the-glasspane-shapes ()
-  "The lifted formatters answer what Glasspane's cards rendered, and
-Glasspane's names are now the foundation's."
+  "The lifted formatters answer what Glasspane's cards rendered."
   (should (equal (jetpacs-org-agenda-item-meta
                   '((extra . "Scheduled:") (file . "/v/work.org")) nil)
                  "work.org"))
@@ -460,19 +451,21 @@ Glasspane's names are now the foundation's."
                  "Sched. 3x · work.org"))
   (should (equal (jetpacs-org-agenda-item-meta '((file . "/v/a.org")) "09:30")
                  "09:30 · a.org"))
+  (should (equal (jetpacs-org-agenda-item-meta
+                  '((extra . "In 3 d.") (file . "/v/t.org")) "09:15")
+                 "09:15 · t.org"))
+  (should (equal (jetpacs-org-agenda-item-meta '((extra . "Deadline")) nil)
+                 ""))
   (should (equal (jetpacs-org-agenda-type-icon "past-scheduled")
                  '("history" . "error")))
   (should (equal (jetpacs-org-agenda-type-icon "upcoming-deadline")
                  '("flag")))
   (should-not (jetpacs-org-agenda-type-icon "timestamp"))
+  (should (equal (jetpacs-org-agenda-type-label "past-scheduled")
+                 "overdue"))
   (should (equal (jetpacs-org-agenda-type-label "upcoming-deadline")
                  "deadline soon"))
-  (should-not (jetpacs-org-agenda-type-label "block"))
-  (when (require 'glasspane-agenda nil t)
-    (should (eq (symbol-function 'glasspane-agenda-type-icon)
-                'jetpacs-org-agenda-type-icon))
-    (should (eq (symbol-function 'glasspane-agenda-widget-item-meta)
-                'jetpacs-org-agenda-item-meta))))
+  (should-not (jetpacs-org-agenda-type-label "block")))
 
 (provide 'jetpacs-org-reminders-test)
 ;;; jetpacs-org-reminders-test.el ends here
