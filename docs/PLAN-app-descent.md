@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Sections 1–7 landed on branch `app-descent`.
+Status: plan, 2026-10-23. Sections 1–8 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -234,12 +234,41 @@ path-bearing ids that are not SPEC identifiers. Wiring it is now a
 projector of about twenty lines, but turning on notifications for
 Orgzly users is the owner's call (see open decisions).
 
-## Section 8 — `jetpacs-org-blocks` (~650 lines in Glasspane)
+## Section 8 — inline Org spans (landed, narrowed)
 
-Org body → nodes (prose, quote/verse, checkboxes, drawers, logbook, source and
-Babel cards, typed property editor) plus `jetpacs-org-inline-spans` with
-style and link-title hooks (vulpea titles stay in Glasspane). Highest payoff,
-highest risk (~30 tests pin Glasspane private names). Last.
+Planned as `jetpacs-org-blocks`, the whole Glasspane body renderer.
+Narrowed after reading it: by the boundary rule Jetpacs renders Org
+bodies through `jetpacs-org-render` (built-in fontification), and the
+Glasspane block builders are product design — quote rules, centered
+verse, titled export and special-block cards, Glasspane ids and colors —
+with no second consumer. Bloom keeps its parity parser. Moving them would
+have put a second, Glasspane-styled body renderer into Jetpacs.
+
+What two callers did share moved:
+- `jetpacs-org-inline.el`: `jetpacs-org-inline-spans` and
+  `jetpacs-org-inline-prose` render Org inline objects (emphasis, code
+  and verbatim, links, footnote references) as spans, tapping and
+  exposing real buffer positions, charged to the shared budget as one
+  unit. Bare links get readable labels; id links ask the abnormal hook
+  `jetpacs-org-inline-id-title-functions` before Org's id index, and
+  Glasspane adds its vulpea lookup there with `jetpacs-add-hook`.
+  `jetpacs-org-inline-link-tally` counts rendered links for a caller
+  that binds it.
+- The stock footnote dialog now renders definitions with
+  `jetpacs-org-inline-prose`, so it shows emphasis without Glasspane.
+  The `jetpacs-reader-org-footnote-prose-function` seam, whose only user
+  was Glasspane, is gone.
+- `jetpacs-buffer-face-spans` (prepared faces to monospace spans, faces
+  only) serves Jetpacs source blocks and Glasspane export blocks;
+  `jetpacs-buffer-charge` (spend spans and bytes all or nothing) serves
+  the inline spans and Glasspane's block and call cards. The source-block
+  renderer keeps its own accounting: it checks spans before
+  `jetpacs-org-render--emit-native-p` spends bytes, an order the helper
+  cannot express.
+
+Glasspane lost about 270 lines; its two pure emphasis tests moved to
+`test/jetpacs-org-inline-test.el`, and its reader tests still cover links
+and footnotes end to end.
 
 ## Stays in the apps
 

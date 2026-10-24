@@ -464,6 +464,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-org-table-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-reader-org-test.el \
   -f ert-run-tests-batch-and-exit
 
+# Org inline markup as native spans: emphasis, literal contexts, links and
+# footnote references at exposed positions, the id-title hook and budget.
+emacs -Q --batch -L emacs -l test/jetpacs-org-inline-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JA-5g exit gate: the habits screen — the windowed graph with rotten
 # habits skipped, the one-canvas strip's A2 spend, the durable Done
 # with the prompt hazard loud, token honesty, and the grep pin keeping

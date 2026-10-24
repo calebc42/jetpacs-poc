@@ -39,6 +39,7 @@
 (require 'ebp-org)
 (require 'jetpacs-reader)
 (require 'jetpacs-org-render)
+(require 'jetpacs-org-inline)
 (require 'jetpacs-org-save)
 (require 'jetpacs-widgets)
 (require 'jetpacs-surfaces)
@@ -965,11 +966,6 @@ A source draft has no `:kind'; an argument draft carries `:kind' `call'.")
 (defvar jetpacs-reader-org--footnote-sequence 0
   "Sequence of action-created footnote dialogs; never read by builders.")
 
-(defvar jetpacs-reader-org-footnote-prose-function nil
-  "Function rendering a footnote's TEXT as a dialog-profile node, or nil.
-Nil renders plain text.  A downstream reader with richer prose (emphasis
-spans, say) installs its own renderer here while registered.")
-
 (defun jetpacs-reader-org--save-buffer (buffer)
   "Save BUFFER synchronously through the Org save policy."
   (jetpacs-org-save-policy buffer))
@@ -1482,9 +1478,7 @@ Return nil for an undefined reference.  Preserve separators outside the body."
                            :max-length jetpacs-reader-org-footnote-limit))
       ((string-empty-p text)
        (jetpacs-text "Empty footnote" :color "outline"))
-      ((functionp jetpacs-reader-org-footnote-prose-function)
-       (funcall jetpacs-reader-org-footnote-prose-function text))
-      (t (jetpacs-text text)))
+      (t (jetpacs-org-inline-prose text)))
      (jetpacs-row
       (jetpacs-spacer :weight 1)
       (jetpacs-button (if editing "Cancel" "Close") (jetpacs-dialog-dismiss)

@@ -846,6 +846,51 @@ span rather than being appended past the budget."
   "The live compact serialized size of NODE in octets."
   (jetpacs-node-wire-bytes node))
 
+(defun jetpacs-buffer-charge (spans bytes)
+  "Spend SPANS rich spans and BYTES octets of `jetpacs-buffer-budget'.
+Either may be nil, which leaves that allowance alone.  When both fit,
+deduct them and return t; otherwise spend NOTHING and return nil.  No
+shared budget always fits.  A builder that adds one finished node calls
+this once, so a node that does not fit is dropped whole."
+  (let ((spans-left (car-safe jetpacs-buffer-budget))
+        (bytes-left (cdr-safe jetpacs-buffer-budget)))
+    (when (and (or (null spans) (null spans-left) (<= spans spans-left))
+               (or (null bytes) (null bytes-left) (<= bytes bytes-left)))
+      (when (and spans spans-left)
+        (setcar jetpacs-buffer-budget (- spans-left spans)))
+      (when (and bytes bytes-left)
+        (setcdr jetpacs-buffer-budget (- bytes-left bytes)))
+      t)))
+
+(defun jetpacs-buffer-face-spans (text buffer-name)
+  "Return TEXT's existing Emacs faces as monospace spans.
+Only `face' and `font-lock-face' are copied, into a temporary buffer:
+folds, display substitutions and text keymaps cannot hide text or create
+actions there.  Lines are joined by \"\\n\" spans; nothing follows the last.
+Never fontifies: TEXT carries whatever its buffer already prepared.
+BUFFER-NAME names the origin for `jetpacs-buffer-line-spans'."
+  (let (spans)
+    (with-temp-buffer
+      (let ((cursor 0))
+        (while (< cursor (length text))
+          (let ((next (next-property-change cursor text (length text))))
+            (insert (propertize (substring-no-properties text cursor next)
+                                'face (or (get-text-property cursor 'face text)
+                                          (get-text-property
+                                           cursor 'font-lock-face text))))
+            (setq cursor next))))
+      (let ((jetpacs-buffer-monospace t)
+            (jetpacs-buffer-emit-colors t)
+            (jetpacs-buffer-span-action-function nil))
+        (goto-char (point-min))
+        (while (< (point) (point-max))
+          (setq spans (nconc spans (jetpacs-buffer-line-spans
+                                    (point) (line-end-position) buffer-name)))
+          (when (< (line-end-position) (point-max))
+            (setq spans (nconc spans (list (jetpacs-span "\n" :mono t)))))
+          (forward-line))))
+    spans))
+
 (defconst jetpacs-buffer--byte-budget-batch-size 128
   "Number of rendered lines measured by one byte-budget serialization.
 The old one-node-at-a-time check serialized a long Org document hundreds of

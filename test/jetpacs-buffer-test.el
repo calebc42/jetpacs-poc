@@ -634,5 +634,36 @@ the push-time GATE 5 aggregate remains the authority."
     (jetpacs-buffer-with-budget
       (should (jetpacs-buffer-spend-limit :max_table_cells 10000)))))
 
+(ert-deftest jetpacs-buffer-charge-spends-all-or-nothing ()
+  "A charge deducts both allowances when both fit and nothing otherwise."
+  (let ((jetpacs-buffer-budget (cons 10 100)))
+    (should (jetpacs-buffer-charge 4 60))
+    (should (equal jetpacs-buffer-budget '(6 . 40)))
+    (should-not (jetpacs-buffer-charge 4 41))
+    (should-not (jetpacs-buffer-charge 7 1))
+    (should (equal jetpacs-buffer-budget '(6 . 40)))
+    (should (jetpacs-buffer-charge nil 40))
+    (should (jetpacs-buffer-charge 6 nil))
+    (should (equal jetpacs-buffer-budget '(0 . 0))))
+  (let ((jetpacs-buffer-budget nil))
+    (should (jetpacs-buffer-charge 1000 1000000))))
+
+(ert-deftest jetpacs-buffer-face-spans-copies-faces-only ()
+  "Faces survive as colors; display, invisibility and keymaps do not; a
+newline span joins lines and nothing trails the last."
+  (let* ((text (concat (propertize "let" 'face 'font-lock-keyword-face
+                                   'display "HIDDEN" 'invisible t
+                                   'keymap (make-sparse-keymap))
+                       " x\nnext"))
+         (spans (jetpacs-buffer-face-spans text "code"))
+         (texts (mapcar (lambda (span) (plist-get span :text)) spans)))
+    (should (equal (apply #'concat texts) "let x\nnext"))
+    (should (member "\n" texts))
+    (should-not (equal (car (last texts)) "\n"))
+    (should (cl-every (lambda (span) (plist-get span :mono)) spans))
+    (should-not (cl-some (lambda (span) (plist-get span :on_tap)) spans))
+    (should (equal (jetpacs-buffer-face-spans (concat text "\n") "code")
+                   (append spans (list (jetpacs-span "\n" :mono t)))))))
+
 (provide 'jetpacs-buffer-test)
 ;;; jetpacs-buffer-test.el ends here

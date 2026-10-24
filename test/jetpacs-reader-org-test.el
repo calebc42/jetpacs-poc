@@ -348,54 +348,54 @@ Save never resolves the call; malformed values stay inside the field."
     (list :buffer (buffer-name) :pos pos :tick (buffer-chars-modified-tick))))
 
 (ert-deftest jetpacs-reader-org-footnote-dialog-reads-edits-and-saves ()
-  "Open shows a read dialog (through the installed prose seam); Edit moves
+  "Open shows a read dialog (through the inline prose renderer); Edit moves
 to a fresh editing identity; Save rewrites exactly one definition durably;
 dismissal never writes."
   (dolist (source jetpacs-reader-org-test--footnote-sources)
     (jetpacs-reader-org-test--with-file file source
-      (let ((jetpacs-reader-org-footnote-prose-function
-             (lambda (text) (jetpacs-text (concat "PROSE:" text))))
-            shown callback)
-        (jetpacs-reader-org-test--with-dialogs shown callback
-          (let ((args (jetpacs-reader-org-test--footnote-args)))
-            (should (eq (jetpacs-reader-org--on-footnote-open
-                         args '(:surface "app:test"))
-                        'accepted))
-            (should-not (jetpacs-reader-org-test--nodes-of-type shown "text_input"))
-            (should (string-search "PROSE:Old *note*"
-                                   (jetpacs-node->canonical-json shown)))
-            (funcall callback "dismissed" nil nil)
-            (should-not jetpacs-reader-org--footnote-dialog)
-            (should (equal source (buffer-string)))
-            (should (eq (jetpacs-reader-org--on-footnote-open
-                         args '(:surface "app:test"))
-                        'accepted))
-            (let ((id (plist-get jetpacs-reader-org--footnote-dialog :id))
-                  (old-callback callback))
-              (should (eq (jetpacs-reader-org--on-footnote-edit
-                           (list :session id) (list :dialog_id "other"))
-                          'stale))
-              (should (eq (jetpacs-reader-org--on-footnote-edit
-                           (list :session id) (list :dialog_id id))
-                          'accepted))
-              (should-not (equal id (plist-get jetpacs-reader-org--footnote-dialog :id)))
-              ;; The retired preview's conclusion cannot retire the editor.
-              (funcall old-callback "dismissed" nil nil)
-              (should jetpacs-reader-org--footnote-dialog))
-            (should (equal (plist-get (car (jetpacs-reader-org-test--nodes-of-type
-                                            shown "text_input"))
-                                      :value)
-                           "Old *note*"))
-            (let ((id (plist-get jetpacs-reader-org--footnote-dialog :id)))
-              (should (eq (jetpacs-reader-org--on-footnote-save
-                           (list :session id)
-                           (list :dialog_id id :fields '(:footnote-text "New /note/")))
-                          'accepted)))
-            (should-not jetpacs-reader-org--footnote-dialog)
-            (let ((expected (replace-regexp-in-string
-                             "Old \\*note\\*" "New /note/" source t t)))
-              (should (equal expected (buffer-string)))
-              (should (equal expected (jetpacs-reader-org-test--disk file))))))))))
+					(let (shown callback)
+					  (cl-letf (((symbol-function 'jetpacs-org-inline-prose)
+						     (lambda (text &rest _) (jetpacs-text (concat "PROSE:" text)))))
+					    (jetpacs-reader-org-test--with-dialogs shown callback
+										   (let ((args (jetpacs-reader-org-test--footnote-args)))
+										     (should (eq (jetpacs-reader-org--on-footnote-open
+												  args '(:surface "app:test"))
+												 'accepted))
+										     (should-not (jetpacs-reader-org-test--nodes-of-type shown "text_input"))
+										     (should (string-search "PROSE:Old *note*"
+													    (jetpacs-node->canonical-json shown)))
+										     (funcall callback "dismissed" nil nil)
+										     (should-not jetpacs-reader-org--footnote-dialog)
+										     (should (equal source (buffer-string)))
+										     (should (eq (jetpacs-reader-org--on-footnote-open
+												  args '(:surface "app:test"))
+												 'accepted))
+										     (let ((id (plist-get jetpacs-reader-org--footnote-dialog :id))
+											   (old-callback callback))
+										       (should (eq (jetpacs-reader-org--on-footnote-edit
+												    (list :session id) (list :dialog_id "other"))
+												   'stale))
+										       (should (eq (jetpacs-reader-org--on-footnote-edit
+												    (list :session id) (list :dialog_id id))
+												   'accepted))
+										       (should-not (equal id (plist-get jetpacs-reader-org--footnote-dialog :id)))
+										       ;; The retired preview's conclusion cannot retire the editor.
+										       (funcall old-callback "dismissed" nil nil)
+										       (should jetpacs-reader-org--footnote-dialog))
+										     (should (equal (plist-get (car (jetpacs-reader-org-test--nodes-of-type
+														     shown "text_input"))
+													       :value)
+												    "Old *note*"))
+										     (let ((id (plist-get jetpacs-reader-org--footnote-dialog :id)))
+										       (should (eq (jetpacs-reader-org--on-footnote-save
+												    (list :session id)
+												    (list :dialog_id id :fields '(:footnote-text "New /note/")))
+												   'accepted)))
+										     (should-not jetpacs-reader-org--footnote-dialog)
+										     (let ((expected (replace-regexp-in-string
+												      "Old \\*note\\*" "New /note/" source t t)))
+										       (should (equal expected (buffer-string)))
+										       (should (equal expected (jetpacs-reader-org-test--disk file)))))))))))
 
 (ert-deftest jetpacs-reader-org-footnote-save-refuses-drift-invalid-and-failed-write ()
   "The wrong dialog, invalid Org, source or disk drift and write errors

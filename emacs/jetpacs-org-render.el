@@ -1045,26 +1045,9 @@ The run action uses the source buffer, block position and modification tick."
                    (jetpacs-action "jetpacs.org.execute-src-block"
                                    :args (list :buffer name :pos pos :tick tick))
                    :content-description "Execute source block")))
-           spans)
-      (with-temp-buffer
-        ;; Copy only face properties.  Source folds, pretty-symbol display
-        ;; and text keymaps must not hide code or create accidental actions.
-        (let ((cursor 0))
-          (while (< cursor (length code))
-            (let ((next (next-property-change cursor code (length code))))
-              (insert (propertize (substring-no-properties code cursor next)
-                                  'face (or (get-text-property cursor 'face code)
-                                            (get-text-property cursor 'font-lock-face code))))
-              (setq cursor next))))
-        (let ((jetpacs-buffer-monospace t)
-              (jetpacs-buffer-emit-colors t)
-              (jetpacs-buffer-span-action-function nil))
-          (goto-char (point-min))
-          (while (< (point) (point-max))
-            (setq spans (nconc spans (jetpacs-buffer-line-spans
-                                     (point) (line-end-position) name)
-                               (list (jetpacs-span "\n" :mono t))))
-            (forward-line))))
+           ;; Faces only: folds, pretty-symbol display and text keymaps
+           ;; must not hide code or create accidental actions.
+           (spans (jetpacs-buffer-face-spans code name)))
       (let* ((header (jetpacs-row
                       (jetpacs-with-attrs
                        (jetpacs-text (if label (format "%s · %s" language label) language)
