@@ -822,15 +822,6 @@ allowed, writable Org file rejects, and so does an event with no fields."
                         (jetpacs-error-label err))
                'rejected))))))
 
-;; Public names for the two handlers, so an app whose older screens
-;; emitted its own verb names can alias them without a private call.
-(defalias 'jetpacs-org-file-properties-show
-  #'jetpacs-org-dialogs--on-file-properties-show
-  "Handle a file-properties show event: (ARGS PARAMS), ARGS' `:path'.")
-(defalias 'jetpacs-org-file-properties-save
-  #'jetpacs-org-dialogs--on-file-properties-save
-  "Handle a file-properties save event: (ARGS PARAMS), ARGS' `:path'.")
-
 ;;;; The timestamp editor (poc 2031-2266 rebuilt: one-shot dialogs, sessions)
 ;;
 ;; The poc kept a live satellite view with module-global state — one
