@@ -418,7 +418,8 @@ device has already been told `accepted'."
                (lambda (text &rest _) (setq notified text)))
               ((symbol-function 'completing-read)
                (lambda (&rest _) (setq prompted t) "")))
-      (jetpacs-emacs-ui--with-prompting #'jetpacs-emacs-ui--mx-flow)
+      (jetpacs-dialog-with-prompting #'jetpacs-emacs-ui--mx-flow
+                                     jetpacs-emacs-ui-owner)
       (should-not prompted)
       (should notified))))
 
@@ -431,8 +432,9 @@ never die unreported in a timer."
                (lambda (text &rest _) (setq notified text)))
               ((symbol-function 'message)
                (lambda (fmt &rest args) (push (apply #'format fmt args) logged))))
-      (jetpacs-emacs-ui--with-prompting
-       (lambda () (error "SECRET-DOCUMENT-TEXT")))
+      (jetpacs-dialog-with-prompting
+       (lambda () (error "SECRET-DOCUMENT-TEXT"))
+       jetpacs-emacs-ui-owner)
       (should notified)
       (should-not (cl-some (lambda (l) (string-match-p "SECRET" l)) logged)))))
 

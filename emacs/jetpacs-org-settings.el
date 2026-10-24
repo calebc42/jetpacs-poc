@@ -205,11 +205,8 @@ answers nil.  Memoised under the `org-mode' namespace."
   (when (stringp file)
     (ebp-org-with-cache 'org-mode (list 'workflow-todo-keywords file)
       (condition-case nil
-          (let ((true (ebp-org--check-file file)))
-            (ebp-org--with-clamped-io
-              (with-current-buffer (find-file-noselect true t)
-                (unless (derived-mode-p 'org-mode) (org-mode))
-                (copy-sequence org-todo-keywords-1))))
+          (ebp-org-with-file (_true file)
+            (copy-sequence org-todo-keywords-1))
         (error nil)))))
 
 (defun jetpacs-org-settings-workflow-keywords (items)

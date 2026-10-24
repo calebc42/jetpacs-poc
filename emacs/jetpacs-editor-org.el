@@ -163,7 +163,7 @@ subtree and records its Emacs-owned splice identity for the save gate."
   "The editor's top-bar actions for Org PATH: the file-properties dialog.
 One emitter for every app: an app adapter composing over this one must
 not emit its own, or the button doubles."
-  (when (jetpacs-reader-org-path-p path)
+  (when (ebp-org-path-p path)
     (list (jetpacs-icon-button
            "tune"
            (jetpacs-action "jetpacs.org.file-properties.show"
@@ -443,7 +443,7 @@ allowlist and makes the built-in before-save scan retain the entry."
   (unless jetpacs-editor-org--registered
     (setq jetpacs-editor-org--registered t)
     (jetpacs-editor-register
-     'org :predicate #'jetpacs-reader-org-path-p
+     'org :predicate #'ebp-org-path-p
      :setup #'jetpacs-editor-org--setup
      :body #'jetpacs-editor-org--body
      :toolbar #'jetpacs-editor-org--toolbar

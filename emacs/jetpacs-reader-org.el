@@ -290,12 +290,6 @@ the original authority operations; it never grants a fresh allowance."
   (when buffer-file-name
     (jetpacs-reader-org--invalidate-path buffer-file-name)))
 
-(defun jetpacs-reader-org-path-p (path)
-  "Whether PATH names an Org document."
-  (and (stringp path)
-       (let ((case-fold-search t))
-         (string-match-p "\\.org\\(_archive\\)?\\'" path))))
-
 (defun jetpacs-reader-org--buffer (path)
   "Visit PATH and return its Org buffer."
   (let ((buf (find-file-noselect path t)))
@@ -561,7 +555,7 @@ Signals `user-error' for invalid or excessive input."
 (defun jetpacs-reader-org--prewarm (path)
   "Author PATH's next canonical visibility without changing live state."
   (setq jetpacs-reader-org--prewarm-timer nil)
-  (when-let* ((buffer (and (jetpacs-reader-org-path-p path)
+  (when-let* ((buffer (and (ebp-org-path-p path)
                            (jetpacs-reader-org--buffer path))))
     (when (jetpacs-reader-org--canonical-p path buffer)
       (let* ((selected (jetpacs-reader-org--visibility path))
@@ -822,7 +816,7 @@ its editor is deliberately plain and section-scoped."
   "Validated Org path from ARGS and PARAMS, or a status symbol."
   (let ((path (plist-get args :path)))
     (cond
-     ((not (and (jetpacs-reader-org-path-p path)
+     ((not (and (ebp-org-path-p path)
                 (jetpacs-reader-adapter-for path)))
       'rejected)
      ((jetpacs-event-stale-p params) 'stale)
@@ -1729,7 +1723,7 @@ drafts, and failed writes roll back the buffer while leaving the dialog open."
   ;; this inside the one-time action block would make that restoration a
   ;; no-op merely because the stock actions were still registered.
   (jetpacs-reader-register
-   'org :predicate #'jetpacs-reader-org-path-p
+   'org :predicate #'ebp-org-path-p
    :render #'jetpacs-reader-org--render
    :actions #'jetpacs-reader-org--actions
    :transition #'jetpacs-reader-org--transition)

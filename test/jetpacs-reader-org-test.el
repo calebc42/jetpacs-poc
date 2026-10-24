@@ -457,14 +457,5 @@ unexposed and the ungranted, and goes stale on a moved snapshot."
                       'stale))
           (should-not shown))))))
 
-(ert-deftest jetpacs-reader-org-path-p-includes-native-archives ()
-  "The reader claims Org's archive filenames, in any case."
-  (dolist (path '("/tmp/note.org" "/tmp/note.ORG"
-                  "/tmp/note.org_archive" "/tmp/note.ORG_ARCHIVE"))
-    (should (jetpacs-reader-org-path-p path)))
-  (dolist (path '("/tmp/note.org_archive.bak" "/tmp/note_archive"
-                  "/tmp/note.orgx_archive" nil))
-    (should-not (jetpacs-reader-org-path-p path))))
-
 (provide 'jetpacs-reader-org-test)
 ;;; jetpacs-reader-org-test.el ends here

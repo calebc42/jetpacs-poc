@@ -305,31 +305,6 @@ that accounting), so it carries its own bound."
          (jetpacs-buffer-render-tail buf jetpacs-emacs-ui-messages-lines))))
      :back back)))
 
-(defun jetpacs-emacs-ui--with-prompting (fn)
-  "Run FN only if a prompt raised now would reach the device.
-Every flow here exists to ASK something.  Without a bridge the dialog
-advice falls through to the real minibuffer — on a daemon or an
-unattended desktop that is a prompt nobody can answer, with the device
-already told `accepted'.  Refusing loudly beats wedging silently.
-
-Also re-checked after the fact by each flow's own liveness guards: the
-device round trip inside a prompt can take minutes, and a buffer named
-before it may be gone after."
-  (if (not (jetpacs-dialog-can-bridge-p))
-      (jetpacs-shell-notify
-       (if jetpacs-dialog--pending
-           "Busy — finish the open dialog first"
-         "Dialogs are not available in this session")
-       jetpacs-emacs-ui-owner)
-    (condition-case err
-        (funcall fn)
-      ;; SPEC 23.3: the SYMBOL only — a flow error must not put document
-      ;; text on the wire, and it must not die unreported in a timer.
-      (error (message "jetpacs-emacs-ui: flow failed: %s"
-                      (jetpacs-error-label err))
-             (jetpacs-shell-notify "That did not work"
-                                   jetpacs-emacs-ui-owner)))))
-
 ;; --- imenu -------------------------------------------------------------------
 
 (defun jetpacs-emacs-ui-imenu-flatten (index)
@@ -783,7 +758,8 @@ offered (SPEC 23.1)")
     (lambda (_args _params)
       (jetpacs-flow-continue
        (lambda ()
-         (jetpacs-emacs-ui--with-prompting #'jetpacs-emacs-ui--mx-flow)))
+         (jetpacs-dialog-with-prompting #'jetpacs-emacs-ui--mx-flow
+                                        jetpacs-emacs-ui-owner)))
       'accepted)
     :any-surface t)
 
@@ -813,9 +789,9 @@ offered (SPEC 23.1)")
                 (sel-start (plist-get args :sel_start))
                 (sel-end (plist-get args :sel_end)))
             (ignore params)
-            ;; Not `--with-prompting': an explicit command asks nothing
-            ;; and must run on a grant-less session; the flow's own M-x
-            ;; arm gates on the bridge.  The error half is the same
+            ;; Not `jetpacs-dialog-with-prompting': an explicit command
+            ;; asks nothing and must run on a grant-less session; the
+            ;; flow's own M-x arm gates on the bridge.  The error half is the same
             ;; discipline (SPEC 23.3: symbol only, never die unreported
             ;; in a timer).
             (jetpacs-flow-continue
@@ -840,8 +816,9 @@ offered (SPEC 23.1)")
           'rejected)
          (t (jetpacs-flow-continue
              (lambda ()
-               (jetpacs-emacs-ui--with-prompting
-                (lambda () (jetpacs-emacs-ui--imenu-flow name)))))
+               (jetpacs-dialog-with-prompting
+                (lambda () (jetpacs-emacs-ui--imenu-flow name))
+                jetpacs-emacs-ui-owner)))
             'accepted)))))
 
   (jetpacs-defaction "jetpacs.emacs.imenu-clear"
@@ -867,8 +844,9 @@ offered (SPEC 23.1)")
           'rejected)
          (t (jetpacs-flow-continue
              (lambda ()
-               (jetpacs-emacs-ui--with-prompting
-                (lambda () (jetpacs-emacs-ui--palette-flow name)))))
+               (jetpacs-dialog-with-prompting
+                (lambda () (jetpacs-emacs-ui--palette-flow name))
+                jetpacs-emacs-ui-owner)))
             'accepted))))))
 
 ;; --- Teardown ----------------------------------------------------------------

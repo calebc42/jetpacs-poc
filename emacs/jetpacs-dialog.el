@@ -52,6 +52,7 @@
 (require 'ebp)
 (require 'jetpacs-widgets)
 (require 'jetpacs-surfaces)
+(require 'jetpacs-shell)
 
 (defgroup jetpacs-dialog nil
   "Emacs prompts bridged to Companion dialogs."
@@ -881,6 +882,31 @@ MIGHT prompt should just prompt: the advice bridges when it can and
 uses the minibuffer when it cannot, which is the right behavior for a
 user sitting at the desktop."
   (jetpacs-dialog--bridge-p))
+
+(defun jetpacs-dialog-with-prompting (fn surface &optional refusal failure)
+  "Run FN only if a prompt raised now would reach the device.
+For a device flow whose whole purpose is to ask (see
+`jetpacs-dialog-can-bridge-p').  Without a bridge the prompt would fall
+through to a minibuffer nobody attends, so notify SURFACE instead:
+\"Busy\" while another dialog is open, else REFUSAL (default \"Dialogs
+are not available in this session\").  An error inside FN is logged by
+its symbol only and notifies FAILURE (default \"That did not work\"):
+document text must not reach the wire (SPEC 23.3), and the error must
+not die unreported in a timer.  Return FN's value, or nil."
+  (if (not (jetpacs-dialog-can-bridge-p))
+      (progn
+        (jetpacs-shell-notify
+         (if jetpacs-dialog--pending
+             "Busy — finish the open dialog first"
+           (or refusal "Dialogs are not available in this session"))
+         surface)
+        nil)
+    (condition-case err
+        (funcall fn)
+      (error (message "jetpacs-dialog: flow failed: %s"
+                      (jetpacs-error-label err))
+             (jetpacs-shell-notify (or failure "That did not work") surface)
+             nil))))
 
 (provide 'jetpacs-dialog)
 ;;; jetpacs-dialog.el ends here

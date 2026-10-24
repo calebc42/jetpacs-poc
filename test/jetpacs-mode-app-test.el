@@ -75,10 +75,10 @@
   "Org's sibling archive convention selects the same native adapter."
   (dolist (path '("/tmp/note.org" "/tmp/note.ORG"
                   "/tmp/note.org_archive" "/tmp/note.ORG_ARCHIVE"))
-    (should (jetpacs-reader-org-path-p path)))
+    (should (ebp-org-path-p path)))
   (dolist (path '("/tmp/note.org_archive.bak" "/tmp/note_archive"
                   "/tmp/note.orgx_archive" nil))
-    (should-not (jetpacs-reader-org-path-p path)))
+    (should-not (ebp-org-path-p path)))
   (should (jetpacs-reader-adapter-for "/tmp/note.org_archive")))
 
 (ert-deftest jetpacs-reader-registry-and-toggle-are-document-scoped ()
@@ -112,7 +112,7 @@
         ;; while another app temporarily owns adapter id `org'.
         (jetpacs-reader-org--registered t))
     (jetpacs-reader-register
-     'org :predicate #'jetpacs-reader-org-path-p
+     'org :predicate #'ebp-org-path-p
      :render (lambda (_path) (jetpacs-text "replacement"))
      :actions #'ignore :transition #'ignore)
     (jetpacs-reader-org-register)

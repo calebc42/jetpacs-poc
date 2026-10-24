@@ -569,42 +569,38 @@ does not cover settings changes.  A refused or vanished FILE answers nil."
   (when (and (stringp file) (stringp group)
              (not (string-empty-p group)))
     (condition-case nil
-        (let ((true (ebp-org--check-file file)))
-          (ebp-org--with-clamped-io
-            (with-current-buffer (find-file-noselect true t)
-              (unless (derived-mode-p 'org-mode) (org-mode))
-              (org-with-wide-buffer
-               (let ((org-use-tag-inheritance
-                      (or inherit org-use-tag-inheritance)))
-                 (ebp-org-with-cache 'org-mode
-                     (list 'tag-group-index true group (and inherit t)
-                           (buffer-chars-modified-tick)
-                           (jetpacs-org-mode--tag-settings-here))
-                   (let* ((members
-                           (plist-get
-                            (jetpacs-org-mode-tag-group
-                             (ebp-org-tag-groups) group)
-                            :tags))
-                          (file-tags (jetpacs-org-mode-tag-strings
-                                      org-file-tags))
-                          positions)
-                     (org-map-entries
-                      (lambda ()
-                        (let ((membership (ebp-org-tag-groups-at (point))))
-                          (push
-                           (cons (point)
-                                 (plist-get
-                                  (jetpacs-org-mode-tag-group
-                                   (plist-get membership :groups) group)
-                                  :members))
-                           positions)))
-                      nil 'file)
-                     (list :members members
-                           :file-tags (cl-remove-if-not
-                                       (lambda (member)
-                                         (member member file-tags))
-                                       members)
-                           :positions (nreverse positions)))))))))
+        (ebp-org-with-file (true file)
+          (let ((org-use-tag-inheritance
+                 (or inherit org-use-tag-inheritance)))
+            (ebp-org-with-cache 'org-mode
+                (list 'tag-group-index true group (and inherit t)
+                      (buffer-chars-modified-tick)
+                      (jetpacs-org-mode--tag-settings-here))
+              (let* ((members
+                      (plist-get
+                       (jetpacs-org-mode-tag-group
+                        (ebp-org-tag-groups) group)
+                       :tags))
+                     (file-tags (jetpacs-org-mode-tag-strings
+                                 org-file-tags))
+                     positions)
+                (org-map-entries
+                 (lambda ()
+                   (let ((membership (ebp-org-tag-groups-at (point))))
+                     (push
+                      (cons (point)
+                            (plist-get
+                             (jetpacs-org-mode-tag-group
+                              (plist-get membership :groups) group)
+                             :members))
+                      positions)))
+                 nil 'file)
+                (list :members members
+                      :file-tags (cl-remove-if-not
+                                  (lambda (member)
+                                    (member member file-tags))
+                                  members)
+                      :positions (nreverse positions))))))
       (error nil))))
 
 ;;;; Reminder projection and ownership

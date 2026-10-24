@@ -70,25 +70,6 @@ without `:surface' — fall through to the device flow's origin."
   (or (plist-get params :surface)
       (jetpacs-flow-surface)))
 
-(defun jetpacs-org-table--with-prompting (fn surface refusal)
-  "Run FN only if a prompt raised now would reach the device.
-The jetpacs-org-dialogs shape: with no bridge the advised prompt falls
-through to a minibuffer nobody attends, so refusing loudly (REFUSAL to
-SURFACE) beats wedging silently — and a flow error surfaces as a
-SPEC 23.3 symbol, never text."
-  (if (not (jetpacs-dialog-can-bridge-p))
-      (jetpacs-shell-notify
-       (if (bound-and-true-p jetpacs-dialog--pending)
-           "Busy — finish the open dialog first"
-         refusal)
-       surface)
-    (condition-case err
-        (funcall fn)
-      (error (message "jetpacs-org-table: flow failed: %s"
-                      (jetpacs-error-label err))
-             (jetpacs-shell-notify "That table edit did not work"
-                                   surface)))))
-
 ;;;; The mutation funnel
 
 (defun jetpacs-org-table-mutate (buffer pos fn)
@@ -131,7 +112,7 @@ A field is one line between pipes — keep it that way."
   "The bridged cell editor: prefill, prompt, write back, repush.
 A field that #+TBLFM computes opens its formula instead — recalculation
 would immediately overwrite any value typed into it."
-  (jetpacs-org-table--with-prompting
+  (jetpacs-dialog-with-prompting
    (lambda ()
      (let (current formula)
        (with-current-buffer buffer
@@ -171,7 +152,8 @@ would immediately overwrite any value typed into it."
                                        (org-table-get-field nil new)))
            (ignore-errors (jetpacs-shell-push surface))))))
    surface
-   "Cell editing needs an attended session"))
+   "Cell editing needs an attended session"
+   "That table edit did not work"))
 
 (defconst jetpacs-org-table--menu-ops
   '(("Insert row above"   . org-table-insert-row)
@@ -183,7 +165,7 @@ references (or mark them INVALID) on the way through.")
 
 (defun jetpacs-org-table--cell-menu-run (buffer pos surface)
   "The bridged row/column structure menu for the cell at POS."
-  (jetpacs-org-table--with-prompting
+  (jetpacs-dialog-with-prompting
    (lambda ()
      (let* ((choice (completing-read "Row/column: "
                                      (mapcar #'car jetpacs-org-table--menu-ops)
@@ -193,7 +175,8 @@ references (or mark them INVALID) on the way through.")
          (jetpacs-org-table-mutate buffer pos op)
          (ignore-errors (jetpacs-shell-push surface)))))
    surface
-   "Table editing needs an attended session"))
+   "Table editing needs an attended session"
+   "That table edit did not work"))
 
 (define-error 'jetpacs-org-table--timeout "Babel run timed out")
 (define-error 'jetpacs-org-table--disabled

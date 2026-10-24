@@ -988,5 +988,36 @@ POC 1's device-tested exclusions: bridging any of these either breaks
     (should (jetpacs-dialog-test--quits
              (read-multiple-choice "Day? " '((?w "wednesday")))))))
 
+(ert-deftest jetpacs-dialog-with-prompting-refuses-runs-and-reports ()
+  "No bridge refuses with the caller's text or Busy; a bridge runs FN and
+returns its value; an error notifies FAILURE and logs the symbol only."
+  (let (notes logged (bridge nil) (jetpacs-dialog--pending nil))
+    (cl-letf (((symbol-function 'jetpacs-dialog-can-bridge-p)
+               (lambda () bridge))
+              ((symbol-function 'jetpacs-shell-notify)
+               (lambda (text surface) (push (list text surface) notes)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) logged))))
+      (should-not (jetpacs-dialog-with-prompting
+                   (lambda () (error "Ran")) "s" "No dialogs here"))
+      (should (equal (pop notes) '("No dialogs here" "s")))
+      (jetpacs-dialog-with-prompting #'ignore "s")
+      (should (equal (pop notes)
+                     '("Dialogs are not available in this session" "s")))
+      (let ((jetpacs-dialog--pending t))
+        (jetpacs-dialog-with-prompting #'ignore "s" "No dialogs here"))
+      (should (equal (pop notes) '("Busy — finish the open dialog first" "s")))
+      (setq bridge t)
+      (should (eq (jetpacs-dialog-with-prompting (lambda () 'done) "s") 'done))
+      (should-not notes)
+      (should-not (jetpacs-dialog-with-prompting
+                   (lambda () (error "SECRET-DOCUMENT-TEXT"))
+                   "s" nil "Edit failed"))
+      (should (equal (pop notes) '("Edit failed" "s")))
+      (should logged)
+      (should-not (cl-some (lambda (line) (string-search "SECRET" line))
+                           logged)))))
+
 (provide 'jetpacs-dialog-test)
 ;;; jetpacs-dialog-test.el ends here

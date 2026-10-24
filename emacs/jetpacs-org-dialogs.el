@@ -78,23 +78,6 @@
   "Queue TEXT as the tapped surface's next-push snackbar."
   (jetpacs-shell-notify text (plist-get params :surface)))
 
-(defun jetpacs-org-dialogs--with-prompting (fn params)
-  "Run FN only if a prompt raised now would reach the device.
-The `jetpacs-emacs-ui--with-prompting' shape: refusing loudly beats
-wedging silently, and a flow error surfaces as a symbol, never text
-(SPEC 23.3)."
-  (if (not (jetpacs-dialog-can-bridge-p))
-      (jetpacs-org-dialogs--notify
-       (if (bound-and-true-p jetpacs-dialog--pending)
-           "Busy — finish the open dialog first"
-         "Dialogs are not available in this session")
-       params)
-    (condition-case err
-        (funcall fn)
-      (error (message "jetpacs-org-dialogs: flow failed: %s"
-                      (jetpacs-error-label err))
-             (jetpacs-org-dialogs--notify "That did not work" params)))))
-
 (defun jetpacs-org-dialogs--ref-label (ref)
   "REF's headline as a dialog title, scrubbed and bounded."
   (jetpacs-truncate-text
@@ -433,23 +416,20 @@ reads chars with no prompt argument and would hang under a flow."
 `org-priority' reads with a promptless `read-char-exclusive' the
 bridge advice never sees (emacs-30.1 org.el:11172)."
   (when-let* ((client (jetpacs-client)))
-    (let* ((hi (with-current-buffer buf org-priority-highest))
-           (lo (with-current-buffer buf org-priority-lowest))
-           (chars (and (integerp hi) (integerp lo) (<= hi lo)
-                       (cl-loop for c from hi to lo collect c))))
-      (when chars
+    (let ((letters (with-current-buffer buf (ebp-org-priority-levels))))
+      (when letters
         (ebp-client-dialog-show
          client
          (jetpacs-org-dialogs--id "prio" buf 0)
          (apply #'jetpacs-column
                 (jetpacs-text "Priority" :style "title")
                 (append
-                 (mapcar (lambda (c)
-                           (jetpacs-button (format "#%c" c)
+                 (mapcar (lambda (letter)
+                           (jetpacs-button (concat "#" letter)
                                            (jetpacs-dialog-submit
-                                            :value (char-to-string c))
+                                            :value letter)
                                            :variant "text"))
-                         chars)
+                         letters)
                  (list (jetpacs-button "Clear"
                                        (jetpacs-dialog-submit
                                         :value "__remove__")
@@ -464,8 +444,7 @@ bridge advice never sees (emacs-30.1 org.el:11172)."
                     ((equal v "__remove__")
                      (ebp-org-with-mutation ref 'org
                        (org-priority 'remove)))
-                    ((and (stringp v) (= 1 (length v))
-                          (<= hi (aref v 0) lo))
+                    ((member v letters)
                      (ebp-org-with-mutation ref 'org
                        (org-priority (aref v 0)))))
                  (error (message "jetpacs-org-dialogs: priority failed: %s"
@@ -636,12 +615,6 @@ BUF keys the dialog id and PARAMS name the surface to refresh."
     "file-prop-startup" "file-prop-archive")
   "The captured field ids of the file-properties dialog, in save order.")
 
-(defun jetpacs-org-dialogs--org-path-p (path)
-  "Non-nil when PATH names an Org file, archives included."
-  (and (stringp path)
-       (let ((case-fold-search t))
-         (string-match-p "\\.org\\(_archive\\)?\\'" path))))
-
 (defun jetpacs-org-dialogs--file-buffer (file)
   "FILE's live buffer, visiting it quietly when needed."
   (or (get-file-buffer file) (find-file-noselect file t)))
@@ -810,7 +783,7 @@ PARAMS are the opening event's, kept for the Save's refresh."
 PARAMS are the opening event's."
   (let ((path (plist-get args :path)))
     (cond
-     ((not (and (jetpacs-org-dialogs--org-path-p path)
+     ((not (and (ebp-org-path-p path)
                 (ebp-org-file-allowed-p path)))
       'rejected)
      ((null (jetpacs-client)) 'rejected)
@@ -826,7 +799,7 @@ allowed, writable Org file rejects, and so does an event with no fields."
   (let ((path (plist-get args :path))
         (fields (plist-get params :fields)))
     (cond
-     ((not (and (jetpacs-org-dialogs--org-path-p path)
+     ((not (and (ebp-org-path-p path)
                 (ebp-org-file-allowed-p path)
                 (file-writable-p path)))
       'rejected)
@@ -1310,7 +1283,7 @@ For an edit like refile that may dirty buffers the caller never sees."
 bridges to the device picker.  Refile touches a target buffer this
 module never sees, so every dirty Org buffer is saved afterward, each
 through the save policy."
-  (jetpacs-org-dialogs--with-prompting
+  (jetpacs-dialog-with-prompting
    (lambda ()
      (let ((m (ebp-org-resolve-ref ref)))
        (unwind-protect
@@ -1323,7 +1296,7 @@ through the save policy."
      (jetpacs-org-dialogs--save-dirty-org-buffers)
      (jetpacs-org-dialogs--notify "Refiled" params)
      (jetpacs-org-dialogs--refresh params))
-   params))
+   (plist-get params :surface)))
 
 ;;;; add-heading (poc 2658-2680 rebuilt on the flow seam)
 
@@ -1344,7 +1317,7 @@ first, making the mint order-independent within one document —
 The poc called `read-string' INSIDE the handler; here it runs from the
 flow continuation behind the can-bridge gate.  The title is scrubbed
 and newline-flattened — a multi-line title would smuggle structure."
-  (jetpacs-org-dialogs--with-prompting
+  (jetpacs-dialog-with-prompting
    (lambda ()
      (let ((title (condition-case nil
                       (read-string "New heading: ")
@@ -1365,7 +1338,7 @@ and newline-flattened — a multi-line title would smuggle structure."
            (funcall ebp-org-file-save-function (current-buffer)))
          (jetpacs-org-dialogs--notify "Heading added" params))
        (jetpacs-org-dialogs--refresh params)))
-   params))
+   (plist-get params :surface)))
 
 (defun jetpacs-org-dialogs--add-heading (args params)
   "Append a heading to the buffer the render offered the affordance on."
