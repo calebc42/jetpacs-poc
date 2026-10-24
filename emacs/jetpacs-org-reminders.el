@@ -23,14 +23,7 @@
 (require 'org-agenda)
 (require 'ebp-org)
 (require 'jetpacs-widgets)               ; jetpacs-opaque-id
-
-(defvar jetpacs-shell-after-push-hook)
-(declare-function jetpacs-connected-p "jetpacs-surfaces" ())
-(declare-function jetpacs-granted-p "jetpacs-surfaces"
-                  (capability &optional client))
-(declare-function jetpacs-error-label "jetpacs-surfaces" (err))
-(declare-function jetpacs-reminders-set "jetpacs-device"
-                  (reminders &rest args))
+(require 'jetpacs-reminders)
 
 (defconst jetpacs-org-reminders-owner "org-mode"
   "Owner of the canonical Org agenda reminder set.")
@@ -49,9 +42,6 @@ limits the neutral records retained for downstream applets."
 
 (defvar jetpacs-org-reminders-enabled t
   "Non-nil when the canonical Org reminder pipeline is enabled.")
-
-(defvar jetpacs-org-reminders--last-reminders 'unset
-  "Last reminder set confirmed by the Companion.")
 
 (defconst jetpacs-org-mode--agenda-buffer "*Jetpacs Org Mode Agenda*"
   "Private Org Agenda buffer used by the canonical extraction.")
@@ -780,48 +770,18 @@ add their own opaque routing without duplicating Org extraction."
                            (concat " · " type)))))
    (jetpacs-org-mode-reminder-candidates horizon-hours now 0)))
 
-(defun jetpacs-org-reminders--sync-reminders ()
-  "Synchronize the canonical Org reminder set after a successful push."
-  (when (and jetpacs-org-reminders-enabled
-             (jetpacs-connected-p)
-             (jetpacs-granted-p "reminders.owner"))
-    ;; Keep scan failure distinct from a successful empty projection: only the
-    ;; latter is authority to clear the owner's durable device set.
-    (when-let* ((scan
-                 (condition-case err
-                     (cons t
-                           (jetpacs-org-reminders--upcoming-reminders))
-                   (error
-                    (message "jetpacs-org-reminders: scan failed: %s"
-                             (jetpacs-error-label err))
-                    nil))))
-      (let ((reminders (cdr scan)))
-        (unless (equal reminders jetpacs-org-reminders--last-reminders)
-          (condition-case err
-              (jetpacs-reminders-set
-               reminders :owner jetpacs-org-reminders-owner
-               :callback
-               (lambda (_count error)
-                 (unless error
-                   (setq jetpacs-org-reminders--last-reminders reminders))))
-            (error
-             (message "jetpacs-org-reminders: sync failed: %s"
-                      (jetpacs-error-label err)))))))))
-
 (defun jetpacs-org-reminders-register ()
-  "Install the canonical reminder hook when its rollout flag is enabled."
-  (remove-hook 'jetpacs-shell-after-push-hook
-               #'jetpacs-org-reminders--sync-reminders)
-  (when jetpacs-org-reminders-enabled
-    (add-hook 'jetpacs-shell-after-push-hook
-              #'jetpacs-org-reminders--sync-reminders))
+  "Project the canonical Org reminder set when its rollout flag is enabled."
+  (if jetpacs-org-reminders-enabled
+      (jetpacs-reminders-define-projection
+       jetpacs-org-reminders-owner
+       #'jetpacs-org-reminders--upcoming-reminders)
+    (jetpacs-reminders-remove-projection jetpacs-org-reminders-owner))
   t)
 
 (defun jetpacs-org-reminders-unregister ()
-  "Remove the canonical reminder hook and forget its confirmed-set cache."
-  (remove-hook 'jetpacs-shell-after-push-hook
-               #'jetpacs-org-reminders--sync-reminders)
-  (setq jetpacs-org-reminders--last-reminders 'unset)
+  "Stop projecting the canonical Org reminder set."
+  (jetpacs-reminders-remove-projection jetpacs-org-reminders-owner)
   t)
 
 (provide 'jetpacs-org-reminders)

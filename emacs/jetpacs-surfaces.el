@@ -187,9 +187,9 @@ dropped by `jetpacs--dispose-owner-claims'.")
   (puthash kind fn jetpacs--claim-disposers))
 
 (defconst jetpacs-teardown-kind-order
-  '("hook" "reader-adapter" "editor-adapter" "render-buffer"
-    "theme-provider" "settings-link" "settings-hub" "settings-section"
-    "drill-host" "app")
+  '("hook" "reminder-projection" "reader-adapter" "editor-adapter"
+    "render-buffer" "theme-provider" "settings-link" "settings-hub"
+    "settings-section" "drill-host" "app")
   "Ledger kinds `jetpacs-teardown-owner' disposes, in this order.
 Hooks go first, so no app hook fires into a half-removed registry; the
 app's registry entry goes last.  `action' and `surface' keep their own

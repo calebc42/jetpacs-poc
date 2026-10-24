@@ -864,8 +864,7 @@
                   jetpacs-files-editor-toolbar-functions))
     (should (gethash "org-mode.capture" jetpacs-action-handlers))
     (should (gethash "org-mode.open-seed" jetpacs-action-handlers))
-    (should (memq #'jetpacs-org-reminders--sync-reminders
-                  jetpacs-shell-after-push-hook))))
+    (should (jetpacs-reminders-projection-p "org-mode"))))
 
 (ert-deftest jetpacs-mode-app-render-rendered-p-is-the-reader-host ()
   "Whether an Org path presents rendered is the reader host's answer,

@@ -356,6 +356,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-theme-picker-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-device-test.el \
   -f ert-run-tests-batch-and-exit
 
+# Owner reminder projections: coalescing, the confirmed-set cache, failure
+# versus a disabled projection, and teardown.
+emacs -Q --batch -L emacs -l test/jetpacs-reminders-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JA-1 clip view exit gate (golden: test/goldens/clip-view.golden).
 emacs -Q --batch -L emacs -l test/jetpacs-clip-test.el \
   -f ert-run-tests-batch-and-exit

@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Sections 1–6 landed on branch `app-descent`.
+Status: plan, 2026-10-23. Sections 1–7 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -205,11 +205,34 @@ ebp-org, which the heading cores require.
   `current-time`, but Org's matcher reads today through a bare
   `decode-time`, so the test failed on any day but 2026-10-23.
 
-## Section 7 — reminder projections
+## Section 7 — reminder projections (landed)
 
-`jetpacs-reminders-define-projection (owner projector &key enabled-p)` owns
-batching, the last-confirmed cache, and the push hook; the foundation's own
-sync becomes one caller. Bloom keeps only its projector; Orgzly gains sync.
+New `jetpacs-reminders.el`, free of Org and ebp-org:
+`(jetpacs-reminders-define-projection OWNER PROJECTOR &key enabled-p)`.
+The app supplies only the projector; the module owns
+- coalescing (`jetpacs-reminders-schedule-sync OWNER`: one idle timer per
+  owner, or the handler's continuation inside a dispatch);
+- the confirmed-set cache, moved only by the Companion's acceptance, and
+  ignored for a projection replaced while its send was in flight;
+- failure versus emptiness: a signalling projector sends nothing, a
+  disabled one (`:enabled-p` answers nil) sends the empty set;
+- the push trigger (one `jetpacs-shell-after-push-hook` member for every
+  projection) and teardown: a projection is a `reminder-projection`
+  ledger claim, so `jetpacs-teardown-owner` removes it. Removal keeps the
+  device's set, as both callers already did.
+
+Callers:
+- The canonical Org set (`jetpacs-org-reminders`) is one projection; its
+  hand-rolled sync, cache and hook are gone. Its sync moved from inside
+  the push hook to the coalesced timer, the timing Bloom already used.
+- Bloom keeps its projector, actions and the Org-refresh trigger; its
+  timer, cache, sync and push hook are gone.
+
+Not done: Orgzly. Its PARITY.md says platform reminder delivery is
+deliberately not claimed by the current UI, and its specs use
+path-bearing ids that are not SPEC identifiers. Wiring it is now a
+projector of about twenty lines, but turning on notifications for
+Orgzly users is the owner's call (see open decisions).
 
 ## Section 8 — `jetpacs-org-blocks` (~650 lines in Glasspane)
 
@@ -231,5 +254,8 @@ queries reaching `read-from-string`/`org-ql-select`.
 
 - Retire Glasspane's compatibility verbs (`files.properties.*`,
   `detail.open-file`, `journal.capture` / `glasspane-journal.el`)?
+- Should Orgzly deliver reminders? Its calculation exists
+  (`orgzly-reminders-upcoming`); delivery would be a projection with
+  opaque ids, likely behind an off-by-default setting.
 - Move `glasspane-demo.el`'s editor tour next to `jetpacs-org-mode-seed` and
   load the PARA corpus on demand?

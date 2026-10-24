@@ -213,8 +213,8 @@
 
 (ert-deftest jetpacs-org-reminders-sync-gates-and-diffs-confirmed-set ()
   "The active owner sends only when connected/granted and suppresses repeats."
-  (let ((jetpacs-org-reminders-enabled t)
-        (jetpacs-org-reminders--last-reminders 'unset)
+  (let ((jetpacs-reminders--projections (make-hash-table :test #'equal))
+        (jetpacs-org-reminders-enabled t)
         (connected t)
         (granted t)
         (calls nil)
@@ -231,23 +231,29 @@
                 (lambda (reminders &key owner callback)
                   (push (cons owner reminders) calls)
                   (funcall callback (length reminders) nil)))))
-      (jetpacs-org-reminders--sync-reminders)
-      (jetpacs-org-reminders--sync-reminders)
-      (should (equal calls `(("org-mode" . ,fixture))))
-      (setq jetpacs-org-reminders--last-reminders 'unset
-            connected nil)
-      (jetpacs-org-reminders--sync-reminders)
-      (setq connected t
-            granted nil)
-      (jetpacs-org-reminders--sync-reminders)
-      (should (= (length calls) 1)))))
+      (unwind-protect
+          (progn
+            (jetpacs-org-reminders-register)
+            (jetpacs-reminders-sync-now "org-mode")
+            (jetpacs-reminders-sync-now "org-mode")
+            (should (equal calls `(("org-mode" . ,fixture))))
+            ;; Defining again forgets the confirmed set.
+            (jetpacs-org-reminders-register)
+            (setq connected nil)
+            (jetpacs-reminders-sync-now "org-mode")
+            (setq connected t
+                  granted nil)
+            (jetpacs-reminders-sync-now "org-mode")
+            (should (= (length calls) 1))
+            (setq granted t)
+            (jetpacs-reminders-sync-now "org-mode")
+            (should (= (length calls) 2)))
+        (jetpacs-org-reminders-unregister)))))
 
 (ert-deftest jetpacs-org-reminders-scan-error-preserves-durable-set ()
   "A failed agenda scan must not be mistaken for an authoritative empty set."
-  (let ((jetpacs-org-reminders-enabled t)
-        (jetpacs-org-reminders--last-reminders
-         '((:id "org-mode.rem-existing-12345678"
-            :at_ms 42 :title "Existing")))
+  (let ((jetpacs-reminders--projections (make-hash-table :test #'equal))
+        (jetpacs-org-reminders-enabled t)
         (calls 0))
     (cl-letf (((symbol-function 'jetpacs-connected-p) (lambda () t))
               ((symbol-function 'jetpacs-granted-p) (lambda (&rest _) t))
@@ -256,27 +262,27 @@
                (lambda (&rest _) (error "fixture failure")))
               ((symbol-function 'jetpacs-reminders-set)
                (lambda (&rest _) (cl-incf calls))))
-      (jetpacs-org-reminders--sync-reminders)
-      (should (= calls 0))
-      (should
-       (equal jetpacs-org-reminders--last-reminders
-              '((:id "org-mode.rem-existing-12345678"
-                 :at_ms 42 :title "Existing")))))))
+      (unwind-protect
+          (progn
+            (jetpacs-org-reminders-register)
+            (jetpacs-reminders-sync-now "org-mode")
+            (should (= calls 0)))
+        (jetpacs-org-reminders-unregister)))))
 
 (ert-deftest jetpacs-org-reminders-hook-singleton-across-all-flags ()
-  "The canonical Org reminder hook is the sole reminder hook."
+  "The rollout flag alone decides whether the Org projection exists."
   (unwind-protect
       (progn
         (jetpacs-org-reminders-unregister)
         (let ((jetpacs-org-reminders-enabled nil))
           (jetpacs-org-mode-register)
           (glasspane-agenda-register)
-          (should-not (memq #'jetpacs-org-reminders--sync-reminders
-                            jetpacs-shell-after-push-hook)))
+          (should-not (jetpacs-reminders-projection-p "org-mode")))
         (let ((jetpacs-org-reminders-enabled t))
           (jetpacs-org-mode-register)
           (glasspane-agenda-register)
-          (should (memq #'jetpacs-org-reminders--sync-reminders
+          (should (jetpacs-reminders-projection-p "org-mode"))
+          (should (memq #'jetpacs-reminders--after-push
                         jetpacs-shell-after-push-hook))))
     (jetpacs-org-reminders-unregister)
     (let ((jetpacs-org-reminders-enabled t))
