@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Sections 1 and 2 landed on branch `app-descent`.
+Status: plan, 2026-10-23. Sections 1–3 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -101,15 +101,28 @@ Pure Org helpers went to ebp-org, not Jetpacs: by the naming rule in
     headline key differently (`headline:` vs `heading:`), so unifying them
     would change ids.
 
-## Section 3 — shared heading verbs (~330 lines in Glasspane)
+## Section 3 — shared heading verb handlers (landed)
 
-Ownerless `jetpacs.org.heading.*` verbs (todo-set, todo-cycle, schedule,
-priority, tags, refile, add-note, delete, duplicate, prop-set, prop-add,
-clock-in) resolved in the `jetpacs-org-dialogs-owner` token scope and saved
-through `jetpacs-org-save-policy`, with a SAVE-function hook for app
-refreshes (Glasspane's vulpea refresh). Glasspane keeps its old verb names
-registered as thin aliases for the offline-queue window (`:ttl-s`). Bloom's
-TODO handler and Orgzly's `orgzly-data-set-*` follow.
+`jetpacs-org-heading-verbs.el` builds the handlers; the app keeps the wire
+names. `(jetpacs-org-heading-verb VERB :token-owner O :save S :leave L)`
+returns an (ARGS PARAMS) handler for todo-set, todo-cycle, schedule,
+priority, tags, refile, add-note, delete, duplicate, prop-set, prop-add
+or clock-in. The app registers it with its own `jetpacs-defaction` and
+name.
+
+Why not fixed `jetpacs.org.heading.*` verbs, as first planned:
+- Glasspane's `heading.*` names stay byte-identical, so taps already queued
+  offline still resolve and no alias period is needed.
+- The static applet validator still sees a literal provider for every name
+  Glasspane emits; it records the handler as dynamic.
+- Each app keeps its own token scope and save funnel; an ownerless verb
+  could know neither.
+
+Glasspane dropped its twelve handlers and the refile flow (~290 lines);
+its tests still dispatch every verb by name. Not adopted elsewhere yet:
+Bloom addresses headings by notebook/heading ids rather than tokens (and
+its toggle carries its own repeater rule), and Orgzly does not load
+ebp-org, which the heading cores require.
 
 ## Section 4 — revision-checked subtree writes (~100 lines in Bloom)
 

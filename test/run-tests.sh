@@ -440,6 +440,11 @@ emacs -Q --batch -L emacs -L "$GLASSPANE_DIR" \
 emacs -Q --batch -L emacs -l test/jetpacs-org-dialogs-test.el \
   -f ert-run-tests-batch-and-exit
 
+# Token-addressed heading verb handlers apps register under their own
+# wire names: scope, save funnel, notify/refresh, leave, bridge gate.
+emacs -Q --batch -L emacs -l test/jetpacs-org-heading-verbs-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # The table/Babel verbs (moved up from the downstream app): the mutation
 # funnel's durability and #+TBLFM recalculation, the D2 prompting arms'
 # headless refusal, Babel's timeout/decline/disable arms, and the editable
