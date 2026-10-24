@@ -33,6 +33,53 @@
   (and (integerp n) (>= n 1) (<= n 12)
        (aref jetpacs-dates--month-abbrevs (1- n))))
 
+(defconst jetpacs-dates--month-names
+  ["January" "February" "March" "April" "May" "June"
+   "July" "August" "September" "October" "November" "December"]
+  "Full English month names, independent of the host locale.")
+
+(defconst jetpacs-dates--weekdays
+  ["Sunday" "Monday" "Tuesday" "Wednesday" "Thursday" "Friday" "Saturday"]
+  "English weekday names from Sunday, as `calendar-day-of-week' counts.")
+
+(defun jetpacs-dates-month-name (n)
+  "Return the full English name of month N, or nil outside 1..12."
+  (and (integerp n) (>= n 1) (<= n 12)
+       (aref jetpacs-dates--month-names (1- n))))
+
+(defun jetpacs-dates-parts (date)
+  "Return ISO DATE as the calendar's (MONTH DAY YEAR), or nil.
+Only the YYYY-MM-DD shape is checked; `jetpacs-dates-valid-p' also
+checks that the day exists."
+  (when (and (stringp date)
+             (string-match
+              "\\`\\([0-9]\\{4\\}\\)-\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\)\\'"
+              date))
+    (list (string-to-number (match-string 2 date))
+          (string-to-number (match-string 3 date))
+          (string-to-number (match-string 1 date)))))
+
+(defun jetpacs-dates-valid-p (date)
+  "Return non-nil when DATE is a real ISO \"YYYY-MM-DD\" calendar date."
+  (when-let* ((parts (jetpacs-dates-parts date)))
+    (calendar-date-is-valid-p parts)))
+
+(defun jetpacs-dates-delta (date today)
+  "Return ISO DATE's signed day offset from ISO TODAY, or nil.
+Nil when either is not a valid date."
+  (and (jetpacs-dates-valid-p date)
+       (jetpacs-dates-valid-p today)
+       (- (calendar-absolute-from-gregorian (jetpacs-dates-parts date))
+          (calendar-absolute-from-gregorian (jetpacs-dates-parts today)))))
+
+(defun jetpacs-dates-weekday (date &optional short)
+  "Return valid ISO DATE's English weekday name, or nil.
+SHORT returns the three-letter form, such as \"Mon\"."
+  (when (jetpacs-dates-valid-p date)
+    (let ((name (aref jetpacs-dates--weekdays
+                      (calendar-day-of-week (jetpacs-dates-parts date)))))
+      (if short (substring name 0 3) name))))
+
 (defun jetpacs-dates-encode (date)
   "Encode noon on DATE, an ISO \"YYYY-MM-DD\" string.
 Noon avoids DST date flips.  Positional parsing leaves match data

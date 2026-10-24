@@ -79,5 +79,30 @@ the advised cycle; without advice both are unchanged."
   (should (equal (jetpacs-dates-format-clock "noon" "h12") "noon"))
   (should (equal (jetpacs-dates-format-clock nil "h12") nil)))
 
+(ert-deftest jetpacs-dates-calendar-helpers ()
+  "Validity, day offsets, weekdays and month names, all locale-free."
+  (should (equal (jetpacs-dates-parts "2026-10-24") '(10 24 2026)))
+  ;; The shape check alone admits a day that does not exist.
+  (should (equal (jetpacs-dates-parts "2026-02-30") '(2 30 2026)))
+  (should-not (jetpacs-dates-parts "2026-1-24"))
+  (should-not (jetpacs-dates-parts "2026-10-24x"))
+  (should-not (jetpacs-dates-parts nil))
+  (should (jetpacs-dates-valid-p "2024-02-29"))
+  (should-not (jetpacs-dates-valid-p "2026-02-29"))
+  (should-not (jetpacs-dates-valid-p "2026-13-01"))
+  (should (equal (jetpacs-dates-delta "2026-10-25" "2026-10-24") 1))
+  (should (equal (jetpacs-dates-delta "2025-10-24" "2026-10-24") -365))
+  ;; Across the end of daylight saving time the count stays whole.
+  (should (equal (jetpacs-dates-delta "2026-11-02" "2026-10-31") 2))
+  (should-not (jetpacs-dates-delta "2026-02-30" "2026-10-24"))
+  (should-not (jetpacs-dates-delta "2026-10-24" nil))
+  (should (equal (jetpacs-dates-weekday "2026-10-24") "Saturday"))
+  (should (equal (jetpacs-dates-weekday "2026-10-25" t) "Sun"))
+  (should-not (jetpacs-dates-weekday "2026-02-30"))
+  (should (equal (jetpacs-dates-month-name 1) "January"))
+  (should (equal (jetpacs-dates-month-name 12) "December"))
+  (should-not (jetpacs-dates-month-name 0))
+  (should-not (jetpacs-dates-month-name "3")))
+
 (provide 'jetpacs-dates-test)
 ;;; jetpacs-dates-test.el ends here

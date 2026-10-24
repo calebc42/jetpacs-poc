@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Sections 1–5 landed on branch `app-descent`.
+Status: plan, 2026-10-23. Sections 1–6 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -173,16 +173,37 @@ ebp-org, which the heading cores require.
   written in the current note. Bloom's other read mode already used
   `jetpacs-org-render-in-context` with its own presenter.
 
-## Section 6 — dates and timestamps
+## Section 6 — dates and timestamps (landed)
 
-- `ebp-org-ts-parse` → `:date :time :end :repeater :warning :range-end
-  :active`; `ebp-org-body-active-timestamps`; `:scheduled` and `:revision`
-  on `ebp-org--outline-record`.
-- `jetpacs-dates-valid-p`, `-delta`, `-weekday`, `-month-name`.
-- `jetpacs-org-ts-describe` for repeater/span wording.
-- Consumers: `glasspane-ui-human-date` family, `bloom-agenda-parse-timestamp`,
-  `bloom-org` date helpers, `orgzly-data--parse-ts`. Day labels ("Today")
-  stay in each app.
+- ebp-org: `ebp-org-ts-parse` reads the stamp that starts a string into
+  `:date :time :end :repeater :warning :range-end :active`. Clocks are
+  zero-padded, and a date or range end that is not a real calendar day is
+  refused. It replaces `bloom-agenda-parse-timestamp`; the existing
+  `ebp-org-ts-date`/`-time`/`-repeater` extractors stay for callers that
+  scan unanchored text.
+- jetpacs-dates: `jetpacs-dates-parts`, `-valid-p`, `-delta` (calendar
+  days, so DST cannot shift it), `-weekday` (optionally short) and
+  `-month-name`, all locale-free English like the existing month
+  abbreviations. Bloom dropped its own parts/validity/delta helpers and
+  its weekday and month tables; `bloom-org-date-shift` keeps its
+  nil-on-invalid contract over `jetpacs-dates-shift`. Glasspane dropped
+  its weekday table and its `time-to-days` deltas; a stamp naming a day
+  that does not exist now yields no pill instead of a normalized date.
+- Bloom's outline scan reads SCHEDULED once per heading instead of twice.
+- Dropped after a closer look:
+  - `jetpacs-org-ts-describe`: only Glasspane words repeaters ("weekly",
+    "every 2 weeks"); Bloom shows the cookie as written. It stays in
+    Glasspane as product wording.
+  - `ebp-org-body-active-timestamps`: Bloom is the only consumer; Orgzly
+    scans body stamps too but does not load ebp-org.
+  - `:scheduled`/`:revision` on `ebp-org--outline-record`: every other
+    outline consumer would pay a property lookup and a subtree hash per
+    heading for fields only Bloom reads.
+  - Orgzly: `orgzly-data--parse-ts` returns epoch floats for its own
+    model and cannot use ebp-org; nothing in it duplicates jetpacs-dates.
+- Unrelated fix found on the way: Bloom's quick-card test stubbed
+  `current-time`, but Org's matcher reads today through a bare
+  `decode-time`, so the test failed on any day but 2026-10-23.
 
 ## Section 7 — reminder projections
 
