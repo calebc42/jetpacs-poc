@@ -64,4 +64,33 @@ class ReminderNotificationTest {
             Notifications.reminderKey("grove", "same/action/1"),
         )
     }
+
+    @Test
+    fun eachAppletGetsItsOwnGroupChannelAndShadeGroup() {
+        assertEquals("applet:orgzly", Notifications.appletGroupId("orgzly"))
+        assertEquals("reminders:orgzly", Notifications.reminderChannelId("orgzly"))
+        assertNotEquals(
+            Notifications.reminderChannelId("orgzly"),
+            Notifications.reminderChannelId("bloom"),
+        )
+        assertEquals("reminders:bloom", Notifications.reminderGroupKey("bloom"))
+        // The summary can never collide with a reminder of the same owner.
+        assertNotEquals(
+            Notifications.reminderSummaryKey("orgzly"),
+            Notifications.reminderKey("orgzly", "summary"),
+        )
+        assertNotEquals(
+            Notifications.reminderSummaryKey("orgzly"),
+            Notifications.reminderSummaryKey("bloom"),
+        )
+    }
+
+    @Test
+    fun appletLabelsAndSummaryTextReadAsWords() {
+        assertEquals("Orgzly", Notifications.appletLabel("orgzly"))
+        assertEquals("Org Mode", Notifications.appletLabel("org-mode"))
+        assertEquals("Jetpacs Files", Notifications.appletLabel("jetpacs.files"))
+        assertEquals("1 reminder", Notifications.reminderSummaryText(1))
+        assertEquals("3 reminders", Notifications.reminderSummaryText(3))
+    }
 }

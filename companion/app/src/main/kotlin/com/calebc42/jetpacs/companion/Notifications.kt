@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Platform presentation for SPEC 18.5 notification surfaces and SPEC 18.6
-// reminders: one notification channel, a poster, and the alarm receiver that
-// fires a reminder at its at_ms. This W7 slice presents; routing a
+// reminders: per-applet reminder channels and shade groups, a poster, and the
+// alarm receiver that fires a reminder at its at_ms. This W7 slice presents; routing a
 // notification/reminder tap back to Emacs with its offline policy is the
 // deeper integration (the shared ReminderStore/queue must outlive a
 // connection) noted for a follow-on.
@@ -11,6 +11,7 @@ import android.app.Activity
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
+import android.app.NotificationChannelGroup
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.RemoteInput
@@ -111,6 +112,99 @@ object Notifications {
     const val REMINDER_TAG = "reminder"
     private const val MAX_VISIBLE_REMINDER_ACTIONS = 3
 
+    /** The Android notification channel group for applet [owner]: Android's
+     * notification settings list each applet's channels under its own
+     * heading, so a user can silence or restyle one applet's reminders and
+     * keep another's. */
+    fun appletGroupId(owner: String): String = "applet:$owner"
+
+    /** The reminder channel inside [owner]'s group. */
+    fun reminderChannelId(owner: String): String = "reminders:$owner"
+
+    /** The shade group key bundling [owner]'s reminders under one summary. */
+    fun reminderGroupKey(owner: String): String = "reminders:$owner"
+
+    /** A notification id for [owner]'s shade summary that no reminder can
+     * take: reminder ids are SPEC 4.4 identifiers, which hold no NUL. */
+    fun reminderSummaryKey(owner: String): Int = reminderKey(owner, "\u0000summary")
+
+    /** A readable label for applet [owner], a wire identifier such as
+     * `org-mode` or `bloom`: separators become spaces and each word is
+     * capitalized ("Org Mode", "Bloom"). The id stays the channel's key, so
+     * a later, better label renames the group without losing settings. */
+    fun appletLabel(owner: String): String =
+        owner.split('-', '_', '.')
+            .filter(String::isNotEmpty)
+            .joinToString(" ") { word -> word.replaceFirstChar(Char::uppercaseChar) }
+            .ifEmpty { owner }
+
+    /** The summary's text for [count] active reminders. */
+    fun reminderSummaryText(count: Int): String =
+        if (count == 1) "1 reminder" else "$count reminders"
+
+    /** Create [owner]'s channel group and reminder channel if absent, and
+     * return the channel id. Importance is fixed at creation; after that
+     * the user owns it, so an existing channel is never recreated. */
+    private fun ensureReminderChannel(ctx: Context, owner: String): String {
+        val mgr = ctx.getSystemService(NotificationManager::class.java)
+        val channelId = reminderChannelId(owner)
+        if (mgr.getNotificationChannel(channelId) == null) {
+            mgr.createNotificationChannelGroup(
+                NotificationChannelGroup(appletGroupId(owner), appletLabel(owner)))
+            mgr.createNotificationChannel(
+                NotificationChannel(channelId, "Reminders",
+                    NotificationManager.IMPORTANCE_HIGH).apply {
+                    group = appletGroupId(owner)
+                    description = "Reminders from ${appletLabel(owner)}"
+                })
+        }
+        return channelId
+    }
+
+    /** Remove reminder [rid] of [owner] from the shade and keep the
+     * applet's summary in step with what remains. */
+    fun cancelReminderNotification(ctx: Context, owner: String, rid: String) {
+        ctx.getSystemService(NotificationManager::class.java)
+            .cancel(REMINDER_TAG, reminderKey(owner, rid))
+        refreshReminderSummary(ctx, owner)
+    }
+
+    /** Bundle [owner]'s reminders in the shade: with two or more showing,
+     * one summary ("Orgzly · 3 reminders", their titles inside) heads the
+     * group; with fewer, no summary, so a lone reminder reads as itself. The
+     * summary alerts never: its children already did. */
+    private fun refreshReminderSummary(ctx: Context, owner: String) {
+        val mgr = ctx.getSystemService(NotificationManager::class.java)
+        val key = reminderGroupKey(owner)
+        val children = runCatching { mgr.activeNotifications }.getOrDefault(emptyArray())
+            .filter { sbn ->
+                sbn.tag == REMINDER_TAG && sbn.notification.group == key &&
+                    (sbn.notification.flags and Notification.FLAG_GROUP_SUMMARY) == 0
+            }
+        if (children.size < 2) {
+            mgr.cancel(REMINDER_TAG, reminderSummaryKey(owner))
+            return
+        }
+        val style = Notification.InboxStyle()
+            .setSummaryText(appletLabel(owner))
+        children.take(5).forEach { sbn ->
+            sbn.notification.extras.getCharSequence(Notification.EXTRA_TITLE)
+                ?.let(style::addLine)
+        }
+        val summary = Notification.Builder(ctx, ensureReminderChannel(ctx, owner))
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle(appletLabel(owner))
+            .setContentText(reminderSummaryText(children.size))
+            .setStyle(style)
+            .setCategory(Notification.CATEGORY_REMINDER)
+            .setGroup(key)
+            .setGroupSummary(true)
+            .setGroupAlertBehavior(Notification.GROUP_ALERT_CHILDREN)
+            .setAutoCancel(true)
+            .build()
+        runCatching { mgr.notify(REMINDER_TAG, reminderSummaryKey(owner), summary) }
+    }
+
     /** SPEC 18.6: a collision-resistant, OWNER-scoped key for a reminder's alarm
      * request code, tap PendingIntent, and notification id — a truncated SHA-256
      * of (owner, id), NOT a trivially-collidable String.hashCode. Reminder ids
@@ -204,8 +298,7 @@ object Notifications {
             alarmManager.cancel(pending)
             pending.cancel()
         }
-        ctx.getSystemService(NotificationManager::class.java)
-            .cancel(REMINDER_TAG, reminderKey(owner, reminderId))
+        cancelReminderNotification(ctx, owner, reminderId)
     }
 
     /** SPEC 18.6: re-arm every owner's unfired reminders from the durable store.
@@ -229,7 +322,7 @@ object Notifications {
         atMs: Long,
         reminder: JsonObject,
     ) {
-        ensureChannel(ctx)
+        val channel = ensureReminderChannel(ctx, owner)
         val contentIntent = reminder.objOrNull("on_tap")?.let { descriptor ->
             reminderPendingIntent(
                 ctx,
@@ -241,9 +334,10 @@ object Notifications {
                 hasInput = false,
             )
         }
-        val builder = Notification.Builder(ctx, CHANNEL)
+        val builder = Notification.Builder(ctx, channel)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(reminder.requiredString("title"))
+            .setGroup(reminderGroupKey(owner))
             .also {
                 reminder.stringOr("body").takeIf(String::isNotEmpty)
                     ?.let(it::setContentText)
@@ -268,6 +362,7 @@ object Notifications {
         }
         ctx.getSystemService(NotificationManager::class.java)
             .notify(REMINDER_TAG, reminderKey(owner, rid), builder.build())
+        refreshReminderSummary(ctx, owner)
     }
 
     private fun buildReminderAction(
@@ -630,9 +725,7 @@ internal object ReminderInteraction {
                 ) { status, error ->
                     if (error == null && status in
                         setOf("queued", "accepted", "duplicate")) {
-                        app.getSystemService(NotificationManager::class.java)
-                            .cancel(Notifications.REMINDER_TAG,
-                                Notifications.reminderKey(owner, rid))
+                        Notifications.cancelReminderNotification(app, owner, rid)
                     }
                 }
                 return@submit
@@ -658,9 +751,7 @@ internal object ReminderInteraction {
             ) { status, error ->
                 if (action.boolOr("dismiss") && error == null && status in
                     setOf("queued", "accepted", "duplicate")) {
-                    app.getSystemService(NotificationManager::class.java)
-                        .cancel(Notifications.REMINDER_TAG,
-                            Notifications.reminderKey(owner, rid))
+                    Notifications.cancelReminderNotification(app, owner, rid)
                 }
             }
           } finally {
