@@ -136,6 +136,19 @@ its document screen, top-bar actions, and FAB.  A host that enforces a
 stricter boundary must return non-nil after a refusal so the generic
 fallback cannot bypass that boundary.")
 
+(defvar jetpacs-org-render-follow-functions nil
+  "Abnormal hook of app presenters for destinations Org links resolve to.
+Each function receives (SOURCE DESTINATION POSITION SURFACE LINK-POS):
+the first four as for `jetpacs-org-render-follow-destination-function',
+and LINK-POS the followed link's position in SOURCE.  The first to
+return non-nil presented the destination or refused it.
+
+Consulted after a presenter registered for the source buffer on that
+surface (`jetpacs-org-render-in-context') and before
+`jetpacs-org-render-follow-destination-function'.  An app adds its
+presenter with `jetpacs-add-hook' under its owner, so teardown removes
+it, and answers nil for links it does not present.")
+
 (defvar jetpacs-org-render--surface-presenters (make-hash-table :test #'equal)
   "Host presenters keyed by (BUFFER-NAME . SURFACE).
 The registry lets two applets render the same Org buffer without replacing
@@ -1504,25 +1517,36 @@ acceptance; only the view refresh is deferred."
                  'rejected)))))))
 
 (defun jetpacs-org-render--follow (args params)
-  "Follow the exposed Org link and present its resolved destination."
+  "Follow the exposed Org link ARGS name and present its destination.
+ARGS carry `:buffer' and `:pos', and optionally the `:tick' the render
+saw: a buffer edited since then answers `stale', as does a position that
+no longer holds a link.  Presentation tries, in order, the presenter
+registered for the buffer on PARAMS' surface,
+`jetpacs-org-render-follow-functions', and
+`jetpacs-org-render-follow-destination-function'; with none claiming it
+the generic drill in `jetpacs-navigate-thunk' shows the destination."
   (let* ((name (plist-get args :buffer))
          (pos (plist-get args :pos))
-         (buf (and (stringp name) (get-buffer name))))
+         (tick (plist-get args :tick))
+         (buf (and (stringp name) (get-buffer name)))
+         (surface (plist-get params :surface)))
     (cond
-     ((not (and buf (integerp pos))) 'rejected)
+     ((not (and buf (integerp pos) (or (null tick) (integerp tick))))
+      'rejected)
      ((jetpacs-event-stale-p params) 'stale)
      ((not (jetpacs-buffer-exposed-p name pos "jetpacs.org.follow"))
       'rejected)
      ((not (with-current-buffer buf
-             (save-excursion
-               (goto-char (min (max (point-min) pos) (point-max)))
-               (org-in-regexp org-link-any-re))))
+             (and (or (null tick) (= tick (buffer-chars-modified-tick)))
+                  (org-with-wide-buffer
+                   (and (<= (point-min) pos (point-max))
+                        (save-excursion
+                          (goto-char pos)
+                          (org-in-regexp org-link-any-re)))))))
       'stale)
      (t
-      (let ((presenter
-             (or (jetpacs-org-render--presenter-for
-                  name (plist-get params :surface))
-                 jetpacs-org-render-follow-destination-function)))
+      (let ((registered (jetpacs-org-render--presenter-for name surface))
+            (global jetpacs-org-render-follow-destination-function))
         (jetpacs-navigate-thunk
          (lambda ()
            ;; Deliberately leave the destination buffer current: the
@@ -1530,12 +1554,18 @@ acceptance; only the view refresh is deferred."
            (set-buffer buf)
            (goto-char pos)
            (org-open-at-point))
-         (plist-get params :surface)
+         surface
          "Org link"
-         (and (functionp presenter)
-              (lambda (destination destination-position surface)
-                (funcall presenter buf destination destination-position
-                         surface)))))
+         (lambda (destination destination-position surface)
+           (or (and (functionp registered)
+                    (funcall registered buf destination destination-position
+                             surface))
+               (run-hook-with-args-until-success
+                'jetpacs-org-render-follow-functions
+                buf destination destination-position surface pos)
+               (and (functionp global)
+                    (funcall global buf destination destination-position
+                             surface))))))
       'accepted))))
 
 (defun jetpacs-org-render--footnote-return (args params)

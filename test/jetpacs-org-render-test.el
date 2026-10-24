@@ -1129,6 +1129,52 @@ cleanup thunk — the drain never burns a tick on a view nobody shows."
             (goto-char (nth 2 presented))
             (should (looking-at-p "\\* Target"))))))))
 
+(ert-deftest jetpacs-org-render-link-follow-hook-precedes-global-and-checks-tick ()
+  "Follow hooks see the link position and run before the global presenter;
+a declining hook falls through, and an edited buffer answers `stale'."
+  (jetpacs-org-render-test--with-file f
+      "* Target\nDestination body.\n\n[[*Target][Jump]]\n"
+    (let* ((buf (jetpacs-org-render-test--buffer f))
+           (name (buffer-name buf))
+           (surface "app:org-link-hook-test")
+           (claim t)
+           hooked globaled)
+      (jetpacs-org-render buf)
+      (let* ((pos (jetpacs-org-render-test--exposed-position
+                   buf "jetpacs.org.follow"))
+             (tick (with-current-buffer buf (buffer-chars-modified-tick)))
+             (jetpacs-org-render-follow-functions
+              (list (lambda (source destination position target link-pos)
+                      (push (list source destination position target link-pos)
+                            hooked)
+                      claim)))
+             (jetpacs-org-render-follow-destination-function
+              (lambda (&rest args) (push args globaled) t))
+             (jetpacs-navigate-drill-function (lambda (&rest _) t)))
+        (should (eq 'accepted
+                    (jetpacs-org-render--follow
+                     (list :buffer name :pos pos :tick tick)
+                     (list :surface surface))))
+        (should (equal (nth 4 (car hooked)) pos))
+        (should (equal (nth 3 (car hooked)) surface))
+        (should-not globaled)
+        (setq claim nil)
+        (jetpacs-org-render--follow (list :buffer name :pos pos :tick tick)
+                                    (list :surface surface))
+        (should (= (length hooked) 2))
+        (should (= (length globaled) 1))
+        (with-current-buffer buf
+          (goto-char (point-min))
+          (insert " "))
+        (should (eq 'stale
+                    (jetpacs-org-render--follow
+                     (list :buffer name :pos pos :tick tick)
+                     (list :surface surface))))
+        (should (eq 'rejected
+                    (jetpacs-org-render--follow
+                     (list :buffer name :pos pos :tick "soon")
+                     (list :surface surface))))))))
+
 (ert-deftest jetpacs-org-render-footnote-definition-returns-to-reference ()
   "A definition label jumps back and scrolls to its previous reference."
   (jetpacs-org-render-test--with-file f

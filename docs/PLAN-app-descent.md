@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Sections 1–4 landed on branch `app-descent`.
+Status: plan, 2026-10-23. Sections 1–5 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -146,15 +146,32 @@ ebp-org, which the heading cores require.
   deleted. The live Harp writes edit in place and were never the
   unchecked whole-subtree replace the survey worried about.
 
-## Section 5 — link presenter
+## Section 5 — link following (landed)
 
-Public `jetpacs-org-render-register-presenter`, plus an optional `:tick`
-freshness check on `jetpacs.org.follow`. Replace
-`glasspane-org-reader--on-link-open` / `--present-link-destination` and
-Bloom's `bloom-document--on-read-link`. Fix `org.link.open`
-(`glasspane-detail--on-link-open`), which pushes a screen directly and
-bypasses `glasspane-navigation-open-document`; add its NAVIGATION.org row.
-Keep `glasspane.link.open` as an alias verb for the cache window.
+- Jetpacs: `jetpacs.org.follow` takes an optional `:tick` (an edited
+  buffer answers `stale`) and checks the link in the widened buffer. A new
+  abnormal hook, `jetpacs-org-render-follow-functions`, receives
+  (SOURCE DESTINATION POSITION SURFACE LINK-POS) and runs after a presenter
+  registered for the buffer on that surface and before the global
+  presenter. Apps add to it with `jetpacs-add-hook`, so teardown removes
+  them. A hook fit Glasspane better than the planned per-buffer
+  `register-presenter`: its tree reader draws every Org document while
+  Glasspane is registered.
+- Glasspane: the reader emits `jetpacs.org.follow`; `glasspane.link.open`
+  and its handler are gone. Its presenter claims links followed on
+  Glasspane's surface, from a dialog, or in the document Files shows, and
+  routes file destinations through `glasspane-navigation-open-document`.
+  Link exposure is per session, so a tap rendered before the change could
+  not have resolved anyway.
+- Glasspane `org.link.open` is gone too. It opened a device-supplied link
+  string with `org-link-open-from-string` (any link type, `shell:` and
+  `elisp:` included) and pushed the detail screen past NAVIGATION.org.
+  Properties link buttons now emit `jetpacs.org.follow` on the link's
+  exposed drawer position.
+- Bloom: read mode still names links by target text (its parity parser has
+  no buffer positions), but `bloom.read.link` now accepts only a target
+  written in the current note. Bloom's other read mode already used
+  `jetpacs-org-render-in-context` with its own presenter.
 
 ## Section 6 — dates and timestamps
 
