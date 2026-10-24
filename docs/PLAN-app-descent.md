@@ -279,12 +279,17 @@ Resources, SRS, EF, packages; saved views (each app has its own query
 language); Bloom's org-ql mode until a security review of device-supplied
 queries reaching `read-from-string`/`org-ql-select`.
 
-## Open decisions for the owner
+## Owner decisions (resolved 2026-10-24)
 
-- Retire Glasspane's compatibility verbs (`files.properties.*`,
-  `detail.open-file`, `journal.capture` / `glasspane-journal.el`)?
-- Should Orgzly deliver reminders? Its calculation exists
-  (`orgzly-reminders-upcoming`); delivery would be a projection with
-  opaque ids, likely behind an off-by-default setting.
-- Move `glasspane-demo.el`'s editor tour next to `jetpacs-org-mode-seed` and
-  load the PARA corpus on demand?
+- Orgzly delivers reminders: `orgzly-reminders` is a projection registered
+  with the app, capped at the soonest `orgzly-reminders-max-count` (64)
+  under the Companion's shared allowance of 256, ids opaque, on by
+  default, cleared when `orgzly-reminders-enabled` is off.
+- Glasspane's compatibility verbs are retired: `tasks.open`, `views.hub`,
+  `journal.capture` with `glasspane-journal.el`, `resources.open-file`,
+  `resources.return`, `detail.open-file`, `files.properties.show/save`.
+  None was emitted by a current screen; a tap from a spec cached before
+  the change is refused. The detail menu's File properties item emits
+  `jetpacs.org.file-properties.show`, and the foundation's
+  `jetpacs-org-file-properties-show/-save` aliases went with them.
+- `glasspane-demo.el` stays where it is for now.
