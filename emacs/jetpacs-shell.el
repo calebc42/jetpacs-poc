@@ -183,12 +183,23 @@ last-push-wins shell.  The builtin constructor validates SURFACE in both arms."
         builtin
       (jetpacs-action "jetpacs.launcher.open" :args (list :surface surface)))))
 
+(defvar jetpacs-shell-build-target nil
+  "The profile key of the surface whose builder is running, or nil.
+`:app', `:notification', `:widget' or `:tile' (SPEC 10.2), bound by
+`jetpacs-shell--build' and around a stale builder, so a helper that
+gates on an advertised feature asks the profile the node is bound for.
+Nil outside a shell build means `:app'.")
+
 (defun jetpacs-shell-action-opening-surface (name surface &rest keys)
   "Build remote action NAME whose same occurrence presents app SURFACE.
 KEYS are the keyword arguments accepted by `jetpacs-action'.  A Companion
 advertising `action.open_surface' performs the receiver-local Nav3 selection
 and still dispatches NAME to Emacs; an older Companion receives the original
 remote-only descriptor and retains its pre-Nav3 last-push-wins behavior.
+
+The feature is asked of the profile being built (`jetpacs-shell-build-target'):
+a widget, notification or tile that does not advertise it gets the plain
+remote action, which its gate would otherwise refuse with the whole surface.
 
 Use this only when NAME's accepted effect deliberately publishes a different
 app surface.  Ordinary same-surface refreshes remain plain remote actions."
@@ -197,7 +208,8 @@ app surface.  Ordinary same-surface refreshes remain plain remote actions."
   (jetpacs-surface-open surface)
   (apply #'jetpacs-action name
          :open-surface (and (jetpacs-feature-advertised-p
-                             "action.open_surface" :app)
+                             "action.open_surface"
+                             (or jetpacs-shell-build-target :app))
                             surface)
          keys))
 
@@ -510,6 +522,8 @@ repush or async flush carries no ambient owner of its own."
             ;; joins it, so two renders of one buffer in one document
             ;; route around each other instead of shipping a duplicate.
             (jetpacs-node-id-claims (make-hash-table :test #'equal))
+            ;; Feature gates inside the builder ask this surface's profile.
+            (jetpacs-shell-build-target (jetpacs-shell--surface-target surface))
             ;; A render is pure: pushes, navigation, flow continuations
             ;; and Org saves refuse inside it (`jetpacs--builder-guard').
             (jetpacs--in-builder t))
@@ -1525,7 +1539,9 @@ render never pushes (defer the push with a timer instead)."
                               ((error (lambda (e)
                                         (jetpacs-shell--note-builder-error
                                          (list :surface surface) e))))
-                            (let ((jetpacs--in-builder t))
+                            (let ((jetpacs--in-builder t)
+                                  (jetpacs-shell-build-target
+                                   (jetpacs-shell--surface-target surface)))
                               (funcall fn))))))
                    (stale-after-s (or stale-after-s
                                       (plist-get entry :stale-after-s)))

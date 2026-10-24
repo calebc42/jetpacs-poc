@@ -655,6 +655,29 @@ reference defconst passes the same spec, proving it cannot witness."
      (jetpacs-shell--check-profile-uses
       feature-spec '("text") nil '("action.open_surface") nil "app"))))
 
+(ert-deftest jetpacs-floor-opening-action-asks-the-built-surfaces-profile ()
+  "A surface-opening action carries `open_surface' only where the profile
+being built advertises it: an app surface does, a widget that does not
+gets the plain remote action instead of a refused push."
+  (jetpacs-floor-test--with-client
+      (client :profiles '(:app (:node_types ["text"] :builtins []
+                                :features ["action.open_surface"])
+                          :widget (:node_types ["text"] :builtins []
+                                   :features [])))
+    (let ((builder (lambda ()
+                     (jetpacs-shell-action-opening-surface
+                      "demo.open" "app:demo" :args '(:id "x")))))
+      (should (equal (plist-get (jetpacs-shell--build
+                                 "app:demo" (list :builder builder))
+                                :open_surface)
+                     "app:demo"))
+      (let ((widget (jetpacs-shell--build "widget:demo.w"
+                                          (list :builder builder))))
+        (should (equal (plist-get widget :action) "demo.open"))
+        (should-not (plist-member widget :open_surface)))
+      ;; Outside a shell build the app profile answers, as before.
+      (should (plist-get (funcall builder) :open_surface)))))
+
 (ert-deftest jetpacs-floor-gate-editor-bytes-amendment-84 ()
   (jetpacs-floor-test--with-client
       (client :profiles '(:app (:node_types ["editor"] :builtins []
