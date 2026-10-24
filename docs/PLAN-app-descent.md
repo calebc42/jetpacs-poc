@@ -1,6 +1,6 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
-Status: plan, 2026-10-23. Section 1 in progress.
+Status: plan, 2026-10-23. Sections 1 and 2 landed on branch `app-descent`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless
@@ -64,23 +64,42 @@ and stay (`glasspane-org-todo-items`, `-all-tags`, `-file-tag-group-index`).
   choice labels and raw strings. Converging needs Bloom's settings screens
   to emit Jetpacs' wire shape, which touches pixel-parity builders.
 
-## Section 2 — small shared helpers (new public Jetpacs API)
+## Section 2 — small shared helpers (landed)
 
-- `jetpacs-dialog-with-prompting (fn surface &optional refusal)`: replaces
-  `glasspane-detail--with-prompting` and the private copies in
-  jetpacs-org-dialogs, jetpacs-emacs-ui, jetpacs-org-table.
-- `jetpacs-org-path-p` (covers `.gpg`, `_archive`): replaces three checks.
-- `jetpacs-org-with-file` macro (check file, clamped IO, find-file, widen):
-  five copies across Glasspane and Jetpacs.
-- `jetpacs-org-priority-levels`, `jetpacs-org-done-p`.
-- `jetpacs-files-segment-name (name &optional ext)`: Bloom and Orgzly.
-- `jetpacs-org-file-preface` → `(:text :keywords :intro)`: Bloom and Orgzly.
-- `jetpacs-stable-id (prefix identity)` and `jetpacs-heading-identity (ref)`:
-  Bloom, Orgzly, Harp. Output must stay byte-identical (ids are persisted).
-- `jetpacs-org-changed-hook`, batched on idle: Bloom's watcher, Glasspane's
-  save refresh, `orgzly-data-invalidate`.
-- Design: public `jetpacs-design-token-color`, an alpha-flattening helper
-  (today private `jetpacs-theme--blend`), `jetpacs-design-profile-declares-p`.
+Pure Org helpers went to ebp-org, not Jetpacs: by the naming rule in
+`jetpacs-org.el`, `ebp-` names what touches only Emacs and the wire.
+
+- `jetpacs-dialog-with-prompting (fn surface &optional refusal failure)`
+  in jetpacs-dialog.el replaces the private copies in jetpacs-org-dialogs,
+  jetpacs-emacs-ui, jetpacs-org-table, glasspane-detail and the inline
+  guard in glasspane-srs. Bloom's two-line guards were left alone: they
+  carry their own error handling, and wrapping them adds nesting for
+  nothing.
+- `ebp-org-path-p (path &optional encrypted)` replaces
+  `jetpacs-reader-org-path-p` and the dialogs' private predicate;
+  Glasspane's editor adapter keeps a one-line wrapper that opts into
+  whole-file gpg.
+- `ebp-org-with-file ((var file) body...)` (root check, IO clamp, Org mode,
+  widened) replaces four hand-rolled visits. Habits was not converted: it
+  has no root check today, so converting would change behavior.
+- `ebp-org-priority-levels`; `ebp-org-done-keywords` /
+  `ebp-org-done-keyword-p` (buffer, then global default, then what
+  `org-todo-keywords` declares) replace Glasspane's hardcoded
+  DONE/CANCELLED fallbacks.
+- `jetpacs-opaque-id (prefix identity &optional length)` in
+  jetpacs-widgets.el: Bloom (4 sites), Orgzly, Harp and the custom-view
+  list; pinned byte-identical to the persisted formula.
+- `jetpacs-files-segment-p` in jetpacs-files.el: Jetpacs Files' rename and
+  new-entry flows, Bloom's notebook names, Orgzly's book names.
+- Dropped after a closer look:
+  - `jetpacs-org-file-preface`: Bloom and Orgzly return different shapes,
+    and Bloom's is pixel-parity code.
+  - `jetpacs-org-changed-hook`: Bloom is the only watcher. Glasspane's
+    "save refresh" was a flag nobody read, now deleted.
+  - Design token helpers: only Bloom reads design tokens.
+  - `jetpacs-heading-identity`: Bloom's two heading identities spell the
+    headline key differently (`headline:` vs `heading:`), so unifying them
+    would change ids.
 
 ## Section 3 — shared heading verbs (~330 lines in Glasspane)
 
