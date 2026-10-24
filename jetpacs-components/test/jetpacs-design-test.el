@@ -194,6 +194,26 @@ bare scaffold, only under an advertised runtime."
                (cl-loop for (key value) on profile by #'cddr
                         unless (eq key :theme-roles) append (list key value)))))))
 
+(ert-deftest jetpacs-components-list-item-drops-members-the-target-omits ()
+  "The canonical row drops a card variant and a column weight its target
+profile does not advertise; a full profile keeps both."
+  (cl-letf (((symbol-function 'jetpacs-node-advertised-p) (lambda (&rest _) nil))
+            ((symbol-function 'jetpacs-node-member-advertised-p)
+             (lambda (type member target)
+               (not (and (eq target :widget)
+                         (member (cons type member)
+                                 '(("card" . "variant") ("column" . "weight"))))))))
+    (let* ((widget (jetpacs-components-list-item "Row" :subtitle "meta"
+                                                 :target :widget))
+           (app (jetpacs-components-list-item "Row" :subtitle "meta")))
+      (should (equal (plist-get widget :t) "card"))
+      (should-not (plist-member widget :variant))
+      (should-not (string-search "\"weight\""
+                                 (jetpacs-node->canonical-json widget)))
+      (should (equal (plist-get app :variant) "outlined"))
+      (should (string-search "\"weight\""
+                             (jetpacs-node->canonical-json app))))))
+
 (ert-deftest jetpacs-components-list-item-composes-a-trailing-list ()
   "A trailing LIST builds on both receivers: the flat node's one typed
 `trailing' member takes the list as a row, the canonical card lays it

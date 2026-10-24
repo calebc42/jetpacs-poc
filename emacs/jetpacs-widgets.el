@@ -1953,7 +1953,8 @@ Companion has always drawn)."
 
 (cl-defun jetpacs-list-item (&key leading title subtitle overline trailing
                                   on-tap on-long-tap swipe-start swipe-end
-                                  padding key (spacing 12) (variant "outlined"))
+                                  padding key (spacing 12) (variant "outlined")
+                                  (weighted t))
   "An elevated list-item card with a flexible middle and pinned edges.
 The standard \"leading · title/subtitle · trailing\" list row, laid out
 so the trailing controls are never pushed off-screen.
@@ -1966,7 +1967,9 @@ TRAILING is a single node, or a list of nodes, pinned at the end (a status
 badge, icon buttons) — each keeps its intrinsic width.
 ON-TAP makes the whole card tappable; ON-LONG-TAP fires on long-press;
 SWIPE-START / SWIPE-END attach swipe actions; PADDING pads the card; SPACING
-is the gap between the row's parts; VARIANT defaults to outlined.
+is the gap between the row's parts; VARIANT defaults to outlined, and nil
+omits it.  WEIGHTED nil drops the middle column's flex weight; both are for a
+target whose profile does not advertise `card.variant' or `column.weight'.
 KEY rides the outer card as its stable `lazy_column' identity (see
 `jetpacs-card') — give every dynamic list row one (the org id, the
 file path) so reorders and inserts never smear state across rows.
@@ -1981,7 +1984,8 @@ nodes (`card' > `row' > weighted `column'); it is not a new wire node type."
                       (list (and overline (funcall ensure-text overline "label"))
                             (and title    (funcall ensure-text title "body"))
                             (and subtitle (funcall ensure-text subtitle "caption")))))
-         (middle (jetpacs-with-attrs (apply #'jetpacs-column (append texts (list :spacing 2))) :weight 1))
+         (column (apply #'jetpacs-column (append texts (list :spacing 2))))
+         (middle (if weighted (jetpacs-with-attrs column :weight 1) column))
          (trailing-nodes (cond ((null trailing) nil)
                                ((jetpacs-node-p trailing) (list trailing))
                                (t (append trailing nil))))
@@ -1991,7 +1995,7 @@ nodes (`card' > `row' > weighted `column'); it is not a new wire node type."
                                     (when on-long-tap :on-long-tap) on-long-tap
                                     (when swipe-start :swipe-start) swipe-start
                                     (when swipe-end :swipe-end) swipe-end
-                                    :variant variant)))
+                                    (when variant :variant) variant)))
          (card (apply #'jetpacs-card card-args)))
     (if (or key padding)
         (apply #'jetpacs-with-attrs card (delq nil (list (when key :key) key (when padding :padding) padding)))

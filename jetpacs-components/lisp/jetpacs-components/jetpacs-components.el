@@ -20,6 +20,8 @@
 ;; The session layer answers what the live profile advertises.  It is a soft
 ;; dependency: this package builds nodes and must stay loadable without a
 ;; session, so the row builder degrades when the predicate is absent.
+(declare-function jetpacs-node-member-advertised-p "jetpacs-surfaces"
+                  (type member &optional target))
 (declare-function jetpacs-node-advertised-p "jetpacs-surfaces"
                   (type &optional target))
 
@@ -135,6 +137,12 @@ left for `jetpacs-component-list-item' to refuse."
       (car trailing)))
    (t trailing)))
 
+(defun jetpacs-components--member-p (type member target)
+  "Non-nil unless the live TARGET profile omits node TYPE's MEMBER.
+Offline, or without the foundation's welcome reader, the richer form."
+  (or (not (fboundp 'jetpacs-node-member-advertised-p))
+      (jetpacs-node-member-advertised-p type member target)))
+
 (cl-defun jetpacs-components-list-item
     (title &key overline subtitle title-max-lines subtitle-max-lines
            leading trailing on-tap on-long-tap swipe-start swipe-end
@@ -183,6 +191,12 @@ row in a `lazy_column' the same way either way."
               :swipe-start swipe-start :swipe-end swipe-end
               :selected selected :enabled enabled)
            (jetpacs-list-item
+            ;; Members the target cannot draw are dropped: a widget's card
+            ;; has no variant and its column no weight, and the receiver
+            ;; refuses the whole surface for one unadvertised member.
+            :variant (and (jetpacs-components--member-p "card" "variant" target)
+                          "outlined")
+            :weighted (jetpacs-components--member-p "column" "weight" target)
             :leading leading
             :overline overline
             :title (jetpacs-text title :style "body"

@@ -678,6 +678,24 @@ gets the plain remote action instead of a refused push."
       ;; Outside a shell build the app profile answers, as before.
       (should (plist-get (funcall builder) :open_surface)))))
 
+(ert-deftest jetpacs-floor-gate-target-max-nodes ()
+  "A target profile's `max_nodes' is enforced before the send, naming the
+surface; an app surface without a target cap is unaffected."
+  (jetpacs-floor-test--with-client
+      (client :profiles '(:app (:node_types ["text" "column"] :builtins []
+                                :features [])
+                          :widget (:node_types ["text" "column"] :builtins []
+                                   :features [] :limits (:max_nodes 3))))
+    (let ((small (jetpacs-column (jetpacs-text "a") (jetpacs-text "b")))
+          (big (jetpacs-column (jetpacs-text "a") (jetpacs-text "b")
+                               (jetpacs-text "c"))))
+      (should (= (jetpacs-shell-node-count big) 4))
+      (should (= (jetpacs-shell-target-limit "widget:demo.w" :max_nodes) 3))
+      (should-not (jetpacs-shell-target-limit "app:demo" :max_nodes))
+      (should-not (jetpacs-shell--gate-target-nodes client "widget:demo.w" small))
+      (should-error (jetpacs-shell--gate-target-nodes client "widget:demo.w" big))
+      (should-not (jetpacs-shell--gate-target-nodes client "app:demo" big)))))
+
 (ert-deftest jetpacs-floor-gate-editor-bytes-amendment-84 ()
   (jetpacs-floor-test--with-client
       (client :profiles '(:app (:node_types ["editor"] :builtins []

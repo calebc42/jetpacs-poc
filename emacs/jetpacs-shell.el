@@ -1171,6 +1171,32 @@ spans) add no depth."
           :max_rich_spans rich-spans :max_table_cells table-cells
           :max_chart_points chart-points :max_canvas_ops canvas-ops)))
 
+(defun jetpacs-shell-target-limit (surface limit &optional client)
+  "SURFACE's target profile LIMIT, such as `:max_nodes', or nil.
+A widget, notification or tile profile may cap a document below the
+session-wide SPEC 4.5 limits (SPEC 10.2); nil means no target cap or no
+attached CLIENT, which defaults to the live one."
+  (when-let* ((client (or client (jetpacs-client)))
+              (profile (plist-get (ebp-client-profiles client)
+                                  (jetpacs-shell--surface-target surface))))
+    (plist-get (plist-get profile :limits) limit)))
+
+(defun jetpacs-shell-node-count (spec)
+  "The typed nodes in SPEC, size variants included, as the receiver counts."
+  (plist-get (jetpacs-shell--count-aggregates spec) :nodes))
+
+(defun jetpacs-shell--gate-target-nodes (client surface spec &optional analysis)
+  "Refuse SPEC when it exceeds SURFACE's target `max_nodes' (SPEC 10.2).
+The receiver refuses the whole document; refusing here names the cause
+where the builder can see it."
+  (when-let* ((cap (jetpacs-shell-target-limit surface :max_nodes client))
+              (nodes (plist-get (or (and analysis (plist-get analysis :counts))
+                                    (jetpacs-shell--count-aggregates spec))
+                                :nodes)))
+    (when (> nodes cap)
+      (error "jetpacs: %d nodes exceed %s's max_nodes %d (SPEC 10.2)"
+             nodes surface cap))))
+
 (defun jetpacs-shell--gate-size
     (client spec stale-spec &optional spec-analysis stale-analysis data)
   "GATE 5: SPEC 4.5 SIZE — the sender MUST respect the reported limits.
@@ -1619,6 +1645,11 @@ spec (SPEC 13.4)" current-view)))
                   (jetpacs-shell--gate-amendments client spec spec-analysis)
                   (jetpacs-shell--gate-size
                    client spec stale-spec spec-analysis stale-analysis data)
+                  (jetpacs-shell--gate-target-nodes
+                   client surface spec spec-analysis)
+                  (when stale-spec
+                    (jetpacs-shell--gate-target-nodes
+                     client surface stale-spec stale-analysis))
                   (jetpacs-shell--gate-ids
                    spec stale-spec spec-analysis stale-analysis)
                   (when stale-spec
