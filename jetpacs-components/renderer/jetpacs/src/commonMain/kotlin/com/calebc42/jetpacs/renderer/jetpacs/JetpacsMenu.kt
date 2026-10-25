@@ -35,6 +35,14 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.DefaultShadowColor
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInWindow
@@ -191,6 +199,7 @@ fun JetpacsMenu(
                     enabled = enabled,
                     role = Role.DropdownList,
                 ) { expanded = true }
+                .designRipple(DesignComponentStyleSlot.MenuTrigger, source)
                 .styleable(
                     styleState,
                     JetpacsTheme.styles.menuTrigger,
@@ -202,7 +211,10 @@ fun JetpacsMenu(
             DesignGlyph(triggerIcon, triggerTint, 24.dp)
         }
 
-        if (expanded) {
+        // The popup outlives `expanded` by its closing fade.
+        var popupShown by remember { mutableStateOf(false) }
+        if (expanded) popupShown = true
+        if (popupShown) {
             val layoutDirection = LocalLayoutDirection.current
             val density = LocalDensity.current
             val windowHeight = LocalWindowInfo.current.containerSize.height
@@ -213,27 +225,55 @@ fun JetpacsMenu(
             }
             val placement = LocalDesignScope.current
                 ?.componentStyle(DesignComponentStyleSlot.MenuContainer).popupPlacement()
+            // A View popup's shadow is drawn by the window manager outside the
+            // popup; a Compose popup draws it inside its own window, so the
+            // window gets transparent room for the whole shadow around the menu.
+            val shadowMargin = LocalDesignScope.current
+                ?.componentStyle(DesignComponentStyleSlot.MenuContainer).authoredElevation()
+                ?.let { (elevation, _) -> elevation * 2 } ?: 0.dp
+            // A View popup window's transitions: it fades in at full size,
+            // its shadow with it, and fades out as it closes.
+            val alpha = remember { Animatable(0f) }
+            LaunchedEffect(expanded) {
+                if (expanded) {
+                    alpha.animateTo(1f, tween(PopupEnterMillis, easing = LinearOutSlowInEasing))
+                } else {
+                    alpha.animateTo(0f, tween(PopupExitMillis))
+                    popupShown = false
+                }
+            }
+            val positionProvider = remember(layoutDirection, placement, density, shadowMargin) {
+                with(density) {
+                    JetpacsAnchoredPopupPositionProvider(
+                        layoutDirection,
+                        overlap = placement.overlap,
+                        offsetY = placement.offsetY.roundToPx(),
+                        edgeInset = placement.edgeInset.roundToPx(),
+                        beforeAnchor = placement.beforeAnchor,
+                        shadowMargin = shadowMargin.roundToPx(),
+                    )
+                }
+            }
             Popup(
-                popupPositionProvider = remember(layoutDirection, placement, density) {
-                    with(density) {
-                        JetpacsAnchoredPopupPositionProvider(
-                            layoutDirection,
-                            overlap = placement.overlap,
-                            offsetY = placement.offsetY.roundToPx(),
-                            edgeInset = placement.edgeInset.roundToPx(),
-                            beforeAnchor = placement.beforeAnchor,
-                        )
-                    }
-                },
+                popupPositionProvider = positionProvider,
                 onDismissRequest = { closePopup(restoreFocus = true) },
                 properties = PopupProperties(
                     focusable = true,
                     dismissOnBackPress = true,
                     dismissOnClickOutside = true,
-                    clippingEnabled = true,
+                    // The shadow's room may run past the window's edge; the
+                    // menu itself is kept inside by the position provider.
+                    clippingEnabled = shadowMargin == 0.dp,
                 ),
             ) {
+              Box(
+                Modifier
+                    // A tap on the shadow's room is a tap outside the menu.
+                    .pointerInput(Unit) { detectTapGestures { closePopup(restoreFocus = true) } }
+                    .padding(shadowMargin),
+              ) {
                 JetpacsMenuPopupContent(
+                    fade = { alpha.value },
                     items = items,
                     groups = groups,
                     initialScroll = initialScroll,
@@ -253,10 +293,14 @@ fun JetpacsMenu(
                     itemSupportingStyle = itemSupportingStyle,
                     groupLabelStyle = groupLabelStyle,
                 )
+              }
             }
         }
     }
 }
+
+private const val PopupEnterMillis = 150
+private const val PopupExitMillis = 200
 
 /** Bounded popup body, separated from the window so tests can draw it. */
 @Composable
@@ -274,6 +318,8 @@ fun JetpacsMenuPopupContent(
     itemLabelStyle: Style = Style,
     itemSupportingStyle: Style = Style,
     groupLabelStyle: Style = Style,
+    /** The popup window's opacity as it opens and closes, its shadow's too. */
+    fade: () -> Float = { 1f },
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -311,9 +357,23 @@ fun JetpacsMenuPopupContent(
         modifier = modifier
             .let { m ->
                 elevation?.let { (e, corner) ->
-                    m.shadow(e, androidx.compose.foundation.shape.RoundedCornerShape(corner), clip = false)
+                    // The shadow's own layer, outside the fading one: a layer
+                    // drawn offscreen for its alpha casts no shadow, so the
+                    // shadow fades through its colors instead. A window's
+                    // shadow trails its content in (measured against Orgzly
+                    // Revived's dropdown, about as the fourth power).
+                    m.graphicsLayer {
+                        shadowElevation = e.toPx()
+                        shape = androidx.compose.foundation.shape.RoundedCornerShape(corner)
+                        clip = false
+                        val f = fade()
+                        val shadow = DefaultShadowColor.copy(alpha = DefaultShadowColor.alpha * f * f * f * f)
+                        ambientShadowColor = shadow
+                        spotShadowColor = shadow
+                    }
                 } ?: m
             }
+            .graphicsLayer { alpha = fade() }
             .widthIn(min = popupMinWidth, max = popupMaxWidth)
             // As Material's menus do: as wide as the widest item, whose
             // rows fill that width, rather than the whole allowed width.

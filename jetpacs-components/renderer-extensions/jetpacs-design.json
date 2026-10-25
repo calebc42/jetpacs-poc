@@ -8,7 +8,8 @@
     "jetpacs.pressable",
     "jetpacs.glyph",
     "jetpacs.inline_text",
-    "jetpacs.inline"
+    "jetpacs.inline",
+    "jetpacs.wheel"
   ],
   "targets": {
     "app": [
@@ -17,7 +18,8 @@
       "jetpacs.pressable",
       "jetpacs.glyph",
       "jetpacs.inline_text",
-      "jetpacs.inline"
+      "jetpacs.inline",
+      "jetpacs.wheel"
     ],
     "dialog": [
       "jetpacs.design_scope",
@@ -25,7 +27,8 @@
       "jetpacs.pressable",
       "jetpacs.glyph",
       "jetpacs.inline_text",
-      "jetpacs.inline"
+      "jetpacs.inline",
+      "jetpacs.wheel"
     ],
     "notification": []
   },
@@ -523,8 +526,62 @@
           "description": "The most width the placeholder takes, in dp."
         }
       }
+    },
+    "jetpacs.wheel": {
+      "description": "A stateful selector wheel: one of values, scrolled into the middle of a spinning column, as the platform's number picker draws it. Its published value is the selected string.",
+      "required": {
+        "id": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The stateful node id drafts, captures and state.changed address."
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "min_length": 1,
+            "max_length": 64
+          },
+          "min_items": 1,
+          "max_items": 256,
+          "description": "The choices, top to bottom."
+        },
+        "value": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 64,
+          "description": "The selected choice; one of values."
+        }
+      },
+      "optional": {
+        "wrap": {
+          "type": "boolean",
+          "description": "Whether scrolling past the last choice wraps to the first; false by default."
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "color": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 64,
+          "description": "The choices' text color: #RRGGBB, #RRGGBBAA or an EBP theme role."
+        },
+        "divider_color": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 64,
+          "description": "The selection dividers' color."
+        },
+        "on_change": {
+          "type": "action",
+          "description": "Dispatched after a settled change with the selected choice injected as args.value."
+        }
+      }
     }
   },
-  "stateful_when_present": {},
+  "stateful_when_present": {
+    "jetpacs.wheel": "value"
+  },
   "at_least_one_non_empty": {}
 }

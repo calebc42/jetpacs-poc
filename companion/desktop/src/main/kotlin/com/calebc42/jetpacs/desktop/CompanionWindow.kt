@@ -22,8 +22,10 @@ import com.calebc42.jetpacs.companion.host.ui.JetpacsNavHost
 import com.calebc42.jetpacs.companion.host.ui.LocalCompanionRendererConfiguration
 import com.calebc42.jetpacs.companion.host.ui.LocalHostUiPlatform
 import com.calebc42.jetpacs.companion.host.ui.PieMenuHost
+import com.calebc42.jetpacs.companion.host.ui.PlatformDesignRipple
 import com.calebc42.jetpacs.material3.EbpTheme
 import com.calebc42.jetpacs.material3.IconMap
+import com.calebc42.jetpacs.renderer.jetpacs.LocalDesignRippleFactory
 import com.calebc42.jetpacs.renderer.jetpacs.ProvideJetpacsTheme
 
 /**
@@ -62,6 +64,8 @@ fun CompanionWindow(
         // One glyph set for both renderers: the Material-free design
         // renderer draws the same named icons Glasspane resolves.
         LocalComposeIconResolver provides ComposeIconResolver(IconMap::get),
+        // Its authored touch ripples are the platform's, as Material draws them.
+        LocalDesignRippleFactory provides PlatformDesignRipple,
     ) {
         EbpTheme(themePayload) {
             ProvideJetpacsTheme(themePayload) {
@@ -88,7 +92,7 @@ fun CompanionWindow(
                             },
                         )
                         PieMenuHost(presentation.currentPieMenu, bridge)
-                        DialogHost(presentation.currentDialog, bridge)
+                        DialogHost(presentation.dialogs, bridge)
                         ConfirmHost(bridge)
                         ToastHost(companion.toasts)
                         TransportStatusStrip(companion.transportStatus, companion.toasts)

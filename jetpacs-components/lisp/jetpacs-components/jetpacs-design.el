@@ -113,6 +113,9 @@
     ("paragraph_breaking" . "boolean")
     ("line_spacing_below" . "boolean")
     ("line_height_centered" . "boolean")
+    ("platform_dialog" . "boolean")
+    ("ripple_color" . "color")
+    ("ripple_radius" . "dimension")
     ("max_lines" . "number")
     ("middle_ellipsis" . "boolean")
     ("popup_overlap" . "boolean")
@@ -510,6 +513,25 @@ names the glyph for accessibility."
   (jetpacs-make-node "jetpacs.glyph" :paths (vconcat paths)
                      :viewport_width viewport-width :viewport_height viewport-height
                      :size size :color color :content_description content-description))
+
+(cl-defun jetpacs-design-wheel (id values value &key wrap enabled color divider-color on-change)
+  "A stateful selector wheel ID over VALUES, a list of strings, at VALUE.
+The platform's number picker draws it; its published value is the
+selected string, so a dialog's `capture_fields' reads it by ID.  WRAP
+lets the wheel run past the last value to the first.  COLOR and
+DIVIDER-COLOR are #RRGGBB or #RRGGBBAA colors or EBP theme roles.
+ON-CHANGE is dispatched once a change settles, with the value injected."
+  (jetpacs-check-identifier id ":id")
+  (unless (and (proper-list-p values) (<= 1 (length values) 256)
+               (cl-every (lambda (v) (and (stringp v) (<= 1 (length v) 64))) values))
+    (error "jetpacs-design: wheel values must be one to 256 strings of 1-64 characters"))
+  (unless (member value values)
+    (error "jetpacs-design: wheel value %S is not one of its values" value))
+  (when on-change (jetpacs-check-descriptor on-change ":on-change"))
+  (jetpacs-make-node "jetpacs.wheel" :id id :values (vconcat values) :value value
+                     :wrap (and wrap (if (eq wrap :json-false) :json-false t))
+                     :enabled enabled :color color :divider_color divider-color
+                     :on_change on-change))
 
 (cl-defun jetpacs-design-inline-text (children &key style)
   "One paragraph of CHILDREN: `text' nodes flow as text and

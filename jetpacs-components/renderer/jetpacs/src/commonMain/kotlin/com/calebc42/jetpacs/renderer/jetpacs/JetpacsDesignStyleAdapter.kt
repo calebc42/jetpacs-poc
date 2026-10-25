@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.renderer.jetpacs
 
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.indication
+import androidx.compose.foundation.interaction.InteractionSource
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.FastOutLinearInEasing
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -29,6 +33,8 @@ import androidx.compose.foundation.style.scale
 import androidx.compose.foundation.style.selected
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
@@ -153,6 +159,8 @@ private fun StyleScope.applyDesignProperties(
             DesignProperty.MaxLines -> Unit
             // Read by the text renderer, which owns where a line is cut.
             DesignProperty.MiddleEllipsis -> Unit
+            DesignProperty.PlatformDialog -> Unit
+            DesignProperty.RippleColor, DesignProperty.RippleRadius -> Unit
             // Read by the popup positioner, which owns where a popup opens.
             DesignProperty.PopupOverlap, DesignProperty.PopupOffsetY,
             DesignProperty.PopupEdgeInset, DesignProperty.PopupBeforeAnchor -> Unit
@@ -514,6 +522,46 @@ internal fun ComputedDesignStyle.authoredSize(): Pair<Boolean, Boolean> {
     )
 }
 
+/**
+ * Draws the touch ripple a design style authors: [color]'s alpha is the
+ * pressed strength, and a [radius] makes it borderless, as a toolbar
+ * action's. This renderer stays Material-free, so the host supplies the
+ * platform's ripple through [LocalDesignRippleFactory].
+ */
+fun interface DesignRippleFactory {
+    fun ripple(color: Color, radius: Dp?): IndicationNodeFactory
+}
+
+/** The host's [DesignRippleFactory]; without one, authored ripples draw nothing. */
+val LocalDesignRippleFactory = staticCompositionLocalOf<DesignRippleFactory?> { null }
+
+/**
+ * Draw [style]'s authored ripple for presses on [source] over what follows
+ * this modifier, clipped to the style's `corner_radius` when it is bounded,
+ * as a shaped button's ripple is. Unchanged without `ripple_color` or a
+ * host ripple.
+ */
+@Composable
+internal fun Modifier.authoredRipple(style: ComputedDesignStyle?, source: InteractionSource): Modifier {
+    val factory = LocalDesignRippleFactory.current ?: return this
+    val properties = style?.resolve()?.properties ?: return this
+    val argb = (properties[DesignProperty.RippleColor] as? DesignValue.ColorValue)?.argb ?: return this
+    val radius = (properties[DesignProperty.RippleRadius] as? DesignValue.DimensionValue)?.value?.dp
+    val ripple = remember(factory, argb, radius) { factory.ripple(Color(argb), radius) }
+    val corner = (properties[DesignProperty.CornerRadius] as? DesignValue.DimensionValue)?.value?.dp
+    return (if (radius == null && corner != null) clip(RoundedCornerShape(corner)) else this)
+        .indication(source, ripple)
+}
+
+/** [authoredRipple] for the scope's [slot]. */
+@Composable
+internal fun Modifier.designRipple(slot: DesignComponentStyleSlot, source: InteractionSource): Modifier =
+    authoredRipple(LocalDesignScope.current?.componentStyle(slot), source)
+
+/** Whether a picker face's resolved slot properties ask for `platform_dialog`. */
+internal fun Map<DesignProperty, DesignValue>.platformDialog(): Boolean =
+    (this[DesignProperty.PlatformDialog] as? DesignValue.BooleanValue)?.value == true
+
 /** Whether resolved text properties ask for `word_ellipsis`. */
 internal fun Map<DesignProperty, DesignValue>.wordEllipsis(): Boolean =
     (this[DesignProperty.WordEllipsis] as? DesignValue.BooleanValue)?.value == true
@@ -523,9 +571,9 @@ internal fun Map<DesignProperty, DesignValue>.wordEllipsis(): Boolean =
  *
  * The host draws the dialog window's surface outside the dialog's node tree,
  * so the scope's `chrome.dialog` slot is read here: `background_color`,
- * `corner_radius`, `width`, `padding`, and `alpha` as the window's dim behind
- * the dialog. Each is null while unauthored, and the host keeps its own
- * default for it.
+ * `corner_radius`, `width`, `padding`, `elevation` as the surface's shadow,
+ * and `alpha` as the window's dim behind the dialog. Each is null while
+ * unauthored, and the host keeps its own default for it.
  */
 data class JetpacsDialogChrome(
     val container: Color?,
@@ -533,6 +581,7 @@ data class JetpacsDialogChrome(
     val width: Dp?,
     val padding: Dp?,
     val dim: Float? = null,
+    val elevation: Dp? = null,
 )
 
 /** The [JetpacsDialogChrome] of [spec], or null unless its root is a design scope. */
@@ -556,6 +605,7 @@ fun jetpacsDialogChrome(spec: JsonObject): JetpacsDialogChrome? {
         width = dp(DesignProperty.Width),
         padding = dp(DesignProperty.Padding),
         dim = (properties[DesignProperty.Alpha] as? DesignValue.NumberValue)?.value?.toFloat(),
+        elevation = dp(DesignProperty.Elevation),
     )
 }
 

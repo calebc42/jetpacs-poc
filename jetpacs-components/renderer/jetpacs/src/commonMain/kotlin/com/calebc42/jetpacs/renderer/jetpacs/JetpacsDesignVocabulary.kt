@@ -17,16 +17,17 @@ val JETPACS_DESIGN_NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "jetpacs.glyph" to NodeRow(setOf("paths", "viewport_width", "viewport_height", "size"), setOf("color", "content_description")),
     "jetpacs.inline_text" to NodeRow(setOf("children"), setOf("style")),
     "jetpacs.inline" to NodeRow(setOf("child", "height"), setOf("reserve_text", "reserve_text_size", "reserve_extra", "reserve_max")),
+    "jetpacs.wheel" to NodeRow(setOf("id", "values", "value"), setOf("wrap", "enabled", "color", "divider_color", "on_change")),
 )
 
 val JETPACS_DESIGN_TARGET_NODE_TYPES: Map<String, Set<String>> = mapOf(
-    "app" to setOf("jetpacs.design_scope", "jetpacs.styled", "jetpacs.pressable", "jetpacs.glyph", "jetpacs.inline_text", "jetpacs.inline"),
-    "dialog" to setOf("jetpacs.design_scope", "jetpacs.styled", "jetpacs.pressable", "jetpacs.glyph", "jetpacs.inline_text", "jetpacs.inline"),
+    "app" to setOf("jetpacs.design_scope", "jetpacs.styled", "jetpacs.pressable", "jetpacs.glyph", "jetpacs.inline_text", "jetpacs.inline", "jetpacs.wheel"),
+    "dialog" to setOf("jetpacs.design_scope", "jetpacs.styled", "jetpacs.pressable", "jetpacs.glyph", "jetpacs.inline_text", "jetpacs.inline", "jetpacs.wheel"),
     "notification" to setOf(),
 )
 
 val JETPACS_DESIGN_STATEFUL_WHEN_PRESENT: Map<String, String> = mapOf(
-
+    "jetpacs.wheel" to "value",
 )
 
 val JETPACS_DESIGN_AT_LEAST_ONE_NON_EMPTY: Map<String, Set<String>> = mapOf(
@@ -40,6 +41,7 @@ val JETPACS_DESIGN_TYPED_NODE_SCHEMA: Map<String, ExtensionNodeSchema> = mapOf(
     "jetpacs.glyph" to ExtensionNodeSchema(mapOf("paths" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.StringValue(1, 16384), 1, 8), "size" to ExtensionValueSchema.NumberValue(0.0, 1024.0), "viewport_height" to ExtensionValueSchema.NumberValue(1.0, 100000.0), "viewport_width" to ExtensionValueSchema.NumberValue(1.0, 100000.0)), mapOf("color" to ExtensionValueSchema.StringValue(1, 64), "content_description" to ExtensionValueSchema.StringValue(0, 512))),
     "jetpacs.inline_text" to ExtensionNodeSchema(mapOf("children" to ExtensionValueSchema.NodeArrayValue(1, 512)), mapOf("style" to ExtensionValueSchema.StringValue(1, 32))),
     "jetpacs.inline" to ExtensionNodeSchema(mapOf("child" to ExtensionValueSchema.NodeValue, "height" to ExtensionValueSchema.NumberValue(1.0, 512.0)), mapOf("reserve_extra" to ExtensionValueSchema.NumberValue(0.0, 1024.0), "reserve_max" to ExtensionValueSchema.NumberValue(0.0, 4096.0), "reserve_text" to ExtensionValueSchema.StringValue(0, 1024), "reserve_text_size" to ExtensionValueSchema.NumberValue(1.0, 200.0))),
+    "jetpacs.wheel" to ExtensionNodeSchema(mapOf("id" to ExtensionValueSchema.StringValue(1, 128), "value" to ExtensionValueSchema.StringValue(1, 64), "values" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.StringValue(1, 64), 1, 256)), mapOf("color" to ExtensionValueSchema.StringValue(1, 64), "divider_color" to ExtensionValueSchema.StringValue(1, 64), "enabled" to ExtensionValueSchema.BooleanValue, "on_change" to ExtensionValueSchema.ActionDescriptorValue, "wrap" to ExtensionValueSchema.BooleanValue)),
 )
 
-const val JETPACS_DESIGN_SCHEMA_SHA256 = "719cbd1a4483a8ab8d66fac23c354cb892d9d7033a0b83b82bea79d55981f785"
+const val JETPACS_DESIGN_SCHEMA_SHA256 = "ec6f4688ad0fba685fd323553e1f62761143937a3753943b25d05688260534d8"

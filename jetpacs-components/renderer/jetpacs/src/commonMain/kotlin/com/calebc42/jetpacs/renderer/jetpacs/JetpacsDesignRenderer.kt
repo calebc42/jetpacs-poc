@@ -105,6 +105,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
         listOf(
             JetpacsDesignScopeComponent, JetpacsStyledComponent, JetpacsPressableComponent,
             JetpacsGlyphComponent, JetpacsInlineTextComponent, JetpacsInlineComponent,
+            JetpacsWheelComponent,
         ),
     )
 
@@ -294,6 +295,7 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
                     }
                 }
                 .then(computed.elevationShadow())
+                .authoredRipple(computed, interactionSource)
                 .styleable(styleState, style),
         ) {
             val textContext = remember(computed, styleState) {

@@ -625,8 +625,28 @@ internal class JetpacsAnchoredPopupPositionProvider(
     private val offsetY: Int = 0,
     private val edgeInset: Int = 0,
     private val beforeAnchor: Boolean = false,
+    /** Transparent room around the popup for its shadow: placement is of
+     * the content inside it, and the window starts this much before it. */
+    private val shadowMargin: Int = 0,
 ) : PopupPositionProvider {
     override fun calculatePosition(
+        anchorBounds: IntRect,
+        windowSize: IntSize,
+        layoutDirection: LayoutDirection,
+        popupContentSize: IntSize,
+    ): IntOffset {
+        if (shadowMargin > 0) {
+            val inner = IntSize(
+                (popupContentSize.width - 2 * shadowMargin).coerceAtLeast(0),
+                (popupContentSize.height - 2 * shadowMargin).coerceAtLeast(0),
+            )
+            val at = place(anchorBounds, windowSize, layoutDirection, inner)
+            return IntOffset(at.x - shadowMargin, at.y - shadowMargin)
+        }
+        return place(anchorBounds, windowSize, layoutDirection, popupContentSize)
+    }
+
+    private fun place(
         anchorBounds: IntRect,
         windowSize: IntSize,
         layoutDirection: LayoutDirection,

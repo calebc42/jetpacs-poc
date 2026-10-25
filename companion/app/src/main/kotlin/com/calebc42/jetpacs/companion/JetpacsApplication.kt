@@ -30,7 +30,7 @@ class JetpacsApplication : Application() {
     internal val appSurfaceCatalog: StateFlow<AppSurfaceRegistry.Catalog>
         get() = presentation.appSurfaceCatalog
     fun appSurface(surfaceId: String): StateFlow<JsonObject?> = presentation.appSurface(surfaceId)
-    val currentDialog: StateFlow<CompanionPresentation.DialogShow?> get() = presentation.currentDialog
+    val dialogs: StateFlow<List<CompanionPresentation.DialogShow>> get() = presentation.dialogs
     val theme: StateFlow<JsonObject?> get() = presentation.theme
     val currentPieMenu: StateFlow<Pair<String, JsonObject>?> get() = presentation.currentPieMenu
     val settingsOpen: StateFlow<Boolean> get() = presentation.settingsOpen

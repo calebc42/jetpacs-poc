@@ -145,6 +145,12 @@ object JetpacsDesignIconRenderer : ComposeCanonicalNodeOverride {
  */
 const val PICKER_FACE: String = "jetpacs-picker"
 
+/**
+ * The value a picker face's tap carries when its `picker.container` slot sets
+ * `platform_dialog`: the Material picker then opens the platform's own dialog.
+ */
+const val PICKER_PLATFORM_DIALOG: String = "platform"
+
 object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
     override val id: String = "jetpacs.design.button.compose"
     override val designScope: String = JETPACS_DESIGN_EXTENSION
@@ -224,8 +230,17 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
                     indication = null,
                     enabled = enabled,
                     role = Role.Button,
-                ) { context.action(node["on_tap"] as? JsonObject) }
+                ) {
+                    // A picker slot asking for the platform dialog says so
+                    // to the Material picker that synthesized this face.
+                    context.action(
+                        node["on_tap"] as? JsonObject,
+                        if (picker && labelProperties.platformDialog())
+                            JsonPrimitive(PICKER_PLATFORM_DIALOG) else null,
+                    )
+                }
                 .semantics(mergeDescendants = true) {}
+                .designRipple(slot, source)
                 .let {
                     if (sized) it.styleable(styleState, base, designComponentStyle(slot), metricStyle, nodeStyle)
                     else it.styleable(styleState, base, metricStyle, designComponentStyle(slot), nodeStyle)
@@ -588,6 +603,7 @@ object JetpacsDesignIconButtonRenderer : ComposeCanonicalNodeOverride {
                     enabled = enabled,
                     role = Role.Button,
                 ) { context.action(node["on_tap"] as? JsonObject) }
+                .designRipple(DesignComponentStyleSlot.IconButtonContainer, source)
                 .styleable(
                     styleState,
                     JetpacsComponentStyles.iconButton,

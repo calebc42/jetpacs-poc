@@ -268,6 +268,12 @@ enum class DesignProperty(val wireName: String, internal val kind: ValueKind) {
     LineHeightCentered("line_height_centered", ValueKind.Boolean),
     MaxLines("max_lines", ValueKind.Number),
     MiddleEllipsis("middle_ellipsis", ValueKind.Boolean),
+    /** A picker face opens the platform's own date or time dialog. */
+    PlatformDialog("platform_dialog", ValueKind.Boolean),
+    /** The touch ripple a press draws, its alpha the pressed strength. */
+    RippleColor("ripple_color", ValueKind.Color),
+    /** An unbounded ripple's radius, as a borderless toolbar action's. */
+    RippleRadius("ripple_radius", ValueKind.Dimension),
     PopupOverlap("popup_overlap", ValueKind.Boolean),
     PopupOffsetY("popup_offset_y", ValueKind.Dimension),
     PopupEdgeInset("popup_edge_inset", ValueKind.Dimension),

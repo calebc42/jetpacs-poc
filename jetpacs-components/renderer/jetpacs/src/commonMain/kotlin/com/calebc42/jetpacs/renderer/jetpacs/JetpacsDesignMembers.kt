@@ -78,6 +78,20 @@ object JetpacsInlineMembers : NodeMemberSet("jetpacs.inline") {
     override val optional: List<NodeMember<*>> = listOf(ReserveExtra, ReserveMax, ReserveText, ReserveTextSize)
 }
 
+/** Typed members of the `jetpacs.wheel` node. */
+object JetpacsWheelMembers : NodeMemberSet("jetpacs.wheel") {
+    val Id: StringMember = StringMember("id", required = true)
+    val Value: StringMember = StringMember("value", required = true)
+    val Values: ArrayMember = ArrayMember("values", required = true, tag = "array")
+    val Color: StringMember = StringMember("color", required = false)
+    val DividerColor: StringMember = StringMember("divider_color", required = false)
+    val Enabled: BooleanMember = BooleanMember("enabled", required = false)
+    val OnChange: ActionMember = ActionMember("on_change", required = false)
+    val Wrap: BooleanMember = BooleanMember("wrap", required = false)
+    override val required: List<NodeMember<*>> = listOf(Id, Value, Values)
+    override val optional: List<NodeMember<*>> = listOf(Color, DividerColor, Enabled, OnChange, Wrap)
+}
+
 /** Every generated member set, keyed by node type. */
 val JETPACS_DESIGN_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "jetpacs.design_scope" to JetpacsDesignScopeMembers,
@@ -86,4 +100,5 @@ val JETPACS_DESIGN_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "jetpacs.glyph" to JetpacsGlyphMembers,
     "jetpacs.inline_text" to JetpacsInlineTextMembers,
     "jetpacs.inline" to JetpacsInlineMembers,
+    "jetpacs.wheel" to JetpacsWheelMembers,
 )

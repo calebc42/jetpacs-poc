@@ -15,6 +15,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -77,14 +78,20 @@ fun PieMenuHost(
     pie?.let { (id, spec) -> RenderPieMenu(id, spec, bridge) }
 }
 
-/** SPEC 18.1: the one outstanding dialog, in a platform dialog window. */
+/** SPEC 18.1: every outstanding dialog, each in its own platform dialog
+ * window, a later one over the ones before it. */
 @Composable
 fun DialogHost(
-    flow: StateFlow<CompanionPresentation.DialogShow?>,
+    flow: StateFlow<List<CompanionPresentation.DialogShow>>,
     bridge: DeviceBridge,
 ) {
-    val dialog by flow.collectAsState()
-    dialog?.let { (id, dspec, epoch) ->
+    val dialogs by flow.collectAsState()
+    for (dialog in dialogs) key(dialog.id, dialog.epoch) { PresentedDialog(dialog, bridge) }
+}
+
+@Composable
+private fun PresentedDialog(dialog: CompanionPresentation.DialogShow, bridge: DeviceBridge) {
+    dialog.let { (id, dspec, epoch) ->
         // A dialog whose root is a design scope sizes and colors this
         // surface through its chrome.dialog slot; otherwise Material's.
         val chrome = remember(dspec) { jetpacsDialogChrome(dspec) }
@@ -99,6 +106,7 @@ fun DialogHost(
                 shape = chrome?.corner?.let { RoundedCornerShape(it) }
                     ?: MaterialTheme.shapes.extraLarge,
                 color = chrome?.container ?: MaterialTheme.colorScheme.surfaceContainerHigh,
+                shadowElevation = chrome?.elevation ?: 0.dp,
             ) {
                 // The HOST container scrolls. SPEC 18.1 forbids lazy_column
                 // NODES in a dialog spec, not the window scrolling — and

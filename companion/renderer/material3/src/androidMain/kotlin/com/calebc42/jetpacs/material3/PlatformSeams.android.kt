@@ -9,6 +9,7 @@ import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -75,5 +76,63 @@ internal actual fun SystemBarsMatch(background: Color) {
         val bars = android.view.WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS or
             android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
         window.insetsController?.setSystemBarsAppearance(if (light) bars else 0, bars)
+    }
+}
+
+internal actual val hasPlatformPickers: Boolean = true
+
+@Composable
+private fun platformPickerContext(): android.content.Context {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val dark = androidx.compose.foundation.isSystemInDarkTheme()
+    return androidx.compose.runtime.remember(context, configuration, dark) {
+        android.view.ContextThemeWrapper(
+            context,
+            if (dark) R.style.Jetpacs_PlatformPicker_Dark else R.style.Jetpacs_PlatformPicker_Light,
+        ).apply {
+            // The window's own configuration: a split-screen pane is portrait
+            // even where the activity's resources still say landscape, and
+            // the pickers lay their header out by orientation.
+            applyOverrideConfiguration(android.content.res.Configuration(configuration))
+        }
+    }
+}
+
+@Composable
+internal actual fun PlatformDateDialog(value: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = platformPickerContext()
+    val pick by androidx.compose.runtime.rememberUpdatedState(onPick)
+    val dismiss by androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    androidx.compose.runtime.DisposableEffect(context) {
+        val parts = value.split("-").mapNotNull { it.toIntOrNull() }
+        val today = java.util.Calendar.getInstance()
+        val dialog = android.app.DatePickerDialog(
+            context,
+            { _, year, month, day -> pick(String.format("%04d-%02d-%02d", year, month + 1, day)) },
+            parts.getOrNull(0) ?: today.get(java.util.Calendar.YEAR),
+            (parts.getOrNull(1) ?: (today.get(java.util.Calendar.MONTH) + 1)) - 1,
+            parts.getOrNull(2) ?: today.get(java.util.Calendar.DAY_OF_MONTH),
+        )
+        dialog.setOnDismissListener { dismiss() }
+        dialog.show()
+        onDispose { dialog.setOnDismissListener(null); dialog.dismiss() }
+    }
+}
+
+@Composable
+internal actual fun PlatformTimeDialog(hour: Int, minute: Int, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    val context = platformPickerContext()
+    val pick by androidx.compose.runtime.rememberUpdatedState(onPick)
+    val dismiss by androidx.compose.runtime.rememberUpdatedState(onDismiss)
+    androidx.compose.runtime.DisposableEffect(context) {
+        val dialog = android.app.TimePickerDialog(
+            context,
+            { _, h, m -> pick(String.format("%02d:%02d", h, m)) },
+            hour, minute, android.text.format.DateFormat.is24HourFormat(context),
+        )
+        dialog.setOnDismissListener { dismiss() }
+        dialog.show()
+        onDispose { dialog.setOnDismissListener(null); dialog.dismiss() }
     }
 }

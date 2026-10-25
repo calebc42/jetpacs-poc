@@ -51,3 +51,17 @@ internal actual fun endTraceSection() = Unit
 
 @Composable
 internal actual fun SystemBarsMatch(background: Color) = Unit
+
+internal actual val hasPlatformPickers: Boolean = false
+
+// The desktop has no platform dialogs; date_button and time_button keep
+// Material's, and these are never composed.
+@Composable
+internal actual fun PlatformDateDialog(value: String, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { onDismiss() }
+}
+
+@Composable
+internal actual fun PlatformTimeDialog(hour: Int, minute: Int, onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    androidx.compose.runtime.LaunchedEffect(Unit) { onDismiss() }
+}

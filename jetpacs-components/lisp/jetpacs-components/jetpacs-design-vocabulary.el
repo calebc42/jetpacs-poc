@@ -21,13 +21,14 @@
     ("jetpacs.pressable" ("children" "on_tap" "styles") ("enabled" "selected" "toggled"))
     ("jetpacs.glyph" ("paths" "size" "viewport_height" "viewport_width") ("color" "content_description"))
     ("jetpacs.inline_text" ("children") ("style"))
-    ("jetpacs.inline" ("child" "height") ("reserve_extra" "reserve_max" "reserve_text" "reserve_text_size")))
+    ("jetpacs.inline" ("child" "height") ("reserve_extra" "reserve_max" "reserve_text" "reserve_text_size"))
+    ("jetpacs.wheel" ("id" "value" "values") ("color" "divider_color" "enabled" "on_change" "wrap")))
   "Jetpacs Design node schemas as (TYPE REQUIRED OPTIONAL).")
 
 (defconst jetpacs-design-target-node-types
   '(
-    (app . ("jetpacs.design_scope" "jetpacs.styled" "jetpacs.pressable" "jetpacs.glyph" "jetpacs.inline_text" "jetpacs.inline"))
-    (dialog . ("jetpacs.design_scope" "jetpacs.styled" "jetpacs.pressable" "jetpacs.glyph" "jetpacs.inline_text" "jetpacs.inline"))
+    (app . ("jetpacs.design_scope" "jetpacs.styled" "jetpacs.pressable" "jetpacs.glyph" "jetpacs.inline_text" "jetpacs.inline" "jetpacs.wheel"))
+    (dialog . ("jetpacs.design_scope" "jetpacs.styled" "jetpacs.pressable" "jetpacs.glyph" "jetpacs.inline_text" "jetpacs.inline" "jetpacs.wheel"))
     (notification . ()))
   "Jetpacs Design node types supported by each renderer target.")
 
@@ -38,10 +39,11 @@
     ("jetpacs.pressable" . (:required (("children" . (:type node-array :min-items 1 :max-items 16)) ("on_tap" . (:type action)) ("styles" . (:type array :items (:type string :min-length 1 :max-length 128) :min-items 1 :max-items 16))) :optional (("enabled" . (:type boolean)) ("selected" . (:type boolean)) ("toggled" . (:type boolean)))))
     ("jetpacs.glyph" . (:required (("paths" . (:type array :items (:type string :min-length 1 :max-length 16384) :min-items 1 :max-items 8)) ("size" . (:type number :minimum 0 :maximum 1024)) ("viewport_height" . (:type number :minimum 1 :maximum 100000)) ("viewport_width" . (:type number :minimum 1 :maximum 100000))) :optional (("color" . (:type string :min-length 1 :max-length 64)) ("content_description" . (:type string :min-length 0 :max-length 512)))))
     ("jetpacs.inline_text" . (:required (("children" . (:type node-array :min-items 1 :max-items 512))) :optional (("style" . (:type string :min-length 1 :max-length 32)))))
-    ("jetpacs.inline" . (:required (("child" . (:type node)) ("height" . (:type number :minimum 1 :maximum 512))) :optional (("reserve_extra" . (:type number :minimum 0 :maximum 1024)) ("reserve_max" . (:type number :minimum 0 :maximum 4096)) ("reserve_text" . (:type string :min-length 0 :max-length 1024)) ("reserve_text_size" . (:type number :minimum 1 :maximum 200))))))
+    ("jetpacs.inline" . (:required (("child" . (:type node)) ("height" . (:type number :minimum 1 :maximum 512))) :optional (("reserve_extra" . (:type number :minimum 0 :maximum 1024)) ("reserve_max" . (:type number :minimum 0 :maximum 4096)) ("reserve_text" . (:type string :min-length 0 :max-length 1024)) ("reserve_text_size" . (:type number :minimum 1 :maximum 200)))))
+    ("jetpacs.wheel" . (:required (("id" . (:type string :min-length 1 :max-length 128)) ("value" . (:type string :min-length 1 :max-length 64)) ("values" . (:type array :items (:type string :min-length 1 :max-length 64) :min-items 1 :max-items 256))) :optional (("color" . (:type string :min-length 1 :max-length 64)) ("divider_color" . (:type string :min-length 1 :max-length 64)) ("enabled" . (:type boolean)) ("on_change" . (:type action)) ("wrap" . (:type boolean))))))
   "Jetpacs Design closed typed node schemas.")
 
-(defconst jetpacs-design-schema-sha256 "719cbd1a4483a8ab8d66fac23c354cb892d9d7033a0b83b82bea79d55981f785"
+(defconst jetpacs-design-schema-sha256 "ec6f4688ad0fba685fd323553e1f62761143937a3753943b25d05688260534d8"
   "SHA-256 of the canonical resolved typed schema projection.")
 
 (provide 'jetpacs-design-vocabulary)

@@ -53,3 +53,20 @@ internal expect fun endTraceSection()
  */
 @Composable
 internal expect fun SystemBarsMatch(background: Color)
+
+/** Whether this platform has its own date and time dialogs. */
+internal expect val hasPlatformPickers: Boolean
+
+/**
+ * The platform's own date dialog at [value] (YYYY-MM-DD), shown while
+ * composed. [onPick] gets the picked date; [onDismiss] runs either way.
+ */
+@Composable
+internal expect fun PlatformDateDialog(value: String, onPick: (String) -> Unit, onDismiss: () -> Unit)
+
+/**
+ * The platform's own time dialog at [hour]:[minute], on the device's 12 or
+ * 24 hour clock. [onPick] gets HH:MM; [onDismiss] runs either way.
+ */
+@Composable
+internal expect fun PlatformTimeDialog(hour: Int, minute: Int, onPick: (String) -> Unit, onDismiss: () -> Unit)

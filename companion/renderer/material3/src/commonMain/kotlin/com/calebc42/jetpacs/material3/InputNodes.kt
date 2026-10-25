@@ -1266,9 +1266,16 @@ internal fun RenderDateButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, DateButtonMembers)
     val onPick = p[DateButtonMembers.OnPick]
     var show by remember { mutableStateOf(false) }
+    var platform by remember { mutableStateOf(false) }
     PickerFace(p[DateButtonMembers.Label].orEmpty(), p.getOr(DateButtonMembers.Enabled, true),
-        ctx, m) { show = true }
-    if (show) {
+        ctx, m) { native -> platform = native && hasPlatformPickers; show = true }
+    if (show && platform) {
+        PlatformDateDialog(
+            p[DateButtonMembers.Value].orEmpty(),
+            onPick = { iso -> if (onPick != null) ctx.action(onPick, JsonPrimitive(iso)) },
+            onDismiss = { show = false },
+        )
+    } else if (show) {
         val initialMillis = remember { parseIsoDateUtc(p[DateButtonMembers.Value].orEmpty()) }
         // §17.4 day-level bounds: the declarative predicate is the ONLY form
         // the wire can carry — SelectableDates is a Kotlin lambda — and the
@@ -1334,9 +1341,17 @@ internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, TimeButtonMembers)
     val onPick = p[TimeButtonMembers.OnPick]
     var show by remember { mutableStateOf(false) }
+    var platform by remember { mutableStateOf(false) }
     PickerFace(p[TimeButtonMembers.Label].orEmpty(), p.getOr(TimeButtonMembers.Enabled, true),
-        ctx, m) { show = true }
-    if (show) {
+        ctx, m) { native -> platform = native && hasPlatformPickers; show = true }
+    if (show && platform) {
+        val (h, min) = remember { parseHm(p[TimeButtonMembers.Value].orEmpty()) }
+        PlatformTimeDialog(
+            h, min,
+            onPick = { hm -> if (onPick != null) ctx.action(onPick, JsonPrimitive(hm)) },
+            onDismiss = { show = false },
+        )
+    } else if (show) {
         val (h, min) = remember { parseHm(p[TimeButtonMembers.Value].orEmpty()) }
         val state = rememberTimePickerState(initialHour = h, initialMinute = min)
         val confirm: @Composable () -> Unit = {
@@ -1383,6 +1398,10 @@ internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     }
 }
 
+/** jetpacs-components' PICKER_PLATFORM_DIALOG: the value a picker face's tap
+ * carries when its design slot sets `platform_dialog`. */
+private const val PICKER_PLATFORM_DIALOG = "platform"
+
 /** The button a date_button or time_button shows, whose tap runs [open].
  * Inside a design scope that draws `button`, it wears that scope's tonal
  * picker face: a synthesized `button` node rendered through the
@@ -1395,7 +1414,7 @@ private fun PickerFace(
     enabled: Boolean,
     ctx: RenderCtx,
     m: Modifier,
-    open: () -> Unit,
+    open: (platform: Boolean) -> Unit,
 ) {
     val face = remember(label, enabled) {
         buildJsonObject {
@@ -1413,7 +1432,7 @@ private fun PickerFace(
         ?.let { ctx.configuration.canonicalOverrides.rendererFor(it, "button") }
         ?.takeIf { it.appliesTo(face) }
     if (override == null) {
-        OutlinedButton(onClick = open, enabled = enabled, modifier = m) { Text(label) }
+        OutlinedButton(onClick = { open(false) }, enabled = enabled, modifier = m) { Text(label) }
         return
     }
     val currentOpen by rememberUpdatedState(open)
@@ -1426,7 +1445,8 @@ private fun PickerFace(
                 sourceId: String?,
                 onOutcome: (RendererActionOutcome) -> Unit,
             ): ActionHandoff {
-                currentOpen()
+                // The face's design slot may ask for the platform's dialog.
+                currentOpen((value as? JsonPrimitive)?.content == PICKER_PLATFORM_DIALOG)
                 return ActionHandoff.HandedOff
             }
         }

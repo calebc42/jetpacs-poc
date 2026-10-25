@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- The platform date and time dialogs a picker face opens when its design
+     slot sets platform_dialog, themed as an app on Material 3 dynamic colors
+     themes these framework dialogs: the accent from colorSecondary, the
+     buttons in colorPrimary without caps, the surface behind them. -->
+<resources>
+    <style name="Jetpacs.PlatformPicker.Button.Light" parent="android:Widget.Material.Button.Borderless.Colored">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@android:color/system_primary_light</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:layout_marginStart">8dp</item>
+    </style>
+    <style name="Jetpacs.PlatformPicker.Button.Dark" parent="android:Widget.Material.Button.Borderless.Colored">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:textColor">@android:color/system_primary_dark</item>
+        <item name="android:minWidth">64dp</item>
+        <item name="android:paddingStart">12dp</item>
+        <item name="android:paddingEnd">12dp</item>
+        <item name="android:layout_marginStart">8dp</item>
+    </style>
+    <style name="Jetpacs.PlatformPicker.Light" parent="android:Theme.Material.Light.Dialog.Alert">
+        <item name="android:colorAccent">@android:color/system_secondary_light</item>
+        <item name="android:colorBackground">@android:color/system_surface_light</item>
+        <item name="android:colorBackgroundFloating">@android:color/system_surface_light</item>
+        <item name="android:textColorPrimary">@android:color/system_on_surface_light</item>
+        <item name="android:textColorSecondary">@android:color/system_on_surface_variant_light</item>
+        <item name="android:textColorPrimaryInverse">@android:color/system_on_surface_dark</item>
+        <item name="android:textColorSecondaryInverse">@android:color/system_on_surface_variant_dark</item>
+        <item name="android:buttonBarButtonStyle">@style/Jetpacs.PlatformPicker.Button.Light</item>
+        <!-- Material 3's dialog dim, and the pickers' own width. -->
+        <item name="android:backgroundDimAmount">0.32</item>
+        <item name="android:windowMinWidthMajor">0%</item>
+        <item name="android:windowMinWidthMinor">0%</item>
+    </style>
+    <style name="Jetpacs.PlatformPicker.Dark" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:colorAccent">@android:color/system_secondary_dark</item>
+        <item name="android:colorBackground">@android:color/system_surface_dark</item>
+        <item name="android:colorBackgroundFloating">@android:color/system_surface_dark</item>
+        <item name="android:textColorPrimary">@android:color/system_on_surface_dark</item>
+        <item name="android:textColorSecondary">@android:color/system_on_surface_variant_dark</item>
+        <item name="android:textColorPrimaryInverse">@android:color/system_on_surface_light</item>
+        <item name="android:textColorSecondaryInverse">@android:color/system_on_surface_variant_light</item>
+        <item name="android:buttonBarButtonStyle">@style/Jetpacs.PlatformPicker.Button.Dark</item>
+        <!-- Material 3's dialog dim, and the pickers' own width. -->
+        <item name="android:backgroundDimAmount">0.32</item>
+        <item name="android:windowMinWidthMajor">0%</item>
+        <item name="android:windowMinWidthMinor">0%</item>
+    </style>
+</resources>

@@ -24,6 +24,7 @@ import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_LAZY_COLUMN_STIC
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_SELECTION_OPTIONS
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT
+import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_STATEFUL_WHEN_PRESENT
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TRUE_REQUIRES_PARENT
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_COMPONENTS_TYPED_NODE_SCHEMA
 import com.calebc42.jetpacs.renderer.jetpacs.JETPACS_DESIGN_EXTENSION
@@ -164,7 +165,8 @@ open class CompanionRenderer(private val targets: PlatformRendererTargets) {
                 JETPACS_COMPONENTS_NODE_SCHEMA + JETPACS_DESIGN_NODE_SCHEMA,
             statefulWhenPresent = EBP_NODE_VOCABULARY.statefulWhenPresent +
                 JETPACS_MATERIAL3_STATEFUL_WHEN_PRESENT +
-                JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT,
+                JETPACS_COMPONENTS_STATEFUL_WHEN_PRESENT +
+                JETPACS_DESIGN_STATEFUL_WHEN_PRESENT,
             atLeastOneNonEmpty = JETPACS_MATERIAL3_AT_LEAST_ONE_NON_EMPTY +
                 JETPACS_COMPONENTS_AT_LEAST_ONE_NON_EMPTY,
             selectionOptions = JETPACS_COMPONENTS_SELECTION_OPTIONS,

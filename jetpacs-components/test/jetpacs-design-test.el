@@ -368,5 +368,18 @@ that advertises `jetpacs.list_item'."
                    align)))
   (should-error (jetpacs-design-text-align "justify")))
 
+(ert-deftest jetpacs-design-wheel-is-a-checked-stateful-node ()
+  (let ((wheel (jetpacs-design-wheel "unit" '("Day" "Week") "Week" :wrap t
+                                     :divider-color "#70767D")))
+    (should (equal (plist-get wheel :t) "jetpacs.wheel"))
+    (should (equal (plist-get wheel :values) ["Day" "Week"]))
+    (should (equal (plist-get wheel :value) "Week"))
+    (should (eq (plist-get wheel :wrap) t))
+    (should (equal (cdr (assoc "jetpacs.wheel" (append nil jetpacs-design-node-schema)))
+                   '(("id" "value" "values") ("color" "divider_color" "enabled" "on_change" "wrap")))))
+  (should-error (jetpacs-design-wheel "unit" '("Day") "Week"))
+  (should-error (jetpacs-design-wheel "unit" nil "Day"))
+  (should-error (jetpacs-design-wheel "bad id" '("Day") "Day")))
+
 (provide 'jetpacs-design-test)
 ;;; jetpacs-design-test.el ends here

@@ -31,8 +31,11 @@ class CompanionPresentation {
     // are structurally identical to what is already on screen.
     data class DialogShow(val id: String, val spec: JsonObject, val epoch: Long)
     private var dialogEpoch = 0L
-    private val _currentDialog = MutableStateFlow<DialogShow?>(null)
-    val currentDialog: StateFlow<DialogShow?> get() = _currentDialog
+    private val _dialogs = MutableStateFlow<List<DialogShow>>(emptyList())
+    /** SPEC 18.1: every outstanding dialog, oldest first; each later one
+     * opens over those before it, as a platform dialog opened from a dialog
+     * does. */
+    val dialogs: StateFlow<List<DialogShow>> get() = _dialogs
 
     // SPEC 18.4: the accepted theme payload ({dark, colors, syntax}) to mirror,
     // or null for the native scheme (dark = follow-system, amendment #36).
@@ -82,10 +85,15 @@ class CompanionPresentation {
     /** The durable app-surface cache has finished its initial projection. */
     val onAppSurfaceCacheLoaded: () -> Unit = appSurfaces::markLoaded
 
-    /** SPEC 18.1: one outstanding dialog presented at a time here. */
+    /** SPEC 18.1: (id, spec) shows a dialog over the outstanding ones;
+     * (id, null) concludes that one dialog and leaves the others standing.
+     * A null id clears them all. */
     val onDialogChanged: (String?, JsonObject?) -> Unit = { id, spec ->
-        _currentDialog.value =
-            if (spec != null && id != null) DialogShow(id, spec, ++dialogEpoch) else null
+        _dialogs.value = when {
+            id == null -> emptyList()
+            spec == null -> _dialogs.value.filterNot { it.id == id }
+            else -> _dialogs.value.filterNot { it.id == id } + DialogShow(id, spec, ++dialogEpoch)
+        }
     }
 
     /** SPEC 18.4: the accepted theme payload, or null for the native scheme. */
