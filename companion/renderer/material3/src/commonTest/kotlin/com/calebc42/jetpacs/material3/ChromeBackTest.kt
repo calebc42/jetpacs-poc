@@ -55,6 +55,37 @@ class ChromeBackTest {
     }
 
     @Test
+    fun aTopLevelScreenWithoutAnArrowOffersItsDeclaredBack() {
+        // Amendment #200: (jetpacs-chrome-screen "Outline" body :drawer D
+        // :on-back (jetpacs-view-switch "books")) — the hamburger stays and
+        // the gesture still returns to the screen below.
+        val view = spec("""
+            {"body":{"t":"text","text":"body"},"t":"scaffold",
+             "drawer":{"t":"column","children":[]},
+             "on_back":{"builtin":"view.switch","view":"books"},
+             "top_bar":{"align":"center","children":[
+               {"style":"title","t":"text","text":"Outline","weight":1}],
+              "spacing":4,"t":"row"},
+             "top_bar_style":"small"}""")
+        assertEquals(viewSwitch("books"), chromeBackDescriptor(view))
+    }
+
+    @Test
+    fun aLeadingArrowWinsOverTheDeclaredBack() {
+        val view = spec("""
+            {"body":{"t":"text","text":"body"},"t":"scaffold",
+             "on_back":{"builtin":"view.switch","view":"elsewhere"},
+             "top_bar":{"align":"center","children":[
+               {"content_description":"back","icon":"arrow_back",
+                "on_tap":{"builtin":"view.switch","view":"hub"},
+                "t":"icon_button"},
+               {"style":"title","t":"text","text":"Files","weight":1}],
+              "spacing":4,"t":"row"},
+             "top_bar_style":"small"}""")
+        assertEquals(viewSwitch("hub"), chromeBackDescriptor(view))
+    }
+
+    @Test
     fun aCenterAlignedBarKeepsItsArrowOnTheLeadingSpine() {
         // jetpacs-m3-top-app-bar--centered-bar: the icon row is wrapped in a
         // box so the title can center OVER it. The arrow is still leading.

@@ -52,6 +52,7 @@
     "action.container" "action.label"
     "choice.container" "choice.indicator" "choice.label"
     "panel.container" "panel.label"
+    "picker.container" "picker.label"
     "tabs.container" "tabs.item" "tabs.indicator" "tabs.label"
     "section-navigator.container" "section-navigator.option"
     "section-navigator.label" "section-navigator.button"
@@ -77,7 +78,7 @@
     "editor.syntax.heading-7" "editor.syntax.heading-8"
     "chrome.tab-label" "chrome.tab-indicator"
     "chrome.rail-label" "chrome.rail-indicator"
-    "chrome.drawer" "chrome.snackbar")
+    "chrome.drawer" "chrome.scrim" "chrome.dialog" "chrome.snackbar")
   "Closed semantic-component visual slots accepted by design scopes.")
 
 (defconst jetpacs-design-property-kinds
@@ -106,6 +107,14 @@
     ("font_weight" . "font-weight")
     ("text_align" . "text-align")
     ("fill_width" . "boolean")
+    ("intrinsic_height" . "boolean")
+    ("word_ellipsis" . "boolean")
+    ("paragraph_breaking" . "boolean")
+    ("line_spacing_below" . "boolean")
+    ("max_lines" . "number")
+    ("popup_overlap" . "boolean")
+    ("popup_offset_y" . "dimension")
+    ("popup_edge_inset" . "dimension")
     ("italic" . "boolean")
     ("underline" . "boolean")
     ("strike_through" . "boolean"))

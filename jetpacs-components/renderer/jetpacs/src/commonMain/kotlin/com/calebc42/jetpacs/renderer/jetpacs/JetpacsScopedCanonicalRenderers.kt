@@ -139,6 +139,12 @@ object JetpacsDesignIconRenderer : ComposeCanonicalNodeOverride {
  * connected-group positions (`shape_role`) decline to the Material renderer,
  * which owns their state and shape morphs.
  */
+/**
+ * The `variant` a Material date_button or time_button gives the `button` it
+ * synthesizes as its face: not an EBP variant, so only that face carries it.
+ */
+const val PICKER_FACE: String = "jetpacs-picker"
+
 object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
     override val id: String = "jetpacs.design.button.compose"
     override val designScope: String = JETPACS_DESIGN_EXTENSION
@@ -169,10 +175,20 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
         }
         // Layout properties the wire names directly, applied after the
         // profile so `size` and `shape` keep their canonical meaning.
-        val nodeStyle = remember(metrics, square, authored, variant) {
+        // A picker face (`variant` "picker", synthesized by the Material
+        // date_button and time_button) takes the ladder's metrics only as
+        // defaults, so its slot may author height, padding, font and lines;
+        // an ordinary button's ladder wins, as it always has.
+        val picker = variant == PICKER_FACE
+        val sized = !picker || node.member("size").isNotEmpty()
+        val metricStyle = remember(metrics) {
             Style {
                 minHeight(metrics.height)
                 contentPadding(horizontal = metrics.horizontalPadding, vertical = metrics.verticalPadding)
+            }
+        }
+        val nodeStyle = remember(square, authored, variant) {
+            Style {
                 if (square) shape(androidx.compose.foundation.shape.RoundedCornerShape(8.dp))
                 if (authored != null) {
                     if (variant == "filled" || variant.isEmpty()) background(authored)
@@ -181,16 +197,26 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
             }
         }
         val labelStyle = resolvedDesignTextStyle(
-            DesignComponentStyleSlot.ButtonLabel,
+            if (variant == PICKER_FACE) DesignComponentStyleSlot.PickerLabel
+            else DesignComponentStyleSlot.ButtonLabel,
             resolvedDesignTextStyle(slot, labelFallback(variant, colors), styleState),
             styleState,
         ).let { style ->
             if (authored != null && variant != "filled" && variant.isNotEmpty()) style.copy(color = authored) else style
-        }.copy(fontSize = metrics.fontSize)
+        }
+        val labelSlot = if (picker) DesignComponentStyleSlot.PickerLabel
+            else DesignComponentStyleSlot.ButtonLabel
+        val labelProperties = if (picker) {
+            resolvedSlotProperties(slot, styleState) + resolvedSlotProperties(labelSlot, styleState)
+        } else emptyMap()
+        val label = if (sized || DesignProperty.FontSize !in labelProperties) {
+            labelStyle.copy(fontSize = metrics.fontSize)
+        } else labelStyle
         val icon = node.member("icon")
         Row(
             modifier = modifier
-                .heightIn(min = 48.dp)
+                // A picker face's slot sizes it, as an authored pressable's does.
+                .let { if (picker) it else it.heightIn(min = 48.dp) }
                 .hoverable(source, enabled)
                 .jetpacsFocusable(enabled, source)
                 .clickable(
@@ -200,7 +226,10 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
                     role = Role.Button,
                 ) { context.action(node["on_tap"] as? JsonObject) }
                 .semantics(mergeDescendants = true) {}
-                .styleable(styleState, base, designComponentStyle(slot), nodeStyle),
+                .let {
+                    if (sized) it.styleable(styleState, base, designComponentStyle(slot), metricStyle, nodeStyle)
+                    else it.styleable(styleState, base, metricStyle, designComponentStyle(slot), nodeStyle)
+                },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
         ) {
@@ -210,14 +239,15 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
             }
             BasicText(
                 text = node.member("label"),
-                style = labelStyle,
-                maxLines = 1,
+                style = label,
+                maxLines = labelProperties.maxLines() ?: 1,
                 overflow = TextOverflow.Ellipsis,
             )
         }
     }
 
     private fun containerSlotFor(variant: String): DesignComponentStyleSlot = when (variant) {
+        PICKER_FACE -> DesignComponentStyleSlot.PickerContainer
         "tonal" -> DesignComponentStyleSlot.ButtonTonal
         "elevated" -> DesignComponentStyleSlot.ButtonElevated
         "outlined" -> DesignComponentStyleSlot.ButtonOutlined
@@ -226,7 +256,7 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
     }
 
     private fun baseStyleFor(variant: String): Style = when (variant) {
-        "tonal" -> JetpacsComponentStyles.buttonTonal
+        "tonal", PICKER_FACE -> JetpacsComponentStyles.buttonTonal
         "elevated" -> JetpacsComponentStyles.buttonElevated
         "outlined" -> JetpacsComponentStyles.buttonOutlined
         "text" -> JetpacsComponentStyles.buttonText
@@ -237,7 +267,7 @@ object JetpacsDesignButtonRenderer : ComposeCanonicalNodeOverride {
     @ReadOnlyComposable
     private fun labelFallback(variant: String, colors: JetpacsColors): TextStyle {
         val color = when (variant) {
-            "tonal" -> colors.content
+            "tonal", PICKER_FACE -> colors.content
             "elevated", "outlined", "text" -> colors.accent
             else -> colors.onAccent
         }

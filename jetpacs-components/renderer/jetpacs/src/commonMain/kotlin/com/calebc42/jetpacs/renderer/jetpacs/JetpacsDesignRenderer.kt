@@ -40,6 +40,13 @@ val JetpacsDesignContribution = RendererContribution(
     extensions = setOf(JETPACS_DESIGN_EXTENSION),
 )
 
+/** The design nodes a dialog may carry, so an app's dialogs wear its styles. */
+val JetpacsDesignDialogContribution = RendererContribution(
+    id = "jetpacs.design.dialog",
+    nodeTypes = JETPACS_DESIGN_TARGET_NODE_TYPES.getValue("dialog"),
+    extensions = setOf(JETPACS_DESIGN_EXTENSION),
+)
+
 internal val LocalDesignScope = staticCompositionLocalOf<CompiledDesignScope?> { null }
 
 /**
@@ -201,7 +208,7 @@ internal object JetpacsStyledComponent : JetpacsComponent("jetpacs.styled", Jetp
         val style = remember(computed.layers) { computed.toFoundationStyle() }
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource)
-        val childStyle = Modifier.styleable(styleState, style)
+        val childStyle = computed.intrinsicLayout().styleable(styleState, style)
         val textContext = remember(computed) { DesignTextContext(computed, null) }
         CompositionLocalProvider(LocalDesignTextContext provides textContext) {
             RenderDesignChildren(children, context, modifier, childStyle, scoped = true)
@@ -249,9 +256,14 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
             it.isChecked = toggled
         }
         val style = remember(computed.layers) { computed.toFoundationStyle() }
+        val (authoredWidth, authoredHeight) = remember(computed.layers) { computed.authoredSize() }
         Row(
             modifier = modifier
-                .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
+                .then(computed.intrinsicLayout())
+                .sizeIn(
+                    minWidth = if (authoredWidth) 0.dp else 48.dp,
+                    minHeight = if (authoredHeight) 0.dp else 48.dp,
+                )
                 .hoverable(interactionSource, enabled)
                 .jetpacsFocusable(enabled, interactionSource)
                 .clickable(

@@ -260,7 +260,9 @@
                  '("jetpacs.action" "jetpacs.choice" "jetpacs.list_item"
                    "jetpacs.panel" "jetpacs.scope"
                    "jetpacs.section_navigator" "jetpacs.tabs")))
-  (should (equal (jetpacs-renderer-target-node-types 'dialog) nil))
+  ;; Dialogs admit only jetpacs.design's styling nodes, never these.
+  (dolist (type (cdr (assoc jetpacs-components-extension jetpacs-renderer-extensions)))
+    (should-not (member type (jetpacs-renderer-target-node-types 'dialog))))
   (dolist (type '("jetpacs.action" "jetpacs.choice" "jetpacs.panel"
                   "jetpacs.scope" "jetpacs.section_navigator"
                   "jetpacs.tabs"))

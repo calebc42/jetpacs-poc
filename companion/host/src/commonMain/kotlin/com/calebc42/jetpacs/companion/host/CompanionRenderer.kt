@@ -33,6 +33,7 @@ import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsComponentsRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignCanonicalOverrides
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignContribution
+import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignDialogContribution
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignRenderer
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsDesignSemanticValidator
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsEditorRenderer
@@ -110,6 +111,7 @@ open class CompanionRenderer(private val targets: PlatformRendererTargets) {
             targets.widget,
             JetpacsComponentsContribution,
             JetpacsDesignContribution,
+            JetpacsDesignDialogContribution,
         ),
         extensionOwners = allExtensionOwners,
     )
@@ -138,6 +140,17 @@ open class CompanionRenderer(private val targets: PlatformRendererTargets) {
             if (designRuntimeEnabled) add(JetpacsDesignContribution.id)
         }
         val appProfile = registry.profile(*appContributions.toTypedArray()).executable()
+        // A dialog an app presents wears the app's design language: with
+        // the runtime installed, the dialog target admits the design nodes.
+        val dialogProfile = if (designRuntimeEnabled) {
+            registry.profile(
+                CoreComposeContribution.id,
+                NodeSupport.MATERIAL_DIALOG_CONTRIBUTION.id,
+                JetpacsDesignDialogContribution.id,
+            ).executable()
+        } else {
+            this.dialogProfile
+        }
         val extensionOwners = if (designRuntimeEnabled) {
             allExtensionOwners
         } else {

@@ -9,6 +9,8 @@ import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.style.Style
 import androidx.compose.foundation.style.StyleScope
@@ -27,6 +29,7 @@ import androidx.compose.foundation.style.scale
 import androidx.compose.foundation.style.selected
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import com.calebc42.ebp.renderer.compose.ComposeChromeStyles
@@ -36,8 +39,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
+import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonObject
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 
 /**
@@ -129,6 +138,18 @@ private fun StyleScope.applyDesignProperties(
                 // small buttons onto `jetpacs.pressable` instead of Action.
                 if (value.boolean()) fillWidth()
             }
+            // Applied as a layout modifier by the styled and pressable
+            // components: Foundation Styles cannot ask for intrinsic size.
+            DesignProperty.IntrinsicHeight -> Unit
+            // Read by the text renderer, which owns where a line is cut.
+            DesignProperty.WordEllipsis -> Unit
+            DesignProperty.ParagraphBreaking -> Unit
+            DesignProperty.LineSpacingBelow -> Unit
+            // Read by the button renderer, which owns its label's lines.
+            DesignProperty.MaxLines -> Unit
+            // Read by the popup positioner, which owns where a popup opens.
+            DesignProperty.PopupOverlap, DesignProperty.PopupOffsetY,
+            DesignProperty.PopupEdgeInset -> Unit
             DesignProperty.Italic ->
                 fontStyle(if (value.boolean()) FontStyle.Italic else FontStyle.Normal)
             // One decoration carries both lines, so the pair is applied once,
@@ -203,6 +224,22 @@ internal fun resolvedDesignTextStyle(
     return fallback.withDesignTextProperties(properties, JetpacsTheme.roles)
 }
 
+/** The properties [slot] resolves to in the current scope and [state]. */
+@Composable
+@ReadOnlyComposable
+internal fun resolvedSlotProperties(
+    slot: DesignComponentStyleSlot,
+    state: StyleState? = null,
+): Map<DesignProperty, DesignValue> = LocalDesignScope.current
+    ?.componentStyle(slot)
+    ?.resolve(state.activeDesignStates())
+    ?.properties
+    .orEmpty()
+
+/** An authored `max_lines`, at least one, or null. */
+internal fun Map<DesignProperty, DesignValue>.maxLines(): Int? =
+    (this[DesignProperty.MaxLines] as? DesignValue.NumberValue)?.value?.toInt()?.coerceAtLeast(1)
+
 /**
  * Overlay authored text properties on [this] fallback text style.
  *
@@ -233,6 +270,20 @@ internal fun TextStyle.withDesignTextProperties(
         if (it.value) FontStyle.Italic else FontStyle.Normal
     } ?: fontStyle,
     textDecoration = designTextDecoration(properties) ?: textDecoration,
+    // paragraph_breaking: the balanced breaker and no hyphenation, which is
+    // how an Android TextView wraps by default; false keeps the greedy one.
+    lineBreak = (properties[DesignProperty.ParagraphBreaking] as? DesignValue.BooleanValue)?.let {
+        if (it.value) LineBreak.Paragraph else LineBreak.Simple
+    } ?: lineBreak,
+    hyphens = (properties[DesignProperty.ParagraphBreaking] as? DesignValue.BooleanValue)
+        ?.takeIf { it.value }?.let { Hyphens.None } ?: hyphens,
+    // line_spacing_below: a line's extra height goes below it and the last
+    // line drops it, as a TextView's line spacing does, instead of being
+    // shared above and below every line.
+    lineHeightStyle = (properties[DesignProperty.LineSpacingBelow] as? DesignValue.BooleanValue)
+        ?.takeIf { it.value }
+        ?.let { LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.LastLineBottom) }
+        ?: lineHeightStyle,
 )
 
 /**
@@ -275,6 +326,7 @@ internal fun CompiledDesignScope.composeChromeStyles(
     val railLabel = properties(DesignComponentStyleSlot.ChromeRailLabel)
     val railIndicator = properties(DesignComponentStyleSlot.ChromeRailIndicator)
     val drawer = properties(DesignComponentStyleSlot.ChromeDrawer)
+    val scrim = properties(DesignComponentStyleSlot.ChromeScrim)
     val snackbar = properties(DesignComponentStyleSlot.ChromeSnackbar)
     val styles = ComposeChromeStyles(
         tabLabel = tabLabel?.text(),
@@ -286,6 +338,7 @@ internal fun CompiledDesignScope.composeChromeStyles(
         drawerShape = drawer?.shape(),
         drawerWidth = (drawer?.get(DesignProperty.Width) as? DesignValue.DimensionValue)
             ?.value?.dp,
+        drawerScrim = scrim?.color(DesignProperty.BackgroundColor),
         snackbarContainer = snackbar?.color(DesignProperty.BackgroundColor),
         snackbarContent = snackbar?.color(DesignProperty.ContentColor),
         snackbarShape = snackbar?.shape(),
@@ -396,3 +449,103 @@ private fun DesignValue.fontFamily(): FontFamily = when (
     DesignFontFamily.PlexSerif -> PlexFonts.serif
     DesignFontFamily.PlexMono -> PlexFonts.mono
 }
+
+/**
+ * The layout a style program asks for outside Foundation Styles.
+ *
+ * `intrinsic_height` sizes the node to its children's intrinsic height, so a
+ * child the parent row stretches (`align_self` `stretch`) spans the tallest
+ * sibling, as an indent guide spans a wrapped outline row.
+ */
+internal fun ComputedDesignStyle.intrinsicLayout(): Modifier =
+    if ((resolve().properties[DesignProperty.IntrinsicHeight] as? DesignValue.BooleanValue)?.value == true) {
+        Modifier.height(IntrinsicSize.Min)
+    } else {
+        Modifier
+    }
+
+/**
+ * Whether the style authors its own size on each axis.
+ *
+ * A pressable keeps a 48dp minimum interaction bound unless its style sizes
+ * that axis itself, which is how a dense list row tiles rows shorter than
+ * 48dp edge to edge as its upstream design does.
+ */
+internal fun ComputedDesignStyle.authoredSize(): Pair<Boolean, Boolean> {
+    val keys = baseOnly().resolve().properties.keys
+    return Pair(
+        DesignProperty.Width in keys || DesignProperty.MinWidth in keys,
+        DesignProperty.Height in keys || DesignProperty.MinHeight in keys,
+    )
+}
+
+/** Whether resolved text properties ask for `word_ellipsis`. */
+internal fun Map<DesignProperty, DesignValue>.wordEllipsis(): Boolean =
+    (this[DesignProperty.WordEllipsis] as? DesignValue.BooleanValue)?.value == true
+
+/**
+ * What a dialog's root design scope asks of the host's dialog surface.
+ *
+ * The host draws the dialog window's surface outside the dialog's node tree,
+ * so the scope's `chrome.dialog` slot is read here: `background_color`,
+ * `corner_radius`, `width`, `padding`, and `alpha` as the window's dim behind
+ * the dialog. Each is null while unauthored, and the host keeps its own
+ * default for it.
+ */
+data class JetpacsDialogChrome(
+    val container: Color?,
+    val corner: Dp?,
+    val width: Dp?,
+    val padding: Dp?,
+    val dim: Float? = null,
+)
+
+/** The [JetpacsDialogChrome] of [spec], or null unless its root is a design scope. */
+fun jetpacsDialogChrome(spec: JsonObject): JetpacsDialogChrome? {
+    if ((spec["t"] as? JsonPrimitive)?.content != "jetpacs.design_scope") return null
+    val scope = runCatching { DesignModel.compileScope(spec, null, "dialog") }.getOrNull()
+        ?: return null
+    val properties = scope.componentStyle(DesignComponentStyleSlot.ChromeDialog)
+        ?.resolve()?.properties ?: return null
+    fun color(value: DesignValue?): Color? = when (value) {
+        is DesignValue.ColorValue -> Color(value.argb)
+        is DesignValue.ThemeRoleValue ->
+            (scope.themeRoles[value.value] as? DesignValue.ColorValue)?.let { Color(it.argb) }
+        else -> null
+    }
+    fun dp(property: DesignProperty): Dp? =
+        (properties[property] as? DesignValue.DimensionValue)?.value?.dp
+    return JetpacsDialogChrome(
+        container = color(properties[DesignProperty.BackgroundColor]),
+        corner = dp(DesignProperty.CornerRadius),
+        width = dp(DesignProperty.Width),
+        padding = dp(DesignProperty.Padding),
+        dim = (properties[DesignProperty.Alpha] as? DesignValue.NumberValue)?.value?.toFloat(),
+    )
+}
+
+/**
+ * Where an anchored popup opens, from its container slot: `popup_overlap`
+ * starts it at the anchor's top instead of its bottom, as an Android
+ * overflow menu covers its button; `popup_offset_y` moves it further down;
+ * `popup_edge_inset` keeps it that far from the window's sides.
+ */
+data class JetpacsPopupPlacement(
+    val overlap: Boolean = false,
+    val offsetY: Dp = 0.dp,
+    val edgeInset: Dp = 0.dp,
+)
+
+internal fun ComputedDesignStyle?.popupPlacement(): JetpacsPopupPlacement {
+    val properties = this?.resolve()?.properties ?: return JetpacsPopupPlacement()
+    return JetpacsPopupPlacement(
+        overlap = (properties[DesignProperty.PopupOverlap] as? DesignValue.BooleanValue)?.value == true,
+        offsetY = (properties[DesignProperty.PopupOffsetY] as? DesignValue.DimensionValue)?.value?.dp ?: 0.dp,
+        edgeInset = (properties[DesignProperty.PopupEdgeInset] as? DesignValue.DimensionValue)?.value?.dp ?: 0.dp,
+    )
+}
+
+/** The `min_width` a style authors, or null. */
+internal fun ComputedDesignStyle?.authoredMinWidth(): Dp? =
+    (this?.resolve()?.properties?.get(DesignProperty.MinWidth) as? DesignValue.DimensionValue)
+        ?.value?.dp

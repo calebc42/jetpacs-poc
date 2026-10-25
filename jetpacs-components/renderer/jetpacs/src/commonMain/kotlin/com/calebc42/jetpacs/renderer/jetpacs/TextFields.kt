@@ -32,6 +32,7 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.TextObfuscationMode
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -131,7 +132,7 @@ fun JetpacsTextField(
         )
     }
     val fieldModifier = modifier
-        .heightIn(min = 48.dp)
+        .heightIn(min = textFieldMinHeight())
         .styleable(
             styleState,
             designComponentNonTextStyle(DesignComponentStyleSlot.TextFieldText),
@@ -235,7 +236,7 @@ internal fun JetpacsMaskedTextField(
         value = value,
         onValueChange = onValueChange,
         modifier = modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = textFieldMinHeight())
             .styleable(
                 styleState,
                 designComponentNonTextStyle(DesignComponentStyleSlot.TextFieldText),
@@ -252,7 +253,10 @@ internal fun JetpacsMaskedTextField(
         keyboardActions = keyboardActions,
         singleLine = lineLimits == TextFieldLineLimits.SingleLine,
         minLines = multiLine?.minHeightInLines ?: 1,
-        maxLines = multiLine?.maxHeightInLines ?: 1,
+        maxLines = multiLine?.maxHeightInLines
+            // A finite limit times the line height must fit Constraints;
+            // beyond a thousand lines it means "unbounded" in practice.
+            ?.let { if (it > 1000) Int.MAX_VALUE else it } ?: 1,
         visualTransformation = visualTransformation,
         interactionSource = source,
         cursorBrush = SolidColor(colors.focus),
@@ -559,3 +563,15 @@ fun JetpacsFieldGlyph(name: String, modifier: Modifier = Modifier) {
         }
     }
 }
+
+/**
+ * A field's 48dp minimum interaction height, unless the scope's
+ * `text-field.text` slot authors its own `height` or `min_height`, as a
+ * chromeless title field sized like the upstream TextView does.
+ */
+@Composable
+@ReadOnlyComposable
+private fun textFieldMinHeight(): Dp =
+    if (LocalDesignScope.current?.componentStyle(DesignComponentStyleSlot.TextFieldText)
+            ?.authoredSize()?.second == true
+    ) 0.dp else 48.dp

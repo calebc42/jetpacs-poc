@@ -621,6 +621,9 @@ internal fun JetpacsChevron(direction: JetpacsChevronDirection) {
  */
 internal class JetpacsAnchoredPopupPositionProvider(
     private val preferredLayoutDirection: LayoutDirection,
+    private val overlap: Boolean = false,
+    private val offsetY: Int = 0,
+    private val edgeInset: Int = 0,
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -635,12 +638,16 @@ internal class JetpacsAnchoredPopupPositionProvider(
         } else {
             anchorBounds.right - popupContentSize.width
         }
-        val maxX = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
-        val x = unboundedX.coerceIn(0, maxX)
-        val below = windowSize.height - anchorBounds.bottom
+        // Keep edgeInset from both sides; a popup too wide for that keeps
+        // only the window's own bounds.
+        val room = (windowSize.width - popupContentSize.width).coerceAtLeast(0)
+        val inset = edgeInset.coerceAtMost(room / 2)
+        val x = unboundedX.coerceIn(inset, room - inset)
+        val top = if (overlap) anchorBounds.top else anchorBounds.bottom
+        val below = windowSize.height - top
         val above = anchorBounds.top
         val unboundedY = if (popupContentSize.height <= below || below >= above) {
-            anchorBounds.bottom
+            top + offsetY
         } else {
             anchorBounds.top - popupContentSize.height
         }

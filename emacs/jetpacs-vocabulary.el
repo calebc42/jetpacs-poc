@@ -461,7 +461,7 @@ types a `bind' may never name.")
   "Contract-projected wire field names and their declared value types.")
 
 (defconst jetpacs-action-hook-keys
-  '("on_tap" "on_change" "on_submit" "on_save" "on_enter" "on_pick" "on_reorder" "on_refresh" "on_sheet_change" "on_expand_change" "on_long_tap" "on_add_row" "on_add_col" "on_day_tap" "on_month_change" "on_point_tap" "on_trigger" "on_search" "on_action" "header_action")
+  '("on_tap" "on_change" "on_submit" "on_save" "on_enter" "on_pick" "on_reorder" "on_refresh" "on_back" "on_sheet_change" "on_expand_change" "on_long_tap" "on_add_row" "on_add_col" "on_day_tap" "on_month_change" "on_point_tap" "on_trigger" "on_search" "on_action" "header_action")
   "Contract-projected Node members which accept an ActionDescriptor.")
 
 (defconst jetpacs-action-descriptor-fields
@@ -560,7 +560,7 @@ Each row is (KIND :required (MEMBER...) :optional (MEMBER...)).")
     ("chart" ("series") ("children" "height" "kind" "on_point_tap" "summary" "y_range"))
     ("canvas" ("height" "ops" "width") ("children"))
     ("month_grid" ("month") ("children" "day_styles" "disabled_weekdays" "marks" "max_date" "max_month" "min_date" "min_month" "on_day_tap" "on_month_change" "range_end" "range_start" "selected"))
-    ("scaffold" () ("body" "bottom_bar" "bottom_bar_behavior" "drawer" "drawer_variant" "fab" "fab_hide_on_scroll" "fab_position" "floating_toolbar" "floating_toolbar_exit_direction" "floating_toolbar_expanded" "floating_toolbar_fab" "floating_toolbar_orientation" "floating_toolbar_placement" "floating_toolbar_scroll" "is_refreshing" "on_refresh" "on_sheet_change" "rail" "refresh_indicator" "scroll_behavior" "sheet" "sheet_peek_height" "sheet_state" "snackbar" "snackbar_action" "snackbar_content" "snackbar_dismiss" "snackbar_duration" "snackbar_max_lines" "top_bar" "top_bar_centered" "top_bar_collapsed_height" "top_bar_expanded" "top_bar_expanded_height" "top_bar_style" "top_bar_subtitle"))
+    ("scaffold" () ("body" "bottom_bar" "bottom_bar_behavior" "drawer" "drawer_variant" "fab" "fab_hide_on_scroll" "fab_position" "floating_toolbar" "floating_toolbar_exit_direction" "floating_toolbar_expanded" "floating_toolbar_fab" "floating_toolbar_orientation" "floating_toolbar_placement" "floating_toolbar_scroll" "is_refreshing" "on_back" "on_refresh" "on_sheet_change" "rail" "refresh_indicator" "scroll_behavior" "sheet" "sheet_peek_height" "sheet_state" "snackbar" "snackbar_action" "snackbar_content" "snackbar_dismiss" "snackbar_duration" "snackbar_max_lines" "top_bar" "top_bar_centered" "top_bar_collapsed_height" "top_bar_expanded" "top_bar_expanded_height" "top_bar_style" "top_bar_subtitle"))
     ("tooltip" ("children" "text") ("action_label" "caret" "caret_height" "caret_width" "on_action" "position" "rich" "shown" "title"))
     ("pane_scaffold" ("detail" "list") ("extra" "variant"))
     ("navigation_rail" ("items") ("arrangement" "expanded" "header" "hide_on_collapse" "on_expand_change" "variant"))

@@ -4,6 +4,9 @@ package com.calebc42.jetpacs.companion
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
@@ -20,6 +23,12 @@ internal class AndroidHostUi(context: Context) : HostUiPlatform {
     @Composable
     override fun BackHandler(enabled: Boolean, onBack: () -> Unit) {
         androidx.activity.compose.BackHandler(enabled = enabled, onBack = onBack)
+    }
+
+    @Composable
+    override fun DialogDim(amount: Float) {
+        val window = (LocalView.current.parent as? DialogWindowProvider)?.window
+        SideEffect { window?.setDimAmount(amount.coerceIn(0f, 1f)) }
     }
 
     @Composable

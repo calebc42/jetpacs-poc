@@ -13,7 +13,11 @@
       "jetpacs.styled",
       "jetpacs.pressable"
     ],
-    "dialog": [],
+    "dialog": [
+      "jetpacs.design_scope",
+      "jetpacs.styled",
+      "jetpacs.pressable"
+    ],
     "notification": []
   },
   "definitions": {
@@ -225,6 +229,8 @@
         "choice.label",
         "panel.container",
         "panel.label",
+        "picker.container",
+        "picker.label",
         "tabs.container",
         "tabs.item",
         "tabs.indicator",
@@ -287,6 +293,8 @@
         "chrome.rail-label",
         "chrome.rail-indicator",
         "chrome.drawer",
+        "chrome.scrim",
+        "chrome.dialog",
         "chrome.snackbar"
       ]
     },

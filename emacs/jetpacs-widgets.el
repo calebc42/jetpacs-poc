@@ -1546,12 +1546,14 @@ naming a highlighter."
                  :max_lines max-lines
                  :syntax syntax))
 
-(cl-defun jetpacs-span (text &key font-weight italic underline color bg mono on-tap)
+(cl-defun jetpacs-span (text &key font-weight italic underline color bg mono scale on-tap)
   "A styled text run for `jetpacs-rich-text' (SPEC §17.2 RichSpan).
 Plain-text TEXT; FONT-WEIGHT a name or 100..900; ITALIC/UNDERLINE/MONO
-non-nil to enable; COLOR/BG §16.6 colors; ON-TAP an ActionDescriptor that
-makes the run a link."
+non-nil to enable; COLOR/BG §16.6 colors; SCALE a number 0.5..2.0
+multiplying the run's font size relative to the text (amendment #201);
+ON-TAP an ActionDescriptor that makes the run a link."
   (jetpacs-require-string text ":text")
+  (when scale (jetpacs--check-number scale ":scale" 0.5 2.0))
   (when font-weight (jetpacs--check-font-weight font-weight))
   (when color (jetpacs--check-color color))
   (when bg (jetpacs--check-color bg))
@@ -1564,6 +1566,7 @@ makes the run a link."
                  :color color
                  :bg bg
                  :mono (jetpacs--flag mono)
+                 :scale scale
                  :on_tap on-tap))
 
 (cl-defun jetpacs-rich-text (spans &key style)
@@ -3640,7 +3643,7 @@ that needs the value is the Companion's to apply at materialization."
 
 (cl-defun jetpacs-scaffold (&key top-bar body bottom-bar fab floating-toolbar
                                  drawer snackbar snackbar-action on-refresh
-                                 top-bar-style top-bar-subtitle scroll-behavior
+                                 on-back top-bar-style top-bar-subtitle scroll-behavior
                                  floating-toolbar-orientation
                                  floating-toolbar-expanded
                                  floating-toolbar-placement
@@ -3660,6 +3663,10 @@ that needs the value is the Companion's to apply at materialization."
   "A scaffold (application chrome) node (SPEC §17.6).
 TOP-BAR/BODY/BOTTOM-BAR/FAB/FLOATING-TOOLBAR/DRAWER are Nodes; SNACKBAR a
 string; SNACKBAR-ACTION a `jetpacs-snackbar-action'; ON-REFRESH a descriptor.
+ON-BACK is the descriptor the platform back gesture dispatches while the
+top bar draws no back arrow (SPEC 17.6, amendment #200): a top-level
+destination wearing the drawer's menu button that still returns to the
+screen below it.
 RAIL is a Node laid on the START edge beside the whole chrome — author a
 `jetpacs-navigation-rail' there when the SPEC 20.1.1 window class is wide,
 and the same items in BOTTOM-BAR when it is compact; the two slots are the
@@ -3718,6 +3725,7 @@ EXIT-DIRECTION lets it slide away as the body scrolls."
   (when snackbar (jetpacs-require-string snackbar ":snackbar"))
   (when snackbar-action (jetpacs--check-snackbar-action snackbar-action))
   (when on-refresh (jetpacs-check-descriptor on-refresh ":on-refresh"))
+  (when on-back (jetpacs-check-descriptor on-back ":on-back"))
   (when refresh-indicator
     (setq refresh-indicator (jetpacs-check-enum refresh-indicator
                                                  jetpacs--refresh-indicators
@@ -3846,6 +3854,7 @@ EXIT-DIRECTION lets it slide away as the body scrolls."
                  :snackbar_content snackbar-content
                  :rail rail
                  :on_refresh on-refresh
+                 :on_back on-back
                  :refresh_indicator refresh-indicator
                  :is_refreshing is-refreshing
                  :sheet sheet :sheet_peek_height sheet-peek-height

@@ -125,6 +125,37 @@ vertical ranges and accessible summaries follow the canonical contract.
 Charts with point actions retain the host implementation and its required
 index/value injection seam. This adds no wire vocabulary or app dependency.
 
+### Dense rows and TextView metrics
+
+Four style properties and one chrome slot let an app reproduce a native
+Android View design exactly (Orgzly Native's port of Orgzly Revived is the
+first consumer):
+
+- `intrinsic_height` sizes a styled or pressable child to its children's
+  intrinsic height, so a sibling the parent row stretches (`align_self`
+  `stretch`) spans the tallest one, as an outline's indent guides span a
+  wrapped note. Foundation Styles sizes do not report intrinsic width, so fixed
+  sizes inside such a row belong on universal `width`/`height` attributes.
+- A pressable keeps its 48dp minimum interaction bound unless its style
+  authors `width`/`min_width` (horizontal) or `height`/`min_height`
+  (vertical), so a list of short rows can tile edge to edge.
+- `word_ellipsis` cuts an overflowing `max_lines` text at the last word that
+  fits, as a Toolbar title does, instead of mid-word.
+- `paragraph_breaking` wraps with the balanced breaker and no hyphenation,
+  an Android TextView's defaults, instead of Compose's greedy breaker.
+- `line_spacing_below` puts the extra height of a `line_height` below each
+  line and drops it from the last, as a TextView's line spacing does, so a
+  one-line text is no taller than its font.
+- Inside a design scope `date_button` and `time_button` draw as a button
+  styled by `picker.container` and `picker.label` and open their pickers
+  locally. Unlike `button.*`, those slots may author `min_height`, padding
+  and `font_size`, and `max_lines` lets a label wrap.
+- `chrome.scrim` colors the content behind a modal drawer through its
+  `background_color` (a View `DrawerLayout` dims to 60% black).
+
+Rich text honors the RichSpan `scale` of EBP amendment #201 in both the
+Foundation and Material renderers.
+
 This directory is a module of `jetpacs-poc`; it needs no separate Git remote.
 Run the commands above from this directory. External EBP dependencies remain
 sibling repositories of `jetpacs-poc`; `JETPACS_REPOSITORIES_ROOT` can select

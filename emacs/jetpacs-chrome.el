@@ -148,7 +148,7 @@ or live-profile refusal costs the default only, never the screen.")
 
 (cl-defun jetpacs-chrome-screen (title body &key back actions fab drawer
                                        bottom-bar on-refresh floating-toolbar
-                                       scaffold)
+                                       on-back scaffold)
   "A titled scaffold screen.  BACK, when given, is the tap descriptor
 of a leading arrow_back button (canonically `jetpacs-view-switch' of
 the screen below).  The weight-1 title is what keeps trailing ACTIONS
@@ -161,6 +161,10 @@ the §17.6 members this function does not name individually — top-bar
 styling, floating-toolbar styling, and whatever §17.6 grows next.
 `jetpacs-scaffold' validates it, so an unknown member is an error there
 rather than a silently dropped keyword here.
+
+ON-BACK is the back gesture of a screen that draws no BACK arrow — a
+top-level destination wearing the drawer's menu button above a parent
+screen (SPEC 17.6, amendment #200).
 
 The optional slots follow docs/CHROME-VOCABULARY.md: DRAWER holds
 app-level destinations (the Companion adds the opening hamburger on
@@ -183,7 +187,7 @@ three to five sibling places, never document actions."
                      actions
                      (list :align "center" :spacing 4)))
     :body body :fab fab :drawer drawer :bottom-bar bottom-bar
-    :on-refresh on-refresh :floating-toolbar floating-toolbar
+    :on-refresh on-refresh :on-back on-back :floating-toolbar floating-toolbar
     ;; The M3-catalog sprint proved the styled bars end to end, so chrome
     ;; wears the REAL M3 small top bar by default now — proper insets,
     ;; the drawer hamburger as its navigationIcon, and a scroll behavior

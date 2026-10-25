@@ -86,6 +86,8 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.TextUnit
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
@@ -255,6 +257,9 @@ internal fun buildSpanString(
             fontStyle = if (s.boolOr("italic")) FontStyle.Italic else null,
             fontFamily = if (s.boolOr("mono")) FontFamily.Monospace else null,
             textDecoration = if (s.boolOr("underline")) TextDecoration.Underline else null,
+            // Amendment #201: scale is relative to the enclosing text size.
+            fontSize = s["scale"]?.numOrNull()?.toFloat()?.takeIf { it in 0.5f..2.0f }?.em
+                ?: TextUnit.Unspecified,
             background = resolve(s.stringOr("bg").takeIf { it.isNotEmpty() })
                 ?: Color.Unspecified,
             color = resolve(s.stringOr("color").takeIf { it.isNotEmpty() })

@@ -19,10 +19,13 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import com.calebc42.ebp.renderer.compose.ComposeCanonicalNodeOverride
 import com.calebc42.ebp.renderer.compose.ComposeNodeRenderContext
+import androidx.compose.ui.unit.TextUnit
+import androidx.compose.ui.unit.em
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.doubleOrNull
 
 /**
  * Canonical rich text under a design scope, rendered by Foundation BasicText.
@@ -68,6 +71,9 @@ internal fun buildDesignRichText(
             fontStyle = if (flag("italic")) FontStyle.Italic else null,
             fontFamily = if (flag("mono")) FontFamily.Monospace else null,
             textDecoration = if (flag("underline")) TextDecoration.Underline else null,
+            // Amendment #201: scale is relative to the enclosing text size.
+            fontSize = (span["scale"] as? JsonPrimitive)?.takeUnless { it.isString }
+                ?.doubleOrNull?.takeIf { it in 0.5..2.0 }?.em ?: TextUnit.Unspecified,
             color = resolve(string("color")) ?: Color.Unspecified,
             background = resolve(string("bg")) ?: Color.Unspecified,
         )

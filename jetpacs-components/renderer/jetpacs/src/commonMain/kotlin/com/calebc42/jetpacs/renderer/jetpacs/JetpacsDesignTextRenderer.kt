@@ -6,6 +6,10 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
@@ -54,14 +58,19 @@ object JetpacsDesignTextRenderer : ComposeCanonicalNodeOverride {
             annotatedText(raw, language, syntaxColors)
         }
         val maxLines = node.positiveInt("max_lines") ?: Int.MAX_VALUE
+        val wordEllipsis = maxLines != Int.MAX_VALUE && enclosingWordEllipsis()
         val content: @Composable () -> Unit = {
-            BasicText(
-                text = text,
-                modifier = modifier,
-                style = style,
-                maxLines = maxLines,
-                overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
-            )
+            if (wordEllipsis) {
+                WordEllipsizedText(text, modifier, style, maxLines)
+            } else {
+                BasicText(
+                    text = text,
+                    modifier = modifier,
+                    style = style,
+                    maxLines = maxLines,
+                    overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
+                )
+            }
         }
         if (node.boolean("selectable")) SelectionContainer { content() } else content()
     }
@@ -84,6 +93,15 @@ object JetpacsDesignTextRenderer : ComposeCanonicalNodeOverride {
             )
         }
         return withFace.withCanonicalMembers(node, roles)
+    }
+
+    /** Whether the enclosing face asks for `word_ellipsis`. */
+    @Composable
+    @ReadOnlyComposable
+    private fun enclosingWordEllipsis(): Boolean {
+        val enclosing = LocalDesignTextContext.current ?: return false
+        return enclosing.computed.resolve(enclosing.state.activeDesignStates())
+            .properties.wordEllipsis()
     }
 
     @Composable
@@ -237,3 +255,52 @@ val JetpacsDesignCanonicalOverrides: List<ComposeCanonicalNodeOverride> = listOf
     JetpacsDesignTextInputRenderer,
     JetpacsDesignEditorRenderer,
 )
+
+/**
+ * `word_ellipsis`: cut an overflowing text at the last word that fits and
+ * append the ellipsis there, as an Android TextView does for a toolbar title,
+ * instead of mid-word. The text is first laid out clipped at its line limit;
+ * when it overflows, the last visible line ends at a word boundary, and the
+ * text is re-laid out up to that boundary with the ellipsis. A cut that would
+ * leave nothing on the line keeps the ordinary character ellipsis.
+ */
+@Composable
+private fun WordEllipsizedText(
+    text: AnnotatedString,
+    modifier: Modifier,
+    style: TextStyle,
+    maxLines: Int,
+) {
+    var shown by remember(text, maxLines) { mutableStateOf<AnnotatedString?>(null) }
+    var characterEllipsis by remember(text, maxLines) { mutableStateOf(false) }
+    val current = shown
+    BasicText(
+        text = current ?: text,
+        modifier = modifier,
+        style = style,
+        maxLines = maxLines,
+        softWrap = true,
+        overflow = if (current != null || characterEllipsis) TextOverflow.Ellipsis else TextOverflow.Clip,
+        onTextLayout = { layout ->
+            if (current == null && !characterEllipsis && layout.hasVisualOverflow) {
+                val last = minOf(maxLines, layout.lineCount) - 1
+                val end = layout.getLineEnd(last, visibleEnd = true)
+                val kept = text.subSequence(0, end).trimEndWhitespace()
+                if (kept.isEmpty() || layout.getLineStart(last) >= kept.length) {
+                    characterEllipsis = true
+                } else {
+                    shown = buildAnnotatedString {
+                        append(kept)
+                        append("\u2026")
+                    }
+                }
+            }
+        },
+    )
+}
+
+private fun AnnotatedString.trimEndWhitespace(): AnnotatedString {
+    var end = length
+    while (end > 0 && text[end - 1].isWhitespace()) end--
+    return subSequence(0, end)
+}

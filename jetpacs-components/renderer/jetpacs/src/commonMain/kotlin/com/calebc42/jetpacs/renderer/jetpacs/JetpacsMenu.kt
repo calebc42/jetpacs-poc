@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.style.MutableStyleState
@@ -209,9 +210,18 @@ fun JetpacsMenu(
                 val below = (windowHeight - bounds.bottom).coerceAtLeast(0)
                 with(density) { maxOf(above, below).toDp() }
             }
+            val placement = LocalDesignScope.current
+                ?.componentStyle(DesignComponentStyleSlot.MenuContainer).popupPlacement()
             Popup(
-                popupPositionProvider = remember(layoutDirection) {
-                    JetpacsAnchoredPopupPositionProvider(layoutDirection)
+                popupPositionProvider = remember(layoutDirection, placement, density) {
+                    with(density) {
+                        JetpacsAnchoredPopupPositionProvider(
+                            layoutDirection,
+                            overlap = placement.overlap,
+                            offsetY = placement.offsetY.roundToPx(),
+                            edgeInset = placement.edgeInset.roundToPx(),
+                        )
+                    }
                 },
                 onDismissRequest = { closePopup(restoreFocus = true) },
                 properties = PopupProperties(
@@ -267,7 +277,11 @@ fun JetpacsMenuPopupContent(
     val scrollState = rememberScrollState()
     val windowSize = LocalWindowInfo.current.containerDpSize
     val popupMaxWidth = minOf(MenuPopupMaxWidth, windowSize.width)
-    val popupMinWidth = minOf(MenuPopupMinWidth, popupMaxWidth)
+    // An authored container min_width is a real layout minimum: Styles
+    // sizes do not take part in the intrinsic width the popup wraps to.
+    val authoredMinWidth = LocalDesignScope.current
+        ?.componentStyle(DesignComponentStyleSlot.MenuContainer).authoredMinWidth()
+    val popupMinWidth = minOf(maxOf(MenuPopupMinWidth, authoredMinWidth ?: 0.dp), popupMaxWidth)
     val popupMaxHeight = minOf(
         windowSize.height,
         availableHeight ?: windowSize.height,
@@ -290,6 +304,9 @@ fun JetpacsMenuPopupContent(
     Column(
         modifier = modifier
             .widthIn(min = popupMinWidth, max = popupMaxWidth)
+            // As Material's menus do: as wide as the widest item, whose
+            // rows fill that width, rather than the whole allowed width.
+            .width(IntrinsicSize.Max)
             .heightIn(max = popupMaxHeight)
             .styleable(
                 remember { MutableStyleState(null) },

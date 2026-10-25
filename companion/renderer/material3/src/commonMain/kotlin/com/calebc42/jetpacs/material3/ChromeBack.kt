@@ -16,7 +16,8 @@ import kotlinx.serialization.json.JsonObject
 /**
  * The `view.switch` descriptor of VIEW's chrome back arrow, or null when this
  * screen has none — the stack bottom, a non-scaffold root, or a top bar whose
- * leading slot is something else. Null means the system default proceeds and
+ * leading slot is something else. A scaffold without an arrow may declare its
+ * gesture in `on_back` (amendment #200), which is returned instead. Null means the system default proceeds and
  * the Activity finishes, which is the pre-S11 behavior for every screen.
  *
  * VIEW is the RESOLVED current view (the app host collapses the
@@ -52,6 +53,11 @@ fun chromeBackDescriptor(
         if (IconButtonMembers.Enabled.read(leading) == false) return null
         val onTap = IconButtonMembers.OnTap.read(leading) ?: return null
         return validBackActionDescriptor(onTap, surfaceId, connected)
+    }
+    // Amendment #200: a screen drawing no arrow may still declare its back
+    // gesture, as a top-level destination above a parent screen does.
+    ScaffoldMembers.OnBack.read(scaffold)?.let { onBack ->
+        return validBackActionDescriptor(onBack, surfaceId, connected)
     }
     if (!connected) return null
     return primaryDockHomeDescriptor(scaffold, surfaceId)

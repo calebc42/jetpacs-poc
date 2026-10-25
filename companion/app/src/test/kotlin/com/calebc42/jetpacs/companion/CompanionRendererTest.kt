@@ -95,8 +95,13 @@ class CompanionRendererTest {
         assertTrue(
             JETPACS_DESIGN_EXTENSION in enabled.composeConfiguration.appExtensions,
         )
-        assertFalse(
+        // An app's dialogs wear its design language once the runtime is on,
+        // and never before.
+        assertTrue(
             JETPACS_DESIGN_EXTENSION in enabled.composeConfiguration.dialogExtensions,
+        )
+        assertFalse(
+            JETPACS_DESIGN_EXTENSION in disabled.composeConfiguration.dialogExtensions,
         )
     }
 

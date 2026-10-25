@@ -281,6 +281,12 @@ data class RenderCtx(
     val configuration: ComposeRendererConfiguration = NodeSupport.COMPOSE_CONFIGURATION,
     /** Nearest admitted downstream design scope; roots always start unscoped. */
     val designScope: String? = null,
+    /**
+     * Run before every dispatch from this subtree. A modal drawer sets it to
+     * close itself, so choosing a destination closes the drawer as Material
+     * specifies, whether or not the destination changes the surface.
+     */
+    val onDispatch: (() -> Unit)? = null,
 ) {
     /** [position] is the child's JSON route under this node: `children[i]`, a slot name, `items[i].content`. */
     fun child(node: JsonObject?, index: Int, position: String = "children[$index]"): RenderCtx =
@@ -334,6 +340,7 @@ data class RenderCtx(
         onOutcome: (RendererActionOutcome) -> Unit = {},
     ): ActionHandoff {
         descriptor ?: return ActionHandoff.Ignored
+        onDispatch?.invoke()
         // SPEC 18.1 (T3c, closes LD-1): inside a dialog the dialog.submit /
         // dialog.dismiss builtins complete the outstanding request instead of
         // dispatching remotely — resolved HERE, in the one ordinary dispatch
@@ -1067,7 +1074,10 @@ private fun LegacyMaskedMaterialTextField(
         keyboardActions = keyboardActions,
         singleLine = singleLine,
         minLines = multiLine?.minHeightInLines ?: 1,
-        maxLines = multiLine?.maxHeightInLines ?: 1,
+        maxLines = multiLine?.maxHeightInLines
+            // A finite limit times the line height must fit Constraints;
+            // beyond a thousand lines it means "unbounded" in practice.
+            ?.let { if (it > 1000) Int.MAX_VALUE else it } ?: 1,
         visualTransformation = visualTransformation,
         interactionSource = interactionSource,
         cursorBrush = SolidColor(colors.cursorColor(isError)),
@@ -1668,9 +1678,20 @@ fun RenderScaffold(
             },
             topBar = {
                 val topBar = p[ScaffoldMembers.TopBar]
+                // The top bar's own `pad` insets the whole bar, the hamburger
+                // included, as a wide window's Toolbar does: its start moves
+                // the hamburger (and so the title after it), its end the row.
+                val barPad = topBar?.let { UniversalMembers.Pad.read(it) }
+                fun barSide(side: String): androidx.compose.ui.unit.Dp =
+                    (safeDp(barPad?.let { it.doubleOr(side, it.doubleOr("horizontal", 0.0)) } ?: 0.0)
+                        ?: 0f).dp
                 if (topBarStyle.isNotEmpty()) {
+                    val titleNode = if (barPad == null || drawerState == null) topBar
+                        else topBar?.let {
+                            JsonObject(it + ("pad" to buildJsonObject { put("end", barSide("end").value) }))
+                        }
                     val title: @Composable () -> Unit = {
-                        topBar?.let { RenderNode(it, ctx.child(it, 0, "top_bar")) }
+                        titleNode?.let { RenderNode(it, ctx.child(it, 0, "top_bar")) }
                     }
                     val nav: @Composable () -> Unit = {
                         // A PERMANENT drawer stands open; its hamburger
@@ -1678,7 +1699,7 @@ fun RenderScaffold(
                         val state = drawerState
                         if (state != null &&
                             p[ScaffoldMembers.DrawerVariant]?.wire.orEmpty() != "permanent")
-                            IconButton(onClick = {
+                            IconButton(modifier = Modifier.padding(start = barSide("start")), onClick = {
                                 scope.launch {
                                     if (state.isClosed) state.open()
                                     else state.close()
@@ -1770,8 +1791,11 @@ fun RenderScaffold(
                     // TopAppBar, gets no automatic inset) — else the hamburger
                     // sits under the status icons and is neither visible nor
                     // tappable.
+                    val barNode = if (barPad == null) topBar
+                        else topBar?.let { JsonObject(it - "pad") }
                     Row(
-                        modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+                        modifier = Modifier.fillMaxWidth().statusBarsPadding()
+                            .padding(start = barSide("start"), end = barSide("end")),
                         verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                         val state = drawerState
                         if (state != null &&
@@ -1787,7 +1811,7 @@ fun RenderScaffold(
                                     IconMap.get("menu"), contentDescription = "Menu")
                             }
                         }
-                        topBar?.let { RenderNode(it, ctx.child(it, 0, "top_bar")) }
+                        barNode?.let { RenderNode(it, ctx.child(it, 0, "top_bar")) }
                     }
                 }
             },
@@ -2097,6 +2121,9 @@ fun RenderScaffold(
             else ->
                 androidx.compose.material3.ModalNavigationDrawer(
                     drawerState = state,
+                    // A design scope's chrome.scrim colors the dimmed content.
+                    scrimColor = LocalComposeChromeStyles.current?.drawerScrim
+                        ?: androidx.compose.material3.DrawerDefaults.scrimColor,
                     drawerContent = {
                         val chrome = LocalComposeChromeStyles.current
                         androidx.compose.material3.ModalDrawerSheet(
@@ -2111,7 +2138,8 @@ fun RenderScaffold(
                             drawerContainerColor = chrome?.drawerContainer
                                 ?: androidx.compose.material3.DrawerDefaults
                                     .modalContainerColor) {
-                            RenderNode(drawer, ctx.child(drawer, 5, "drawer"))
+                            RenderNode(drawer, ctx.child(drawer, 5, "drawer").copy(
+                                onDispatch = { scope.launch { state.close() } }))
                         }
                     }) { sheetWrap { railed() } }
         }

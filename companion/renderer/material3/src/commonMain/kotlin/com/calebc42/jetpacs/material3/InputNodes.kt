@@ -142,6 +142,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -173,6 +174,8 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 /** §17.4 `button.size`: the M3 container scale. A step is a COORDINATED token
  * set — height, content padding, icon size, icon spacing and label typography
@@ -1263,10 +1266,8 @@ internal fun RenderDateButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, DateButtonMembers)
     val onPick = p[DateButtonMembers.OnPick]
     var show by remember { mutableStateOf(false) }
-    OutlinedButton(
-        onClick = { show = true },
-        enabled = p.getOr(DateButtonMembers.Enabled, true),
-        modifier = m) { Text(p[DateButtonMembers.Label].orEmpty()) }
+    PickerFace(p[DateButtonMembers.Label].orEmpty(), p.getOr(DateButtonMembers.Enabled, true),
+        ctx, m) { show = true }
     if (show) {
         val initialMillis = remember { parseIsoDateUtc(p[DateButtonMembers.Value].orEmpty()) }
         // §17.4 day-level bounds: the declarative predicate is the ONLY form
@@ -1333,10 +1334,8 @@ internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val p = NodeProperties(node, TimeButtonMembers)
     val onPick = p[TimeButtonMembers.OnPick]
     var show by remember { mutableStateOf(false) }
-    OutlinedButton(
-        onClick = { show = true },
-        enabled = p.getOr(TimeButtonMembers.Enabled, true),
-        modifier = m) { Text(p[TimeButtonMembers.Label].orEmpty()) }
+    PickerFace(p[TimeButtonMembers.Label].orEmpty(), p.getOr(TimeButtonMembers.Enabled, true),
+        ctx, m) { show = true }
     if (show) {
         val (h, min) = remember { parseHm(p[TimeButtonMembers.Value].orEmpty()) }
         val state = rememberTimePickerState(initialHour = h, initialMinute = min)
@@ -1382,6 +1381,57 @@ internal fun RenderTimeButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                 else TimePicker(state = state)
             })
     }
+}
+
+/** The button a date_button or time_button shows, whose tap runs [open].
+ * Inside a design scope that draws `button`, it wears that scope's tonal
+ * picker face: a synthesized `button` node rendered through the
+ * scope's override, with a context that opens the picker instead of
+ * dispatching, so an app styles its pickers as it styles its buttons.
+ * Elsewhere it stays Material's outlined button. */
+@Composable
+private fun PickerFace(
+    label: String,
+    enabled: Boolean,
+    ctx: RenderCtx,
+    m: Modifier,
+    open: () -> Unit,
+) {
+    val face = remember(label, enabled) {
+        buildJsonObject {
+            put("t", "button")
+            put("label", label)
+            // jetpacs-components' PICKER_FACE: styled by the picker.* slots.
+            put("variant", "jetpacs-picker")
+            put("enabled", enabled)
+            // Never dispatched: the context below answers every tap locally.
+            put("on_tap", buildJsonObject { put("action", "picker.open") })
+        }
+    }
+    val override = ctx.designScope
+        ?.takeIf { ctx.configuration.admitsDesignScope(it, ctx.inDialog) }
+        ?.let { ctx.configuration.canonicalOverrides.rendererFor(it, "button") }
+        ?.takeIf { it.appliesTo(face) }
+    if (override == null) {
+        OutlinedButton(onClick = open, enabled = enabled, modifier = m) { Text(label) }
+        return
+    }
+    val currentOpen by rememberUpdatedState(open)
+    val local = remember(ctx) {
+        object : MaterialNodeRenderContext(ctx) {
+            override fun dispatchAction(
+                descriptor: JsonObject?,
+                value: JsonElement?,
+                secret: RendererVolatileSecret?,
+                sourceId: String?,
+                onOutcome: (RendererActionOutcome) -> Unit,
+            ): ActionHandoff {
+                currentOpen()
+                return ActionHandoff.HandedOff
+            }
+        }
+    }
+    override.render(face, local, m)
 }
 
 // ------------------------------------------------- pure date/time helpers

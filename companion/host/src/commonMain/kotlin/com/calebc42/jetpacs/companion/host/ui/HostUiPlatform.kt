@@ -20,6 +20,14 @@ interface HostUiPlatform {
     @Composable
     fun BackHandler(enabled: Boolean, onBack: () -> Unit)
 
+    /**
+     * Dim the content behind the dialog this composes inside by [amount]
+     * (0..1), where the platform's dialog window can. The default leaves the
+     * platform's own dim.
+     */
+    @Composable
+    fun DialogDim(amount: Float) {}
+
     /** The window's current size in dp, read from the platform's own source. */
     @Composable
     fun windowSizeDp(): DpSize
