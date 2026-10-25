@@ -149,7 +149,9 @@ private fun StyleScope.applyDesignProperties(
             DesignProperty.MaxLines -> Unit
             // Read by the popup positioner, which owns where a popup opens.
             DesignProperty.PopupOverlap, DesignProperty.PopupOffsetY,
-            DesignProperty.PopupEdgeInset -> Unit
+            DesignProperty.PopupEdgeInset, DesignProperty.PopupBeforeAnchor -> Unit
+            // Read by the menu popup, which draws the platform shadow.
+            DesignProperty.Elevation -> Unit
             DesignProperty.Italic ->
                 fontStyle(if (value.boolean()) FontStyle.Italic else FontStyle.Normal)
             // One decoration carries both lines, so the pair is applied once,
@@ -534,6 +536,9 @@ data class JetpacsPopupPlacement(
     val overlap: Boolean = false,
     val offsetY: Dp = 0.dp,
     val edgeInset: Dp = 0.dp,
+    /** The popup ends where its anchor starts, as a field's dropdown
+     * spans the field before the button that opens it. */
+    val beforeAnchor: Boolean = false,
 )
 
 internal fun ComputedDesignStyle?.popupPlacement(): JetpacsPopupPlacement {
@@ -542,7 +547,16 @@ internal fun ComputedDesignStyle?.popupPlacement(): JetpacsPopupPlacement {
         overlap = (properties[DesignProperty.PopupOverlap] as? DesignValue.BooleanValue)?.value == true,
         offsetY = (properties[DesignProperty.PopupOffsetY] as? DesignValue.DimensionValue)?.value?.dp ?: 0.dp,
         edgeInset = (properties[DesignProperty.PopupEdgeInset] as? DesignValue.DimensionValue)?.value?.dp ?: 0.dp,
+        beforeAnchor = (properties[DesignProperty.PopupBeforeAnchor] as? DesignValue.BooleanValue)?.value == true,
     )
+}
+
+/** The `elevation` a style authors with its `corner_radius`, or null. */
+internal fun ComputedDesignStyle?.authoredElevation(): Pair<Dp, Dp>? {
+    val properties = this?.resolve()?.properties ?: return null
+    val elevation = (properties[DesignProperty.Elevation] as? DesignValue.DimensionValue)?.value ?: return null
+    val corner = (properties[DesignProperty.CornerRadius] as? DesignValue.DimensionValue)?.value ?: 0.0
+    return elevation.dp to corner.dp
 }
 
 /** The `min_width` a style authors, or null. */

@@ -624,6 +624,7 @@ internal class JetpacsAnchoredPopupPositionProvider(
     private val overlap: Boolean = false,
     private val offsetY: Int = 0,
     private val edgeInset: Int = 0,
+    private val beforeAnchor: Boolean = false,
 ) : PopupPositionProvider {
     override fun calculatePosition(
         anchorBounds: IntRect,
@@ -633,10 +634,12 @@ internal class JetpacsAnchoredPopupPositionProvider(
     ): IntOffset {
         val direction = layoutDirection.takeIf { it == preferredLayoutDirection }
             ?: preferredLayoutDirection
-        val unboundedX = if (direction == LayoutDirection.Ltr) {
-            anchorBounds.left
-        } else {
-            anchorBounds.right - popupContentSize.width
+        val unboundedX = when {
+            beforeAnchor && direction == LayoutDirection.Ltr ->
+                anchorBounds.left - popupContentSize.width
+            beforeAnchor -> anchorBounds.right
+            direction == LayoutDirection.Ltr -> anchorBounds.left
+            else -> anchorBounds.right - popupContentSize.width
         }
         // Keep edgeInset from both sides; a popup too wide for that keeps
         // only the window's own bounds.

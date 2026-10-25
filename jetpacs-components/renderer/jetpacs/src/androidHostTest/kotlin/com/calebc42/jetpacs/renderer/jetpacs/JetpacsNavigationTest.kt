@@ -153,4 +153,29 @@ class JetpacsNavigationTest {
             ),
         )
     }
+
+    @Test
+    fun beforeAnchorPopupEndsWhereItsTriggerStarts() {
+        // A field-wide dropdown opened from the button after the field.
+        val ltr = JetpacsAnchoredPopupPositionProvider(LayoutDirection.Ltr, overlap = true, offsetY = 81, beforeAnchor = true)
+        assertEquals(
+            IntOffset(128, 558),
+            ltr.calculatePosition(
+                anchorBounds = IntRect(1166, 477, 1262, 573),
+                windowSize = IntSize(1270, 1600),
+                layoutDirection = LayoutDirection.Ltr,
+                popupContentSize = IntSize(1038, 418),
+            ),
+        )
+        val rtl = JetpacsAnchoredPopupPositionProvider(LayoutDirection.Rtl, beforeAnchor = true)
+        assertEquals(
+            IntOffset(104, 573),
+            rtl.calculatePosition(
+                anchorBounds = IntRect(8, 477, 104, 573),
+                windowSize = IntSize(1270, 1600),
+                layoutDirection = LayoutDirection.Rtl,
+                popupContentSize = IntSize(1038, 418),
+            ),
+        )
+    }
 }

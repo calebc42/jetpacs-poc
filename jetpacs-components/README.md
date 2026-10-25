@@ -146,6 +146,10 @@ first consumer):
 - `line_spacing_below` puts the extra height of a `line_height` below each
   line and drops it from the last, as a TextView's line spacing does, so a
   one-line text is no taller than its font.
+- `popup_before_anchor` on `menu.container` ends the popup where its trigger
+  starts, and an authored `min_width` may exceed the menu maximum, so a
+  trigger beside a field can open a field-wide dropdown; `elevation` gives
+  the popup the platform shadow a View popup casts.
 - Inside a design scope `date_button` and `time_button` draw as a button
   styled by `picker.container` and `picker.label` and open their pickers
   locally. Unlike `button.*`, those slots may author `min_height`, padding

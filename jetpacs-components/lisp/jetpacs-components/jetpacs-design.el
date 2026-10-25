@@ -115,6 +115,8 @@
     ("popup_overlap" . "boolean")
     ("popup_offset_y" . "dimension")
     ("popup_edge_inset" . "dimension")
+    ("popup_before_anchor" . "boolean")
+    ("elevation" . "dimension")
     ("italic" . "boolean")
     ("underline" . "boolean")
     ("strike_through" . "boolean"))

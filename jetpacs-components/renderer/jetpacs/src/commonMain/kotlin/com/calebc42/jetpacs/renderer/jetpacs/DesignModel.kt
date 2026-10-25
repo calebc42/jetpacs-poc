@@ -266,6 +266,8 @@ enum class DesignProperty(val wireName: String, internal val kind: ValueKind) {
     PopupOverlap("popup_overlap", ValueKind.Boolean),
     PopupOffsetY("popup_offset_y", ValueKind.Dimension),
     PopupEdgeInset("popup_edge_inset", ValueKind.Dimension),
+    PopupBeforeAnchor("popup_before_anchor", ValueKind.Boolean),
+    Elevation("elevation", ValueKind.Dimension),
     Italic("italic", ValueKind.Boolean),
     Underline("underline", ValueKind.Boolean),
     StrikeThrough("strike_through", ValueKind.Boolean),

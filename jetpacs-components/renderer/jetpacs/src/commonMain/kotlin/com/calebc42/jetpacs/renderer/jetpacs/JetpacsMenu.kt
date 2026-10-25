@@ -34,6 +34,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInWindow
@@ -220,6 +221,7 @@ fun JetpacsMenu(
                             overlap = placement.overlap,
                             offsetY = placement.offsetY.roundToPx(),
                             edgeInset = placement.edgeInset.roundToPx(),
+                            beforeAnchor = placement.beforeAnchor,
                         )
                     }
                 },
@@ -276,11 +278,12 @@ fun JetpacsMenuPopupContent(
 ) {
     val scrollState = rememberScrollState()
     val windowSize = LocalWindowInfo.current.containerDpSize
-    val popupMaxWidth = minOf(MenuPopupMaxWidth, windowSize.width)
     // An authored container min_width is a real layout minimum: Styles
-    // sizes do not take part in the intrinsic width the popup wraps to.
+    // sizes do not take part in the intrinsic width the popup wraps to. It
+    // may exceed the menu maximum, as a field-wide dropdown does.
     val authoredMinWidth = LocalDesignScope.current
         ?.componentStyle(DesignComponentStyleSlot.MenuContainer).authoredMinWidth()
+    val popupMaxWidth = minOf(maxOf(MenuPopupMaxWidth, authoredMinWidth ?: 0.dp), windowSize.width)
     val popupMinWidth = minOf(maxOf(MenuPopupMinWidth, authoredMinWidth ?: 0.dp), popupMaxWidth)
     val popupMaxHeight = minOf(
         windowSize.height,
@@ -301,8 +304,16 @@ fun JetpacsMenuPopupContent(
             scrollState.scrollTo(scrollState.maxValue)
         }
     }
+    // An authored elevation draws the platform shadow a View popup casts.
+    val elevation = LocalDesignScope.current
+        ?.componentStyle(DesignComponentStyleSlot.MenuContainer).authoredElevation()
     Column(
         modifier = modifier
+            .let { m ->
+                elevation?.let { (e, corner) ->
+                    m.shadow(e, androidx.compose.foundation.shape.RoundedCornerShape(corner), clip = false)
+                } ?: m
+            }
             .widthIn(min = popupMinWidth, max = popupMaxWidth)
             // As Material's menus do: as wide as the widest item, whose
             // rows fill that width, rather than the whole allowed width.
