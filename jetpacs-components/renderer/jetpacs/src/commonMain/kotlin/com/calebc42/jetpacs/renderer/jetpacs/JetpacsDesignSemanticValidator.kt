@@ -29,6 +29,9 @@ object JetpacsDesignSemanticValidator : ExtensionSemanticValidator {
         "divider",
         "jetpacs.design_scope",
         "jetpacs.styled",
+        "jetpacs.glyph",
+        "jetpacs.inline_text",
+        "jetpacs.inline",
     )
 
     override fun validate(document: JsonObject, path: String) {

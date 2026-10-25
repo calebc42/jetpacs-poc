@@ -105,7 +105,10 @@ applet returns literally."
 (defconst jetpacs-applet-examples--design-types
   '(("jetpacs.design_scope" . "jetpacs-design-material-scope")
     ("jetpacs.styled" . "jetpacs-design-material-card")
-    ("jetpacs.pressable" . "jetpacs-design-material-filled-button"))
+    ("jetpacs.pressable" . "jetpacs-design-material-filled-button")
+    ("jetpacs.inline_text" . "jetpacs-design-inline-text")
+    ("jetpacs.inline" . "jetpacs-design-inline")
+    ("jetpacs.glyph" . "jetpacs-design-glyph"))
   "Design nodes and the proof-library builder that produces each one.")
 
 (defun jetpacs-applet-examples--design-tree ()
@@ -115,6 +118,13 @@ its builders are documented to make (jetpacs-design-material.el)."
   (jetpacs-design-material-scope
    (list (jetpacs-design-material-card
           (list (jetpacs-text "Proof library card")
+                ;; A paragraph with an app glyph riding inline.
+                (jetpacs-design-inline-text
+                 (list (jetpacs-text "Logged ")
+                       (jetpacs-design-inline
+                        (jetpacs-design-glyph '("M0 2h4v8H0zM6 0h4v10H6z") 10 10 14)
+                        24 :reserve-text "x" :reserve-extra 8)
+                       (jetpacs-text " today")))
                 (jetpacs-design-material-filled-button
                  "Save" (jetpacs-action "catalog.save")))))))
 

@@ -5,18 +5,27 @@
   "node_types": [
     "jetpacs.design_scope",
     "jetpacs.styled",
-    "jetpacs.pressable"
+    "jetpacs.pressable",
+    "jetpacs.glyph",
+    "jetpacs.inline_text",
+    "jetpacs.inline"
   ],
   "targets": {
     "app": [
       "jetpacs.design_scope",
       "jetpacs.styled",
-      "jetpacs.pressable"
+      "jetpacs.pressable",
+      "jetpacs.glyph",
+      "jetpacs.inline_text",
+      "jetpacs.inline"
     ],
     "dialog": [
       "jetpacs.design_scope",
       "jetpacs.styled",
-      "jetpacs.pressable"
+      "jetpacs.pressable",
+      "jetpacs.glyph",
+      "jetpacs.inline_text",
+      "jetpacs.inline"
     ],
     "notification": []
   },
@@ -294,6 +303,7 @@
         "chrome.rail-indicator",
         "chrome.drawer",
         "chrome.scrim",
+        "chrome.bottom-bar",
         "chrome.dialog",
         "chrome.snackbar"
       ]
@@ -409,6 +419,108 @@
         },
         "toggled": {
           "type": "boolean"
+        }
+      }
+    },
+    "jetpacs.glyph": {
+      "description": "A vector glyph: SVG path data in a viewport, fitted into a square of size dp and filled in color, as a toolkit icon draws an app’s own vector.",
+      "required": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "min_length": 1,
+            "max_length": 16384
+          },
+          "min_items": 1,
+          "max_items": 8,
+          "description": "SVG path data, filled nonzero, in viewport units."
+        },
+        "viewport_width": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "viewport_height": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 100000
+        },
+        "size": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1024,
+          "description": "The square the viewport is fitted into, in dp."
+        }
+      },
+      "optional": {
+        "color": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 64,
+          "description": "A #RRGGBB or #RRGGBBAA color or an EBP theme role; the enclosing content color by default."
+        },
+        "content_description": {
+          "type": "string",
+          "min_length": 0,
+          "max_length": 512
+        }
+      }
+    },
+    "jetpacs.inline_text": {
+      "description": "One paragraph whose text children flow as text and whose jetpacs.inline children ride in it as placeholders, wrapping with the words.",
+      "required": {
+        "children": {
+          "type": "node-array",
+          "min_items": 1,
+          "max_items": 512
+        }
+      },
+      "optional": {
+        "style": {
+          "type": "string",
+          "min_length": 1,
+          "max_length": 32,
+          "description": "The canonical text style the paragraph takes, as a text node’s style."
+        }
+      }
+    },
+    "jetpacs.inline": {
+      "description": "A node riding in a jetpacs.inline_text paragraph. Its placeholder is the width of reserve_text at reserve_text_size plus reserve_extra, at most reserve_max, and height sp tall, centred on the text; outside a paragraph the child renders alone.",
+      "required": {
+        "child": {
+          "type": "node"
+        },
+        "height": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 512,
+          "description": "The placeholder height, in sp."
+        }
+      },
+      "optional": {
+        "reserve_text": {
+          "type": "string",
+          "min_length": 0,
+          "max_length": 1024
+        },
+        "reserve_text_size": {
+          "type": "number",
+          "minimum": 1,
+          "maximum": 200,
+          "description": "The font size reserve_text is measured at, in sp; 14 by default."
+        },
+        "reserve_extra": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1024,
+          "description": "Width added to the measured text, in dp."
+        },
+        "reserve_max": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 4096,
+          "description": "The most width the placeholder takes, in dp."
         }
       }
     }

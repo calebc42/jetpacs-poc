@@ -339,6 +339,7 @@
     ("chrome.rail-indicator" . ("base.toolkit"))
     ("chrome.drawer" . ("base.surface"))
     ("chrome.scrim" . ("base.toolkit"))
+    ("chrome.bottom-bar" . ("base.toolkit"))
     ("chrome.dialog" . ("base.toolkit"))
     ("chrome.snackbar" . ("base.toast"))
     ("action.container" . ("base.interactive" "base.action"))

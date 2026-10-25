@@ -194,6 +194,7 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     ChromeRailIndicator("chrome.rail-indicator"),
     ChromeDrawer("chrome.drawer"),
     ChromeScrim("chrome.scrim"),
+    ChromeBottomBar("chrome.bottom-bar"),
     ChromeDialog("chrome.dialog"),
     ChromeSnackbar("chrome.snackbar"),
     ;
@@ -210,6 +211,7 @@ enum class DesignFontFamily {
     PlexSans,
     PlexSerif,
     PlexMono,
+    SystemMono,
 }
 
 enum class DesignTextAlign {
@@ -259,10 +261,13 @@ enum class DesignProperty(val wireName: String, internal val kind: ValueKind) {
     TextAlign("text_align", ValueKind.TextAlign),
     FillWidth("fill_width", ValueKind.Boolean),
     IntrinsicHeight("intrinsic_height", ValueKind.Boolean),
+    CenterVertically("center_vertically", ValueKind.Boolean),
     WordEllipsis("word_ellipsis", ValueKind.Boolean),
     ParagraphBreaking("paragraph_breaking", ValueKind.Boolean),
     LineSpacingBelow("line_spacing_below", ValueKind.Boolean),
+    LineHeightCentered("line_height_centered", ValueKind.Boolean),
     MaxLines("max_lines", ValueKind.Number),
+    MiddleEllipsis("middle_ellipsis", ValueKind.Boolean),
     PopupOverlap("popup_overlap", ValueKind.Boolean),
     PopupOffsetY("popup_offset_y", ValueKind.Dimension),
     PopupEdgeInset("popup_edge_inset", ValueKind.Dimension),
@@ -893,6 +898,7 @@ object DesignModel {
                     "plex-sans" -> DesignFontFamily.PlexSans
                     "plex-serif" -> DesignFontFamily.PlexSerif
                     "plex-mono" -> DesignFontFamily.PlexMono
+                    "system-mono" -> DesignFontFamily.SystemMono
                     else -> invalid("$path.value", "has an unknown font family")
                 },
             )

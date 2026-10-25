@@ -141,7 +141,7 @@ bare scaffold, only under an advertised runtime."
              "{\"slot\":\"text.body\",\"styles\":[\"typography.reading-body\"]}"
              json))
     (should (member "text.body" jetpacs-design-component-style-slots))
-    (should (= (length jetpacs-design-component-style-slots) 126))
+    (should (= (length jetpacs-design-component-style-slots) 127))
   ;; An empty style is a legal binding that leaves the toolkit's value:
   ;; a plain plist in the profile, a literal `{}' on the wire.
   (let ((empty (jetpacs-design-style nil)))
@@ -342,7 +342,7 @@ that advertises `jetpacs.list_item'."
   (should (equal jetpacs-design-easings
                  '("linear" "ease-in" "ease-out" "ease-in-out" "spring")))
   (should (equal jetpacs-design-font-families
-                 '("system" "plex-sans" "plex-serif" "plex-mono")))
+                 '("system" "plex-sans" "plex-serif" "plex-mono" "system-mono")))
   (should (equal jetpacs-design-font-weights
                  '(100 200 300 400 500 600 700 800 900)))
   (should (equal jetpacs-design-text-aligns '("start" "center" "end")))

@@ -955,14 +955,14 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-components.json`, schem
 - tab-options: array<tab-option>(1..10000)
 - text: string(0..4096)
 
-## Nodes (jetpacs.design, 3) - Jetpacs' bounded Elisp-authored Foundation design runtime.
+## Nodes (jetpacs.design, 6) - Jetpacs' bounded Elisp-authored Foundation design runtime.
 
-Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sha256 dde3ad61aeb70123a0b080f22df24770600ab805bce114ada2e5df180ba38a06. A node travels only to a target whose profile advertises both the node type and the extension.
+Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sha256 719cbd1a4483a8ab8d66fac23c354cb892d9d7033a0b83b82bea79d55981f785. A node travels only to a target whose profile advertises both the node type and the extension.
 
 - jetpacs.design_scope: { children: node-array(0..10000), styles: style-map, tokens: token-map, component_styles?: component-style-bindings, motions?: motion-map, theme_roles?: theme-role-map } - The root of the Elisp-authored design runtime: tokens, named styles, motions and component styles that its subtree may reference. [accepts children] [targets: app, dialog] [elisp: jetpacs-design-scope (tokens styles children &key motions component-styles theme-roles)]
   - styles: Named styles available to jetpacs.styled and jetpacs.pressable beneath.
   - tokens: Named design tokens the styles resolve.
-  - example (design-material, jetpacs-design-material-scope): `{"children":[{"children":[{"t":"text","text":"Proof library card"},{"children":[{"children":[{"t":"text","text":"Save"}],"styles":["material.button.label"],"t":"jetpacs.styled"}],"on_tap":{"action":"catalog.save"},"styles":["material.button"],"t":"jetpacs.pressable"}],"styles":["material.card"],"t":"jetpacs.styled"}],"motions":{"motion.quick":{"duration_ms":120,"easing":"ease-out"}},"styles":{"material.button":{"motion":"motion.quick","properties":{"background_color":{"kind":"token","value":"color.primary"},"corner_radius":{"kind":"token","value":"radius.medium"},"min_height":{"kind":"dimension","value":"48"},"padding_horizontal":{"kind":"dimension","value":"20"},"padding_vertical":{"kind":"token","value":"space.medium"}},"rules":[{"properties":{"scale":{"kind":"number","value":"0.97"}},"state":"pressed"},{"properties":{"border_color":{"kind":"token","value":"color.outline"},"border_width":{"kind":"dimension","value":"2"}},"state":"focused"},{"properties":{"alpha":{"kind":"number","value":"0.38"}},"state":"disabled"}]},"material.button.label":{"properties":{"content_color":{"kind":"token","value":"color.on-primary"},"font_family":{"kind":"font-family","value":"plex-sans"},"font_weight":{"kind":"font-weight","value":"600"}},"rules":[]},"material.card":{"properties":{"background_color":{"kind":"token","value":"color.surface"},"border_color":{"kind":"token","value":"color.outline"},"border_width":{"kind":"dimension","value":"1"},"corner_radius":{"kind":"token","value":"radius.medium"},"padding":{"kind":"token","value":"space.medium"}},"rules":[]},"material.selector.option":{"motion":"motion.quick","properties":{"border_color":{"kind":"token","value":"color.outline"},"border_width":{"kind":"dimension","value":"1"},"corner_radius":{"kind":"token","value":"radius.medium"},"min_height":{"kind":"dimension","value":"48"},"padding_horizontal":{"kind":"token","value":"space.medium"}},"rules":[{"properties":{"background_color":{"kind":"token","value":"color.primary"}},"state":"selected"},{"properties":{"scale":{"kind":"number","value":"0.97"}},"state":"pressed"}]}},"t":"jetpacs.design_scope","tokens":{"color.on-primary":{"kind":"color","value":"#FFFFFF"},"color.on-surface":{"kind":"color","value":"#272B26"},"color.outline":{"kind":"color","value":"#74796F"},"color.primary":{"kind":"color","value":"#315C49"},"color.surface":{"kind":"color","value":"#FBF8F0"},"radius.medium":{"kind":"dimension","value":"12"},"space.medium":{"kind":"dimension","value":"12"},"space.small":{"kind":"dimension","value":"8"}}}`
+  - example (design-material, jetpacs-design-material-scope): `{"children":[{"children":[{"t":"text","text":"Proof library card"},{"children":[{"t":"text","text":"Logged "},{"child":{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10},"height":24,"reserve_extra":8,"reserve_text":"x","t":"jetpacs.inline"},{"t":"text","text":" today"}],"t":"jetpacs.inline_text"},{"children":[{"children":[{"t":"text","text":"Save"}],"styles":["material.button.label"],"t":"jetpacs.styled"}],"on_tap":{"action":"catalog.save"},"styles":["material.button"],"t":"jetpacs.pressable"}],"styles":["material.card"],"t":"jetpacs.styled"}],"motions":{"motion.quick":{"duration_ms":120,"easing":"ease-out"}},"styles":{"material.button":{"motion":"motion.quick","properties":{"background_color":{"kind":"token","value":"color.primary"},"corner_radius":{"kind":"token","value":"radius.medium"},"min_height":{"kind":"dimension","value":"48"},"padding_horizontal":{"kind":"dimension","value":"20"},"padding_vertical":{"kind":"token","value":"space.medium"}},"rules":[{"properties":{"scale":{"kind":"number","value":"0.97"}},"state":"pressed"},{"properties":{"border_color":{"kind":"token","value":"color.outline"},"border_width":{"kind":"dimension","value":"2"}},"state":"focused"},{"properties":{"alpha":{"kind":"number","value":"0.38"}},"state":"disabled"}]},"material.button.label":{"properties":{"content_color":{"kind":"token","value":"color.on-primary"},"font_family":{"kind":"font-family","value":"plex-sans"},"font_weight":{"kind":"font-weight","value":"600"}},"rules":[]},"material.card":{"properties":{"background_color":{"kind":"token","value":"color.surface"},"border_color":{"kind":"token","value":"color.outline"},"border_width":{"kind":"dimension","value":"1"},"corner_radius":{"kind":"token","value":"radius.medium"},"padding":{"kind":"token","value":"space.medium"}},"rules":[]},"material.selector.option":{"motion":"motion.quick","properties":{"border_color":{"kind":"token","value":"color.outline"},"border_width":{"kind":"dimension","value":"1"},"corner_radius":{"kind":"token","value":"radius.medium"},"min_height":{"kind":"dimension","value":"48"},"padding_horizontal":{"kind":"token","value":"space.medium"}},"rules":[{"properties":{"background_color":{"kind":"token","value":"color.primary"}},"state":"selected"},{"properties":{"scale":{"kind":"number","value":"0.97"}},"state":"pressed"}]}},"t":"jetpacs.design_scope","tokens":{"color.on-primary":{"kind":"color","value":"#FFFFFF"},"color.on-surface":{"kind":"color","value":"#272B26"},"color.outline":{"kind":"color","value":"#74796F"},"color.primary":{"kind":"color","value":"#315C49"},"color.surface":{"kind":"color","value":"#FBF8F0"},"radius.medium":{"kind":"dimension","value":"12"},"space.medium":{"kind":"dimension","value":"12"},"space.small":{"kind":"dimension","value":"8"}}}`
 
     ```elisp
     (:t "jetpacs.design_scope" :tokens
@@ -1033,6 +1033,14 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sh
         :children
         [(:t "jetpacs.styled" :styles ["material.card"] :children
     	 [(:t "text" :text "Proof library card")
+    	  (:t "jetpacs.inline_text" :children
+    	      [(:t "text" :text "Logged ")
+    	       (:t "jetpacs.inline" :child
+    		   (:t "jetpacs.glyph" :paths
+    		       ["M0 2h4v8H0zM6 0h4v10H6z"] :viewport_width 10
+    		       :viewport_height 10 :size 14)
+    		   :height 24 :reserve_text "x" :reserve_extra 8)
+    	       (:t "text" :text " today")])
     	  (:t "jetpacs.pressable" :styles ["material.button"] :on_tap
     	      (:action "catalog.save") :children
     	      [(:t "jetpacs.styled" :styles ["material.button.label"]
@@ -1041,11 +1049,18 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sh
 
 - jetpacs.styled: { children: node-array(0..10000), styles: style-references } - Applies named styles from the enclosing design scope to its children. [accepts children] [targets: app, dialog] [elisp: jetpacs-design-styled (styles children)]
   - styles: The style names applied, in order.
-  - example (design-material, jetpacs-design-material-card): `{"children":[{"t":"text","text":"Proof library card"},{"children":[{"children":[{"t":"text","text":"Save"}],"styles":["material.button.label"],"t":"jetpacs.styled"}],"on_tap":{"action":"catalog.save"},"styles":["material.button"],"t":"jetpacs.pressable"}],"styles":["material.card"],"t":"jetpacs.styled"}`
+  - example (design-material, jetpacs-design-material-card): `{"children":[{"t":"text","text":"Proof library card"},{"children":[{"t":"text","text":"Logged "},{"child":{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10},"height":24,"reserve_extra":8,"reserve_text":"x","t":"jetpacs.inline"},{"t":"text","text":" today"}],"t":"jetpacs.inline_text"},{"children":[{"children":[{"t":"text","text":"Save"}],"styles":["material.button.label"],"t":"jetpacs.styled"}],"on_tap":{"action":"catalog.save"},"styles":["material.button"],"t":"jetpacs.pressable"}],"styles":["material.card"],"t":"jetpacs.styled"}`
 
     ```elisp
     (:t "jetpacs.styled" :styles ["material.card"] :children
         [(:t "text" :text "Proof library card")
+         (:t "jetpacs.inline_text" :children
+    	 [(:t "text" :text "Logged ")
+    	  (:t "jetpacs.inline" :child
+    	      (:t "jetpacs.glyph" :paths ["M0 2h4v8H0zM6 0h4v10H6z"]
+    		  :viewport_width 10 :viewport_height 10 :size 14)
+    	      :height 24 :reserve_text "x" :reserve_extra 8)
+    	  (:t "text" :text " today")])
          (:t "jetpacs.pressable" :styles ["material.button"] :on_tap
     	 (:action "catalog.save") :children
     	 [(:t "jetpacs.styled" :styles ["material.button.label"]
@@ -1062,12 +1077,48 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sh
         [(:t "jetpacs.styled" :styles ["material.button.label"] :children
     	 [(:t "text" :text "Save")])])    ```
 
+- jetpacs.glyph: { paths: array<string(1..16384)>(1..8), size: number(0..1024), viewport_height: number(1..100000), viewport_width: number(1..100000), color?: string(1..64), content_description?: string(0..512) } - A vector glyph: SVG path data in a viewport, fitted into a square of size dp and filled in color, as a toolkit icon draws an app’s own vector. [targets: app, dialog] [elisp: jetpacs-design-glyph (paths viewport-width viewport-height size &key color content-description)]
+  - paths: SVG path data, filled nonzero, in viewport units.
+  - size: The square the viewport is fitted into, in dp.
+  - color: A #RRGGBB or #RRGGBBAA color or an EBP theme role; the enclosing content color by default.
+  - example (design-material, jetpacs-design-glyph): `{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10}`
+
+    ```elisp
+    (:t "jetpacs.glyph" :paths ["M0 2h4v8H0zM6 0h4v10H6z"] :viewport_width
+        10 :viewport_height 10 :size 14)    ```
+
+- jetpacs.inline_text: { children: node-array(1..512), style?: string(1..32) } - One paragraph whose text children flow as text and whose jetpacs.inline children ride in it as placeholders, wrapping with the words. [accepts children] [targets: app, dialog] [elisp: jetpacs-design-inline-text (children &key style)]
+  - style: The canonical text style the paragraph takes, as a text node’s style.
+  - example (design-material, jetpacs-design-inline-text): `{"children":[{"t":"text","text":"Logged "},{"child":{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10},"height":24,"reserve_extra":8,"reserve_text":"x","t":"jetpacs.inline"},{"t":"text","text":" today"}],"t":"jetpacs.inline_text"}`
+
+    ```elisp
+    (:t "jetpacs.inline_text" :children
+        [(:t "text" :text "Logged ")
+         (:t "jetpacs.inline" :child
+    	 (:t "jetpacs.glyph" :paths ["M0 2h4v8H0zM6 0h4v10H6z"]
+    	     :viewport_width 10 :viewport_height 10 :size 14)
+    	 :height 24 :reserve_text "x" :reserve_extra 8)
+         (:t "text" :text " today")])    ```
+
+- jetpacs.inline: { child: node, height: number(1..512), reserve_extra?: number(0..1024), reserve_max?: number(0..4096), reserve_text?: string(0..1024), reserve_text_size?: number(1..200) } - A node riding in a jetpacs.inline_text paragraph. Its placeholder is the width of reserve_text at reserve_text_size plus reserve_extra, at most reserve_max, and height sp tall, centred on the text; outside a paragraph the child renders alone. [targets: app, dialog] [elisp: jetpacs-design-inline (child height &key reserve-text reserve-text-size reserve-extra reserve-max)]
+  - height: The placeholder height, in sp.
+  - reserve_extra: Width added to the measured text, in dp.
+  - reserve_max: The most width the placeholder takes, in dp.
+  - reserve_text_size: The font size reserve_text is measured at, in sp; 14 by default.
+  - example (design-material, jetpacs-design-inline): `{"child":{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10},"height":24,"reserve_extra":8,"reserve_text":"x","t":"jetpacs.inline"}`
+
+    ```elisp
+    (:t "jetpacs.inline" :child
+        (:t "jetpacs.glyph" :paths ["M0 2h4v8H0zM6 0h4v10H6z"]
+    	:viewport_width 10 :viewport_height 10 :size 14)
+        :height 24 :reserve_text "x" :reserve_extra 8)    ```
+
 
 ### Definitions (jetpacs.design)
 
 - component-style-binding: object{slot: component-style-slot, styles: style-references}
 - component-style-bindings: array<component-style-binding>(0..128)
-- component-style-slot: enum[text.body|text.title|text.headline|text.caption|text.label|text.mono|card.filled|card.elevated|card.outlined|list-item.container|list-item.overline|list-item.title|list-item.subtitle|swipe.cell|swipe.label|icon-button.container|badge.container|badge.label|empty-state.container|empty-state.title|empty-state.caption|button.filled|button.tonal|button.elevated|button.outlined|button.text|button.label|chip.container|chip.label|divider.line|section-header.container|section-header.title|menu.trigger|menu.container|menu.item|menu.item-label|menu.item-supporting|menu.group-label|switch.track|switch.thumb|switch.label|collapsible.header|collapsible.chevron|collapsible.body|month-grid.container|month-grid.header|month-grid.nav|month-grid.weekday|month-grid.day|month-grid.today|month-grid.range|month-grid.mark|action.container|action.label|choice.container|choice.indicator|choice.label|panel.container|panel.label|picker.container|picker.label|tabs.container|tabs.item|tabs.indicator|tabs.label|section-navigator.container|section-navigator.option|section-navigator.label|section-navigator.button|section-navigator.selector|section-navigator.popup|section-navigator.popup-item|text-field.outlined|text-field.filled|text-field.text|text-field.label|text-field.placeholder|text-field.supporting|text-field.affix|dropdown.field|dropdown.text|dropdown.label|dropdown.popup|dropdown.item|editor.surface|editor.chromeless|editor.text|editor.gutter|editor.toolbar|editor.toolbar-item|editor.sync-status|editor.completion-list|editor.completion-item|editor.candidate-document|editor.tooling-status|editor.syntax.comment|editor.syntax.string|editor.syntax.keyword|editor.syntax.function|editor.syntax.constant|editor.syntax.variable|editor.syntax.type|editor.syntax.number|editor.syntax.operator|editor.syntax.preprocessor|editor.syntax.heading|editor.syntax.link|editor.syntax.todo|editor.syntax.done|editor.syntax.tag|editor.syntax.heading-1|editor.syntax.heading-2|editor.syntax.heading-3|editor.syntax.heading-4|editor.syntax.heading-5|editor.syntax.heading-6|editor.syntax.heading-7|editor.syntax.heading-8|chrome.tab-label|chrome.tab-indicator|chrome.rail-label|chrome.rail-indicator|chrome.drawer|chrome.scrim|chrome.dialog|chrome.snackbar]
+- component-style-slot: enum[text.body|text.title|text.headline|text.caption|text.label|text.mono|card.filled|card.elevated|card.outlined|list-item.container|list-item.overline|list-item.title|list-item.subtitle|swipe.cell|swipe.label|icon-button.container|badge.container|badge.label|empty-state.container|empty-state.title|empty-state.caption|button.filled|button.tonal|button.elevated|button.outlined|button.text|button.label|chip.container|chip.label|divider.line|section-header.container|section-header.title|menu.trigger|menu.container|menu.item|menu.item-label|menu.item-supporting|menu.group-label|switch.track|switch.thumb|switch.label|collapsible.header|collapsible.chevron|collapsible.body|month-grid.container|month-grid.header|month-grid.nav|month-grid.weekday|month-grid.day|month-grid.today|month-grid.range|month-grid.mark|action.container|action.label|choice.container|choice.indicator|choice.label|panel.container|panel.label|picker.container|picker.label|tabs.container|tabs.item|tabs.indicator|tabs.label|section-navigator.container|section-navigator.option|section-navigator.label|section-navigator.button|section-navigator.selector|section-navigator.popup|section-navigator.popup-item|text-field.outlined|text-field.filled|text-field.text|text-field.label|text-field.placeholder|text-field.supporting|text-field.affix|dropdown.field|dropdown.text|dropdown.label|dropdown.popup|dropdown.item|editor.surface|editor.chromeless|editor.text|editor.gutter|editor.toolbar|editor.toolbar-item|editor.sync-status|editor.completion-list|editor.completion-item|editor.candidate-document|editor.tooling-status|editor.syntax.comment|editor.syntax.string|editor.syntax.keyword|editor.syntax.function|editor.syntax.constant|editor.syntax.variable|editor.syntax.type|editor.syntax.number|editor.syntax.operator|editor.syntax.preprocessor|editor.syntax.heading|editor.syntax.link|editor.syntax.todo|editor.syntax.done|editor.syntax.tag|editor.syntax.heading-1|editor.syntax.heading-2|editor.syntax.heading-3|editor.syntax.heading-4|editor.syntax.heading-5|editor.syntax.heading-6|editor.syntax.heading-7|editor.syntax.heading-8|chrome.tab-label|chrome.tab-indicator|chrome.rail-label|chrome.rail-indicator|chrome.drawer|chrome.scrim|chrome.bottom-bar|chrome.dialog|chrome.snackbar]
 - design-value: object{kind: enum[boolean|color|dimension|font-family|font-weight|number|theme-role|text-align|token], value: string(1..256)}
 - identifier: string(1..128)
 - motion: object{duration_ms: integer(0..10000), easing: enum[linear|ease-in|ease-out|ease-in-out|spring]}

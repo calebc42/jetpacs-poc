@@ -30,6 +30,7 @@ import androidx.compose.foundation.style.selected
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import com.calebc42.ebp.renderer.compose.ComposeChromeStyles
@@ -141,12 +142,17 @@ private fun StyleScope.applyDesignProperties(
             // Applied as a layout modifier by the styled and pressable
             // components: Foundation Styles cannot ask for intrinsic size.
             DesignProperty.IntrinsicHeight -> Unit
+            // Read by the pressable, which owns its row's alignment.
+            DesignProperty.CenterVertically -> Unit
             // Read by the text renderer, which owns where a line is cut.
             DesignProperty.WordEllipsis -> Unit
             DesignProperty.ParagraphBreaking -> Unit
             DesignProperty.LineSpacingBelow -> Unit
+            DesignProperty.LineHeightCentered -> Unit
             // Read by the button renderer, which owns its label's lines.
             DesignProperty.MaxLines -> Unit
+            // Read by the text renderer, which owns where a line is cut.
+            DesignProperty.MiddleEllipsis -> Unit
             // Read by the popup positioner, which owns where a popup opens.
             DesignProperty.PopupOverlap, DesignProperty.PopupOffsetY,
             DesignProperty.PopupEdgeInset, DesignProperty.PopupBeforeAnchor -> Unit
@@ -238,6 +244,14 @@ internal fun resolvedSlotProperties(
     ?.properties
     .orEmpty()
 
+/** Whether resolved text properties ask for `middle_ellipsis`. */
+internal fun Map<DesignProperty, DesignValue>.middleEllipsis(): Boolean =
+    (this[DesignProperty.MiddleEllipsis] as? DesignValue.BooleanValue)?.value == true
+
+/** The literal `content_color` these properties author, or null. */
+internal fun Map<DesignProperty, DesignValue>.literalContentColor(): Color? =
+    (this[DesignProperty.ContentColor] as? DesignValue.ColorValue)?.let { Color(it.argb) }
+
 /** An authored `max_lines`, at least one, or null. */
 internal fun Map<DesignProperty, DesignValue>.maxLines(): Int? =
     (this[DesignProperty.MaxLines] as? DesignValue.NumberValue)?.value?.toInt()?.coerceAtLeast(1)
@@ -282,10 +296,15 @@ internal fun TextStyle.withDesignTextProperties(
     // line_spacing_below: a line's extra height goes below it and the last
     // line drops it, as a TextView's line spacing does, instead of being
     // shared above and below every line.
-    lineHeightStyle = (properties[DesignProperty.LineSpacingBelow] as? DesignValue.BooleanValue)
-        ?.takeIf { it.value }
-        ?.let { LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.LastLineBottom) }
-        ?: lineHeightStyle,
+    // line_height_centered: every line, the first and last too, is its full
+    // line_height with the text centred in it, as Material's type scale is.
+    lineHeightStyle = when {
+        (properties[DesignProperty.LineHeightCentered] as? DesignValue.BooleanValue)?.value == true ->
+            LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None)
+        (properties[DesignProperty.LineSpacingBelow] as? DesignValue.BooleanValue)?.value == true ->
+            LineHeightStyle(LineHeightStyle.Alignment.Top, LineHeightStyle.Trim.LastLineBottom)
+        else -> lineHeightStyle
+    },
 )
 
 /**
@@ -329,6 +348,7 @@ internal fun CompiledDesignScope.composeChromeStyles(
     val railIndicator = properties(DesignComponentStyleSlot.ChromeRailIndicator)
     val drawer = properties(DesignComponentStyleSlot.ChromeDrawer)
     val scrim = properties(DesignComponentStyleSlot.ChromeScrim)
+    val bottomBar = properties(DesignComponentStyleSlot.ChromeBottomBar)
     val snackbar = properties(DesignComponentStyleSlot.ChromeSnackbar)
     val styles = ComposeChromeStyles(
         tabLabel = tabLabel?.text(),
@@ -341,6 +361,18 @@ internal fun CompiledDesignScope.composeChromeStyles(
         drawerWidth = (drawer?.get(DesignProperty.Width) as? DesignValue.DimensionValue)
             ?.value?.dp,
         drawerScrim = scrim?.color(DesignProperty.BackgroundColor),
+        bottomBarContainer = bottomBar?.color(DesignProperty.BackgroundColor),
+        bottomBarPadding = bottomBar?.takeIf { props ->
+            listOf(DesignProperty.Padding, DesignProperty.PaddingHorizontal, DesignProperty.PaddingVertical)
+                .any { it in props }
+        }?.let { props ->
+            fun dim(p: DesignProperty) = (props[p] as? DesignValue.DimensionValue)?.value
+            val all = dim(DesignProperty.Padding) ?: 0.0
+            androidx.compose.foundation.layout.PaddingValues(
+                horizontal = (dim(DesignProperty.PaddingHorizontal) ?: all).dp,
+                vertical = (dim(DesignProperty.PaddingVertical) ?: all).dp,
+            )
+        },
         snackbarContainer = snackbar?.color(DesignProperty.BackgroundColor),
         snackbarContent = snackbar?.color(DesignProperty.ContentColor),
         snackbarShape = snackbar?.shape(),
@@ -450,6 +482,7 @@ private fun DesignValue.fontFamily(): FontFamily = when (
     DesignFontFamily.PlexSans -> PlexFonts.sans
     DesignFontFamily.PlexSerif -> PlexFonts.serif
     DesignFontFamily.PlexMono -> PlexFonts.mono
+    DesignFontFamily.SystemMono -> FontFamily.Monospace
 }
 
 /**
@@ -558,6 +591,12 @@ internal fun ComputedDesignStyle?.authoredElevation(): Pair<Dp, Dp>? {
     val corner = (properties[DesignProperty.CornerRadius] as? DesignValue.DimensionValue)?.value ?: 0.0
     return elevation.dp to corner.dp
 }
+
+/** The platform shadow an authored `elevation` casts around the style's corners. */
+internal fun ComputedDesignStyle.elevationShadow(): Modifier =
+    authoredElevation()?.let { (elevation, corner) ->
+        Modifier.shadow(elevation, androidx.compose.foundation.shape.RoundedCornerShape(corner), clip = false)
+    } ?: Modifier
 
 /** The `min_width` a style authors, or null. */
 internal fun ComputedDesignStyle?.authoredMinWidth(): Dp? =

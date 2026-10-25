@@ -78,7 +78,7 @@
     "editor.syntax.heading-7" "editor.syntax.heading-8"
     "chrome.tab-label" "chrome.tab-indicator"
     "chrome.rail-label" "chrome.rail-indicator"
-    "chrome.drawer" "chrome.scrim" "chrome.dialog" "chrome.snackbar")
+    "chrome.drawer" "chrome.scrim" "chrome.bottom-bar" "chrome.dialog" "chrome.snackbar")
   "Closed semantic-component visual slots accepted by design scopes.")
 
 (defconst jetpacs-design-property-kinds
@@ -108,10 +108,13 @@
     ("text_align" . "text-align")
     ("fill_width" . "boolean")
     ("intrinsic_height" . "boolean")
+    ("center_vertically" . "boolean")
     ("word_ellipsis" . "boolean")
     ("paragraph_breaking" . "boolean")
     ("line_spacing_below" . "boolean")
+    ("line_height_centered" . "boolean")
     ("max_lines" . "number")
+    ("middle_ellipsis" . "boolean")
     ("popup_overlap" . "boolean")
     ("popup_offset_y" . "dimension")
     ("popup_edge_inset" . "dimension")
@@ -132,7 +135,7 @@ Public so an editor can offer only the values a property accepts.")
   "Closed easing names accepted by an authored motion.")
 
 (defconst jetpacs-design-font-families
-  '("system" "plex-sans" "plex-serif" "plex-mono")
+  '("system" "plex-sans" "plex-serif" "plex-mono" "system-mono")
   "Closed font family names a font-family value may carry.")
 
 (defconst jetpacs-design-font-weights
@@ -490,6 +493,40 @@ THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
    "jetpacs.styled"
    :styles (jetpacs-design--style-references styles)
    :children (jetpacs-design--children children 10000 "styled children")))
+
+(cl-defun jetpacs-design-glyph (paths viewport-width viewport-height size
+                                     &key color content-description)
+  "A vector glyph: SVG path data PATHS in a VIEWPORT-WIDTH by VIEWPORT-HEIGHT
+viewport, fitted into a SIZE dp square and filled.  PATHS is a list of one
+to eight path strings.  COLOR is a #RRGGBB or #RRGGBBAA color or an EBP
+theme role, the enclosing content color when nil; CONTENT-DESCRIPTION
+names the glyph for accessibility."
+  (unless (and (proper-list-p paths) (<= 1 (length paths) 8) (cl-every #'stringp paths))
+    (error "jetpacs-design: glyph paths must be one to eight strings"))
+  (dolist (pair `((,viewport-width . "viewport width") (,viewport-height . "viewport height")
+                  (,size . "size")))
+    (unless (and (numberp (car pair)) (>= (car pair) 0))
+      (error "jetpacs-design: glyph %s must be a non-negative number" (cdr pair))))
+  (jetpacs-make-node "jetpacs.glyph" :paths (vconcat paths)
+                     :viewport_width viewport-width :viewport_height viewport-height
+                     :size size :color color :content_description content-description))
+
+(cl-defun jetpacs-design-inline-text (children &key style)
+  "One paragraph of CHILDREN: `text' nodes flow as text and
+`jetpacs-design-inline' nodes ride in it, wrapping with the words.  STYLE
+is the canonical text style the paragraph takes."
+  (jetpacs-make-node "jetpacs.inline_text"
+                     :children (jetpacs-design--children children 512 "inline text children")
+                     :style style))
+
+(cl-defun jetpacs-design-inline (child height &key reserve-text reserve-text-size
+                                       reserve-extra reserve-max)
+  "CHILD riding in a `jetpacs-design-inline-text' paragraph, HEIGHT sp tall.
+Its placeholder is RESERVE-TEXT measured at RESERVE-TEXT-SIZE sp (14 by
+default) plus RESERVE-EXTRA dp, at most RESERVE-MAX dp."
+  (jetpacs-make-node "jetpacs.inline" :child child :height height
+                     :reserve_text reserve-text :reserve_text_size reserve-text-size
+                     :reserve_extra reserve-extra :reserve_max reserve-max))
 
 (cl-defun jetpacs-design-pressable
     (styles on-tap children &key enabled selected toggled)

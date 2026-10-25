@@ -136,6 +136,8 @@ first consumer):
   `stretch`) spans the tallest one, as an outline's indent guides span a
   wrapped note. Foundation Styles sizes do not report intrinsic width, so fixed
   sizes inside such a row belong on universal `width`/`height` attributes.
+- `center_vertically` centres a pressable's children in its height, as a
+  Material button or list row centres its content.
 - A pressable keeps its 48dp minimum interaction bound unless its style
   authors `width`/`min_width` (horizontal) or `height`/`min_height`
   (vertical), so a list of short rows can tile edge to edge.
@@ -143,6 +145,8 @@ first consumer):
   fits, as a Toolbar title does, instead of mid-word.
 - `paragraph_breaking` wraps with the balanced breaker and no hyphenation,
   an Android TextView's defaults, instead of Compose's greedy breaker.
+- `line_height_centered` gives every line its full `line_height` with the
+  text centred, as Material's type scale lays text out.
 - `line_spacing_below` puts the extra height of a `line_height` below each
   line and drops it from the last, as a TextView's line spacing does, so a
   one-line text is no taller than its font.
@@ -150,10 +154,20 @@ first consumer):
   starts, and an authored `min_width` may exceed the menu maximum, so a
   trigger beside a field can open a field-wide dropdown; `elevation` gives
   the popup the platform shadow a View popup casts.
+- `jetpacs.glyph` draws an app's own vector icon (SVG path data fitted into
+  a square); `jetpacs.inline_text` lays `text` children and `jetpacs.inline`
+  placeholders out as one wrapping paragraph, each placeholder reserving the
+  measured width of its `reserve_text` plus `reserve_extra`, as a Compose
+  Text with inline content does; `elevation` on a styled or pressable face
+  casts the platform shadow; `middle_ellipsis` cuts a too-long text in its
+  middle; the `system-mono` font family is the platform monospace.
 - Inside a design scope `date_button` and `time_button` draw as a button
   styled by `picker.container` and `picker.label` and open their pickers
   locally. Unlike `button.*`, those slots may author `min_height`, padding
   and `font_size`, and `max_lines` lets a label wrap.
+- `chrome.bottom-bar` sets the band a scaffold's bottom bar sits on: its
+  `background_color` and its `padding`, `padding_horizontal` and
+  `padding_vertical`, so an app can draw its own navigation bar.
 - `chrome.scrim` colors the content behind a modal drawer through its
   `background_color` (a View `DrawerLayout` dims to 60% black).
 

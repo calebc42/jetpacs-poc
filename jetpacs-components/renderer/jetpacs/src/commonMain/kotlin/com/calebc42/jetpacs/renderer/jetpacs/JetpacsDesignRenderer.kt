@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.selected
@@ -101,7 +102,10 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
 
     /** One component per owned node type; `JetpacsComponentRegistriesTest` pins it to the manifest. */
     val registry: ComposeComponentRegistry<ComposeExtensionRenderContext> = ComposeComponentRegistry(
-        listOf(JetpacsDesignScopeComponent, JetpacsStyledComponent, JetpacsPressableComponent),
+        listOf(
+            JetpacsDesignScopeComponent, JetpacsStyledComponent, JetpacsPressableComponent,
+            JetpacsGlyphComponent, JetpacsInlineTextComponent, JetpacsInlineComponent,
+        ),
     )
 
     @Composable
@@ -208,7 +212,7 @@ internal object JetpacsStyledComponent : JetpacsComponent("jetpacs.styled", Jetp
         val style = remember(computed.layers) { computed.toFoundationStyle() }
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource)
-        val childStyle = computed.intrinsicLayout().styleable(styleState, style)
+        val childStyle = computed.intrinsicLayout().then(computed.elevationShadow()).styleable(styleState, style)
         val textContext = remember(computed) { DesignTextContext(computed, null) }
         CompositionLocalProvider(LocalDesignTextContext provides textContext) {
             RenderDesignChildren(children, context, modifier, childStyle, scoped = true)
@@ -257,7 +261,12 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
         }
         val style = remember(computed.layers) { computed.toFoundationStyle() }
         val (authoredWidth, authoredHeight) = remember(computed.layers) { computed.authoredSize() }
+        val centered = remember(computed.layers) {
+            (computed.baseOnly().resolve().properties[DesignProperty.CenterVertically]
+                as? DesignValue.BooleanValue)?.value == true
+        }
         Row(
+            verticalAlignment = if (centered) Alignment.CenterVertically else Alignment.Top,
             modifier = modifier
                 .then(computed.intrinsicLayout())
                 .sizeIn(
@@ -284,6 +293,7 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
                         }
                     }
                 }
+                .then(computed.elevationShadow())
                 .styleable(styleState, style),
         ) {
             val textContext = remember(computed, styleState) {

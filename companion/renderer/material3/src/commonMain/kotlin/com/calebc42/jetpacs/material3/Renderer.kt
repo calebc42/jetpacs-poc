@@ -1858,10 +1858,14 @@ fun RenderScaffold(
                                     RenderNode(it, ctx.child(it, 4, "bottom_bar"))
                                 }
                             else androidx.compose.material3.Surface(
-                                color = MaterialTheme.colorScheme.surfaceContainer,
+                                // A design scope's chrome.bottom-bar sets the
+                                // band, as a custom navigation bar needs.
+                                color = LocalComposeChromeStyles.current?.bottomBarContainer
+                                    ?: MaterialTheme.colorScheme.surfaceContainer,
                                 modifier = Modifier.fillMaxWidth()) {
                                 Box(Modifier.navigationBarsPadding()
-                                        .padding(horizontal = 8.dp, vertical = 6.dp)) {
+                                        .padding(LocalComposeChromeStyles.current?.bottomBarPadding
+                                            ?: PaddingValues(horizontal = 8.dp, vertical = 6.dp))) {
                                     RenderNode(it, ctx.child(it, 4, "bottom_bar"))
                                 }
                             }

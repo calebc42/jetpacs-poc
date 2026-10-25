@@ -6,10 +6,13 @@ package com.calebc42.jetpacs.renderer.jetpacs
 import com.calebc42.ebp.renderer.model.vocabulary.ActionMember
 import com.calebc42.ebp.renderer.model.vocabulary.ArrayMember
 import com.calebc42.ebp.renderer.model.vocabulary.BooleanMember
+import com.calebc42.ebp.renderer.model.vocabulary.ChildNodeMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeArrayMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeMemberSet
+import com.calebc42.ebp.renderer.model.vocabulary.NumberMember
 import com.calebc42.ebp.renderer.model.vocabulary.ObjectMember
+import com.calebc42.ebp.renderer.model.vocabulary.StringMember
 
 /** Typed members of the `jetpacs.design_scope` node. */
 object JetpacsDesignScopeMembers : NodeMemberSet("jetpacs.design_scope") {
@@ -43,9 +46,44 @@ object JetpacsPressableMembers : NodeMemberSet("jetpacs.pressable") {
     override val optional: List<NodeMember<*>> = listOf(Enabled, Selected, Toggled)
 }
 
+/** Typed members of the `jetpacs.glyph` node. */
+object JetpacsGlyphMembers : NodeMemberSet("jetpacs.glyph") {
+    val Paths: ArrayMember = ArrayMember("paths", required = true, tag = "array")
+    val Size: NumberMember = NumberMember("size", required = true)
+    val ViewportHeight: NumberMember = NumberMember("viewport_height", required = true)
+    val ViewportWidth: NumberMember = NumberMember("viewport_width", required = true)
+    val Color: StringMember = StringMember("color", required = false)
+    val ContentDescription: StringMember = StringMember("content_description", required = false)
+    override val required: List<NodeMember<*>> = listOf(Paths, Size, ViewportHeight, ViewportWidth)
+    override val optional: List<NodeMember<*>> = listOf(Color, ContentDescription)
+}
+
+/** Typed members of the `jetpacs.inline_text` node. */
+object JetpacsInlineTextMembers : NodeMemberSet("jetpacs.inline_text") {
+    val Children: NodeArrayMember = NodeArrayMember("children", required = true)
+    val Style: StringMember = StringMember("style", required = false)
+    override val required: List<NodeMember<*>> = listOf(Children)
+    override val optional: List<NodeMember<*>> = listOf(Style)
+}
+
+/** Typed members of the `jetpacs.inline` node. */
+object JetpacsInlineMembers : NodeMemberSet("jetpacs.inline") {
+    val Child: ChildNodeMember = ChildNodeMember("child", required = true)
+    val Height: NumberMember = NumberMember("height", required = true)
+    val ReserveExtra: NumberMember = NumberMember("reserve_extra", required = false)
+    val ReserveMax: NumberMember = NumberMember("reserve_max", required = false)
+    val ReserveText: StringMember = StringMember("reserve_text", required = false)
+    val ReserveTextSize: NumberMember = NumberMember("reserve_text_size", required = false)
+    override val required: List<NodeMember<*>> = listOf(Child, Height)
+    override val optional: List<NodeMember<*>> = listOf(ReserveExtra, ReserveMax, ReserveText, ReserveTextSize)
+}
+
 /** Every generated member set, keyed by node type. */
 val JETPACS_DESIGN_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "jetpacs.design_scope" to JetpacsDesignScopeMembers,
     "jetpacs.styled" to JetpacsStyledMembers,
     "jetpacs.pressable" to JetpacsPressableMembers,
+    "jetpacs.glyph" to JetpacsGlyphMembers,
+    "jetpacs.inline_text" to JetpacsInlineTextMembers,
+    "jetpacs.inline" to JetpacsInlineMembers,
 )

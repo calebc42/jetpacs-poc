@@ -68,7 +68,11 @@ object JetpacsDesignTextRenderer : ComposeCanonicalNodeOverride {
                     modifier = modifier,
                     style = style,
                     maxLines = maxLines,
-                    overflow = if (maxLines == Int.MAX_VALUE) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    overflow = when {
+                        maxLines == Int.MAX_VALUE -> TextOverflow.Clip
+                        enclosingMiddleEllipsis() -> TextOverflow.MiddleEllipsis
+                        else -> TextOverflow.Ellipsis
+                    },
                 )
             }
         }
@@ -93,6 +97,15 @@ object JetpacsDesignTextRenderer : ComposeCanonicalNodeOverride {
             )
         }
         return withFace.withCanonicalMembers(node, roles)
+    }
+
+    /** Whether the enclosing face asks for `middle_ellipsis`. */
+    @Composable
+    @ReadOnlyComposable
+    private fun enclosingMiddleEllipsis(): Boolean {
+        val enclosing = LocalDesignTextContext.current ?: return false
+        return enclosing.computed.resolve(enclosing.state.activeDesignStates())
+            .properties.middleEllipsis()
     }
 
     /** Whether the enclosing face asks for `word_ellipsis`. */
