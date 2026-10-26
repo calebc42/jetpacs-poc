@@ -386,14 +386,14 @@ provider that drops or malforms its declared home leaves the root unselected."
           jetpacs-apps--current-route nil)))
 
 (defun jetpacs-apps-call-register (register file)
-  "Call app REGISTER function as if FILE, the app's entry file, were loading.
+  "Call app REGISTER function attributing its claims to FILE, the entry file.
 Apps register nothing at load; the Apps screen or a launcher calls the
-register function afterwards.  Binding `load-file-name' to FILE keeps
-the attribution ledger's claim sites naming the app's own file, as they
-did when apps registered at the end of their load, so provenance and
-the same-owner-different-file warning stay meaningful.  FILE nil keeps
-the current binding."
-  (let ((load-file-name (or file load-file-name)))
+register function afterwards.  FILE becomes the ledger's claim site
+\(`jetpacs--claim-site'), so the sites keep naming the app's own file,
+as they did when apps registered at the end of their load, and
+provenance and the same-owner-different-file warning stay meaningful.
+FILE nil keeps the current attribution."
+  (let ((jetpacs--claim-site (or file jetpacs--claim-site)))
     (funcall register)))
 
 (defun jetpacs-apps-unregister (id)

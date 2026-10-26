@@ -2234,7 +2234,7 @@ nothing; two flips in one tick coalesce; each surface pushes in isolation."
             (should (null jetpacs-chrome--flip-timer))))))))
 
 (ert-deftest jetpacs-chrome-stage-only-defers-push-to-top-screen ()
-  "Staging a guest screen with `jetpacs-chrome--stage-only' emits one frame
+  "Staging a guest screen with `jetpacs-chrome-stage-screen' emits one frame
 when the top screen is pushed immediately after."
   (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
     (jetpacs-chrome-test--clean-repush
@@ -2242,13 +2242,12 @@ when the top screen is pushed immediately after."
         (jetpacs-chrome-test--define "filesapp" "browser")
         (setq recs nil)
         (with-jetpacs-owner "guestapp"
-          (let ((jetpacs-chrome--stage-only t))
-            (should-not
-             (jetpacs-chrome-push-screen
-              "app:filesapp" "files-return"
-              (lambda (back)
-                (jetpacs-chrome-screen "Return" (jetpacs-text "ret")
-                                       :back back))))))
+          (should
+           (jetpacs-chrome-stage-screen
+            "app:filesapp" "files-return"
+            (lambda (back)
+              (jetpacs-chrome-screen "Return" (jetpacs-text "ret")
+                                     :back back)))))
         (should (null recs))
         (should (jetpacs-chrome--guest-delegate-p "guestapp" "app:filesapp"))
         (with-jetpacs-owner "filesapp"
@@ -2342,7 +2341,7 @@ unchanged and the recorder sees the refusal."
                                   (lambda (back)
                                     (jetpacs-chrome-screen
                                      "D" (jetpacs-text "d") :back back)))
-      (let ((jetpacs--in-builder t))
+      (let ((jetpacs-build-target :app))
         (should-error (jetpacs-chrome-pop-screen "filesapp")
                       :type 'jetpacs-builder-side-effect)
         (should-error (jetpacs-chrome-reset-screens "filesapp")

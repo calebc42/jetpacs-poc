@@ -833,10 +833,10 @@
   "Grove Capture and Agenda fixtures match the normative widget witnesses."
   (let ((goldens (jetpacs-test--golden-map "widget-surfaces")))
     (should (equal (jetpacs-node->canonical-json
-                    (jetpacs-grove-capture-widget-fixture))
+                    (jetpacs-demo-capture-widget-fixture))
                    (gethash "00" goldens)))
     (should (equal (jetpacs-node->canonical-json
-                    (jetpacs-grove-agenda-widget-fixture))
+                    (jetpacs-demo-agenda-widget-fixture))
                    (gethash "01" goldens)))))
 
 (ert-deftest jetpacs-widgets/scaffold-surface-validation ()
@@ -941,7 +941,7 @@
   (should-error (jetpacs-check-profile (jetpacs-button "x" (jetpacs-action "a.b"))
                                        'notification))
   ;; widget advertises only the nodes the Glance translation really implements.
-  (should (jetpacs-check-profile (jetpacs-grove-agenda-widget-fixture) 'widget))
+  (should (jetpacs-check-profile (jetpacs-demo-agenda-widget-fixture) 'widget))
   (should-error (jetpacs-check-profile (jetpacs-checkbox "c") 'widget))
   ;; dialog (27) forbids scaffold/layout/viz.  `editor' IS advertised:
   ;; JC-4b added it to the Companion's DIALOG_NODE_TYPES so a dialog could

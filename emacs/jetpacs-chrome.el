@@ -921,8 +921,9 @@ every lower view whose entry and budget position are unchanged ships
 its cached node (`jetpacs-chrome--reusable-screens') and only the
 target's builder runs.  The cached views remain in the complete
 snapshot required by SPEC 13.2."
-  ;; Every screen builder below runs inside the render: pure.
-  (let ((jetpacs--in-builder t))
+  ;; Every screen builder below runs inside the render: pure, and gated
+  ;; on this surface's profile.
+  (let ((jetpacs-build-target (jetpacs-shell--surface-target surface)))
     (let ((stack (gethash surface jetpacs-chrome--stacks)))
       (unless stack
         (error "jetpacs-chrome: no chrome stack for %s" surface))
@@ -1330,10 +1331,50 @@ session-teardown and the live-unregister paths sweep."
 
 (setq jetpacs-guest-delegation-function #'jetpacs-chrome--guest-delegate-p)
 
-(defvar jetpacs-chrome--stage-only nil
-  "When non-nil, `jetpacs-chrome-push-screen' stages without pushing.
-Used when a caller stages an intermediate screen immediately before pushing
-the top screen in the same continuation, avoiding an intermediate wire frame.")
+(defun jetpacs-chrome--stage (surface-or-owner id builder)
+  "Enter screen ID with BUILDER into SURFACE-OR-OWNER's stack model.
+The shared half of `jetpacs-chrome-stage-screen' and
+`jetpacs-chrome-push-screen': resolve the surface, prefix and record a
+guest's id (S4), and insert the entry.  Returns (SURFACE ID UNDO
+GUEST-OWNER); UNDO restores the stack, for a presenting push the gates
+refuse."
+  (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
+         ;; S4: pushed by an owner onto a stack it does not own, the
+         ;; screen is a sanctioned GUEST — its id is prefixed (two
+         ;; apps pushing "settings" onto the host must not truncate
+         ;; each other's entries) and recorded, which is what admits
+         ;; this owner's events from the host surface while the
+         ;; screen lives (`jetpacs-chrome--guest-delegate-p').
+         (guest-owner (and jetpacs-current-owner
+                           (not (jetpacs-owned-surface-p
+                                 surface jetpacs-current-owner))
+                           jetpacs-current-owner))
+         (id (if guest-owner
+                 (jetpacs-chrome-guest-screen-id guest-owner id)
+               id))
+         (undo (jetpacs-chrome--stack-insert surface id builder)))
+    (when guest-owner
+      (let ((rows (gethash surface jetpacs-chrome--guests)))
+        (unless (equal (alist-get id rows nil nil #'equal) guest-owner)
+          (puthash surface (cons (cons id guest-owner)
+                                 ;; Re-noting replaces; rows whose id
+                                 ;; left the stack are inert either way.
+                                 (cl-remove id rows
+                                            :key #'car :test #'equal))
+                   jetpacs-chrome--guests))))
+    (list surface id undo guest-owner)))
+
+(defun jetpacs-chrome-stage-screen (surface-or-owner id builder)
+  "Stage screen ID with BUILDER on SURFACE-OR-OWNER's stack; present nothing.
+The screen enters the model exactly as `jetpacs-chrome-push-screen'
+would enter it (guest prefixing and admission included) but no frame
+is sent: for a caller that stages an intermediate screen immediately
+before pushing the top screen in the same continuation, so the device
+never sees the intermediate one.  The next push presents the stack,
+and like a push this is refused inside a builder extent.  Returns the
+id the screen entered under."
+  (jetpacs--builder-guard 'jetpacs-chrome-stage-screen)
+  (nth 1 (jetpacs-chrome--stage surface-or-owner id builder)))
 
 (defun jetpacs-chrome-push-screen (surface-or-owner id builder)
   "Push screen ID onto SURFACE's stack and navigate to it.
@@ -1360,43 +1401,20 @@ refused frame is retried by the B8 repush.)
 Inside a builder extent it signals `jetpacs-builder-side-effect', before
 any mutation: a render does not navigate."
   (jetpacs--builder-guard 'jetpacs-chrome-push-screen)
-  (let* ((surface (jetpacs-shell--resolve-surface surface-or-owner))
-         ;; S4: pushed by an owner onto a stack it does not own, the
-         ;; screen is a sanctioned GUEST — its id is prefixed (two
-         ;; apps pushing "settings" onto the host must not truncate
-         ;; each other's entries) and recorded, which is what admits
-         ;; this owner's events from the host surface while the
-         ;; screen lives (`jetpacs-chrome--guest-delegate-p').
-         (guest-owner (and jetpacs-current-owner
-                           (not (jetpacs-owned-surface-p
-                                 surface jetpacs-current-owner))
-                           jetpacs-current-owner))
-         (id (if guest-owner
-                 (jetpacs-chrome-guest-screen-id guest-owner id)
-               id))
-         (undo (jetpacs-chrome--stack-insert surface id builder)))
-    (when guest-owner
-      (let ((rows (gethash surface jetpacs-chrome--guests)))
-        (unless (equal (alist-get id rows nil nil #'equal) guest-owner)
-          (puthash surface (cons (cons id guest-owner)
-                                 ;; Re-noting replaces; rows whose id
-                                 ;; left the stack are inert either way.
-                                 (cl-remove id rows
-                                            :key #'car :test #'equal))
-                   jetpacs-chrome--guests))))
-    (unless jetpacs-chrome--stage-only
-      (if guest-owner
-          ;; The presenting push must not CLAIM the host's surface for
-          ;; the guest (`jetpacs-shell-push' claims under the bound
-          ;; owner): a stolen claim makes `jetpacs-owned-surface-p'
-          ;; answer t for the guest from then on — an UNSCOPED D1 grant
-          ;; where S4 promises a screen-lifetime one, unprefixed
-          ;; re-pushes, and the host's root swept by the guest's
-          ;; teardown.  Bind the owner of record (nil leaves an
-          ;; unclaimed surface unclaimed; `jetpacs--claim' no-ops).
-          (let ((jetpacs-current-owner (jetpacs--owner-of "surface" surface)))
-            (jetpacs-chrome--push-or-undo surface id undo))
-        (jetpacs-chrome--push-or-undo surface id undo)))))
+  (pcase-let ((`(,surface ,id ,undo ,guest-owner)
+               (jetpacs-chrome--stage surface-or-owner id builder)))
+    (if guest-owner
+        ;; The presenting push must not CLAIM the host's surface for
+        ;; the guest (`jetpacs-shell-push' claims under the bound
+        ;; owner): a stolen claim makes `jetpacs-owned-surface-p'
+        ;; answer t for the guest from then on — an UNSCOPED D1 grant
+        ;; where S4 promises a screen-lifetime one, unprefixed
+        ;; re-pushes, and the host's root swept by the guest's
+        ;; teardown.  Bind the owner of record (nil leaves an
+        ;; unclaimed surface unclaimed; `jetpacs--claim' no-ops).
+        (let ((jetpacs-current-owner (jetpacs--owner-of "surface" surface)))
+          (jetpacs-chrome--push-or-undo surface id undo))
+      (jetpacs-chrome--push-or-undo surface id undo))))
 
 (defun jetpacs-chrome-pop-screen (surface-or-owner)
   "Pop SURFACE's stack and navigate to the screen below (Emacs-side
@@ -1459,11 +1477,12 @@ push replaces it in place (a duplicate id truncates the stack)."
   "Leave screen ID on SURFACE-OR-OWNER after the thing it showed went away.
 Pop when ID is on top (the deletion or move landed from it); otherwise
 repush the surface, so whatever screen shows it re-renders.  Call it
-outside the dispatch extent; a refused repush is ignored."
+outside the dispatch extent; a refused repush is logged and requeued
+\(`jetpacs-shell-push-caught')."
   (let ((surface (jetpacs-shell--resolve-surface surface-or-owner)))
     (if (equal (car (jetpacs-chrome-stack surface)) id)
         (jetpacs-chrome-pop-screen surface)
-      (ignore-errors (jetpacs-shell-push surface)))))
+      (jetpacs-shell-push-caught surface))))
 
 (defun jetpacs-chrome-remove (surface-or-owner)
   "Drop SURFACE's stack and tombstone the surface.

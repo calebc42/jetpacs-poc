@@ -692,9 +692,9 @@ surface; an app surface without a target cap is unaffected."
       (should (= (jetpacs-shell-node-count big) 4))
       (should (= (jetpacs-shell-target-limit "widget:demo.w" :max_nodes) 3))
       (should-not (jetpacs-shell-target-limit "app:demo" :max_nodes))
-      (should-not (jetpacs-shell--gate-target-nodes client "widget:demo.w" small))
-      (should-error (jetpacs-shell--gate-target-nodes client "widget:demo.w" big))
-      (should-not (jetpacs-shell--gate-target-nodes client "app:demo" big)))))
+      (should-not (jetpacs-shell--gate-target-limits client "widget:demo.w" small))
+      (should-error (jetpacs-shell--gate-target-limits client "widget:demo.w" big))
+      (should-not (jetpacs-shell--gate-target-limits client "app:demo" big)))))
 
 (ert-deftest jetpacs-floor-gate-editor-bytes-amendment-84 ()
   (jetpacs-floor-test--with-client
@@ -2013,7 +2013,7 @@ continuation pumped inside a build does not inherit it."
                          (lambda (_a _p)
                            (setq in-handler (jetpacs-in-builder-p))
                            'accepted))
-      (let ((jetpacs--in-builder t))
+      (let ((jetpacs-build-target :app))
         (should (eq (jetpacs--dispatch client '(:action "pure.tap")
                                        (gethash "pure.tap"
                                                 jetpacs-action-handlers))
@@ -2025,7 +2025,7 @@ continuation pumped inside a build does not inherit it."
     (cl-letf (((symbol-function 'run-at-time)
                (lambda (_time _repeat fn &rest _) (setq timer fn))))
       (jetpacs-flow-continue (lambda () (setq ran (jetpacs-in-builder-p)))))
-    (let ((jetpacs--in-builder t)) (funcall timer))
+    (let ((jetpacs-build-target :app)) (funcall timer))
     (should (null ran))))
 
 (provide 'jetpacs-floor-test)
