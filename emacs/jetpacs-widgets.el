@@ -2720,7 +2720,7 @@ long press."
 
 (cl-defun jetpacs-menu-item (label on-tap &key icon enabled supporting-text
                                    trailing-icon trailing-text
-                                   checked checked-icon items)
+                                   checked checked-icon unchecked-icon items)
   "A MenuItem for `jetpacs-menu' (SPEC §17.4).
 :items, a list of `jetpacs-menu-item's, makes it a SUBMENU row (amendment
 #203): ON-TAP is then nil, the row opens those items, and it takes no
@@ -2734,7 +2734,8 @@ end and are mutually exclusive, because the item has ONE trailing slot —
 authored presentation state like a chip\='s :selected, so ON-TAP should
 flip your own state and rebuild; while checked, :checked-icon (default
 check) replaces the leading icon, and a tap keeps the popup open the way
-M3 checkable menus do."
+M3 checkable menus do.  :unchecked-icon is the glyph shown while unchecked
+\(amendment #204), such as radio_button_unchecked beside its checked twin."
   (jetpacs-require-string label ":label")
   (if items
       (progn
@@ -2743,7 +2744,7 @@ M3 checkable menus do."
         (dolist (sub items)
           (when (plist-member sub :items)
             (error "jetpacs-menu-item: submenus nest one level (SPEC 17.4)")))
-        (when (or on-tap checked checked-icon trailing-icon trailing-text)
+        (when (or on-tap checked checked-icon unchecked-icon trailing-icon trailing-text)
           (error "jetpacs-menu-item: a submenu row takes no on-tap, :checked or trailing member"))
         (setq items (vconcat items)))
     (jetpacs-check-descriptor on-tap ":on-tap"))
@@ -2757,10 +2758,15 @@ M3 checkable menus do."
     (error "jetpacs-menu-item: :trailing-icon and :trailing-text are mutually exclusive"))
   (when checked (jetpacs-check-bool checked ":checked"))
   (when checked-icon (jetpacs-check-identifier checked-icon ":checked-icon"))
+  (when unchecked-icon
+    (jetpacs-check-identifier unchecked-icon ":unchecked-icon")
+    (unless checked
+      (error "jetpacs-menu-item: :unchecked-icon needs :checked (SPEC 17.4)")))
   (jetpacs-make-node nil :label label :on_tap on-tap :icon icon :enabled enabled
                  :supporting_text supporting-text :trailing_icon trailing-icon
                  :trailing_text trailing-text
-                 :checked checked :checked_icon checked-icon :items items))
+                 :checked checked :checked_icon checked-icon
+                 :unchecked_icon unchecked-icon :items items))
 
 (cl-defun jetpacs-menu-group (label items)
   "A menu group {label, items} for `jetpacs-menu' :groups (SPEC §17.4).

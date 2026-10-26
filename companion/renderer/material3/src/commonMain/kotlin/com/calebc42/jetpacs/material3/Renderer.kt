@@ -288,6 +288,8 @@ data class RenderCtx(
      * specifies, whether or not the destination changes the surface.
      */
     val onDispatch: (() -> Unit)? = null,
+    /** The user's local edits on this surface, created once per root. */
+    val liveEdits: LiveEdits? = null,
 ) {
     /** [position] is the child's JSON route under this node: `children[i]`, a slot name, `items[i].content`. */
     fun child(node: JsonObject?, index: Int, position: String = "children[$index]"): RenderCtx =
@@ -331,8 +333,10 @@ data class RenderCtx(
 
     /** What stateful node [id] shows now: in a dialog its local field over
      * the authored layer (never a password's), else the store. */
-    fun liveValue(id: String): JsonElement? =
-        if (dialog != null) captureValue(id, dialog.fields, dialog.defaults) else storeValue(id)
+    fun liveValue(id: String): JsonElement? = when {
+        dialog != null -> captureValue(id, dialog.fields, dialog.defaults)
+        else -> liveEdits?.valueOf(id, epochOf(id)) ?: storeValue(id)
+    }
 
     fun action(descriptor: JsonObject?, value: JsonElement? = null) {
         dispatchAction(descriptor, value)
@@ -432,7 +436,12 @@ data class RenderCtx(
             if (volatileSecret) dialog.putVolatile(id, value)
             else dialog.fields[id] = value // SPEC 18.1: local only
         }
-        else bridge.publishState(surface, id, value, caret)
+        else {
+            // The store refreshes only when a snapshot is presented; a node
+            // displaying this one's value follows the edit from here.
+            if (!volatileSecret) liveEdits?.record(id, value, epochOf(id))
+            bridge.publishState(surface, id, value, caret)
+        }
     }
 
     private fun captureDialogFields(
@@ -500,9 +509,29 @@ fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererHost,
         derivedStateOf(structuralEqualityPolicy()) { surfaceInputDisplays(all.value, surface) }
     }
     ProvideRevealSwipeCoordinator {
+        val liveEdits = remember(surface) { LiveEdits() }
         RenderNode(node, RenderCtx(surface, bridge, dialog, displays = displays,
-            configuration = configuration))
+            configuration = configuration, liveEdits = liveEdits))
     }
+}
+
+/**
+ * The user's local edits on one surface, for a node that displays another
+ * node's value as it is typed (`jetpacs.state_switch`). Each edit carries the
+ * input's generation when it was made, so a snapshot that resets the input
+ * (a new epoch) wins over it. Identity equality keeps [RenderCtx] stable.
+ */
+@Stable
+class LiveEdits {
+    private val edits = mutableStateMapOf<String, Pair<JsonElement?, Long>>()
+
+    fun record(id: String, value: JsonElement?, epoch: Long) {
+        edits[id] = value to epoch
+    }
+
+    /** The edit made to [id] in generation [epoch], or null for none. */
+    fun valueOf(id: String, epoch: Long): JsonElement? =
+        edits[id]?.takeIf { it.second == epoch }?.first
 }
 
 /** The host's whole-store display map narrowed to [surface], keyed by node id. */

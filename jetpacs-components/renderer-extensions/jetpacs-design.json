@@ -583,7 +583,7 @@
       }
     },
     "jetpacs.state_switch": {
-      "description": "Shows the one child whose entry in values equals another stateful node's current value, as the user sets it: a hint that follows a wheel. Display only: it publishes nothing, and its children should hold no stateful node.",
+      "description": "Shows the one child whose entry in values equals another stateful node's current value, as the user sets it (a hint that follows a wheel), else `otherwise`. An empty string matches an empty value. Display only: it publishes nothing, and its children should hold no stateful node.",
       "required": {
         "source": {
           "type": "ref",
@@ -594,12 +594,12 @@
           "type": "array",
           "items": {
             "type": "string",
-            "min_length": 1,
+            "min_length": 0,
             "max_length": 64
           },
           "min_items": 1,
           "max_items": 256,
-          "description": "One value per child, in order; the child whose value matches is shown, none when none does."
+          "description": "One value per child, in order; the child whose value matches is shown, `otherwise` when none does."
         },
         "children": {
           "type": "node-array",
@@ -607,7 +607,12 @@
           "max_items": 256
         }
       },
-      "optional": {}
+      "optional": {
+        "otherwise": {
+          "type": "node",
+          "description": "Shown when no value matches the source's."
+        }
+      }
     }
   },
   "stateful_when_present": {

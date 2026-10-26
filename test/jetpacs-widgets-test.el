@@ -562,7 +562,13 @@
   (should-error (jetpacs-text-input "i" :mask "literal"))
   (should-error (jetpacs-text-input "i" :password t :mask "####"))
   (should-error (jetpacs-text-input "i" :syntax "elisp" :mask "####"))
-;; Amendment #203: a submenu row opens its items, one level deep.
+;; Amendment #204: the unchecked glyph rides with a checkable item.
+  (should (equal (plist-get (jetpacs-menu-item "A" '(:action "a.a") :checked :json-false
+                                               :unchecked-icon "radio_button_unchecked")
+                            :unchecked_icon)
+                 "radio_button_unchecked"))
+  (should-error (jetpacs-menu-item "A" '(:action "a.a") :unchecked-icon "radio_button_unchecked"))
+  ;; Amendment #203: a submenu row opens its items, one level deep.
   (let ((row (jetpacs-menu-item "Clock" nil :items
                                 (list (jetpacs-menu-item "Clock in" '(:action "c.in"))))))
     (should (equal (plist-get (aref (plist-get row :items) 0) :label) "Clock in"))

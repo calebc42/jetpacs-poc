@@ -274,6 +274,16 @@ enum class DesignProperty(val wireName: String, internal val kind: ValueKind) {
     RippleColor("ripple_color", ValueKind.Color),
     /** An unbounded ripple's radius, as a borderless toolbar action's. */
     RippleRadius("ripple_radius", ValueKind.Dimension),
+    /** A checkable menu row draws its state glyph at its end, as a View menu's check box. */
+    CheckAtEnd("check_at_end", ValueKind.Boolean),
+    /** The color of a checkable row's state glyph. */
+    CheckColor("check_color", ValueKind.Color),
+    /** The size of a menu row's glyphs. */
+    IconSize("icon_size", ValueKind.Dimension),
+    /** Where a menu row's leading glyph starts, from the row's outer start. */
+    IconStart("icon_start", ValueKind.Dimension),
+    /** The space between a menu row's leading glyph and its label. */
+    IconGap("icon_gap", ValueKind.Dimension),
     PopupOverlap("popup_overlap", ValueKind.Boolean),
     PopupOffsetY("popup_offset_y", ValueKind.Dimension),
     PopupEdgeInset("popup_edge_inset", ValueKind.Dimension),

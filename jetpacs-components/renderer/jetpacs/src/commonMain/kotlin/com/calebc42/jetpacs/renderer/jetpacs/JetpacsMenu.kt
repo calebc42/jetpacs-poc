@@ -40,6 +40,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.Animatable
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -96,6 +97,8 @@ data class JetpacsMenuItem(
     val enabled: Boolean = true,
     val checked: Boolean? = null,
     val checkedIcon: String = "check",
+    /** The glyph shown while unchecked (amendment #204), or null for `icon`. */
+    val uncheckedIcon: String? = null,
     val onSelect: () -> Unit = {},
     /** A submenu row's items (amendment #203); selecting the row opens them. */
     val children: List<JetpacsMenuItem> = emptyList(),
@@ -561,8 +564,18 @@ private fun JetpacsMenuRow(
             role = Role.Checkbox,
         ) { onSelect(item) }
     }
-    // While checked, the check glyph replaces the authored leading icon.
-    val leadingGlyph = if (checked == true) item.checkedIcon else item.icon
+    val glyphs = LocalDesignScope.current?.componentStyle(DesignComponentStyleSlot.MenuItem).menuRowGlyphs()
+        ?: MenuRowGlyphs(checkAtEnd = false, checkColor = null, iconSize = null, iconColor = null)
+    val glyphSize = glyphs.iconSize ?: MenuGlyphSize
+    val glyphColor = glyphs.iconColor ?: labelStyle.color
+    // The state glyph replaces the leading icon, unless the design draws it
+    // at the row's end, as a View menu's radio button or check box.
+    val stateGlyph = when (checked) {
+        true -> item.checkedIcon
+        false -> item.uncheckedIcon
+        null -> null
+    }
+    val leadingGlyph = if (glyphs.checkAtEnd || checked == null) item.icon else stateGlyph ?: item.icon
     // The box is the row's outer bounds, which an attached submenu anchors to;
     // inside the row it would anchor to the padded content instead.
     Box {
@@ -583,11 +596,12 @@ private fun JetpacsMenuRow(
             ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        val shift = if (leadingGlyph.isNullOrEmpty()) 0.dp else glyphs.iconShift
         if (!leadingGlyph.isNullOrEmpty()) {
-            DesignGlyph(leadingGlyph, labelStyle.color, MenuGlyphSize)
-            Spacer(Modifier.width(12.dp))
+            Box(Modifier.offset(x = shift)) { DesignGlyph(leadingGlyph, glyphColor, glyphSize) }
+            Spacer(Modifier.width(glyphs.iconGap ?: 12.dp))
         }
-        Column(Modifier.weight(1f)) {
+        Column(Modifier.weight(1f).offset(x = shift)) {
             Box(Modifier.styleable(styleState, Style, itemLabelStyle)) {
                 BasicText(
                     item.label,
@@ -610,12 +624,15 @@ private fun JetpacsMenuRow(
         // One trailing slot: the wire makes the pair mutually exclusive, and a
         // shortcut hint is text rather than a glyph the icon set would have to
         // contain. A submenu row has neither and shows its indicator there.
-        if (item.children.isNotEmpty()) {
+        if (glyphs.checkAtEnd && !stateGlyph.isNullOrEmpty()) {
             Spacer(Modifier.width(12.dp))
-            DesignGlyph(SubmenuIndicatorGlyph, labelStyle.color, MenuGlyphSize)
+            DesignGlyph(stateGlyph, glyphs.checkColor ?: labelStyle.color, glyphSize)
+        } else if (item.children.isNotEmpty()) {
+            Spacer(Modifier.width(12.dp))
+            DesignGlyph(SubmenuIndicatorGlyph, glyphColor, glyphSize)
         } else if (!item.trailingIcon.isNullOrEmpty()) {
             Spacer(Modifier.width(12.dp))
-            DesignGlyph(item.trailingIcon, labelStyle.color, MenuGlyphSize)
+            DesignGlyph(item.trailingIcon, glyphColor, glyphSize)
         } else if (!item.trailingText.isNullOrEmpty()) {
             Spacer(Modifier.width(12.dp))
             BasicText(
@@ -708,6 +725,7 @@ internal fun jetpacsMenuItems(
             // Presence, not value: a `checked` member makes the row checkable.
             checked = if ("checked" in item) item.menuFlag("checked", false) else null,
             checkedIcon = item.menuText("checked_icon").takeIf(String::isNotEmpty) ?: "check",
+            uncheckedIcon = item.menuText("unchecked_icon").takeIf(String::isNotEmpty),
             // An item with no on_tap is drawn but inert; SPEC requires the
             // label, not the action.
             onSelect = { onTap?.let(dispatch) },

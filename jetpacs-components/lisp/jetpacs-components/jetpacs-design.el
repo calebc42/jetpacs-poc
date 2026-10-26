@@ -116,6 +116,11 @@
     ("platform_dialog" . "boolean")
     ("ripple_color" . "color")
     ("ripple_radius" . "dimension")
+    ("check_at_end" . "boolean")
+    ("check_color" . "color")
+    ("icon_size" . "dimension")
+    ("icon_start" . "dimension")
+    ("icon_gap" . "dimension")
     ("max_lines" . "number")
     ("middle_ellipsis" . "boolean")
     ("popup_overlap" . "boolean")
@@ -535,22 +540,24 @@ ON-CHANGE is dispatched once a change settles, with the value injected."
 
 ;; A hint that follows a wheel without a round trip: the Companion picks
 ;; the child from the source's value as the user sets it.
-(defun jetpacs-design-state-switch (source cases)
+(cl-defun jetpacs-design-state-switch (source cases &key otherwise)
   "The node of CASES whose value equals stateful node SOURCE's current value.
-CASES is an alist of (VALUE . NODE), VALUE a string of 1-64 characters, in
-at most 256 entries.  The Companion shows the matching NODE and follows
-each change the user makes to SOURCE, in a dialog too, where SOURCE's
-value never reaches Emacs before the dialog concludes; no match shows
-nothing.  The nodes should be display only."
+CASES is an alist of (VALUE . NODE), VALUE a string of at most 64
+characters, in at most 256 entries; \"\" matches an empty value.  The
+Companion shows the matching NODE and follows each change the user makes
+to SOURCE, in a dialog too, where SOURCE's value never reaches Emacs
+before the dialog concludes; no match shows OTHERWISE, or nothing.  The
+nodes should be display only."
   (jetpacs-check-identifier source ":source")
   (unless (and (proper-list-p cases) (<= 1 (length cases) 256)
                (cl-every (lambda (c) (and (consp c) (stringp (car c))
-                                          (<= 1 (length (car c)) 64)))
+                                          (<= (length (car c)) 64)))
                          cases))
     (error "jetpacs-design: state switch cases must be 1-256 (VALUE . NODE) pairs"))
   (jetpacs-make-node "jetpacs.state_switch" :source source
                      :values (vconcat (mapcar #'car cases))
-                     :children (vconcat (mapcar #'cdr cases))))
+                     :children (vconcat (mapcar #'cdr cases))
+                     :otherwise otherwise))
 
 (cl-defun jetpacs-design-inline-text (children &key style)
   "One paragraph of CHILDREN: `text' nodes flow as text and

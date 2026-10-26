@@ -682,6 +682,12 @@ private fun MenuItemRow(
         return
     }
     if ("checked" in item) {
+        // Amendment #204: while unchecked, the unchecked glyph takes the
+        // leading icon's place, as the checked glyph does while checked.
+        val uncheckedIcon = item.stringOr("unchecked_icon")
+        val uncheckedLeading: (@Composable () -> Unit)? = if (uncheckedIcon.isNotEmpty()) {
+            { Icon(IconMap.get(uncheckedIcon), null, Modifier.size(18.dp)) }
+        } else leading
         CheckableMenuItem(
             label = item.stringOr("label"),
             checked = item.boolOr("checked", false),
@@ -691,7 +697,7 @@ private fun MenuItemRow(
             supportingText = supportingText,
             index = index,
             count = count,
-            leadingIcon = leading,
+            leadingIcon = uncheckedLeading,
             checkedIconName = item.stringOr("checked_icon", "check"),
             trailingContent = trailing,
             enabled = itemEnabled)

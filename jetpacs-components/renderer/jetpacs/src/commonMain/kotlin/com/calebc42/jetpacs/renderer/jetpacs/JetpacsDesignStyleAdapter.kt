@@ -161,6 +161,9 @@ private fun StyleScope.applyDesignProperties(
             DesignProperty.MiddleEllipsis -> Unit
             DesignProperty.PlatformDialog -> Unit
             DesignProperty.RippleColor, DesignProperty.RippleRadius -> Unit
+            // Read by the menu row, which owns its glyphs.
+            DesignProperty.CheckAtEnd, DesignProperty.CheckColor, DesignProperty.IconSize,
+            DesignProperty.IconStart, DesignProperty.IconGap -> Unit
             // Read by the popup positioner, which owns where a popup opens.
             DesignProperty.PopupOverlap, DesignProperty.PopupOffsetY,
             DesignProperty.PopupEdgeInset, DesignProperty.PopupBeforeAnchor -> Unit
@@ -647,6 +650,42 @@ internal fun ComputedDesignStyle.elevationShadow(): Modifier =
     authoredElevation()?.let { (elevation, corner) ->
         Modifier.shadow(elevation, androidx.compose.foundation.shape.RoundedCornerShape(corner), clip = false)
     } ?: Modifier
+
+/** How a menu row draws its glyphs, from the scope's `menu.item` slot. */
+internal data class MenuRowGlyphs(
+    val checkAtEnd: Boolean,
+    val checkColor: Color?,
+    val iconSize: Dp?,
+    val iconColor: Color?,
+    /** How far the leading glyph moves from where the row's padding puts it. */
+    val iconShift: Dp = 0.dp,
+    val iconGap: Dp? = null,
+)
+
+/** The `menu.item` glyph properties of this style: `check_at_end`, `check_color`, `icon_size`, `content_color`. */
+@Composable
+internal fun ComputedDesignStyle?.menuRowGlyphs(): MenuRowGlyphs {
+    val properties = this?.resolve()?.properties.orEmpty()
+    val roles = JetpacsTheme.roles
+    fun color(p: DesignProperty): Color? = when (val v = properties[p]) {
+        is DesignValue.ColorValue -> Color(v.argb)
+        is DesignValue.ThemeRoleValue -> roles[v.value]
+        else -> null
+    }
+    fun dimension(p: DesignProperty) = (properties[p] as? DesignValue.DimensionValue)?.value?.dp
+    // `icon_start` is measured from the row's outer start; the row's own
+    // start padding already puts the glyph that far in.
+    val paddingStart = dimension(DesignProperty.PaddingStart)
+        ?: dimension(DesignProperty.PaddingHorizontal) ?: dimension(DesignProperty.Padding) ?: 0.dp
+    return MenuRowGlyphs(
+        checkAtEnd = (properties[DesignProperty.CheckAtEnd] as? DesignValue.BooleanValue)?.value == true,
+        checkColor = color(DesignProperty.CheckColor),
+        iconSize = dimension(DesignProperty.IconSize),
+        iconColor = color(DesignProperty.ContentColor),
+        iconShift = dimension(DesignProperty.IconStart)?.let { it - paddingStart } ?: 0.dp,
+        iconGap = dimension(DesignProperty.IconGap),
+    )
+}
 
 /** The `min_width` a style authors, or null. */
 internal fun ComputedDesignStyle?.authoredMinWidth(): Dp? =

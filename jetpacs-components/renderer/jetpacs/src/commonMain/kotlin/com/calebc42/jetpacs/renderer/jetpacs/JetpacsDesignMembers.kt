@@ -97,8 +97,9 @@ object JetpacsStateSwitchMembers : NodeMemberSet("jetpacs.state_switch") {
     val Children: NodeArrayMember = NodeArrayMember("children", required = true)
     val Source: StringMember = StringMember("source", required = true)
     val Values: ArrayMember = ArrayMember("values", required = true, tag = "array")
+    val Otherwise: ChildNodeMember = ChildNodeMember("otherwise", required = false)
     override val required: List<NodeMember<*>> = listOf(Children, Source, Values)
-    override val optional: List<NodeMember<*>> = listOf()
+    override val optional: List<NodeMember<*>> = listOf(Otherwise)
 }
 
 /** Every generated member set, keyed by node type. */

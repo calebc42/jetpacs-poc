@@ -23,7 +23,7 @@
     ("jetpacs.inline_text" ("children") ("style"))
     ("jetpacs.inline" ("child" "height") ("reserve_extra" "reserve_max" "reserve_text" "reserve_text_size"))
     ("jetpacs.wheel" ("id" "value" "values") ("color" "divider_color" "enabled" "on_change" "wrap"))
-    ("jetpacs.state_switch" ("children" "source" "values") ()))
+    ("jetpacs.state_switch" ("children" "source" "values") ("otherwise")))
   "Jetpacs Design node schemas as (TYPE REQUIRED OPTIONAL).")
 
 (defconst jetpacs-design-target-node-types
@@ -42,10 +42,10 @@
     ("jetpacs.inline_text" . (:required (("children" . (:type node-array :min-items 1 :max-items 512))) :optional (("style" . (:type string :min-length 1 :max-length 32)))))
     ("jetpacs.inline" . (:required (("child" . (:type node)) ("height" . (:type number :minimum 1 :maximum 512))) :optional (("reserve_extra" . (:type number :minimum 0 :maximum 1024)) ("reserve_max" . (:type number :minimum 0 :maximum 4096)) ("reserve_text" . (:type string :min-length 0 :max-length 1024)) ("reserve_text_size" . (:type number :minimum 1 :maximum 200)))))
     ("jetpacs.wheel" . (:required (("id" . (:type string :min-length 1 :max-length 128)) ("value" . (:type string :min-length 1 :max-length 64)) ("values" . (:type array :items (:type string :min-length 1 :max-length 64) :min-items 1 :max-items 256))) :optional (("color" . (:type string :min-length 1 :max-length 64)) ("divider_color" . (:type string :min-length 1 :max-length 64)) ("enabled" . (:type boolean)) ("on_change" . (:type action)) ("wrap" . (:type boolean)))))
-    ("jetpacs.state_switch" . (:required (("children" . (:type node-array :min-items 1 :max-items 256)) ("source" . (:type string :min-length 1 :max-length 128)) ("values" . (:type array :items (:type string :min-length 1 :max-length 64) :min-items 1 :max-items 256))) :optional nil)))
+    ("jetpacs.state_switch" . (:required (("children" . (:type node-array :min-items 1 :max-items 256)) ("source" . (:type string :min-length 1 :max-length 128)) ("values" . (:type array :items (:type string :min-length 0 :max-length 64) :min-items 1 :max-items 256))) :optional (("otherwise" . (:type node))))))
   "Jetpacs Design closed typed node schemas.")
 
-(defconst jetpacs-design-schema-sha256 "26eea3cdc077dced307f528b7fb1f7626715f8c5192dcae9fe2a8960bf9f0070"
+(defconst jetpacs-design-schema-sha256 "aacce6c5b5fe8e1dd5f7952e122590e84b087915e8b0deaa94be66e244672990"
   "SHA-256 of the canonical resolved typed schema projection.")
 
 (provide 'jetpacs-design-vocabulary)

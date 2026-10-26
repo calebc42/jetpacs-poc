@@ -389,7 +389,11 @@ that advertises `jetpacs.list_item'."
     (should (equal (plist-get node :values) ["+" ".+"]))
     (should (= (length (plist-get node :children)) 2))
     (should (equal (cdr (assoc "jetpacs.state_switch" (append nil jetpacs-design-node-schema)))
-                   '(("children" "source" "values") nil))))
+                   '(("children" "source" "values") ("otherwise")))))
+  (let ((node (jetpacs-design-state-switch "tags" `(("" . ,(jetpacs-text "Empty")))
+                                           :otherwise (jetpacs-text "Some"))))
+    (should (equal (plist-get node :values) [""]))
+    (should (equal (plist-get (plist-get node :otherwise) :text) "Some")))
   (should-error (jetpacs-design-state-switch "type" nil))
   (should-error (jetpacs-design-state-switch "bad id" `(("+" . ,(jetpacs-text "Add"))))))
 
