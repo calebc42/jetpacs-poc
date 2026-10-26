@@ -299,6 +299,33 @@ Pass it to `jetpacs-dates-format-clock' so time labels follow the
 device's setting rather than Emacs's."
   (plist-get (jetpacs-locale) :hour_cycle))
 
+(defun jetpacs-colors ()
+  "The client's SPEC 20.1.3 device colors plist, or nil before any report.
+Keys: :polarity (\"light\" or \"dark\", the appearance the device
+presents), :light and :dark — the device's scheme at each polarity as a
+plist of role keyword to lowercase #rrggbb: the thirteen EBP theme roles
+and the platform's extended ones (a Material 3 Companion reports
+:primary_container, :on_surface_variant, :surface_container_low …).
+From the welcome mirror and every `colors.changed' since.  Presentation
+advice: a builder reads it to author colors that match the device's
+other applications, and falls back to its own palette when it is nil."
+  (and (jetpacs-connected-p)
+       (ebp-client-colors (jetpacs-client))))
+
+(defun jetpacs-device-dark-p ()
+  "Non-nil when the device presents its dark appearance.
+Nil before any report too, so callers that follow the device keep
+their own default until the welcome says otherwise."
+  (equal (plist-get (jetpacs-colors) :polarity) "dark"))
+
+(defun jetpacs-device-color (role &optional dark)
+  "The device's lowercase #rrggbb for ROLE in its DARK or light scheme, or nil.
+ROLE is a role name string, standard (\"primary\") or extended
+\(\"surface_container_low\"); nil when no report has arrived or the
+device's platform names no such role."
+  (plist-get (plist-get (jetpacs-colors) (if dark :dark :light))
+             (intern (concat ":" role))))
+
 (defun jetpacs-connected-p ()
   "Non-nil when the attached client is past the SPEC 10.3 barrier."
   (and jetpacs--client (eq (ebp-client-state jetpacs--client) 'ready)))

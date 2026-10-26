@@ -433,6 +433,8 @@ class DeviceBridge(
         // SPEC 20.1.2 (#197): the platform says when the locale, the clock
         // cycle or the time zone changed; every live session hears it once.
         localeObserver = runCatching { platform.locale.observe { localeChanged() } }.getOrNull()
+        // SPEC 20.1.3 (#205): and when the wallpaper or the system appearance did.
+        colorsObserver = runCatching { platform.colors.observe { colorsChanged() } }.getOrNull()
         listenerThread = thread(name = "ebp-bridge", isDaemon = true) {
         // Deliver the cached theme before any session so a reconnecting device
         // renders in the mirrored palette immediately (§18.4 persistence).
@@ -522,6 +524,8 @@ class DeviceBridge(
         if (!running.compareAndSet(true, false)) return
         localeObserver?.runCatching { close() }
         localeObserver = null
+        colorsObserver?.runCatching { close() }
+        colorsObserver = null
         transport.stop()
         current?.runCatching { abort("bridge stopped") }
         listenerThread?.interrupt()
@@ -1624,6 +1628,20 @@ class DeviceBridge(
     /** The platform's locale-change subscription for the life of [start] to [stop]. */
     @Volatile private var localeObserver: AutoCloseable? = null
 
+    /** SPEC 20.1.3 (#205): report the device's current color scheme to the
+     * live session. The engine stores it for the welcome mirror and emits
+     * `colors.changed` only when something changed, so calling this on every
+     * configuration change or wallpaper broadcast is cheap and never chatty. */
+    fun colorsChanged() {
+        val colors = runCatching { platform.colors.current() }.getOrNull() ?: return
+        dispatchExecutor.execute {
+            engine?.colorsChanged(colors.dark, colors.light, colors.darkScheme)
+        }
+    }
+
+    /** The platform's colors-change subscription for the life of [start] to [stop]. */
+    @Volatile private var colorsObserver: AutoCloseable? = null
+
     /** SPEC 20.1.1: the Activity reports window geometry here on first
      * composition and every configuration change. The caller is the COMPOSE
      * UI thread and windowChanged may emit a notification — a socket write —
@@ -1670,6 +1688,10 @@ class DeviceBridge(
         // SPEC 20.1.2: seed the locale advice too, so the welcome mirrors it.
         runCatching { platform.locale.current() }.getOrNull()
             ?.let { engine.localeChanged(it.tag, it.hourCycle, it.timeZone) }
+        // SPEC 20.1.3 (#205): and the device colors, so the FIRST snapshot
+        // can be authored in them.
+        runCatching { platform.colors.current() }.getOrNull()
+            ?.let { engine.colorsChanged(it.dark, it.light, it.darkScheme) }
         // SPEC 18.2.1: the event-driven snackbar routes to whichever
         // scaffold host is on screen.
         engine.snackbarListener = { message, action, duration, respond ->

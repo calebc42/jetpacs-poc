@@ -229,6 +229,23 @@ explicit arguments so Grove's planning "today" and time labels follow the
 phone's zone and clock cycle. The Companion formats nothing: it reports facts
 and Emacs authors the strings.
 
+Amendment #205 adds the device colors (EBP §20.1.3) on the same model: the
+Companion reports `{polarity, light, dark}` — the system appearance, and the
+device's scheme at each polarity as a role-to-`#rrggbb` map — as the welcome's
+`colors` mirror and the `colors.changed` notification. `schemeRoles`
+(renderer/material3) projects a Material 3 `ColorScheme` as the thirteen EBP
+roles followed by Material's own roles in snake_case (`primary_container`,
+`on_surface_variant`, `surface_container_low` …), which the spec treats as
+extended roles: reported values, not EBP names. `AndroidHostColors` reads the
+wallpaper-derived schemes on S and later (the baseline schemes below) and
+re-reports on every configuration change and wallpaper broadcast; the desktop
+reports the baseline schemes once. ebp.el keeps the object beside the window
+geometry and locale; `jetpacs-colors`, `jetpacs-device-dark-p` and
+`jetpacs-device-color` read it, and the chrome re-pushes every surface on a
+change, as it does for a size-class flip. Orgzly Native derives its Revived
+palette from it (the fixed measured palettes stay as the fallback), so a new
+wallpaper recolors Orgzly Native as it recolors Revived.
+
 Amendment #198 adds conditional nodes (EBP §13.8.6, feature `data.visible`).
 The universal attribute `visible_when` is a flat AND of at most eight
 predicates `{path, op, value?}` over the data document; `Materializer`

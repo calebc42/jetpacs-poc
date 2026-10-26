@@ -18,6 +18,7 @@ import com.calebc42.jetpacs.companion.host.DEFAULT_LOOPBACK_PORT
 import com.calebc42.jetpacs.companion.host.DeviceLocale
 import com.calebc42.jetpacs.companion.host.HostCapabilities
 import com.calebc42.jetpacs.companion.host.HostClipboard
+import com.calebc42.jetpacs.companion.host.HostColors
 import com.calebc42.jetpacs.companion.host.HostLocale
 import com.calebc42.jetpacs.companion.host.HostLog
 import com.calebc42.jetpacs.companion.host.HostPresentation
@@ -125,6 +126,9 @@ internal class AndroidHostPlatform(context: Context) : CompanionHostPlatform {
             return AutoCloseable { runCatching { app.unregisterReceiver(receiver) } }
         }
     }
+
+    /** SPEC 20.1.3 (#205): the device's own colors, re-read on every change. */
+    override val colors: HostColors = AndroidHostColors(app)
 
     override val capabilities: HostCapabilities = object : HostCapabilities {
         override val supportedCapabilities: Set<String> = setOf(

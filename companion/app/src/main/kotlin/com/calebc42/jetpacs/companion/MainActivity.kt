@@ -94,6 +94,9 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(config.screenWidthDp, config.screenHeightDp) {
                 bridge.windowChanged(config.screenWidthDp, config.screenHeightDp)
             }
+            // SPEC 20.1.3 (#205): the appearance flipped, or the activity was
+            // recreated for a new wallpaper; the engine drops an unchanged report.
+            LaunchedEffect(config.uiMode) { bridge.colorsChanged() }
             CompositionLocalProvider(
                 LocalHostUiPlatform provides hostUi,
                 LocalCompanionRendererConfiguration provides

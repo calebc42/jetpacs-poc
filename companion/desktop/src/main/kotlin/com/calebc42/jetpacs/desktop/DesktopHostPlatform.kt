@@ -6,7 +6,10 @@ import com.calebc42.ebp.wire.CompletionNarrowing
 import com.calebc42.jetpacs.companion.host.AppCapabilityBindings
 import com.calebc42.jetpacs.companion.host.CompanionHostPlatform
 import com.calebc42.jetpacs.companion.host.CompanionStores
+import com.calebc42.jetpacs.companion.host.DeviceColors
 import com.calebc42.jetpacs.companion.host.DeviceLocale
+import com.calebc42.jetpacs.companion.host.HostColors
+import com.calebc42.jetpacs.material3.baselineSchemeRoles
 import com.calebc42.jetpacs.companion.host.HostCapabilities
 import com.calebc42.jetpacs.companion.host.HostClipboard
 import com.calebc42.jetpacs.companion.host.HostLocale
@@ -63,6 +66,19 @@ class DesktopHostPlatform(
         override fun current(): DeviceLocale = currentDesktopLocale()
 
         /** No desktop broadcast says the locale changed; the welcome carries the start-time advice. */
+        override fun observe(onChanged: () -> Unit): AutoCloseable = AutoCloseable { }
+    }
+
+    /** SPEC 20.1.3 (#205): no wallpaper scheme on the desktop; the baseline
+     * Material schemes at the system appearance, read once at start. */
+    override val colors: HostColors = object : HostColors {
+        override fun current(): DeviceColors = DeviceColors(
+            dark = desktopSystemDark(),
+            light = baselineSchemeRoles(false),
+            darkScheme = baselineSchemeRoles(true),
+        )
+
+        /** No desktop signal says the appearance changed; the welcome carries the start-time report. */
         override fun observe(onChanged: () -> Unit): AutoCloseable = AutoCloseable { }
     }
 
@@ -147,6 +163,11 @@ object NoTriggerSources : HostTriggerSources {
  * SPEC §20.1.2: the JDK's view of the locale advice. The clock cycle comes
  * from the localized short time pattern: an hour-of-day letter means `h23`.
  */
+/** The desktop's appearance as Skiko reads it, light when the toolkit cannot say. */
+fun desktopSystemDark(): Boolean =
+    runCatching { org.jetbrains.skiko.currentSystemTheme == org.jetbrains.skiko.SystemTheme.DARK }
+        .getOrDefault(false)
+
 fun currentDesktopLocale(
     locale: Locale = Locale.getDefault(),
     timeZone: TimeZone = TimeZone.getDefault(),

@@ -48,6 +48,9 @@ interface CompanionHostPlatform {
     /** SPEC §20.1.2 locale advice and its change notification. */
     val locale: HostLocale
 
+    /** SPEC §20.1.3 device colors and their change notification. */
+    val colors: HostColors
+
     /** SPEC §20 and §21: the device report, the capability executor, triggers. */
     val capabilities: HostCapabilities
 
@@ -117,6 +120,18 @@ interface HostLocale {
      * Call [onChanged] whenever the locale, clock cycle or time zone changes
      * until the returned handle is closed. A platform without such a signal
      * returns a handle that closes nothing.
+     */
+    fun observe(onChanged: () -> Unit): AutoCloseable
+}
+
+/** SPEC §20.1.3 (#205): the device's color scheme and when it changes. */
+interface HostColors {
+    fun current(): DeviceColors
+
+    /**
+     * Call [onChanged] whenever the wallpaper-derived scheme or the system
+     * appearance changes until the returned handle is closed. A platform
+     * without such a signal returns a handle that closes nothing.
      */
     fun observe(onChanged: () -> Unit): AutoCloseable
 }

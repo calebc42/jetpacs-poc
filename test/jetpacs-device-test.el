@@ -47,6 +47,24 @@
   (funcall (nth 2 (nth n jetpacs-device-test--calls))
            (and (not err) (list :count count)) err))
 
+;;;; Device colors (SPEC 20.1.3, #205)
+
+(ert-deftest jetpacs-device-colors-accessors ()
+  "The device colors read from the client; nil before any report, so a
+builder keeps its own palette until the welcome says otherwise."
+  (jetpacs-device-test--with (jetpacs-device-test--client)
+    (should (null (jetpacs-colors)))
+    (should-not (jetpacs-device-dark-p))
+    (should (null (jetpacs-device-color "primary")))
+    (setf (ebp-client-colors client)
+          '(:polarity "dark" :light (:primary "#396286")
+            :dark (:primary "#b4c5ff" :surface_container_low "#1a1b20")))
+    (should (jetpacs-device-dark-p))
+    (should (equal (jetpacs-device-color "primary") "#396286"))
+    (should (equal (jetpacs-device-color "primary" t) "#b4c5ff"))
+    (should (equal (jetpacs-device-color "surface_container_low" t) "#1a1b20"))
+    (should (null (jetpacs-device-color "no_such_role" t)))))
+
 ;;;; Owner and gates
 
 (ert-deftest jetpacs-device-owner-defaults-from-context ()

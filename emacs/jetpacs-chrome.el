@@ -738,6 +738,14 @@ so the dock swaps forms and every screen re-authors for the new class."
       (setq jetpacs-chrome--window-classes classes)
       (jetpacs-chrome--repush-after-flip))))
 
+(defun jetpacs-chrome--on-colors-changed (_client _colors)
+  "Re-push every chrome surface when the device colors change (SPEC 20.1.3).
+The engine sends `colors.changed' only for a changed object — a new
+wallpaper, a flipped appearance — so every notification is a real
+change and each screen re-authors in the device's colors at the next
+tick, as a size-class flip re-authors it for the new geometry."
+  (jetpacs-chrome--repush-after-flip))
+
 (defun jetpacs-chrome--on-ready (client)
   "Seed the class memo and attach the window hook.
 The welcome mirrors the geometry before ready runs (SPEC 20.1.1), so
@@ -754,7 +762,9 @@ the default compact class; a flip here re-pushes them for the real geometry."
                  (jetpacs-shell--schedule-repush surface))
                jetpacs-chrome--stacks)))
   (cl-pushnew #'jetpacs-chrome--on-window-changed
-              (ebp-client-window-changed-functions client)))
+              (ebp-client-window-changed-functions client))
+  (cl-pushnew #'jetpacs-chrome--on-colors-changed
+              (ebp-client-colors-changed-functions client)))
 
 (defun jetpacs-chrome--error-screen (surface id back err)
   "A Core-Node-Set stand-in for screen ID whose builder failed with ERR.

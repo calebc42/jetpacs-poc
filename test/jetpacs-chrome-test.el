@@ -2192,6 +2192,34 @@ ship from the cache, the replaced screen is built."
             (should (= 2 (hash-table-count views)))
             (should (gethash "hub" views))))))))
 
+(ert-deftest jetpacs-chrome-colors-change-repushes-at-the-next-tick ()
+  "SPEC 20.1.3 (#205): a `colors.changed' re-pushes every chrome surface
+through the same zero-delay timer a size-class flip uses — the engine
+sends it only for a changed object, so each one is a real change."
+  (jetpacs-chrome-test--with (jetpacs-chrome-test--client)
+    (jetpacs-chrome-test--clean-repush
+      (jetpacs-chrome-test--recording recs
+        (jetpacs-chrome-test--define "filesapp" "hub")
+        (jetpacs-chrome-test--define "notesapp" "home")
+        (let ((deferred '()) (debounced 0))
+          (cl-letf (((symbol-function 'run-at-time)
+                     (lambda (delay _r fn &rest _)
+                       (should (eql delay 0))
+                       (push fn deferred)
+                       'timer-object))
+                    ((symbol-function 'timerp)
+                     (lambda (x) (eq x 'timer-object)))
+                    ((symbol-function 'jetpacs-shell--schedule-repush)
+                     (lambda (&rest _) (cl-incf debounced))))
+            (setq jetpacs-chrome--flip-timer nil)
+            (jetpacs-chrome--on-colors-changed client '(:polarity "dark"))
+            (should (= 1 (length deferred)))
+            (should (= 0 debounced))
+            (funcall (car deferred))
+            (should (equal (sort (mapcar #'car recs) #'string<)
+                           '("app:filesapp" "app:notesapp")))
+            (should (null jetpacs-chrome--flip-timer))))))))
+
 (ert-deftest jetpacs-chrome-class-flip-repushes-at-the-next-tick ()
   "A size-class flip re-pushes every chrome surface through a zero-delay
 timer, not the shell's 0.5 s idle debounce; ticks inside one class cost
