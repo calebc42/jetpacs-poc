@@ -318,13 +318,24 @@ Nil before any report too, so callers that follow the device keep
 their own default until the welcome says otherwise."
   (equal (plist-get (jetpacs-colors) :polarity) "dark"))
 
+(defun jetpacs-plist-get-named (plist name)
+  "The value under the key of PLIST whose symbol name is \":NAME\", or nil.
+ebp.el decodes a peer-supplied key it has never seen as an UNINTERNED
+symbol (SPEC 23.5), so `plist-get' with a keyword misses any key no
+loaded code happened to mention; a reader of open-vocabulary objects —
+the device's extended color roles — looks the key up by name."
+  (let ((wanted (concat ":" name)))
+    (cl-loop for (key value) on plist by #'cddr
+             when (and (symbolp key) (equal (symbol-name key) wanted))
+             return value)))
+
 (defun jetpacs-device-color (role &optional dark)
   "The device's lowercase #rrggbb for ROLE in its DARK or light scheme, or nil.
 ROLE is a role name string, standard (\"primary\") or extended
 \(\"surface_container_low\"); nil when no report has arrived or the
 device's platform names no such role."
-  (plist-get (plist-get (jetpacs-colors) (if dark :dark :light))
-             (intern (concat ":" role))))
+  (jetpacs-plist-get-named (plist-get (jetpacs-colors) (if dark :dark :light))
+                           role))
 
 (defun jetpacs-connected-p ()
   "Non-nil when the attached client is past the SPEC 10.3 barrier."

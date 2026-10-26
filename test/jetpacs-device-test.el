@@ -63,7 +63,13 @@ builder keeps its own palette until the welcome says otherwise."
     (should (equal (jetpacs-device-color "primary") "#396286"))
     (should (equal (jetpacs-device-color "primary" t) "#b4c5ff"))
     (should (equal (jetpacs-device-color "surface_container_low" t) "#1a1b20"))
-    (should (null (jetpacs-device-color "no_such_role" t)))))
+    (should (null (jetpacs-device-color "no_such_role" t)))
+    ;; A key ebp.el decoded uninterned (SPEC 23.5) still reads by name.
+    (setf (ebp-client-colors client)
+          (list :polarity "light"
+                :light (list (make-symbol ":surface_container_lowest") "#fdfdff")
+                :dark nil))
+    (should (equal (jetpacs-device-color "surface_container_lowest") "#fdfdff"))))
 
 ;;;; Owner and gates
 
