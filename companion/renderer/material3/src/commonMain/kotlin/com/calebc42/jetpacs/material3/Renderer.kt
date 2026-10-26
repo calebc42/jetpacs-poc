@@ -95,6 +95,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.runtime.Stable
@@ -1150,7 +1151,7 @@ internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         warning = Color(0xFFC08A00),
         info = MaterialTheme.colorScheme.primary,
         hint = MaterialTheme.colorScheme.outline)
-    val outputTransformation = remember(
+    val annotationTransformation = remember(
         language,
         syntaxColors,
         diagColors,
@@ -1169,6 +1170,13 @@ internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         } else {
             SyntaxOutputTransformation(language, syntaxColors)
         }
+    }
+    // The field keeps ONE transformation for its whole life: a new
+    // instance per annotation epoch restarted the keyboard after every
+    // keystroke. The projection itself still changes through state.
+    val latestTransformation = rememberUpdatedState(annotationTransformation)
+    val outputTransformation = remember(document) {
+        LiveAnnotationOutputTransformation { latestTransformation.value }
     }
     val offers by ctx.bridge.completionOffers.collectAsState()
     val offer = if (wantsCompletion && binding.actionsEnabled) {
