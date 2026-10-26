@@ -823,6 +823,10 @@ class DeviceBridge(
                     }
                 }
                 "clipboard.copy" -> platform.clipboard.copy("EBP", descriptor.stringOr("text"))
+                // Amendment #208: the engine validated the scheme at accept
+                // time; the platform's own viewer opens it.
+                "uri.open" -> platform.uriOpener?.open(descriptor.stringOr("uri"))
+                    ?: platform.log.w("EbpBridge", "uri.open reached a host without a viewer")
                 "surface.open" -> onOpenSurface(descriptor.stringOr("surface"))
                 "companion.settings.open" -> onOpenSettings()
                 else -> return RendererActionOutcome.NotAdmitted(
@@ -1792,6 +1796,10 @@ class DeviceBridge(
                         descriptor.stringOr("title").takeIf { t -> t.isNotEmpty() },
                     ) ?: platform.log.w("EbpBridge", "share.send reached a host without a share sheet")
                 }
+                // Amendment #208: the engine validated the scheme at accept
+                // time; the platform's own viewer opens it.
+                "uri.open" -> platform.uriOpener?.open(descriptor.stringOr("uri"))
+                    ?: platform.log.w("EbpBridge", "uri.open reached a host without a viewer")
                 "surface.open" -> onOpenSurface(descriptor.stringOr("surface"))
                 "companion.settings.open" -> onOpenSettings()
             }

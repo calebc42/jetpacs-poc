@@ -1620,3 +1620,15 @@ the conclusion JSON under a throwaway obarray, re-home, extract."
 
 (provide 'jetpacs-widgets-test)
 ;;; jetpacs-widgets-test.el ends here
+
+(ert-deftest jetpacs-uri-open-takes-only-system-link-schemes ()
+  "Amendment #208: http(s), mail, phone, message and map URIs; never file,
+intent or javascript, and never user information before a host."
+  (should (equal (jetpacs-uri-open "tel:555-0199")
+                 '(:builtin "uri.open" :uri "tel:555-0199")))
+  (should (jetpacs-uri-open-p "HTTPS://example.org/a?b#c"))
+  (should (jetpacs-uri-open-p "sms:555-0199),"))
+  (dolist (bad '("file:///etc/passwd" "intent://x" "javascript:alert(1)"
+                 "https://user@example.org/" "no-scheme" ""))
+    (should-not (jetpacs-uri-open-p bad))
+    (should-error (jetpacs-uri-open bad))))

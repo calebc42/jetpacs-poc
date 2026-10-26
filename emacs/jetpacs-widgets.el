@@ -424,7 +424,7 @@ authors into specs — never by the peer."
   action)
 
 (defconst jetpacs--contextless-builtins
-  '("surface.open" "clipboard.copy" "share.send"
+  '("surface.open" "clipboard.copy" "share.send" "uri.open"
     "companion.settings.open" "trigger.fire")
   "Builtins valid without a surface node, view, or dialog (SPEC 14.2).")
 
@@ -1501,6 +1501,30 @@ absent the receiver advances through the host's authored order."
   (jetpacs-require-string text ":text")
   (when title (jetpacs-require-string title ":title"))
   (jetpacs-make-node nil :builtin "share.send" :text text :title title))
+
+(defconst jetpacs-uri-open-schemes
+  '("http" "https" "mailto" "tel" "voicemail" "geo" "sms" "smsto" "mms" "mmsto")
+  "The schemes `uri.open' accepts (amendment #208, contract `uri.scheme').")
+
+(defun jetpacs-uri-open-p (uri)
+  "Non-nil when URI may travel in a `uri.open' builtin (amendment #208).
+An absolute URI of at most 2048 octets in `jetpacs-uri-open-schemes',
+with no user information before its host."
+  (and (stringp uri)
+       (<= (string-bytes uri) 2048)
+       (string-match "\\`\\([A-Za-z][A-Za-z0-9+.-]*\\):\\(.*\\)\\'" uri)
+       (member (downcase (match-string 1 uri)) jetpacs-uri-open-schemes)
+       (let ((rest (match-string 2 uri)))
+         (not (and (string-prefix-p "//" rest)
+                   (string-search "@" (car (split-string (substring rest 2) "[/?#]"))))))))
+
+(defun jetpacs-uri-open (uri)
+  "A `uri.open' builtin opening URI with the device's own viewer (#208).
+The Companion hands it to the platform: the browser, dialer, messaging,
+mail or map application.  Signals unless `jetpacs-uri-open-p' holds."
+  (unless (jetpacs-uri-open-p uri)
+    (error "jetpacs-uri-open: %S is not a URI in `jetpacs-uri-open-schemes'" uri))
+  (jetpacs-make-node nil :builtin "uri.open" :uri uri))
 
 (defun jetpacs-settings-open ()
   "A `companion.settings.open' builtin action (SPEC §14.2)."

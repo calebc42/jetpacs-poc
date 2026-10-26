@@ -45,6 +45,12 @@ interface CompanionHostPlatform {
      */
     val share: HostShare?
 
+    /**
+     * Amendment #208 `uri.open`: hand a validated URI to the platform's
+     * default viewer, or null where the platform has none.
+     */
+    val uriOpener: HostUriOpener?
+
     /** SPEC §20.1.2 locale advice and its change notification. */
     val locale: HostLocale
 
@@ -105,6 +111,11 @@ interface HostSettings {
 /** SPEC §14.2 `clipboard.copy`: the text goes to the system clipboard, and nowhere else. */
 fun interface HostClipboard {
     fun copy(label: String, text: String)
+}
+
+/** Amendment #208 `uri.open`: open [uri] (already validated) with the platform's default viewer. */
+fun interface HostUriOpener {
+    fun open(uri: String)
 }
 
 /** SPEC §14.2 `share.send`: hand [text], with an optional [title], to the platform's share sheet. */

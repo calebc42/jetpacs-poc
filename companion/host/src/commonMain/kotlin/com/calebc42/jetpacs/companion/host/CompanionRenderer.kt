@@ -52,6 +52,7 @@ import kotlinx.serialization.json.put
 val HOST_BUILTINS: Set<String> = setOf(
     "clipboard.copy",
     "share.send",
+    "uri.open",
     "surface.open",
     "companion.settings.open",
 )

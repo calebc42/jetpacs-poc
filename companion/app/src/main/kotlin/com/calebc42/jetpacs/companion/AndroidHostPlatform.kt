@@ -24,6 +24,7 @@ import com.calebc42.jetpacs.companion.host.HostLog
 import com.calebc42.jetpacs.companion.host.HostPresentation
 import com.calebc42.jetpacs.companion.host.HostSettings
 import com.calebc42.jetpacs.companion.host.HostShare
+import com.calebc42.jetpacs.companion.host.HostUriOpener
 import com.calebc42.jetpacs.companion.host.HostTrace
 import com.calebc42.jetpacs.companion.host.HostTriggerSources
 import java.util.concurrent.Executor
@@ -102,6 +103,18 @@ internal class AndroidHostPlatform(context: Context) : CompanionHostPlatform {
         app.startActivity(
             Intent.createChooser(send, null).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
         )
+    }
+
+    /** Amendment #208: ACTION_VIEW, as Orgzly Revived's links open — the
+     * dialer for tel:, Messages for sms:, mail for mailto:, the browser. */
+    override val uriOpener: HostUriOpener = HostUriOpener { uri ->
+        val view = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(uri))
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        try {
+            app.startActivity(view)
+        } catch (e: android.content.ActivityNotFoundException) {
+            android.widget.Toast.makeText(app, "No app can open this link", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     override val locale: HostLocale = object : HostLocale {

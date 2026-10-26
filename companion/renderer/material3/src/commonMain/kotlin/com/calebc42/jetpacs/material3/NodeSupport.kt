@@ -37,6 +37,7 @@ object NodeSupport {
             "companion.settings.open",
             "clipboard.copy",
             "share.send",
+            "uri.open",
             "trigger.fire",
             "variant.switch",
         ),

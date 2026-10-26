@@ -405,7 +405,7 @@ Remote descriptor required fields: action
 Remote descriptor optional fields: args, when_offline, dedupe, ttl_s, confirm, capture_fields, open_surface
 Offline policies: drop, queue, wake
 
-Native builtins (9; closed, profile-advertised vocabulary):
+Native builtins (10; closed, profile-advertised vocabulary):
 - clipboard.copy — required: builtin, text; optional: none; Elisp: jetpacs-clipboard-copy
 - companion.settings.open — required: builtin; optional: none; Elisp: jetpacs-settings-open
 - dialog.dismiss — required: builtin; optional: none; Elisp: jetpacs-dialog-dismiss
@@ -413,6 +413,7 @@ Native builtins (9; closed, profile-advertised vocabulary):
 - share.send — required: builtin, text; optional: title; Elisp: jetpacs-share
 - surface.open — required: builtin, surface; optional: none; Elisp: jetpacs-surface-open
 - trigger.fire — required: builtin, id; optional: none; Elisp: jetpacs-trigger-fire
+- uri.open — required: builtin, uri; optional: none; Elisp: jetpacs-uri-open
 - variant.switch — required: builtin, id; optional: value; Elisp: jetpacs-variant-switch
 - view.switch — required: builtin, view; optional: none; Elisp: jetpacs-view-switch
 

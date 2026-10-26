@@ -17,6 +17,7 @@ import com.calebc42.jetpacs.companion.host.HostLog
 import com.calebc42.jetpacs.companion.host.HostPresentation
 import com.calebc42.jetpacs.companion.host.HostSettings
 import com.calebc42.jetpacs.companion.host.HostShare
+import com.calebc42.jetpacs.companion.host.HostUriOpener
 import com.calebc42.jetpacs.companion.host.HostTrace
 import com.calebc42.jetpacs.companion.host.HostTriggerSources
 import com.calebc42.jetpacs.companion.host.localeAdvice
@@ -61,6 +62,17 @@ class DesktopHostPlatform(
     }
 
     override val share: HostShare? = null
+
+    /** Amendment #208: the desktop's default handler, through AWT where it can browse. */
+    override val uriOpener: HostUriOpener? = HostUriOpener { uri ->
+        runCatching {
+            val desktop = java.awt.Desktop.getDesktop()
+            val target = java.net.URI(uri)
+            if (target.scheme.equals("mailto", true) && desktop.isSupported(java.awt.Desktop.Action.MAIL))
+                desktop.mail(target)
+            else desktop.browse(target)
+        }.onFailure { log.w("EbpBridge", "uri.open could not open the link") }
+    }
 
     override val locale: HostLocale = object : HostLocale {
         override fun current(): DeviceLocale = currentDesktopLocale()
