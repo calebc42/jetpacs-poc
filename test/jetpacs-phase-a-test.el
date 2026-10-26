@@ -364,7 +364,7 @@ save policy writes; outside one the deferred save arms as before."
     (unwind-protect
         (with-current-buffer buf
           (insert "edit ")
-          (let ((jetpacs--in-builder t))
+          (let ((jetpacs-build-target :app))
             (should-error (ebp-org-defer-save)
                           :type 'jetpacs-builder-side-effect)
             (should-not (timerp ebp-org--save-timer))

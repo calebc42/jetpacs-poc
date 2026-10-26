@@ -110,6 +110,16 @@ JetpacsJvmFonts.loader = JetpacsJvmFonts.Loader { resource, weight, style ->
 Without a loader the Plex families fall back to the platform's default sans,
 serif and monospace families.
 
+### Nested scopes inherit
+
+A `jetpacs.design_scope` nested inside another resolves token and motion
+references over its parent's maps, so a screen-local scope that declares
+only its own styles may name the profile's colors. The authoring check in
+`jetpacs-design-scope` validates references locally; pass the enclosing
+declarations as `:inherit` (the profile from `jetpacs-design-active-profile`
+qualifies) and the check accepts the inherited names without the scope
+re-declaring them. Nothing from `:inherit` is sent.
+
 ### Design-scoped rich text
 
 Canonical `rich_text` now renders with Foundation `BasicText` within a

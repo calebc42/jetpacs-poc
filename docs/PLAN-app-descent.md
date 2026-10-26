@@ -1,6 +1,9 @@
 # App descent: simplify Glasspane and Bloom, move shared behavior into Jetpacs
 
 Status: plan, 2026-10-23. Sections 1–8 landed on branch `app-descent`.
+Audited 2026-10-26: `AUDIT-app-descent-2026-10-26.md` records what the
+audit changed in the landed sections and what it left; the gaps the
+applets still work around are `PLAN-elisp-expressivity.md`.
 
 Boundary rule (ratified 2026-10-22): Jetpacs owns built-in Emacs behavior
 (Org, dired, project, Modus), plain and unopinionated, exposed as ownerless

@@ -5,7 +5,6 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'jetpacs-org-mode)
-(require 'glasspane)
 
 (ert-deftest jetpacs-org-reminders-owner-and-rollout-defaults ()
   "The canonical pipeline owns org-mode and is enabled by default."
@@ -44,7 +43,7 @@
             ;; none, evicts the canonical projection.
             (jetpacs-org-mode-agenda-items 'day)
             (should (= calls 1))
-            (ebp-org-cache-invalidate 'glasspane)
+            (ebp-org-cache-invalidate 'another-app)
             (jetpacs-org-mode-agenda-items 'day)
             (should (= calls 2))
             (ebp-org-cache-invalidate)
@@ -276,18 +275,15 @@
         (jetpacs-org-reminders-unregister)
         (let ((jetpacs-org-reminders-enabled nil))
           (jetpacs-org-mode-register)
-          (glasspane-agenda-register)
           (should-not (jetpacs-reminders-projection-p "org-mode")))
         (let ((jetpacs-org-reminders-enabled t))
           (jetpacs-org-mode-register)
-          (glasspane-agenda-register)
           (should (jetpacs-reminders-projection-p "org-mode"))
           (should (memq #'jetpacs-reminders--after-push
                         jetpacs-shell-after-push-hook))))
     (jetpacs-org-reminders-unregister)
     (let ((jetpacs-org-reminders-enabled t))
-      (jetpacs-org-mode-register)
-      (glasspane-agenda-register))))
+      (jetpacs-org-mode-register))))
 
 (defmacro jetpacs-org-reminders-test--with-vault (file content &rest body)
   "Bind FILE to a fresh vault's tasks.org holding CONTENT around BODY.
@@ -447,21 +443,8 @@ set is capped; an owner is required."
           (should-error (jetpacs-org-tokenize nil "t-none")))
       (ebp-org-reset))))
 
-(ert-deftest jetpacs-org-agenda-formatters-are-the-glasspane-shapes ()
-  "The lifted formatters answer what Glasspane's cards rendered."
-  (should (equal (jetpacs-org-agenda-item-meta
-                  '((extra . "Scheduled:") (file . "/v/work.org")) nil)
-                 "work.org"))
-  (should (equal (jetpacs-org-agenda-item-meta
-                  '((extra . "Sched. 3x:") (file . "/v/work.org")) nil)
-                 "Sched. 3x · work.org"))
-  (should (equal (jetpacs-org-agenda-item-meta '((file . "/v/a.org")) "09:30")
-                 "09:30 · a.org"))
-  (should (equal (jetpacs-org-agenda-item-meta
-                  '((extra . "In 3 d.") (file . "/v/t.org")) "09:15")
-                 "09:15 · t.org"))
-  (should (equal (jetpacs-org-agenda-item-meta '((extra . "Deadline")) nil)
-                 ""))
+(ert-deftest jetpacs-org-agenda-type-formatters ()
+  "An agenda item's type maps to one icon and one short label, or nothing."
   (should (equal (jetpacs-org-agenda-type-icon "past-scheduled")
                  '("history" . "error")))
   (should (equal (jetpacs-org-agenda-type-icon "upcoming-deadline")

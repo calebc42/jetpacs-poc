@@ -5,7 +5,7 @@
 ;; Run by tools/check-jetpacs-delineation.sh once per emacs/jetpacs-*.el,
 ;; each in a fresh `emacs -Q --batch' whose load path holds only EBP and
 ;; Jetpacs.  Loads DELINEATION_FEATURE and fails when any downstream app
-;; symbol (glasspane-, bloom-, orgzly-, harp-) is defined: a function,
+;; symbol (glasspane-, bloom-, grove-, orgzly-, harp-) is defined: a function,
 ;; variable, face, error condition, custom group, or loaded feature.  The
 ;; predicate is the ebp.el guard's in test/run-tests.sh, aimed one layer
 ;; down.
@@ -13,7 +13,7 @@
 ;;; Code:
 
 (let* ((feature (intern (getenv "DELINEATION_FEATURE")))
-       (prefix "\\`\\(glasspane\\|bloom\\|orgzly\\|harp\\)\\(-\\|\\'\\)")
+       (prefix "\\`\\(glasspane\\|bloom\\|grove\\|orgzly\\|harp\\)\\(-\\|\\'\\)")
        offenders)
   (require feature)
   (mapatoms

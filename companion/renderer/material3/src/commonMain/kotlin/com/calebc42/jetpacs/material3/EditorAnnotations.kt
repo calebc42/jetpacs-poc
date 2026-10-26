@@ -155,6 +155,32 @@ class AnnotationOutputTransformation(
     }
 }
 
+/**
+ * One stable output transformation over annotations that keep changing.
+ *
+ * Every `fontify.show`, `diagnostics.show` and `eldoc.show` advances the
+ * editor's annotation epoch. Handing the text field a new transformation
+ * instance for each one makes it restart its input session, so the soft
+ * keyboard hides and reappears a moment after every keystroke. This
+ * instance stays put for the life of the field, and [current] reads the
+ * latest projection from snapshot state, which the field observes and
+ * re-applies. The same fix the Jetpacs design tier carries in its own
+ * renderer; each tier wraps its own projection.
+ */
+class LiveAnnotationOutputTransformation(
+    private val current: () -> OutputTransformation?,
+) : OutputTransformation {
+    override fun TextFieldBuffer.transformOutput() {
+        current()?.applyOutput(this)
+    }
+}
+
+/** Run [this] transformation on [buffer]; outside any transformation class,
+ * so the member-extension call cannot resolve to the caller's own. */
+private fun OutputTransformation.applyOutput(buffer: TextFieldBuffer) {
+    with(buffer) { transformOutput() }
+}
+
 /** Legacy view of the Material span projection for non-state consumers. */
 class AnnotationTransformation(
     private val fontify: FontifySet?,

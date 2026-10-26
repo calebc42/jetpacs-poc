@@ -102,6 +102,14 @@ illegal owner fails at registration time, never as a push-time 1201."
 
 (defvar jetpacs--in-action-handler)     ; the dispatch marker, defined below
 
+(defvar jetpacs--claim-site nil
+  "The file a registration is attributed to when not made by a load.
+Nil records the loading file, or the current buffer's.  An app's
+register function runs after its load (`jetpacs-apps-call-register'
+binds this to the app's entry file), so its claim sites keep naming the
+app's own file, as they did when apps registered at the end of their
+load, and the same-owner-different-file warning stays meaningful.")
+
 (defun jetpacs--claim (kind name)
   "Attribute KIND:NAME to `jetpacs-current-owner'; returns NAME.
 A different-owner clash warns, or errors under
@@ -120,7 +128,7 @@ No-op (no record) when no owner is bound."
            ;; spuriously on the next legitimate reload.  A dispatch has no
            ;; meaningful defining file; record none.
            (site (unless jetpacs--in-action-handler
-                   (or load-file-name buffer-file-name))))
+                   (or jetpacs--claim-site load-file-name buffer-file-name))))
       (cond
        ;; A different owner: the pre-existing clash.
        ((and prior (not (equal prior jetpacs-current-owner)))
@@ -636,10 +644,18 @@ diff'; `Info-toc' reads files).  Those stay the caller's judgement."
 (define-error 'jetpacs-builder-side-effect
   "Side effect refused inside a builder extent")
 
-(defvar jetpacs--in-builder nil
-  "Non-nil while a screen, root, data or stale builder runs.
-Bound by the shell and the chrome kit around every builder call.  A
-builder renders; it never pushes, navigates, continues a flow or saves.
+(defvar jetpacs-build-target nil
+  "The profile key of the surface whose builder is running, or nil.
+`:app', `:notification', `:widget' or `:tile' (SPEC 10.2) while a
+screen, root, data or stale builder runs; nil outside every builder.
+Bound by the shell and the chrome kit around every builder call, so a
+helper reached from any depth of a builder gates on the profile the
+node is bound for (`jetpacs-effective-target'): a widget row built by
+an app-screen helper must not carry a member only the app profile
+advertises, or the receiver refuses the whole widget.
+
+The same binding marks the extent as a render.  A builder renders; it
+never pushes, navigates, continues a flow or saves.
 `jetpacs--builder-guard' turns those calls into a
 `jetpacs-builder-side-effect' signal, which the builder's own catch
 degrades into an error screen while the recorder keeps the backtrace.
@@ -648,11 +664,18 @@ Work a builder wants done later goes through a timer
 
 (defun jetpacs-in-builder-p ()
   "Non-nil inside a builder extent."
-  jetpacs--in-builder)
+  (and jetpacs-build-target t))
+
+(defun jetpacs-effective-target (&optional target)
+  "The profile key to gate a node against: TARGET, else the one being built.
+Outside every builder, and when no builder target is known, `:app'.
+The `*-advertised-p' family defaults its TARGET through this, so a
+builder helper need not thread the target it is drawing for."
+  (or target jetpacs-build-target :app))
 
 (defun jetpacs--builder-guard (what)
   "Signal `jetpacs-builder-side-effect' for WHAT inside a builder extent."
-  (when jetpacs--in-builder
+  (when jetpacs-build-target
     (signal 'jetpacs-builder-side-effect (list what))))
 
 (defun jetpacs-error-label (err)
@@ -750,7 +773,7 @@ render does not start flows."
                                      ;; Not a builder, even when a builder
                                      ;; pumping process output ran this
                                      ;; timer inside its extent.
-                                     (jetpacs--in-builder nil)
+                                     (jetpacs-build-target nil)
                                      ;; The OWNER rides the flow too, or D1
                                      ;; dies at the timer boundary: the
                                      ;; dispatch binding ends with the
@@ -866,7 +889,7 @@ logged: amendment #74 puts sensitive trigger data in `args'."
         (jetpacs--in-action-handler t)
         ;; A re-entrant dispatch (a builder pumping process output) runs
         ;; a HANDLER, which may push; the builder marker does not reach it.
-        (jetpacs--in-builder nil)
+        (jetpacs-build-target nil)
         ;; D1: the handler runs under the owner that REGISTERED it.  A
         ;; plain `let', not `with-jetpacs-owner': that macro errors on
         ;; nil, and nil is the common case (most base actions register
@@ -1306,11 +1329,12 @@ tests retain the usual richer-form assumption.  A live target profile is
 authoritative and an absent `:extensions' array means no design extension."
   (if-let* ((client (jetpacs-client)))
       (if-let* ((profile (plist-get (ebp-client-profiles client)
-                                    (or target :app))))
+                                    (jetpacs-effective-target target))))
           (and (member extension
                        (append (plist-get profile :extensions) nil))
                t)
-        (null (jetpacs--capability-gated-target-p target)))
+        (null (jetpacs--capability-gated-target-p
+                (jetpacs-effective-target target))))
     t))
 
 (defun jetpacs-node-advertised-p (type &optional target)
@@ -1323,7 +1347,7 @@ first and degrade when the answer is no.  With no client attached
 \(offline renders, tests) assume the richer form."
   (if-let* ((client (jetpacs-client)))
       (if-let* ((profile (plist-get (ebp-client-profiles client)
-                                    (or target :app))))
+                                    (jetpacs-effective-target target))))
           (and (member type (append (plist-get profile :node_types) nil))
                (if-let* ((extension
                           (jetpacs-renderer-extension-for-node type)))
@@ -1339,7 +1363,8 @@ first and degrade when the answer is no.  With no client attached
         ;; `app' is NOT negotiated (10.2: core session and app:* surfaces
         ;; are not capabilities), so its absence means a malformed
         ;; welcome, not a refusal — keep the richer-form tolerance there.
-        (null (jetpacs--capability-gated-target-p target)))
+        (null (jetpacs--capability-gated-target-p
+                (jetpacs-effective-target target))))
     ;; No client at all — offline render or test: assume the richer form.
     t))
 
@@ -1358,7 +1383,7 @@ With no attached client, offline builders and tests assume the richer form."
     (error "jetpacs: TYPE and MEMBER must be wire-name strings"))
   (if-let* ((client (jetpacs-client)))
       (if-let* ((profile (plist-get (ebp-client-profiles client)
-                                    (or target :app))))
+                                    (jetpacs-effective-target target))))
           (and (jetpacs-node-advertised-p type target)
                (or (not (plist-member profile :members))
                    (let* ((members (plist-get profile :members))
@@ -1366,7 +1391,8 @@ With no attached client, offline builders and tests assume the richer form."
                           (node-members
                            (jetpacs--profile-object-get nodes type)))
                      (and (member member (append node-members nil)) t))))
-        (null (jetpacs--capability-gated-target-p target)))
+        (null (jetpacs--capability-gated-target-p
+                (jetpacs-effective-target target))))
     t))
 
 (defun jetpacs-feature-advertised-p (feature &optional target)
@@ -1382,7 +1408,7 @@ With no client attached the gate does not run either (it needs a live
 profile), so offline renders and tests assume the richer form."
   (if-let* ((client (jetpacs-client)))
       (if-let* ((profile (plist-get (ebp-client-profiles client)
-                                    (or target :app))))
+                                    (jetpacs-effective-target target))))
           (and (member feature (append (plist-get profile :features) nil)) t)
         ;; No profile for this target on a LIVE client.  For a
         ;; CAPABILITY-GATED target that absence is the answer: SPEC 10.2
@@ -1392,7 +1418,8 @@ profile), so offline renders and tests assume the richer form."
         ;; `app' is NOT negotiated (10.2: core session and app:* surfaces
         ;; are not capabilities), so its absence means a malformed
         ;; welcome, not a refusal — keep the richer-form tolerance there.
-        (null (jetpacs--capability-gated-target-p target)))
+        (null (jetpacs--capability-gated-target-p
+                (jetpacs-effective-target target))))
     ;; No client at all — offline render or test: assume the richer form.
     t))
 
@@ -1431,7 +1458,7 @@ and hoping.  With no client attached (offline renders, tests) assume
 the richer form, like the siblings."
   (if-let* ((client (jetpacs-client)))
       (if-let* ((profile (plist-get (ebp-client-profiles client)
-                                    (or target :app))))
+                                    (jetpacs-effective-target target))))
           (and (member builtin (append (plist-get profile :builtins) nil)) t)
         ;; No profile for this target on a LIVE client.  For a
         ;; CAPABILITY-GATED target that absence is the answer: SPEC 10.2
@@ -1441,7 +1468,8 @@ the richer form, like the siblings."
         ;; `app' is NOT negotiated (10.2: core session and app:* surfaces
         ;; are not capabilities), so its absence means a malformed
         ;; welcome, not a refusal — keep the richer-form tolerance there.
-        (null (jetpacs--capability-gated-target-p target)))
+        (null (jetpacs--capability-gated-target-p
+                (jetpacs-effective-target target))))
     ;; No client at all — offline render or test: assume the richer form.
     t))
 

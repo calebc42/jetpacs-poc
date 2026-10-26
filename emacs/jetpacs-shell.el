@@ -183,13 +183,6 @@ last-push-wins shell.  The builtin constructor validates SURFACE in both arms."
         builtin
       (jetpacs-action "jetpacs.launcher.open" :args (list :surface surface)))))
 
-(defvar jetpacs-shell-build-target nil
-  "The profile key of the surface whose builder is running, or nil.
-`:app', `:notification', `:widget' or `:tile' (SPEC 10.2), bound by
-`jetpacs-shell--build' and around a stale builder, so a helper that
-gates on an advertised feature asks the profile the node is bound for.
-Nil outside a shell build means `:app'.")
-
 (defun jetpacs-shell-action-opening-surface (name surface &rest keys)
   "Build remote action NAME whose same occurrence presents app SURFACE.
 KEYS are the keyword arguments accepted by `jetpacs-action'.  A Companion
@@ -197,7 +190,7 @@ advertising `action.open_surface' performs the receiver-local Nav3 selection
 and still dispatches NAME to Emacs; an older Companion receives the original
 remote-only descriptor and retains its pre-Nav3 last-push-wins behavior.
 
-The feature is asked of the profile being built (`jetpacs-shell-build-target'):
+The feature is asked of the profile being built (`jetpacs-build-target'):
 a widget, notification or tile that does not advertise it gets the plain
 remote action, which its gate would otherwise refuse with the whole surface.
 
@@ -209,7 +202,7 @@ app surface.  Ordinary same-surface refreshes remain plain remote actions."
   (apply #'jetpacs-action name
          :open-surface (and (jetpacs-feature-advertised-p
                              "action.open_surface"
-                             (or jetpacs-shell-build-target :app))
+                             (jetpacs-effective-target))
                             surface)
          keys))
 
@@ -446,6 +439,23 @@ registrations."
                      (error (message "jetpacs: repush of %s failed: %s"
                                      s (jetpacs-error-label err))))))))))))
 
+(defun jetpacs-shell-push-caught (surface-or-owner &rest keys)
+  "Push SURFACE-OR-OWNER like `jetpacs-shell-push'; a signalling push is caught.
+KEYS are `jetpacs-shell-push''s keyword arguments.  A push that signals
+\(a builder error, a refused gate) is logged by its label, the surface
+is queued for the debounced repush, and nil is returned: for a repush
+from a timer or a flow continuation, where a signal would die unseen
+and must not kill the extent.  Inside a dispatch extent prefer
+`jetpacs-app-defer-refresh'."
+  (condition-case err
+      (apply #'jetpacs-shell-push surface-or-owner keys)
+    (error
+     (let ((surface (jetpacs-shell--resolve-surface surface-or-owner)))
+       (jetpacs-shell--schedule-repush surface)
+       (message "jetpacs-shell: push of %s failed: %s"
+                surface (jetpacs-error-label err))
+       nil))))
+
 (defun jetpacs-shell--on-ready (client)
   "Drain pushes that SYNCING refused, now that the session is READY.
 On `jetpacs-ready-functions' at depth 90.  Replayed events conclude
@@ -522,11 +532,11 @@ repush or async flush carries no ambient owner of its own."
             ;; joins it, so two renders of one buffer in one document
             ;; route around each other instead of shipping a duplicate.
             (jetpacs-node-id-claims (make-hash-table :test #'equal))
-            ;; Feature gates inside the builder ask this surface's profile.
-            (jetpacs-shell-build-target (jetpacs-shell--surface-target surface))
-            ;; A render is pure: pushes, navigation, flow continuations
-            ;; and Org saves refuse inside it (`jetpacs--builder-guard').
-            (jetpacs--in-builder t))
+            ;; Feature gates inside the builder ask this surface's
+            ;; profile, and the binding marks the extent as a render:
+            ;; pushes, navigation, flow continuations and Org saves
+            ;; refuse inside it (`jetpacs--builder-guard').
+            (jetpacs-build-target (jetpacs-shell--surface-target surface)))
         ;; The recorder seam fires HERE, stack intact — after the unwind
         ;; below, a backtrace would show the catch site, not the crash.
         (handler-bind ((error (lambda (e)
@@ -1185,17 +1195,27 @@ attached CLIENT, which defaults to the live one."
   "The typed nodes in SPEC, size variants included, as the receiver counts."
   (plist-get (jetpacs-shell--count-aggregates spec) :nodes))
 
-(defun jetpacs-shell--gate-target-nodes (client surface spec &optional analysis)
-  "Refuse SPEC when it exceeds SURFACE's target `max_nodes' (SPEC 10.2).
+(defun jetpacs-shell--gate-target-limits (client surface spec &optional analysis)
+  "Refuse SPEC when it exceeds SURFACE's target `limits' (SPEC 10.2).
 The receiver refuses the whole document; refusing here names the cause
-where the builder can see it."
-  (when-let* ((cap (jetpacs-shell-target-limit surface :max_nodes client))
-              (nodes (plist-get (or (and analysis (plist-get analysis :counts))
-                                    (jetpacs-shell--count-aggregates spec))
-                                :nodes)))
-    (when (> nodes cap)
-      (error "jetpacs: %d nodes exceed %s's max_nodes %d (SPEC 10.2)"
-             nodes surface cap))))
+where the builder can see it.  The three limits Emacs can measure on
+the authored document are checked: `max_nodes', `max_node_depth' and
+`max_size_variants'.  `max_lazy_items' and `max_remote_views_bytes'
+are the receiver's own measures of its rendering."
+  (let* ((counts (or (and analysis (plist-get analysis :counts))
+                     (jetpacs-shell--count-aggregates spec)))
+         (measures (list (list :max_nodes (plist-get counts :nodes) "nodes")
+                         (list :max_node_depth (plist-get counts :depth)
+                               "node depth")
+                         (list :max_size_variants
+                               (length (plist-get spec :size_variants))
+                               "size variants"))))
+    (pcase-dolist (`(,limit ,value ,what) measures)
+      (when-let* ((cap (jetpacs-shell-target-limit surface limit client))
+                  ((numberp value))
+                  ((> value cap)))
+        (error "jetpacs: %s %d exceed %s's %s %d (SPEC 10.2)"
+               what value surface (substring (symbol-name limit) 1) cap)))))
 
 (defun jetpacs-shell--gate-size
     (client spec stale-spec &optional spec-analysis stale-analysis data)
@@ -1257,7 +1277,7 @@ A crash signals like a stale builder's: the push is refused, loudly."
     (let ((jetpacs-current-owner
            (or (plist-get entry :owner)
                (and (not jetpacs--in-action-handler) jetpacs-current-owner)))
-          (jetpacs--in-builder t))
+          (jetpacs-build-target (jetpacs-shell--surface-target surface)))
       (handler-bind ((error (lambda (e)
                               (jetpacs-shell--note-builder-error
                                (list :surface surface :phase 'data) e))))
@@ -1565,8 +1585,7 @@ render never pushes (defer the push with a timer instead)."
                               ((error (lambda (e)
                                         (jetpacs-shell--note-builder-error
                                          (list :surface surface) e))))
-                            (let ((jetpacs--in-builder t)
-                                  (jetpacs-shell-build-target
+                            (let ((jetpacs-build-target
                                    (jetpacs-shell--surface-target surface)))
                               (funcall fn))))))
                    (stale-after-s (or stale-after-s
@@ -1645,10 +1664,10 @@ spec (SPEC 13.4)" current-view)))
                   (jetpacs-shell--gate-amendments client spec spec-analysis)
                   (jetpacs-shell--gate-size
                    client spec stale-spec spec-analysis stale-analysis data)
-                  (jetpacs-shell--gate-target-nodes
+                  (jetpacs-shell--gate-target-limits
                    client surface spec spec-analysis)
                   (when stale-spec
-                    (jetpacs-shell--gate-target-nodes
+                    (jetpacs-shell--gate-target-limits
                      client surface stale-spec stale-analysis))
                   (jetpacs-shell--gate-ids
                    spec stale-spec spec-analysis stale-analysis)

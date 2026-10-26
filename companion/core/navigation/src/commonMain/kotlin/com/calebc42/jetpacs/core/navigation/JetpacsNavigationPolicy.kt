@@ -42,7 +42,7 @@ fun reconcileJetpacsBackStack(
  *
  * If DESTINATION is already present lower in BACKSTACK (for example when a
  * cross-surface return arrow or primary-bar tab switches from
- * `app:jetpacs.files` back to `app:glasspane`), unwind to that existing
+ * `app:jetpacs.files` back to the app that handed off), unwind to that existing
  * entry rather than accumulating alternating duplicate surfaces.
  */
 fun pushJetpacsDestination(

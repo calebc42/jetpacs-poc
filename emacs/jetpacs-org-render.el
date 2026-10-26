@@ -1490,9 +1490,8 @@ acceptance; only the view refresh is deferred."
         (condition-case err
             (progn
               (org-encrypt-entry)
-              (ebp-org-cache-invalidate)
               (when buffer-file-name
-                (funcall ebp-org-file-save-function (current-buffer)))
+                (jetpacs-org-save-policy (current-buffer)))
               (jetpacs-buffer-defer-refresh (plist-get params :surface))
               (jetpacs-shell-notify "Encrypted entry" (plist-get params :surface))
               'accepted)
@@ -1616,8 +1615,7 @@ view-mode table and its Files seams are gone."
 (defun jetpacs-org-render-unload-function ()
   "Unload hygiene: deregister the skin and the verbs."
   (remove-hook 'jetpacs-reset-functions #'jetpacs-org-render-reset)
-  (setq jetpacs-render-buffer-functions
-        (assq-delete-all 'org-mode jetpacs-render-buffer-functions))
+  (jetpacs-render-buffer-unregister 'org-mode)
   (jetpacs-undefaction "jetpacs.org.checkbox")
   (jetpacs-undefaction "jetpacs.org.widen")
   (jetpacs-undefaction "jetpacs.org.narrow")

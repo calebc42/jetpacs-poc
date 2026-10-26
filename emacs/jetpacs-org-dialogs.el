@@ -719,8 +719,8 @@ non-TITLE keyword lands after an existing #+TITLE line."
 
 (defun jetpacs-org-dialogs--write-file-properties (buf fields)
   "Write the captured dialog FIELDS into BUF's file keywords, durably.
-FIELDS is the Save event's `:fields' plist.  Ends with a whole-cache
-invalidation and a save through `ebp-org-file-save-function'."
+FIELDS is the Save event's `:fields' plist.  Ends with a save through
+`jetpacs-org-save-policy', which invalidates the whole cache."
   (let* ((fget (lambda (k) (let ((v (plist-get fields k)))
                              (and (stringp v) v))))
          (tags (jetpacs-org-dialogs--field-strings
@@ -764,8 +764,7 @@ invalidation and a save through `ebp-org-file-save-function'."
        (goto-char (point-min))
        (when (re-search-forward "^[ \t]*#\\+CATEGORY:" nil t)
          (ignore-errors (org-element-at-point)))))
-    (ebp-org-cache-invalidate)
-    (funcall ebp-org-file-save-function buf)))
+    (jetpacs-org-save-policy buf)))
 
 (defun jetpacs-org-dialogs--show-file-properties (file params)
   "Show FILE's property editor in `jetpacs-org-dialogs-owner''s slot.
@@ -1204,9 +1203,9 @@ snackbar, the stale-tap ethic."
                 (when (and (eq (char-before beg) ?\s)
                            (memq (char-after beg) '(?\s ?\n nil)))
                   (delete-char -1))))
-             (ebp-org-cache-invalidate)
-             (when buffer-file-name
-               (funcall ebp-org-file-save-function buf)))))))))
+             (if buffer-file-name
+                 (jetpacs-org-save-policy buf)
+               (ebp-org-cache-invalidate)))))))))
 
 ;;;; The log-note dialog (the base docstring's promised follow-up)
 
@@ -1262,9 +1261,9 @@ Reads `ebp-org-toggle-todo-cancelled-note' (the JA-5e engine seam)."
 
 (defun jetpacs-org-dialogs--save-dirty-org-buffers (&optional save)
   "Save every modified Org file buffer through SAVE.
-SAVE is a function of the buffer, default `ebp-org-file-save-function'.
+SAVE is a function of the buffer, default `jetpacs-org-save-policy'.
 For an edit like refile that may dirty buffers the caller never sees."
-  (let ((save (or save ebp-org-file-save-function)))
+  (let ((save (or save #'jetpacs-org-save-policy)))
     (dolist (buffer (org-buffer-list 'files t))
       (when (buffer-modified-p buffer)
         (funcall save buffer)))))
@@ -1324,9 +1323,7 @@ and newline-flattened — a multi-line title would smuggle structure."
                      "[\n\r]+" " "
                      (jetpacs-scalar-text (string-trim title)))
                     "\n"))
-           ;; The seam the engine publishes for exactly this tail: apps
-           ;; rebind it for a synchronous save + index refresh.
-           (funcall ebp-org-file-save-function (current-buffer)))
+           (jetpacs-org-save-policy (current-buffer)))
          (jetpacs-org-dialogs--notify "Heading added" params))
        (jetpacs-org-dialogs--refresh params)))
    (plist-get params :surface)))

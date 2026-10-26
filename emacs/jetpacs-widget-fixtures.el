@@ -6,16 +6,20 @@
 ;;; Commentary:
 
 ;; Deterministic widget documents used to judge Jetpacs' generic Glance
-;; rendering against Grove's compact Capture and Agenda presentation.  They
-;; deliberately contain no Android-side Grove semantics: every tap remains an
+;; rendering against a compact Capture and Agenda presentation.  They
+;; deliberately contain no Android-side app semantics: every tap remains an
 ;; opaque EBP ActionDescriptor that an Emacs applet may register or replace.
+;; The documents reproduce the SPEC's `widget-surfaces.golden' witnesses
+;; byte for byte, so the action names inside them (`grove.capture',
+;; `grove.agenda.open') are the corpus's example vocabulary, not a
+;; dependency on any applet: nothing here requires or calls one.
 
 ;;; Code:
 
 (require 'jetpacs-widgets)
 
-(defun jetpacs-grove-capture-widget-fixture ()
-  "Return the deterministic Grove Capture visual-acceptance SurfaceSpec."
+(defun jetpacs-demo-capture-widget-fixture ()
+  "Return the deterministic demo Capture visual-acceptance SurfaceSpec."
   (jetpacs-widget-surface
    "Capture"
    (jetpacs-box
@@ -23,8 +27,8 @@
     :on-tap (jetpacs-action "grove.capture" :ttl-s 86400 :when-offline 'wake))
    :empty (jetpacs-text "Capture unavailable")))
 
-(defun jetpacs-grove-agenda-widget-fixture ()
-  "Return the deterministic Grove Agenda visual-acceptance SurfaceSpec."
+(defun jetpacs-demo-agenda-widget-fixture ()
+  "Return the deterministic demo Agenda visual-acceptance SurfaceSpec."
   (jetpacs-widget-surface
    "Agenda"
    (jetpacs-lazy-column

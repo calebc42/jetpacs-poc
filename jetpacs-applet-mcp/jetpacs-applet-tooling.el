@@ -2681,14 +2681,19 @@ An applet registered on entry is registered again on exit."
            (entry (jetpacs-applet-tooling-registry-snapshot))
            (base (progn (funcall unregister)
                         (jetpacs-applet-tooling-registry-snapshot)))
-           (mid (progn (funcall register)
-                       (jetpacs-applet-tooling-registry-snapshot)))
-           (post (progn (funcall unregister)
-                        (jetpacs-applet-tooling-registry-snapshot)))
            (was-registered (not (equal entry base)))
-           (leaks (jetpacs-applet-tooling-registry-diff base post))
-           (symmetric (and (null leaks) (not (equal base mid)))))
-      (when was-registered (funcall register))
+           mid post)
+      ;; An applet that was registered on entry is registered again on
+      ;; exit whatever the probe did: a register or unregister that
+      ;; signals must not strand the live runtime without it.
+      (unwind-protect
+          (setq mid (progn (funcall register)
+                           (jetpacs-applet-tooling-registry-snapshot))
+                post (progn (funcall unregister)
+                            (jetpacs-applet-tooling-registry-snapshot)))
+        (when was-registered (funcall register)))
+      (let* ((leaks (jetpacs-applet-tooling-registry-diff base post))
+             (symmetric (and (null leaks) (not (equal base mid)))))
       (jetpacs-applet-tooling--cap
        (concat
         (format "Jetpacs lifecycle symmetry: %s (%s / %s)\n"
@@ -2700,7 +2705,7 @@ An applet registered on entry is registered again on exit."
         (if leaks
             (concat "Left behind by unregister:\n" (string-join leaks "\n")
                     "\n")
-          (if symmetric "" "Register changed nothing.\n")))))))
+          (if symmetric "" "Register changed nothing.\n"))))))))
 
 (defun jetpacs-applet-tooling-load-recording-registrations (file)
   "Load FILE; return the registrations made while loading its own files.

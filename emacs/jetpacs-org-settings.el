@@ -207,7 +207,9 @@ answers nil.  Memoised under the `org-mode' namespace."
       (condition-case nil
           (ebp-org-with-file (_true file)
             (copy-sequence org-todo-keywords-1))
-        (error nil)))))
+        ;; Outside the roots, gone, or unreadable: no file-local
+        ;; keywords.  A bug in the visit still signals.
+        ((ebp-org-refused ebp-org-unresolved ebp-org-unavailable) nil)))))
 
 (defun jetpacs-org-settings-workflow-keywords (items)
   "Return the stable workflow keywords represented by Org ITEMS.

@@ -154,10 +154,9 @@ its verdict, the cache still drops once, and the error stays local."
         (should (= walks 2))))))
 
 (ert-deftest jetpacs-editor-org-save-policy-is-the-named-seam ()
-  "The editor's policy name is the leaf's policy, and the leaf knows
-nothing of the editor: the Org modules require it without a cycle."
-  (should (eq (indirect-function 'jetpacs-editor-org-save-policy)
-              (indirect-function 'jetpacs-org-save-policy)))
+  "The policy has one name, the leaf's, and the leaf knows nothing of
+the editor: the Org modules require it without a cycle."
+  (should-not (fboundp 'jetpacs-editor-org-save-policy))
   (with-temp-buffer
     (insert-file-contents (locate-library "jetpacs-org-save.el" t))
     (should-not (search-forward "jetpacs-editor-org" nil t))))

@@ -379,11 +379,32 @@ most 16 elements.  MOTION names a motion in the effective scope."
   (cl-loop for (key value) on map by #'cddr
            collect (cons (substring (symbol-name key) 1) value)))
 
-(defun jetpacs-design--validate-local-references (tokens styles motions)
-  "Reject unresolved or cyclic references within local scope maps."
+(defun jetpacs-design--declared-names (map)
+  "Return the identifier names MAP declares, as strings.
+MAP is a design identifier map in any of the shapes the authoring layer
+handles: a profile's alist of (NAME . VALUE), a built scope's keyword
+plist, or a decoded hash table."
+  (cond
+   ((hash-table-p map) (hash-table-keys map))
+   ((and (consp map) (consp (car map))) (mapcar #'car map))
+   (t (mapcar #'car (jetpacs-design--plist-pairs map)))))
+
+(defun jetpacs-design--validate-local-references (tokens styles motions
+                                                        &optional inherit)
+  "Reject unresolved or cyclic references within local scope maps.
+INHERIT, when given, is the enclosing scope's declarations: a plist whose
+`:tokens' and `:motions' are identifier maps (a profile from
+`jetpacs-design-active-profile' qualifies).  A reference from this scope
+to a name declared there resolves without being re-declared here, as the
+receiver resolves a nested scope over its parent's merged maps; the
+parent's own chains were checked when it was built."
   (let ((token-pairs (jetpacs-design--plist-pairs tokens))
         (style-pairs (jetpacs-design--plist-pairs styles))
         (motion-pairs (jetpacs-design--plist-pairs motions))
+        (inherited-tokens (jetpacs-design--declared-names
+                           (plist-get inherit :tokens)))
+        (inherited-motions (jetpacs-design--declared-names
+                            (plist-get inherit :motions)))
         (resolved (make-hash-table :test #'equal))
         (resolving (make-hash-table :test #'equal)))
     (cl-labels
@@ -393,13 +414,16 @@ most 16 elements.  MOTION names a motion in the effective scope."
             (when (gethash name resolving)
               (error "jetpacs-design: cyclic token reference involving %s" name))
             (let ((entry (assoc name token-pairs)))
-              (unless entry
-                (error "jetpacs-design: unresolved token %s" name))
-              (puthash name t resolving)
-              (when (equal (plist-get (cdr entry) :kind) "token")
-                (resolve-token (plist-get (cdr entry) :value)))
-              (remhash name resolving)
-              (puthash name t resolved))))
+              (cond
+               (entry
+                (puthash name t resolving)
+                (when (equal (plist-get (cdr entry) :kind) "token")
+                  (resolve-token (plist-get (cdr entry) :value)))
+                (remhash name resolving)
+                (puthash name t resolved))
+               ((member name inherited-tokens)
+                (puthash name t resolved))
+               (t (error "jetpacs-design: unresolved token %s" name))))))
          (check-properties
           (properties)
           (dolist (entry (jetpacs-design--plist-pairs properties))
@@ -407,7 +431,9 @@ most 16 elements.  MOTION names a motion in the effective scope."
               (resolve-token (plist-get (cdr entry) :value)))))
          (check-motion
           (name)
-          (when (and name (not (assoc name motion-pairs)))
+          (when (and name
+                     (not (assoc name motion-pairs))
+                     (not (member name inherited-motions)))
             (error "jetpacs-design: unresolved motion %s" name))))
       (dolist (entry token-pairs) (resolve-token (car entry)))
       (dolist (entry style-pairs)
@@ -437,13 +463,21 @@ these, so chrome follows the profile instead of the ambient Emacs theme."
        checked))))
 
 (cl-defun jetpacs-design-scope
-    (tokens styles children &key motions component-styles theme-roles)
+    (tokens styles children &key motions component-styles theme-roles inherit)
   "Build a design scope from identifier alists TOKENS, STYLES, and MOTIONS.
 CHILDREN is a proper list of ordinary EBP nodes.  Identifier maps are sorted
 lexically and all locally declared token and motion references are checked.
 COMPONENT-STYLES is an optional list of closed component slot bindings.
 THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
-`jetpacs-design--theme-roles'."
+`jetpacs-design--theme-roles'.
+
+INHERIT names the enclosing scope's declarations for the reference check:
+a plist whose `:tokens' and `:motions' are identifier maps, such as the
+profile this scope will be nested under.  A style or theme role here may
+then name a token or motion that scope declares without re-declaring it,
+which is how the receiver resolves a nested scope (over its parent's
+merged maps).  INHERIT is consulted only; nothing from it rides the wire,
+so a screen-local scope costs its own styles and no copied tokens."
   (let ((role-map (and theme-roles (jetpacs-design--theme-roles theme-roles)))
         (token-map
          (jetpacs-design--sorted-map
@@ -475,12 +509,16 @@ THEME-ROLES optionally re-declares EBP theme roles for the subtree, see
               (error "jetpacs-design: motion %s must come from a motion builder"
                      name))
             value))))
-    (jetpacs-design--validate-local-references token-map style-map motion-map)
+    (jetpacs-design--validate-local-references token-map style-map motion-map
+                                               inherit)
     (dolist (pair (jetpacs-design--plist-pairs role-map))
       (when (equal (plist-get (cdr pair) :kind) "token")
-        (unless (plist-get token-map (intern (concat ":" (plist-get (cdr pair) :value))))
-          (error "jetpacs-design: theme role %s references unresolved token %s"
-                 (car pair) (plist-get (cdr pair) :value)))))
+        (let ((name (plist-get (cdr pair) :value)))
+          (unless (or (plist-get token-map (intern (concat ":" name)))
+                      (member name (jetpacs-design--declared-names
+                                    (plist-get inherit :tokens))))
+            (error "jetpacs-design: theme role %s references unresolved token %s"
+                   (car pair) name)))))
     ;; `tokens' and `styles' are required wire members.  A nested scope that
     ;; only rebinds component slots declares neither, so an empty map must
     ;; survive `jetpacs-make-node's nil-drop as a literal `{}'.

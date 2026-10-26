@@ -16,6 +16,7 @@
 (require 'subr-x)
 (require 'jetpacs-components-vocabulary)
 (require 'jetpacs-widgets)
+(require 'jetpacs-surfaces)
 
 ;; The session layer answers what the live profile advertises.  It is a soft
 ;; dependency: this package builds nodes and must stay loadable without a
@@ -137,22 +138,17 @@ left for `jetpacs-component-list-item' to refuse."
       (car trailing)))
    (t trailing)))
 
-(defun jetpacs-components--member-p (type member target)
-  "Non-nil unless the live TARGET profile omits node TYPE's MEMBER.
-Offline, or without the foundation's welcome reader, the richer form."
-  (or (not (fboundp 'jetpacs-node-member-advertised-p))
-      (jetpacs-node-member-advertised-p type member target)))
-
 (cl-defun jetpacs-components-list-item
     (title &key overline subtitle title-max-lines subtitle-max-lines
            leading trailing on-tap on-long-tap swipe-start swipe-end
-           selected enabled key padding (target :app))
+           selected enabled key padding target)
   "Return the best available list row for TITLE on the live profile.
 
-TARGET is the render target the row is bound for and defaults to `:app';
-a widget or notification surface advertises a different node set, so a
-caller building for one must say so or it would emit a node that target
-cannot draw.
+TARGET is the render target the row is bound for; it defaults to the
+target being built (`jetpacs-effective-target'), so a row built inside
+a widget or notification builder takes that surface's node set without
+being told.  A caller building a row outside any builder for a target
+other than the app passes it explicitly.
 
 The `jetpacs.list_item' node is an optional receiver node, so a sender
 MUST ask before emitting it (SPEC 16.2).  When it is advertised this is
@@ -164,12 +160,10 @@ the list composed into a `jetpacs-row' here -- so a host row that ends
 in a badge and a chevron builds on both kinds of receiver.  KEY and
 PADDING ride the result as universal attributes, so a caller places the
 row in a `lazy_column' the same way either way."
-  (let* ((target (or target :app))
+  (let* ((target (jetpacs-effective-target target))
          ;; The manifest names its targets as plain symbols; callers name
          ;; them as EBP keywords, as every other Jetpacs seam does.
-         (manifest-target (if (keywordp target)
-                              (intern (substring (symbol-name target) 1))
-                            target))
+         (manifest-target (intern (substring (symbol-name target) 1)))
          (row
           (if (and
                ;; The manifest is the first gate and holds offline: this node
@@ -179,7 +173,6 @@ row in a `lazy_column' the same way either way."
                (member "jetpacs.list_item"
                        (alist-get manifest-target
                                   jetpacs-components-target-node-types))
-               (fboundp 'jetpacs-node-advertised-p)
                (jetpacs-node-advertised-p "jetpacs.list_item" target))
              (jetpacs-component-list-item
               title :overline overline :subtitle subtitle
@@ -194,9 +187,9 @@ row in a `lazy_column' the same way either way."
             ;; Members the target cannot draw are dropped: a widget's card
             ;; has no variant and its column no weight, and the receiver
             ;; refuses the whole surface for one unadvertised member.
-            :variant (and (jetpacs-components--member-p "card" "variant" target)
+            :variant (and (jetpacs-node-member-advertised-p "card" "variant" target)
                           "outlined")
-            :weighted (jetpacs-components--member-p "column" "weight" target)
+            :weighted (jetpacs-node-member-advertised-p "column" "weight" target)
             :leading leading
             :overline overline
             :title (jetpacs-text title :style "body"

@@ -3,8 +3,8 @@
 #
 # (a) Foundation Elisp names no downstream app: no `(require 'APP' and no
 #     APP-prefixed symbol, word-anchored so a foundation name that merely
-#     contains one (`jetpacs-grove-capture-widget-fixture') does not trip,
-#     plus the case-insensitive Glasspane check this replaced.
+#     contains one does not trip, plus the case-insensitive Glasspane
+#     check this replaced.
 # (b) Every library the foundation requires is Jetpacs, EBP or built into
 #     Emacs: in an `emacs -Q' with no added load path, each required feature
 #     not prefixed `jetpacs'/`ebp' must be locatable.  A soft require
@@ -18,7 +18,7 @@ set -eu
 cd "$(dirname "$0")/.."
 dir=${JETPACS_LAYERING_DIR:-emacs}
 allowlist=$(pwd)/tools/third-party-allowlist.txt
-apps='glasspane|bloom|orgzly|harp'
+apps='glasspane|bloom|grove|orgzly|harp'
 status=0
 
 if grep -n -E "\(require '($apps)([[:space:])]|$)" "$dir"/*.el; then

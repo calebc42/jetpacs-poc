@@ -1811,9 +1811,7 @@ leave the Files surface; nil preserves Files' native offline view switching."
                ;; visited on an unrelated surface handoff.
                (setq jetpacs-files--dir
                      (file-name-as-directory (file-name-directory true)))
-               (let ((jetpacs-chrome--stage-only t))
-                 (jetpacs-chrome-push-screen
-                  surface browser-id browser-builder)))
+               (jetpacs-chrome-stage-screen surface browser-id browser-builder))
              (let ((reason (jetpacs-files--edit-open
                             true surface mark-pos return-action)))
                (when (and browser-id (eq reason 'not-a-file))
@@ -1828,9 +1826,6 @@ leave the Files surface; nil preserves Files' native offline view switching."
 
 (defconst jetpacs-files-document-return-screen "files-return"
   "Guest browser screen staged below a cross-surface document handoff.")
-
-(defconst jetpacs-files-directory-return-screen "files-resources"
-  "Guest browser screen staged for a cross-surface directory handoff.")
 
 (defconst jetpacs-files-return-verb "jetpacs.files.return"
   "Built-in cross-surface Back verb for Files handoffs.")

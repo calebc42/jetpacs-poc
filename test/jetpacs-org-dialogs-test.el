@@ -614,19 +614,19 @@ and buffers are settled afterward."
           (should (equal (cdr refiled-at) "Parent")))))))
 
 (ert-deftest jetpacs-org-dialogs-refile-saves-through-the-policy ()
-  "Every buffer refile dirtied is saved by `ebp-org-file-save-function',
+  "Every buffer refile dirtied is saved by `jetpacs-org-save-policy',
 never by Org's save-all."
   (jetpacs-org-dialogs-test--with-env
     (jetpacs-org-dialogs-test--with-file f
         jetpacs-org-dialogs-test--sheet-fixture
       (let* ((buf (jetpacs-org-dialogs-test--buffer f))
              (ref (jetpacs-org-dialogs-test--ref buf "Parent"))
-             (saved nil)
-             (ebp-org-file-save-function
-              (lambda (b)
-                (push b saved)
-                (with-current-buffer b (set-buffer-modified-p nil)))))
-        (cl-letf (((symbol-function 'jetpacs-flow-begin)
+             (saved nil))
+        (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                   (lambda (b)
+                     (push b saved)
+                     (with-current-buffer b (set-buffer-modified-p nil))))
+                  ((symbol-function 'jetpacs-flow-begin)
                    (lambda (_surface fn) (funcall fn)))
                   ((symbol-function 'jetpacs-dialog-can-bridge-p)
                    (lambda () t))
@@ -970,15 +970,15 @@ armed case defers to the flow and answers accepted."
 
 (ert-deftest jetpacs-org-dialogs-add-heading-flow-inserts-and-saves ()
   "The bridged prompt appends `* TITLE' at wide point-max (newlines
-flattened) and runs the engine's file-save seam; a blank or quit
-answer is a loud no-op."
+flattened) and saves through the policy; a blank or quit answer is a
+loud no-op."
   (jetpacs-org-dialogs-test--with-env
     (jetpacs-org-dialogs-test--with-file f "* Existing\nbody"
       (let* ((buf (jetpacs-org-dialogs-test--buffer f))
-             (saved nil)
-             (ebp-org-file-save-function
-              (lambda (b) (setq saved (buffer-name b)))))
-        (cl-letf (((symbol-function 'jetpacs-dialog-can-bridge-p)
+             (saved nil))
+        (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                   (lambda (b) (setq saved (buffer-name b))))
+                  ((symbol-function 'jetpacs-dialog-can-bridge-p)
                    (lambda () t))
                   ((symbol-function 'read-string)
                    (lambda (&rest _) "  Captured\non the go  ")))

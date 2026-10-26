@@ -41,15 +41,12 @@
 (require 'jetpacs-dialog)
 (require 'jetpacs-org-dialogs)
 (require 'jetpacs-org-save)
+(require 'jetpacs-dates)
 
 (defconst jetpacs-org-heading-verbs
   '(todo-set todo-cycle schedule priority tags refile add-note delete
     duplicate prop-set prop-add clock-in)
   "The heading verbs `jetpacs-org-heading-verb' builds handlers for.")
-
-(defconst jetpacs-org-heading-verbs--refusal
-  "This needs the Companion dialog bridge"
-  "What a prompting verb says when no dialog can reach the device.")
 
 ;;;; Shared steps
 
@@ -85,7 +82,7 @@ CONFIG's `:leave' function decides; without one the surface repushes.
 Runs outside the dispatch extent."
   (if-let* ((leave (plist-get config :leave)))
       (funcall leave params)
-    (ignore-errors (jetpacs-shell-push (plist-get params :surface)))))
+    (jetpacs-shell-push-caught (plist-get params :surface))))
 
 (defun jetpacs-org-heading-verbs--flow (config args params fn)
   "Answer for a prompting verb and run FN behind the dialog guard.
@@ -98,9 +95,7 @@ can reach PARAMS' device surface."
    (t
     (jetpacs-flow-continue
      (lambda ()
-       (jetpacs-dialog-with-prompting
-        fn (plist-get params :surface)
-        jetpacs-org-heading-verbs--refusal)))
+       (jetpacs-dialog-with-prompting fn (plist-get params :surface))))
     'accepted)))
 
 ;;;; The verbs
@@ -140,11 +135,16 @@ every verb."
                   (and c (not (eq c :json-false)))))
          (when (plist-get args :when))
          (value (plist-get args :value))
+         ;; `:when' is relative to the DEVICE's today (SPEC 20.1.2), or
+         ;; an ISO day; `:value' an ISO day.  Anything else is refused
+         ;; rather than handed to `org-read-date-analyze', which would
+         ;; normalize junk into some date.
          (date (or (and (stringp when) (not (string-empty-p when))
                         (or (jetpacs-org-relative-date
-                             (format-time-string "%Y-%m-%d") when)
-                            when))
-                   (and (stringp value) (not (string-empty-p value)) value))))
+                             (jetpacs-dates-today (jetpacs-device-time-zone))
+                             when)
+                            (and (jetpacs-dates-valid-p when) when)))
+                   (and (stringp value) (jetpacs-dates-valid-p value) value))))
     (cond
      (clear
       (jetpacs-org-heading-verbs--done
@@ -239,7 +239,7 @@ CONFIG, ARGS and PARAMS as for every verb."
                          (jetpacs-scalar-text note))))
                      'accepted)
              (jetpacs-shell-notify "Note added" surface)))
-         (ignore-errors (jetpacs-shell-push surface)))))))
+         (jetpacs-shell-push-caught surface))))))
 
 (defun jetpacs-org-heading-verbs--delete (config args params)
   "Delete the subtree outright, then leave the screen.
@@ -264,8 +264,11 @@ CONFIG, ARGS and PARAMS as for every verb."
 (defun jetpacs-org-heading-verbs--property-value (raw)
   "The property string a row input's injected RAW value stands for."
   (cond
+   ;; A switch row injects a JSON boolean; an absent value, like an
+   ;; emptied input, deletes the property.
    ((eq raw t) "t")
-   ((memq raw '(nil :json-false)) "nil")
+   ((eq raw :json-false) "nil")
+   ((null raw) "")
    ((vectorp raw) (if (> (length raw) 0) (format "%s" (aref raw 0)) ""))
    ((proper-list-p raw) (if raw (format "%s" (car raw)) ""))
    ((stringp raw) (string-trim raw))
@@ -309,7 +312,7 @@ CONFIG, ARGS and PARAMS as for every verb."
                'accepted)
            (jetpacs-shell-notify
             (format "Added %s — fill in its value" (upcase name)) surface)))
-         (ignore-errors (jetpacs-shell-push surface)))))))
+         (jetpacs-shell-push-caught surface))))))
 
 (defun jetpacs-org-heading-verbs--clock-in (config args params)
   "Clock in at the heading.  Nothing is written, so nothing is saved.

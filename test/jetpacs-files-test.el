@@ -815,7 +815,12 @@ private builder or path state."
       (write-region "* Note\n" nil file nil 'silent)
       (cl-letf (((symbol-function 'jetpacs-flow-continue)
                  (lambda (fn) (funcall fn)))
+                ;; A directory is presented (push); below a document the
+                ;; browser is only staged.  Both record the same row.
                 ((symbol-function 'jetpacs-chrome-push-screen)
+                 (lambda (surface id builder)
+                   (push (list 'browser surface id builder) calls)))
+                ((symbol-function 'jetpacs-chrome-stage-screen)
                  (lambda (surface id builder)
                    (push (list 'browser surface id builder) calls)))
                 ((symbol-function 'jetpacs-files--edit-open)

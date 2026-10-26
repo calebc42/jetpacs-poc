@@ -53,7 +53,14 @@ Companion's resulting 1301 conclusion finds nothing to clear."
     (remhash owner jetpacs-dialog--slots)
     (when-let* ((client (jetpacs-client))
                 (request-id (plist-get slot :request-id)))
-      (ignore-errors (ebp-client-abandon client request-id)))))
+      (condition-case err
+          (ebp-client-abandon client request-id)
+        (error
+         ;; The slot is already cleared; a request the client could not
+         ;; abandon (it is gone, or the request already concluded) is
+         ;; worth a line, not a signal.
+         (message "jetpacs-dialog-slot: abandon for %s failed: %s"
+                  owner (jetpacs-error-label err)))))))
 
 (cl-defun jetpacs-dialog-slot-show (id spec &key owner params on-submit
                                        on-conclude style)
