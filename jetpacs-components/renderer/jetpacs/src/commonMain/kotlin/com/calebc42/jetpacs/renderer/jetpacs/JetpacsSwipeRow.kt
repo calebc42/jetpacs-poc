@@ -27,6 +27,23 @@ import com.calebc42.ebp.renderer.compose.RevealSwipeCellWidth
 import com.calebc42.ebp.renderer.compose.RevealSwipeDirection
 import com.calebc42.ebp.renderer.compose.RevealSwipeRow
 import com.calebc42.ebp.renderer.compose.RevealSwipeSide
+import com.calebc42.ebp.renderer.compose.SwipePopupAnchor
+import com.calebc42.ebp.renderer.compose.SwipePopupRow
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.style.MutableStyleState
+import androidx.compose.foundation.style.styleable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -53,6 +70,8 @@ internal data class JetpacsSwipeAction(
 internal data class JetpacsSwipeSide(
     val actions: List<JetpacsSwipeAction>,
     val behavior: RevealSwipeSide,
+    /** Amendment #207: `presentation: "popup"` opens a floating row instead of revealing. */
+    val popup: Boolean = false,
 )
 
 /**
@@ -84,6 +103,7 @@ internal fun jetpacsSwipeSide(raw: JsonObject?): JetpacsSwipeSide? {
             commitFirstOnDeepSwipe = rich != null && raw.flag("commit"),
             legacyCommitOnRelease = rich == null,
         ),
+        popup = rich != null && raw.text("presentation") == "popup",
     )
 }
 
@@ -110,6 +130,13 @@ internal fun JetpacsSwipeRow(
     val end = jetpacsSwipeSide(swipeEnd)
     if (start == null && end == null) {
         androidx.compose.foundation.layout.Box { foreground(false) {} }
+        return
+    }
+    // Amendment #207: a popup side opens a floating action row beside the
+    // gesture and never displaces the row. The first authored popup side
+    // decides for the whole row; a mixed row is a popup row.
+    if (start?.popup == true || end?.popup == true) {
+        JetpacsSwipePopupRow(identity, start, end, context, foreground)
         return
     }
     val haptic = LocalHapticFeedback.current
@@ -197,3 +224,109 @@ private fun JsonObject.text(name: String): String =
 
 private fun JsonObject.flag(name: String): Boolean =
     (this[name] as? JsonPrimitive)?.takeIf { !it.isString }?.booleanOrNull ?: false
+
+
+/**
+ * Amendment #207: the popup presentation. A horizontal gesture past the
+ * reveal threshold opens the side's actions as a floating row of tonal icon
+ * buttons at the gesture's end, above the touch and never above the row —
+ * Revived's NotePopup. The row itself never moves.
+ */
+@Composable
+private fun JetpacsSwipePopupRow(
+    identity: Any,
+    start: JetpacsSwipeSide?,
+    end: JetpacsSwipeSide?,
+    context: ComposeNodeRenderContext,
+    foreground: @Composable BoxScope.(isOpen: Boolean, close: () -> Unit) -> Unit,
+) {
+    var anchor by remember(identity) { mutableStateOf<SwipePopupAnchor?>(null) }
+    SwipePopupRow(
+        hasStart = start != null,
+        hasEnd = end != null,
+        onOpen = { anchor = it },
+    ) {
+        foreground(false) {}
+        anchor?.let { open ->
+            val side = if (open.direction == RevealSwipeDirection.Start) start else end
+            if (side != null) {
+                JetpacsSwipePopup(
+                    side = side,
+                    offset = IntOffset(open.x, open.y),
+                    onPick = { action ->
+                        anchor = null
+                        context.swipeAction(action.descriptor, open.direction)
+                    },
+                    onDismiss = { anchor = null },
+                )
+            }
+        }
+    }
+}
+
+/** The floating action row: one tonal icon button per action, in the popup slots. */
+@Composable
+private fun JetpacsSwipePopup(
+    side: JetpacsSwipeSide,
+    offset: IntOffset,
+    onPick: (JetpacsSwipeAction) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val styleState = remember { MutableStyleState(null) }
+    val colors = JetpacsTheme.colors
+    Popup(
+        offset = offset,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(
+            focusable = true,
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+        ),
+    ) {
+        Row(
+            modifier = Modifier.styleable(
+                styleState,
+                JetpacsTheme.styles.menuPopup,
+                designComponentStyle(DesignComponentStyleSlot.SwipePopup),
+            ),
+        ) {
+            side.actions.forEach { action ->
+                val background = resolvedDesignColor(
+                    DesignComponentStyleSlot.SwipePopupButton,
+                    DesignProperty.BackgroundColor,
+                ) ?: colors.selectedSurface
+                val content = resolvedDesignColor(
+                    DesignComponentStyleSlot.SwipePopupButton,
+                    DesignProperty.ContentColor,
+                ) ?: colors.content
+                Column(
+                    modifier = Modifier
+                        .padding(SwipePopupButtonGap)
+                        .size(SwipePopupButtonSize)
+                        .clip(RoundedCornerShape(SwipePopupButtonSize / 2))
+                        .background(background)
+                        .clickable { onPick(action) }
+                        .semantics { contentDescription = action.label },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    val icon = action.icon
+                    if (icon != null) {
+                        DesignGlyph(icon, content, SwipePopupIconSize)
+                    } else {
+                        BasicText(
+                            action.label,
+                            style = JetpacsTheme.typography.choice.copy(color = content),
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Material 3's filled tonal icon button: a 40dp disc with a 24dp glyph, 8dp apart. */
+private val SwipePopupButtonSize = 40.dp
+private val SwipePopupIconSize = 24.dp
+private val SwipePopupButtonGap = 4.dp

@@ -33,7 +33,7 @@
     "card.filled" "card.elevated" "card.outlined"
     "list-item.container" "list-item.overline" "list-item.title"
     "list-item.subtitle"
-    "swipe.cell" "swipe.label"
+    "swipe.cell" "swipe.label" "swipe.popup" "swipe.popup-button"
     "icon-button.container"
     "badge.container" "badge.label"
     "empty-state.container" "empty-state.title" "empty-state.caption"
@@ -616,13 +616,14 @@ default) plus RESERVE-EXTRA dp, at most RESERVE-MAX dp."
                      :reserve_extra reserve-extra :reserve_max reserve-max))
 
 (cl-defun jetpacs-design-pressable
-    (styles on-tap children &key enabled selected toggled)
+    (styles on-tap children &key enabled selected toggled swipe-start swipe-end)
   "Build one accessible pressable face with STYLES and ON-TAP.
 CHILDREN must contain one to 16 passive presentation nodes.  ENABLED,
 SELECTED, and TOGGLED are t or `:json-false' when authored; transient hover,
 focus, and press state stays local to the receiver.  STYLES may be a
 `jetpacs-ref' (SPEC 13.8.3): the ordered identifiers then come from the
-surface data document, which is how a template row varies its face."
+surface data document, which is how a template row varies its face.
+SWIPE-START and SWIPE-END are swipe sides from `jetpacs-swipe' (SPEC 17.3)."
   (jetpacs-check-descriptor on-tap ":on-tap")
   (unless (and (proper-list-p children) (<= 1 (length children) 16))
     (error "jetpacs-design: pressable children must contain one to 16 nodes"))
@@ -630,6 +631,8 @@ surface data document, which is how a template row varies its face."
                   (,selected . "selected")
                   (,toggled . "toggled")))
     (when (car pair) (jetpacs-check-bool (car pair) (cdr pair))))
+  (when swipe-start (jetpacs--check-swipe swipe-start ":swipe-start"))
+  (when swipe-end (jetpacs--check-swipe swipe-end ":swipe-end"))
   (jetpacs-make-node
    "jetpacs.pressable"
    :styles (if (jetpacs-ref-p styles) styles
@@ -638,7 +641,9 @@ surface data document, which is how a template row varies its face."
    :children (jetpacs-design--children children 16 "pressable children")
    :enabled enabled
    :selected selected
-   :toggled toggled))
+   :toggled toggled
+   :swipe_start swipe-start
+   :swipe_end swipe-end))
 
 (provide 'jetpacs-design)
 ;;; jetpacs-design.el ends here

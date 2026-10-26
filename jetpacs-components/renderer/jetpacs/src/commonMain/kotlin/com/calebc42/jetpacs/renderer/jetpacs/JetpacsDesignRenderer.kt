@@ -266,6 +266,14 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
             (computed.baseOnly().resolve().properties[DesignProperty.CenterVertically]
                 as? DesignValue.BooleanValue)?.value == true
         }
+        // SPEC 17.3 (#207): a pressable row may carry swipe sides — revealed
+        // beneath it, or shown as a popup beside the gesture — like a list item.
+        JetpacsSwipeRow(
+            identity = context.path,
+            swipeStart = p[JetpacsPressableMembers.SwipeStart],
+            swipeEnd = p[JetpacsPressableMembers.SwipeEnd],
+            context = context,
+        ) { _, _ ->
         Row(
             verticalAlignment = if (centered) Alignment.CenterVertically else Alignment.Top,
             modifier = modifier
@@ -307,6 +315,7 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
                     context.renderScopedChild(child, index)
                 }
             }
+        }
         }
     }
 }

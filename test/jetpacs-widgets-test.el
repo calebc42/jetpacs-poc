@@ -242,6 +242,19 @@
                               :swipe-end (jetpacs-swipe "Delete" :icon "delete"
                                           :color "error"
                                           :on-trigger (jetpacs-action "demo.delete"))))
+      (chk "109"
+           (jetpacs-card
+            (jetpacs-text "Fling for a popup")
+            :swipe-start
+            (jetpacs-swipe
+             (list
+              (jetpacs-swipe-action "Schedule" :icon "today"
+                                    :on-trigger (jetpacs-action "demo.schedule"))
+              (jetpacs-swipe-action "State" :icon "flag"
+                                    :on-trigger (jetpacs-action "demo.state")))
+             :presentation "popup")))
+      (should-error (jetpacs-swipe (list (jetpacs-swipe-action "A" :on-trigger (jetpacs-action "demo.a")))
+                                   :presentation "popup" :commit t))
       (chk "105"
            (jetpacs-card
             (jetpacs-text "Reveal before acting")

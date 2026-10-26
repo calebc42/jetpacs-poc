@@ -1303,6 +1303,8 @@ private data class SwipeChromeAction(
 private data class SwipeChromeSide(
     val actions: List<SwipeChromeAction>,
     val behavior: RevealSwipeSide,
+    /** Amendment #207: `presentation: "popup"` opens a floating row instead of revealing. */
+    val popup: Boolean = false,
 )
 
 private fun swipeChromeSide(raw: JsonObject?): SwipeChromeSide? {
@@ -1324,6 +1326,7 @@ private fun swipeChromeSide(raw: JsonObject?): SwipeChromeSide? {
     }
     if (actions.isEmpty()) return null
     return SwipeChromeSide(
+        popup = rich != null && raw.stringOr("presentation") == "popup",
         actions = actions,
         behavior = RevealSwipeSide(
             actionCount = actions.size.coerceAtMost(4),
@@ -1394,6 +1397,61 @@ internal fun SwipeActionBox(
 ) {
     val start = swipeChromeSide(swipeStart)
     val end = swipeChromeSide(swipeEnd)
+    // Amendment #207: a popup side opens a floating row of tonal icon
+    // buttons beside the gesture; the item never moves.
+    if (start?.popup == true || end?.popup == true) {
+        var anchor by remember(ctx.path) {
+            androidx.compose.runtime.mutableStateOf<com.calebc42.ebp.renderer.compose.SwipePopupAnchor?>(null)
+        }
+        com.calebc42.ebp.renderer.compose.SwipePopupRow(
+            hasStart = start != null,
+            hasEnd = end != null,
+            onOpen = { anchor = it },
+        ) {
+            content(false) {}
+            anchor?.let { open ->
+                val side = if (open.direction == RevealSwipeDirection.Start) start else end
+                if (side != null) {
+                    androidx.compose.ui.window.Popup(
+                        offset = androidx.compose.ui.unit.IntOffset(open.x, open.y),
+                        onDismissRequest = { anchor = null },
+                        properties = androidx.compose.ui.window.PopupProperties(
+                            focusable = true,
+                            dismissOnBackPress = true,
+                            dismissOnClickOutside = true,
+                        ),
+                    ) {
+                        androidx.compose.material3.Surface(
+                            shape = MaterialTheme.shapes.medium,
+                            tonalElevation = 3.dp,
+                            shadowElevation = 6.dp,
+                        ) {
+                            Row(Modifier.padding(4.dp)) {
+                                side.actions.forEach { action ->
+                                    androidx.compose.material3.FilledTonalIconButton(
+                                        onClick = {
+                                            anchor = null
+                                            ctx.actionInjecting(action.descriptor, buildJsonObject {
+                                                put("direction", open.direction.name.lowercase())
+                                            })
+                                        },
+                                    ) {
+                                        val icon = action.icon
+                                        if (icon != null) {
+                                            Icon(IconMap.get(icon), contentDescription = action.label)
+                                        } else {
+                                            Text(action.label, maxLines = 1)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return
+    }
     val haptic = LocalHapticFeedback.current
     RevealSwipeRow(
         identity = ctx.path,

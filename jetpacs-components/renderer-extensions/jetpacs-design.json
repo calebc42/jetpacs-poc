@@ -200,6 +200,8 @@
         "list-item.subtitle",
         "swipe.cell",
         "swipe.label",
+        "swipe.popup",
+        "swipe.popup-button",
         "icon-button.container",
         "badge.container",
         "badge.label",
@@ -426,6 +428,14 @@
         },
         "toggled": {
           "type": "boolean"
+        },
+        "swipe_start": {
+          "type": "swipe-side",
+          "description": "Actions revealed, or shown as a popup, by a swipe toward the start edge (SPEC 17.3)."
+        },
+        "swipe_end": {
+          "type": "swipe-side",
+          "description": "Actions revealed, or shown as a popup, by a swipe toward the end edge (SPEC 17.3)."
         }
       }
     },

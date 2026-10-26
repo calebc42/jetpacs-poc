@@ -41,9 +41,11 @@ object JetpacsPressableMembers : NodeMemberSet("jetpacs.pressable") {
     val Styles: ArrayMember = ArrayMember("styles", required = true, tag = "array")
     val Enabled: BooleanMember = BooleanMember("enabled", required = false)
     val Selected: BooleanMember = BooleanMember("selected", required = false)
+    val SwipeEnd: ObjectMember = ObjectMember("swipe_end", required = false, tag = "swipe-object")
+    val SwipeStart: ObjectMember = ObjectMember("swipe_start", required = false, tag = "swipe-object")
     val Toggled: BooleanMember = BooleanMember("toggled", required = false)
     override val required: List<NodeMember<*>> = listOf(Children, OnTap, Styles)
-    override val optional: List<NodeMember<*>> = listOf(Enabled, Selected, Toggled)
+    override val optional: List<NodeMember<*>> = listOf(Enabled, Selected, SwipeEnd, SwipeStart, Toggled)
 }
 
 /** Typed members of the `jetpacs.glyph` node. */

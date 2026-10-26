@@ -301,6 +301,8 @@
     ("list-item.subtitle" . ("typography.supporting" "base.muted"))
     ("swipe.cell" . ("base.tonal"))
     ("swipe.label" . ("typography.caption"))
+    ("swipe.popup" . ("base.popup"))
+    ("swipe.popup-button" . ("base.tonal"))
     ("button.filled" . ("base.interactive" "base.action"))
     ("button.tonal" . ("base.interactive" "base.tonal"))
     ("button.elevated" . ("base.interactive" "base.tonal"))

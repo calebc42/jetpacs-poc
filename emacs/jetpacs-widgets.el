@@ -502,13 +502,15 @@ forwarded to the context-less descriptor validator for reminder reuse."
   (if (plist-member v :actions)
       (progn
         (jetpacs--check-obj
-         v '(:actions :commit) what
+         v '(:actions :commit :presentation) what
          (lambda (key value)
            (pcase key
              (:actions
               (unless (vectorp value)
                 (error "jetpacs: %s :actions must be an array (SPEC 17.3)" what)))
-             (:commit (jetpacs-check-bool value ":commit")))))
+             (:commit (jetpacs-check-bool value ":commit"))
+             (:presentation
+              (jetpacs-check-enum value '("reveal" "popup") ":presentation")))))
         (let* ((actions (plist-get v :actions))
                (count (length actions))
                labels)
@@ -523,7 +525,10 @@ forwarded to the context-less descriptor validator for reminder reuse."
           (unless (= count (length (delete-dups (copy-sequence labels))))
             (error "jetpacs: %s action labels must be distinct (SPEC 17.3)" what))
           (when (and (eq (plist-get v :commit) t) (> count 2))
-            (error "jetpacs: %s :commit supports at most two actions (SPEC 17.3)" what))))
+            (error "jetpacs: %s :commit supports at most two actions (SPEC 17.3)" what))
+          (when (and (eq (plist-get v :commit) t)
+                     (equal (plist-get v :presentation) "popup"))
+            (error "jetpacs: %s a popup side cannot :commit (SPEC 17.3)" what))))
     (jetpacs--check-swipe-action v what))
   v)
 
@@ -1874,18 +1879,22 @@ COLOR is a §16.6 color; THICKNESS a non-negative dp."
   (jetpacs-check-descriptor on-trigger ":on-trigger")   ; required (§17.3)
   (jetpacs-make-node nil :label label :icon icon :color color :on_trigger on-trigger))
 
-(cl-defun jetpacs-swipe (label-or-actions &key icon color on-trigger commit)
+(cl-defun jetpacs-swipe (label-or-actions &key icon color on-trigger commit
+                                          presentation)
   "Build a legacy commit swipe or a rich reveal-first swipe side (SPEC §17.3).
 
 When LABEL-OR-ACTIONS is a string, preserve the legacy one-action shape and
 use ICON, COLOR, and ON-TRIGGER.  When it is a list or vector of one through
 four `jetpacs-swipe-action' objects, ordinary swipes only reveal those actions.
 COMMIT opts into the deliberately deeper first-action commit gesture and is
-valid only for rich sides containing at most two actions."
+valid only for rich sides containing at most two actions.  PRESENTATION is
+\"reveal\" (the default) or \"popup\" (amendment #207): a popup side never
+displaces the item; a fling opens its actions as a floating row of icon
+buttons beside the gesture, and it cannot COMMIT."
   (if (stringp label-or-actions)
       (progn
-        (when commit
-          (error "jetpacs: :commit belongs only to a rich swipe side (SPEC 17.3)"))
+        (when (or commit presentation)
+          (error "jetpacs: :commit and :presentation belong only to a rich swipe side (SPEC 17.3)"))
         (jetpacs-swipe-action label-or-actions
                               :icon icon :color color :on-trigger on-trigger))
     (when (or icon color on-trigger)
@@ -1895,7 +1904,8 @@ valid only for rich sides containing at most two actions."
              ((vectorp label-or-actions) label-or-actions)
              ((listp label-or-actions) (vconcat label-or-actions))
              (t (error "jetpacs: rich swipe actions must be a list or vector"))))
-           (side (jetpacs-make-node nil :actions actions :commit commit)))
+           (side (jetpacs-make-node nil :actions actions :commit commit
+                                    :presentation presentation)))
       (jetpacs--check-swipe side "rich swipe")
       side)))
 

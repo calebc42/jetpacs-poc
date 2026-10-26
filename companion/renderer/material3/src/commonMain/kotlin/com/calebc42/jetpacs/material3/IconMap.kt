@@ -10,7 +10,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.Redo
 import androidx.compose.material.icons.automirrored.outlined.Undo
 import androidx.compose.material.icons.outlined.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.vector.addPathNodes
+import androidx.compose.ui.unit.dp
 import java.util.concurrent.ConcurrentHashMap
 
 object IconMap {
@@ -84,6 +89,33 @@ object IconMap {
         cache["star"] = Icons.Outlined.StarOutline
         cache["tune"] = Icons.Outlined.Tune
         cache["help_outline"] = Icons.Outlined.HelpOutline
+        // Orgzly's new-note glyphs (Orgzly Revived's cic_new_above, _under,
+        // _below): a plus beside the dot of the note it is placed against.
+        cache["add_above"] = outlineGlyph("add_above",
+            "m11,13 l0,-4 -4,0 0,-2L11,7l0,-4 2,0 0,4 4,0 0,2 -4,0 0,4 -2,0z",
+            "M12,19m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0")
+        cache["add_under"] = outlineGlyph("add_under",
+            "m14,10 l0,4 -4,0 0,2 4,0 0,4 2,0 0,-4 4,0 0,-2 -4,0 0,-4 -2,0z",
+            "M7,7m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0")
+        cache["add_below"] = outlineGlyph("add_below",
+            "m11,11 l0,4 -4,0 0,2 4,0 0,4 2,0 0,-4 4,0 0,-2 -4,0 0,-4 -2,0z",
+            "M12,5m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0")
+    }
+
+    /** A 24dp glyph from SVG path data, filled like the Material outlined set. */
+    private fun outlineGlyph(name: String, vararg paths: String): ImageVector {
+        val builder = ImageVector.Builder(
+            name = name, defaultWidth = 24.dp, defaultHeight = 24.dp,
+            viewportWidth = 24f, viewportHeight = 24f,
+        )
+        for (data in paths) {
+            builder.addPath(
+                pathData = addPathNodes(data),
+                fill = SolidColor(Color.Black),
+                pathFillType = PathFillType.NonZero,
+            )
+        }
+        return builder.build()
     }
 
     fun get(name: String): ImageVector = cache[name] ?: run {

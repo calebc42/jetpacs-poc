@@ -85,6 +85,9 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     /** One revealed swipe cell and its label, shared by card and list item. */
     SwipeCell("swipe.cell"),
     SwipeLabel("swipe.label"),
+    /** Amendment #207: the floating action row a popup swipe side opens, and its buttons. */
+    SwipePopup("swipe.popup"),
+    SwipePopupButton("swipe.popup-button"),
     /** Canonical `button` containers keyed by variant, plus its label. */
     ButtonFilled("button.filled"),
     ButtonTonal("button.tonal"),

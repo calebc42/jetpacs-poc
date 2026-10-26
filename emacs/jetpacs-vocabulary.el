@@ -78,7 +78,7 @@
   "Contract-projected adaptive widget body shape.")
 
 (defconst jetpacs-swipe-contract
-  '(:legacy (:required ("label" "on_trigger") :optional ("icon" "color")) :rich (:required ("actions") :optional ("commit") :min_actions 1 :max_actions_limit "max_swipe_actions_per_side" :commit_max_actions 2) :action (:required ("label" "on_trigger") :optional ("icon" "color")))
+  '(:legacy (:required ("label" "on_trigger") :optional ("icon" "color")) :rich (:required ("actions") :optional ("commit" "presentation") :min_actions 1 :max_actions_limit "max_swipe_actions_per_side" :commit_max_actions 2 :presentation_enum "swipe.presentation" :presentation_default "reveal") :action (:required ("label" "on_trigger") :optional ("icon" "color")))
   "Contract-projected legacy and reveal-first rich swipe shapes.")
 
 (defconst jetpacs-max-widget-nodes
@@ -217,6 +217,7 @@ types a `bind' may never name.")
     ("window.size_class" . ("compact" "medium" "expanded"))
     ("locale.hour_cycle" . ("h12" "h23"))
     ("colors.polarity" . ("light" "dark"))
+    ("swipe.presentation" . ("reveal" "popup"))
     ("visible.op" . ("present" "absent" "empty" "non_empty" "eq" "neq" "lt" "lte" "gt" "gte"))
     ("snackbar.result" . ("dismissed" "action")))
   "Contract-projected enum values keyed by their qualified field name.")
