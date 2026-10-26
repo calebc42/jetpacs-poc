@@ -11,6 +11,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import com.calebc42.ebp.renderer.compose.ComposeCanonicalNodeOverride
 import com.calebc42.ebp.renderer.compose.ComposeNodeRenderContext
 import com.calebc42.ebp.renderer.compose.MaskVisualTransformation
+import com.calebc42.ebp.renderer.compose.TextInputSuggestions
 import com.calebc42.ebp.renderer.compose.keyboardAction
 import com.calebc42.ebp.renderer.compose.rememberLegacyTextInputAdapter
 import com.calebc42.ebp.renderer.compose.rememberTextInputBinding
@@ -81,9 +82,14 @@ object JetpacsTextInputRenderer : ComposeCanonicalNodeOverride {
             )
             return
         }
+        // SPEC 17.4 `suggestions`: completion of the word at the local cursor.
+        val suggestions = remember(node) { TextInputSuggestions.of(node) }
+        val wordSuggestions = remember { WordSuggestionsState() }
         JetpacsTextField(
             state = binding.controller.state,
-            modifier = binding.fieldModifier(modifier),
+            modifier = binding.fieldModifier(modifier).let {
+                if (suggestions.isEmpty()) it else wordSuggestions.fieldModifier(it)
+            },
             enabled = binding.enabled,
             secure = presentation.password,
             variant = variant,
@@ -103,5 +109,6 @@ object JetpacsTextInputRenderer : ComposeCanonicalNodeOverride {
             onKeyboardAction = binding.keyboardAction { keyboard?.hide() },
             lineLimits = presentation.lineLimits,
         )
+        if (suggestions.isNotEmpty()) wordSuggestions.Popup(binding.controller, suggestions)
     }
 }

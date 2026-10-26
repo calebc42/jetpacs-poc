@@ -9,7 +9,8 @@
     "jetpacs.glyph",
     "jetpacs.inline_text",
     "jetpacs.inline",
-    "jetpacs.wheel"
+    "jetpacs.wheel",
+    "jetpacs.state_switch"
   ],
   "targets": {
     "app": [
@@ -19,7 +20,8 @@
       "jetpacs.glyph",
       "jetpacs.inline_text",
       "jetpacs.inline",
-      "jetpacs.wheel"
+      "jetpacs.wheel",
+      "jetpacs.state_switch"
     ],
     "dialog": [
       "jetpacs.design_scope",
@@ -28,7 +30,8 @@
       "jetpacs.glyph",
       "jetpacs.inline_text",
       "jetpacs.inline",
-      "jetpacs.wheel"
+      "jetpacs.wheel",
+      "jetpacs.state_switch"
     ],
     "notification": []
   },
@@ -578,6 +581,33 @@
           "description": "Dispatched after a settled change with the selected choice injected as args.value."
         }
       }
+    },
+    "jetpacs.state_switch": {
+      "description": "Shows the one child whose entry in values equals another stateful node's current value, as the user sets it: a hint that follows a wheel. Display only: it publishes nothing, and its children should hold no stateful node.",
+      "required": {
+        "source": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The id of the stateful node, in the same surface or dialog, whose value chooses the child."
+        },
+        "values": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "min_length": 1,
+            "max_length": 64
+          },
+          "min_items": 1,
+          "max_items": 256,
+          "description": "One value per child, in order; the child whose value matches is shown, none when none does."
+        },
+        "children": {
+          "type": "node-array",
+          "min_items": 1,
+          "max_items": 256
+        }
+      },
+      "optional": {}
     }
   },
   "stateful_when_present": {

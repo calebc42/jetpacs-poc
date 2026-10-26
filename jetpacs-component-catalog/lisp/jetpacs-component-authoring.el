@@ -86,7 +86,7 @@
                 :autofocus :clear_on_submit :variant :is_error
                 :supporting_text :prefix :suffix :leading_icon :trailing_icon
                 :max_length :selection :hide_keyboard_on_submit
-                :content_padding :mask :filter :enabled))
+                :content_padding :mask :filter :suggestions :enabled))
     ("editor"
      :required (:id)
      :optional (:document :value :on_save :on_enter :single_line :min_lines
@@ -882,7 +882,7 @@ MENU-CHILD rejects recursively nested menus."
     (:selection . :selection)
     (:hide_keyboard_on_submit . :hide-keyboard-on-submit)
     (:content_padding . :content-padding) (:mask . :mask) (:filter . :filter)
-    (:enabled . :enabled))
+    (:suggestions . :suggestions) (:enabled . :enabled))
   "Text Input wire keys mapped to public builder keywords.")
 
 (defconst jetpacs-component-authoring--editor-keywords
@@ -906,6 +906,8 @@ MENU-CHILD rejects recursively nested menus."
                     ((and (eq wire :selection) (vectorp value))
                      (append value nil))
                     ((and (eq wire :toolbar) (vectorp value))
+                     (append value nil))
+                    ((and (eq wire :suggestions) (vectorp value))
                      (append value nil))
                     (t value))))))
 

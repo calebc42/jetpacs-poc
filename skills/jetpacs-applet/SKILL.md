@@ -83,7 +83,7 @@ Every core node is built by its `jetpacs-*` constructor; member types are the co
 - icon_button: { icon: identifier, on_tap: action, content_description?: string, badge?: string-or-number, enabled?: boolean, variant?: string, checked?: boolean, on_change?: action, checked_icon?: identifier, size?: enum[xsmall|small|medium|large], shape?: enum[round|square], width_mode?: string, color?: color } - An icon button showing ICON dispatching ON-TAP (SPEC §17.4). [events: on_tap, on_change] [elisp: jetpacs-icon-button (icon on-tap &key content-description badge variant size shape width-mode checked checked-icon on-change color enabled)]
 - chip: { label: string, on_tap?: action, selected?: boolean, icon?: identifier, enabled?: boolean, variant?: string, trailing_icon?: identifier, avatar?: identifier, content_spacing?: dp } - A chip labeled LABEL (SPEC §17.4). [events: on_tap] [elisp: jetpacs-chip (label &key on-tap selected icon trailing-icon variant avatar content-spacing enabled)]
 - menu: { items?: menu-item-array, groups?: menu-group-array, footer?: node, icon?: identifier, enabled?: boolean, initial_scroll?: string } - A menu of ITEMS (from `jetpacs-menu-item') (SPEC §17.4). [elisp: jetpacs-menu (items &key icon initial-scroll enabled groups footer)]
-- text_input: { id: identifier, value?: string, hint?: string, label?: string, on_change?: action, on_submit?: action, single_line?: boolean, min_lines?: positive-integer, max_lines?: positive-integer, monospace?: boolean, syntax?: identifier, password?: boolean, keyboard?: enum[text|number|decimal|email|phone|uri], autofocus?: boolean, clear_on_submit?: boolean, enabled?: boolean, variant?: string, is_error?: boolean, supporting_text?: string, prefix?: string, suffix?: string, leading_icon?: identifier, trailing_icon?: identifier, max_length?: positive-integer, selection?: two-number-array, hide_keyboard_on_submit?: boolean, content_padding?: dp, mask?: string, filter?: string } - A text input identified by ID (SPEC §17.4). [events: on_change, on_submit] [elisp: jetpacs-text-input (id &key value hint label on-change on-submit single-line min-lines max-lines monospace syntax password keyboard autofocus clear-on-submit variant is-error supporting-text prefix suffix leading-icon trailing-icon max-length selection hide-keyboard-on-submit content-padding mask filter enabled)]
+- text_input: { id: identifier, value?: string, hint?: string, label?: string, on_change?: action, on_submit?: action, single_line?: boolean, min_lines?: positive-integer, max_lines?: positive-integer, monospace?: boolean, syntax?: identifier, password?: boolean, keyboard?: enum[text|number|decimal|email|phone|uri], autofocus?: boolean, clear_on_submit?: boolean, enabled?: boolean, variant?: string, is_error?: boolean, supporting_text?: string, prefix?: string, suffix?: string, leading_icon?: identifier, trailing_icon?: identifier, max_length?: positive-integer, selection?: two-number-array, hide_keyboard_on_submit?: boolean, content_padding?: dp, mask?: string, filter?: string, suggestions?: string-array } - A text input identified by ID (SPEC §17.4). [events: on_change, on_submit] [elisp: jetpacs-text-input (id &key value hint label on-change on-submit single-line min-lines max-lines monospace syntax password keyboard autofocus clear-on-submit variant is-error supporting-text prefix suffix leading-icon trailing-icon max-length selection hide-keyboard-on-submit content-padding mask filter suggestions enabled)]
 - editor: { id: identifier, document?: identifier, value?: string, on_save?: action, on_enter?: action, single_line?: boolean, min_lines?: positive-integer, max_lines?: positive-integer, read_only?: boolean, syntax?: identifier, line_numbers?: boolean, complete?: boolean, chromeless?: boolean, publish_state?: boolean, autofocus?: boolean, toolbar?: toolbar-id-or-item-array, enabled?: boolean } - An editor identified by ID (SPEC §17.4 + §17.7). [events: on_save, on_enter] [elisp: jetpacs-editor (id &key document value on-save on-enter single-line min-lines max-lines read-only syntax line-numbers complete chromeless publish-state autofocus toolbar enabled)]
 - checkbox: { id: identifier, checked?: boolean, state?: string, stroke?: stroke-object, label?: string, on_change?: action, enabled?: boolean } - A checkbox identified by ID (SPEC §17.4). [events: on_change] [elisp: jetpacs-checkbox (id &key checked state stroke label on-change enabled)]
 - switch: { id: identifier, checked?: boolean, label?: string, on_change?: action, enabled?: boolean, thumb_icon?: identifier } - A switch identified by ID (SPEC §17.4). [events: on_change] [elisp: jetpacs-switch (id &key checked label on-change thumb-icon enabled)]
@@ -240,17 +240,17 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-components.json`, schem
 - tab-options: array<tab-option>(1..10000)
 - text: string(0..4096)
 
-## Nodes (jetpacs.design, 6) - Jetpacs' bounded Elisp-authored Foundation design runtime.
+## Nodes (jetpacs.design, 8) - Jetpacs' bounded Elisp-authored Foundation design runtime.
 
-Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sha256 719cbd1a4483a8ab8d66fac23c354cb892d9d7033a0b83b82bea79d55981f785. A node travels only to a target whose profile advertises both the node type and the extension.
+Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sha256 26eea3cdc077dced307f528b7fb1f7626715f8c5192dcae9fe2a8960bf9f0070. A node travels only to a target whose profile advertises both the node type and the extension.
 
 - jetpacs.design_scope: { children: node-array(0..10000), styles: style-map, tokens: token-map, component_styles?: component-style-bindings, motions?: motion-map, theme_roles?: theme-role-map } - The root of the Elisp-authored design runtime: tokens, named styles, motions and component styles that its subtree may reference. [accepts children] [targets: app, dialog] [elisp: jetpacs-design-scope (tokens styles children &key motions component-styles theme-roles)]
   - styles: Named styles available to jetpacs.styled and jetpacs.pressable beneath.
   - tokens: Named design tokens the styles resolve.
-  - example (design-material, jetpacs-design-material-scope): a 2824-character node; see `jetpacs_node_examples`
+  - example (design-material, jetpacs-design-material-scope): a 3044-character node; see `jetpacs_node_examples`
 - jetpacs.styled: { children: node-array(0..10000), styles: style-references } - Applies named styles from the enclosing design scope to its children. [accepts children] [targets: app, dialog] [elisp: jetpacs-design-styled (styles children)]
   - styles: The style names applied, in order.
-  - example (design-material, jetpacs-design-material-card): `{"children":[{"t":"text","text":"Proof library card"},{"children":[{"t":"text","text":"Logged "},{"child":{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10},"height":24,"reserve_extra":8,"reserve_text":"x","t":"jetpacs.inline"},{"t":"text","text":" today"}],"t":"jetpacs.inline_text"},{"children":[{"children":[{"t":"text","text":"Save"}],"styles":["material.button.label"],"t":"jetpacs.styled"}],"on_tap":{"action":"catalog.save"},"styles":["material.button"],"t":"jetpacs.pressable"}],"styles":["material.card"],"t":"jetpacs.styled"}`
+  - example (design-material, jetpacs-design-material-card): `{"children":[{"t":"text","text":"Proof library card"},{"children":[{"t":"text","text":"Logged "},{"child":{"paths":["M0 2h4v8H0zM6 0h4v10H6z"],"size":14,"t":"jetpacs.glyph","viewport_height":10,"viewport_width":10},"height":24,"reserve_extra":8,"reserve_text":"x","t":"jetpacs.inline"},{"t":"text","text":" today"}],"t":"jetpacs.inline_text"},{"id":"unit","t":"jetpacs.wheel","value":"Week","values":["Day","Week"]},{"children":[{"t":"text","text":"Every day"},{"t":"text","text":"Every week"}],"source":"unit","t":"jetpacs.state_switch","values":["Day","Week"]},{"children":[{"children":[{"t":"text","text":"Save"}],"styles":["material.button.label"],"t":"jetpacs.styled"}],"on_tap":{"action":"catalog.save"},"styles":["material.button"],"t":"jetpacs.pressable"}],"styles":["material.card"],"t":"jetpacs.styled"}`
 
     ```elisp
     (:t "jetpacs.styled" :styles ["material.card"] :children
@@ -262,6 +262,11 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sh
     		  :viewport_width 10 :viewport_height 10 :size 14)
     	      :height 24 :reserve_text "x" :reserve_extra 8)
     	  (:t "text" :text " today")])
+         (:t "jetpacs.wheel" :id "unit" :values ["Day" "Week"] :value
+    	 "Week")
+         (:t "jetpacs.state_switch" :source "unit" :values ["Day" "Week"]
+    	 :children
+    	 [(:t "text" :text "Every day") (:t "text" :text "Every week")])
          (:t "jetpacs.pressable" :styles ["material.button"] :on_tap
     	 (:action "catalog.save") :children
     	 [(:t "jetpacs.styled" :styles ["material.button.label"]
@@ -314,6 +319,29 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sh
     	:viewport_width 10 :viewport_height 10 :size 14)
         :height 24 :reserve_text "x" :reserve_extra 8)    ```
 
+- jetpacs.wheel: { id: identifier, value: string(1..64), values: array<string(1..64)>(1..256), color?: string(1..64), divider_color?: string(1..64), enabled?: boolean, on_change?: action, wrap?: boolean } - A stateful selector wheel: one of values, scrolled into the middle of a spinning column, as the platform's number picker draws it. Its published value is the selected string. [targets: app, dialog] [events: on_change] [elisp: jetpacs-design-wheel (id values value &key wrap enabled color divider-color on-change)]
+  - id: The stateful node id drafts, captures and state.changed address.
+  - value: The selected choice; one of values.
+  - values: The choices, top to bottom.
+  - color: The choices' text color: #RRGGBB, #RRGGBBAA or an EBP theme role.
+  - divider_color: The selection dividers' color.
+  - on_change: Dispatched after a settled change with the selected choice injected as args.value.
+  - wrap: Whether scrolling past the last choice wraps to the first; false by default.
+  - example (design-material, jetpacs-design-wheel): `{"id":"unit","t":"jetpacs.wheel","value":"Week","values":["Day","Week"]}`
+
+    ```elisp
+    (:t "jetpacs.wheel" :id "unit" :values ["Day" "Week"] :value "Week")    ```
+
+- jetpacs.state_switch: { children: node-array(1..256), source: identifier, values: array<string(1..64)>(1..256) } - Shows the one child whose entry in values equals another stateful node's current value, as the user sets it: a hint that follows a wheel. Display only: it publishes nothing, and its children should hold no stateful node. [accepts children] [targets: app, dialog] [elisp: jetpacs-design-state-switch (source cases)]
+  - source: The id of the stateful node, in the same surface or dialog, whose value chooses the child.
+  - values: One value per child, in order; the child whose value matches is shown, none when none does.
+  - example (design-material, jetpacs-design-state-switch): `{"children":[{"t":"text","text":"Every day"},{"t":"text","text":"Every week"}],"source":"unit","t":"jetpacs.state_switch","values":["Day","Week"]}`
+
+    ```elisp
+    (:t "jetpacs.state_switch" :source "unit" :values ["Day" "Week"]
+        :children
+        [(:t "text" :text "Every day") (:t "text" :text "Every week")])    ```
+
 
 ### Definitions (jetpacs.design)
 
@@ -361,7 +389,7 @@ Apply with `jetpacs-with-attrs`. `bind`, `template` and `visible_when` need the 
 - template: node
 - visible_when: visible-when-array
 
-Features: image.https, image.data, toolbar.*, editor.candidate_kind, action.open_surface, data.template, data.insert, data.visible. Capabilities: surfaces.notification, surfaces.widget, surfaces.tile, surfaces.dialog, presentation.toast, presentation.snackbar, presentation.pie-menu, theme, reminders.owner, reminders.actions, editor.sync, capabilities, triggers, offline.wake, data.model.
+Features: image.https, image.data, toolbar.*, editor.candidate_kind, action.open_surface, data.template, data.insert, data.visible, menu.submenu. Capabilities: surfaces.notification, surfaces.widget, surfaces.tile, surfaces.dialog, presentation.toast, presentation.snackbar, presentation.pie-menu, theme, reminders.owner, reminders.actions, editor.sync, capabilities, triggers, offline.wake, data.model.
 
 ## Actions
 

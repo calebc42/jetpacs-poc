@@ -105,7 +105,7 @@ object JetpacsDesignRenderer : ComposeNodeExtension {
         listOf(
             JetpacsDesignScopeComponent, JetpacsStyledComponent, JetpacsPressableComponent,
             JetpacsGlyphComponent, JetpacsInlineTextComponent, JetpacsInlineComponent,
-            JetpacsWheelComponent,
+            JetpacsWheelComponent, JetpacsStateSwitchComponent,
         ),
     )
 

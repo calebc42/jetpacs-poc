@@ -659,6 +659,28 @@ private fun MenuItemRow(
     val supportingText: (@Composable () -> Unit)? = if (supporting.isNotEmpty()) {
         { Text(supporting) }
     } else null
+    val subItems = item.arrOrNull("items")
+    if (subItems != null && subItems.isNotEmpty()) {
+        // Amendment #203: a submenu row opens its items in a menu of their
+        // own anchored to it; a pick there closes the whole menu.
+        var open by remember { mutableStateOf(false) }
+        Box {
+            DropdownMenuItem(
+                text = { Text(item.stringOr("label")) },
+                enabled = itemEnabled,
+                onClick = { open = !open },
+                leadingIcon = leading,
+                trailingIcon = { Icon(IconMap.get("arrow_right"), null, Modifier.size(18.dp)) })
+            DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+                subItems.forEachIndexed { i, sub ->
+                    (sub as? JsonObject)?.let {
+                        MenuItemRow(it, ctx, i, subItems.size) { open = false; closeMenu() }
+                    }
+                }
+            }
+        }
+        return
+    }
     if ("checked" in item) {
         CheckableMenuItem(
             label = item.stringOr("label"),

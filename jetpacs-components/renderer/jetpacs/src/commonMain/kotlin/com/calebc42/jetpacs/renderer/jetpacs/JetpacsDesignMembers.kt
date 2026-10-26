@@ -92,6 +92,15 @@ object JetpacsWheelMembers : NodeMemberSet("jetpacs.wheel") {
     override val optional: List<NodeMember<*>> = listOf(Color, DividerColor, Enabled, OnChange, Wrap)
 }
 
+/** Typed members of the `jetpacs.state_switch` node. */
+object JetpacsStateSwitchMembers : NodeMemberSet("jetpacs.state_switch") {
+    val Children: NodeArrayMember = NodeArrayMember("children", required = true)
+    val Source: StringMember = StringMember("source", required = true)
+    val Values: ArrayMember = ArrayMember("values", required = true, tag = "array")
+    override val required: List<NodeMember<*>> = listOf(Children, Source, Values)
+    override val optional: List<NodeMember<*>> = listOf()
+}
+
 /** Every generated member set, keyed by node type. */
 val JETPACS_DESIGN_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "jetpacs.design_scope" to JetpacsDesignScopeMembers,
@@ -101,4 +110,5 @@ val JETPACS_DESIGN_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "jetpacs.inline_text" to JetpacsInlineTextMembers,
     "jetpacs.inline" to JetpacsInlineMembers,
     "jetpacs.wheel" to JetpacsWheelMembers,
+    "jetpacs.state_switch" to JetpacsStateSwitchMembers,
 )

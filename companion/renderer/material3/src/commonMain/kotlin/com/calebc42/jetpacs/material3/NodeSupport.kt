@@ -46,8 +46,9 @@ object NodeSupport {
         // #196: the engine applies the `insert` DataOp. Amendment #198: the
         // engine evaluates `visible_when` at materialization, so app surfaces
         // may carry conditional nodes; the renderer never sees a hidden one.
+        // Amendment #203: both menu renderers present submenus.
         features = imageFeatures + editorFeatures + "action.open_surface" + "data.template" +
-            "data.insert" + "data.visible",
+            "data.insert" + "data.visible" + "menu.submenu",
         extensions = setOf(JETPACS_MATERIAL3_EXTENSION),
     )
 

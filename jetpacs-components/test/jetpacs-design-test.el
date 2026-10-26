@@ -381,5 +381,17 @@ that advertises `jetpacs.list_item'."
   (should-error (jetpacs-design-wheel "unit" nil "Day"))
   (should-error (jetpacs-design-wheel "bad id" '("Day") "Day")))
 
+(ert-deftest jetpacs-design-state-switch-pairs-values-with-children ()
+  (let ((node (jetpacs-design-state-switch
+               "type" `(("+" . ,(jetpacs-text "Add")) (".+" . ,(jetpacs-text "Current"))))))
+    (should (equal (plist-get node :t) "jetpacs.state_switch"))
+    (should (equal (plist-get node :source) "type"))
+    (should (equal (plist-get node :values) ["+" ".+"]))
+    (should (= (length (plist-get node :children)) 2))
+    (should (equal (cdr (assoc "jetpacs.state_switch" (append nil jetpacs-design-node-schema)))
+                   '(("children" "source" "values") nil))))
+  (should-error (jetpacs-design-state-switch "type" nil))
+  (should-error (jetpacs-design-state-switch "bad id" `(("+" . ,(jetpacs-text "Add"))))))
+
 (provide 'jetpacs-design-test)
 ;;; jetpacs-design-test.el ends here

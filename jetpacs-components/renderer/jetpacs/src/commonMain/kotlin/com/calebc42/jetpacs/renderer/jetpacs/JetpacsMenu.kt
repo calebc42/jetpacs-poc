@@ -44,6 +44,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -95,6 +97,8 @@ data class JetpacsMenuItem(
     val checked: Boolean? = null,
     val checkedIcon: String = "check",
     val onSelect: () -> Unit = {},
+    /** A submenu row's items (amendment #203); selecting the row opens them. */
+    val children: List<JetpacsMenuItem> = emptyList(),
 )
 
 /** A run of rows under one heading, separated from the run above by a rule. */
@@ -143,15 +147,23 @@ fun JetpacsMenu(
     groupLabelStyle: Style = Style,
 ) {
     var expanded by remember { mutableStateOf(false) }
+    // The submenu row whose items are open (amendment #203).
+    var openSubmenu by remember { mutableStateOf<JetpacsMenuItem?>(null) }
     var restoreTriggerFocus by remember { mutableStateOf(false) }
     var anchorBounds by remember { mutableStateOf<IntRect?>(null) }
     val triggerFocusRequester = remember { FocusRequester() }
     val source = remember { MutableInteractionSource() }
     val styleState = rememberUpdatedStyleState(source) { it.isEnabled = enabled }
+    val inputModeManager = LocalInputModeManager.current
 
     fun closePopup(restoreFocus: Boolean) {
         expanded = false
-        restoreTriggerFocus = restoreFocus
+        openSubmenu = null
+        // Focus returns to the trigger only for keyboard travel. After a tap,
+        // a focused trigger turns the next Back key into a focus exit that
+        // Compose consumes, so Back would do nothing; a View popup dismissed
+        // by touch leaves focus alone too.
+        restoreTriggerFocus = restoreFocus && inputModeManager.inputMode == InputMode.Keyboard
     }
 
     LaunchedEffect(enabled) {
@@ -257,10 +269,12 @@ fun JetpacsMenu(
             Popup(
                 popupPositionProvider = positionProvider,
                 onDismissRequest = { closePopup(restoreFocus = true) },
+                // While it fades out, the closing window takes neither focus
+                // nor Back nor taps: they belong to the screen again.
                 properties = PopupProperties(
-                    focusable = true,
-                    dismissOnBackPress = true,
-                    dismissOnClickOutside = true,
+                    focusable = expanded,
+                    dismissOnBackPress = expanded,
+                    dismissOnClickOutside = expanded,
                     // The shadow's room may run past the window's edge; the
                     // menu itself is kept inside by the position provider.
                     clippingEnabled = shadowMargin == 0.dp,
@@ -269,29 +283,55 @@ fun JetpacsMenu(
               Box(
                 Modifier
                     // A tap on the shadow's room is a tap outside the menu.
-                    .pointerInput(Unit) { detectTapGestures { closePopup(restoreFocus = true) } }
+                    .pointerInput(Unit) { detectTapGestures { if (expanded) closePopup(restoreFocus = true) } }
                     .padding(shadowMargin),
               ) {
-                JetpacsMenuPopupContent(
-                    fade = { alpha.value },
-                    items = items,
-                    groups = groups,
-                    initialScroll = initialScroll,
-                    availableHeight = availablePopupHeight,
-                    requestInitialFocus = LocalWindowInfo.current.isWindowFocused,
-                    footer = footer,
-                    onSelect = { item ->
+                val select: (JetpacsMenuItem) -> Unit = { item ->
+                    if (item.children.isNotEmpty()) {
+                        // A submenu row opens its items; a second tap on an
+                        // open one closes them again.
+                        openSubmenu = if (item.opens(openSubmenu)) null else item
+                    } else {
                         // A checkable row reports state and stays open; an
                         // ordinary one closes before running, so the action
                         // never fires under a popup that is still up.
                         if (item.checked == null) closePopup(restoreFocus = true)
                         item.onSelect()
-                    },
+                    }
+                }
+                val cascade = platformCascadesSubmenus()
+                val replaced = openSubmenu.takeUnless { cascade }
+                JetpacsMenuPopupContent(
+                    fade = { alpha.value },
+                    // Without room to cascade, the platform shows a submenu
+                    // in its parent's place, headed by the parent's label.
+                    items = if (replaced != null) emptyList() else items,
+                    groups = if (replaced != null) {
+                        listOf(JetpacsMenuGroup(replaced.label, replaced.children))
+                    } else groups,
+                    initialScroll = initialScroll,
+                    availableHeight = availablePopupHeight,
+                    requestInitialFocus = LocalWindowInfo.current.isWindowFocused,
+                    footer = footer.takeIf { replaced == null },
+                    onSelect = select,
                     popupStyle = popupStyle,
                     itemStyle = itemStyle,
                     itemLabelStyle = itemLabelStyle,
                     itemSupportingStyle = itemSupportingStyle,
                     groupLabelStyle = groupLabelStyle,
+                    openSubmenu = openSubmenu.takeIf { cascade },
+                    submenu = { parent ->
+                        CascadedSubmenu(
+                            parent = parent,
+                            shadowMargin = shadowMargin,
+                            onDismiss = { openSubmenu = null },
+                            onSelect = select,
+                            popupStyle = popupStyle,
+                            itemStyle = itemStyle,
+                            itemLabelStyle = itemLabelStyle,
+                            itemSupportingStyle = itemSupportingStyle,
+                        )
+                    },
                 )
               }
             }
@@ -320,6 +360,9 @@ fun JetpacsMenuPopupContent(
     groupLabelStyle: Style = Style,
     /** The popup window's opacity as it opens and closes, its shadow's too. */
     fade: () -> Float = { 1f },
+    /** The submenu row whose items cascade beside it, and how to draw them. */
+    openSubmenu: JetpacsMenuItem? = null,
+    submenu: (@Composable (JetpacsMenuItem) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = rememberScrollState()
@@ -407,6 +450,9 @@ fun JetpacsMenuPopupContent(
                     itemStyle = itemStyle,
                     itemLabelStyle = itemLabelStyle,
                     itemSupportingStyle = itemSupportingStyle,
+                    attached = if (submenu != null && item.opens(openSubmenu)) {
+                        { submenu(item) }
+                    } else null,
                 )
             }
         }
@@ -418,6 +464,9 @@ fun JetpacsMenuPopupContent(
                 itemStyle = itemStyle,
                 itemLabelStyle = itemLabelStyle,
                 itemSupportingStyle = itemSupportingStyle,
+                attached = if (submenu != null && item.opens(openSubmenu)) {
+                    { submenu(item) }
+                } else null,
             )
         }
         footer?.invoke()
@@ -477,6 +526,8 @@ private fun JetpacsMenuRow(
     itemStyle: Style,
     itemLabelStyle: Style,
     itemSupportingStyle: Style,
+    /** Composed inside the row, so a cascading submenu anchors to it. */
+    attached: (@Composable () -> Unit)? = null,
 ) {
     val checked = item.checked
     val source = remember { MutableInteractionSource() }
@@ -512,6 +563,9 @@ private fun JetpacsMenuRow(
     }
     // While checked, the check glyph replaces the authored leading icon.
     val leadingGlyph = if (checked == true) item.checkedIcon else item.icon
+    // The box is the row's outer bounds, which an attached submenu anchors to;
+    // inside the row it would anchor to the padded content instead.
+    Box {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -555,8 +609,11 @@ private fun JetpacsMenuRow(
         }
         // One trailing slot: the wire makes the pair mutually exclusive, and a
         // shortcut hint is text rather than a glyph the icon set would have to
-        // contain.
-        if (!item.trailingIcon.isNullOrEmpty()) {
+        // contain. A submenu row has neither and shows its indicator there.
+        if (item.children.isNotEmpty()) {
+            Spacer(Modifier.width(12.dp))
+            DesignGlyph(SubmenuIndicatorGlyph, labelStyle.color, MenuGlyphSize)
+        } else if (!item.trailingIcon.isNullOrEmpty()) {
             Spacer(Modifier.width(12.dp))
             DesignGlyph(item.trailingIcon, labelStyle.color, MenuGlyphSize)
         } else if (!item.trailingText.isNullOrEmpty()) {
@@ -569,7 +626,16 @@ private fun JetpacsMenuRow(
             )
         }
     }
+    attached?.invoke()
+    }
 }
+
+/** Whether this row is the submenu row [open] names; rows are re-read per snapshot. */
+private fun JetpacsMenuItem.opens(open: JetpacsMenuItem?): Boolean =
+    open != null && children.isNotEmpty() && label == open.label && children.size == open.children.size
+
+/** The platform's submenu arrow: a small right-pointing triangle. */
+private const val SubmenuIndicatorGlyph = "arrow_right"
 
 /**
  * Design-scoped `menu`: the overflow control and its popup.
@@ -622,12 +688,16 @@ object JetpacsDesignMenuRenderer : ComposeCanonicalNodeOverride {
 internal fun jetpacsMenuItems(
     raw: JsonArray?,
     dispatch: (JsonObject) -> Unit,
+    nested: Boolean = false,
 ): List<JetpacsMenuItem> =
     raw?.mapNotNull { element ->
         val item = element as? JsonObject ?: return@mapNotNull null
         val label = item.menuText("label").takeIf(String::isNotEmpty)
             ?: return@mapNotNull null
         val onTap = item["on_tap"] as? JsonObject
+        // Amendment #203: one level of submenu; a deeper one is not admitted.
+        val children = if (nested) emptyList()
+        else jetpacsMenuItems(item["items"] as? JsonArray, dispatch, nested = true)
         JetpacsMenuItem(
             label = label,
             icon = item.menuText("icon").takeIf(String::isNotEmpty),
@@ -641,6 +711,7 @@ internal fun jetpacsMenuItems(
             // An item with no on_tap is drawn but inert; SPEC requires the
             // label, not the action.
             onSelect = { onTap?.let(dispatch) },
+            children = children,
         )
     }.orEmpty()
 

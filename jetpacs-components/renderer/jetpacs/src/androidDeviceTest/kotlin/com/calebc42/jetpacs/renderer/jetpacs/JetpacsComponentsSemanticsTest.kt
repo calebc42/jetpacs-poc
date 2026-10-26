@@ -33,6 +33,7 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertHeightIsAtLeast
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsFocused
+import androidx.compose.ui.test.assertIsNotFocused
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasText
@@ -1260,6 +1261,28 @@ class JetpacsComponentsSemanticsTest {
                 "Collapsed",
             ),
         )
+    }
+
+    @Test
+    fun aTouchDismissalLeavesTheTriggerUnfocused() {
+        val context = RecordingContext()
+        compose.setContent {
+            ProvideJetpacsTheme(null) {
+                JetpacsDesignMenuRenderer.render(
+                    groupedMenuNode(),
+                    context,
+                    Modifier.testTag("menu"),
+                )
+            }
+        }
+
+        compose.onNodeWithTag("menu").performClick()
+        compose.onNodeWithText("Move up").performClick()
+
+        // A focused trigger would turn the next Back key into a focus exit
+        // that Compose consumes; focus returns to it only for keyboard travel.
+        compose.onNodeWithText("Move up").assertDoesNotExist()
+        compose.onNodeWithTag("menu").assertIsNotFocused()
     }
 
     @Test

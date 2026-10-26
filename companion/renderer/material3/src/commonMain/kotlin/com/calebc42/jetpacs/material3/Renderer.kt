@@ -120,6 +120,7 @@ import com.calebc42.ebp.renderer.compose.ComposeRendererConfiguration
 import com.calebc42.ebp.renderer.compose.ebpSemantics
 import com.calebc42.ebp.renderer.compose.keyboardAction
 import com.calebc42.ebp.renderer.compose.MaskVisualTransformation
+import com.calebc42.ebp.renderer.compose.TextInputSuggestions
 import com.calebc42.ebp.renderer.compose.ProvideRevealSwipeCoordinator
 import com.calebc42.ebp.renderer.compose.rememberLegacyTextInputAdapter
 import com.calebc42.ebp.renderer.model.ActionHandoff
@@ -327,6 +328,11 @@ data class RenderCtx(
      * nothing in the store changed.
      */
     fun storeValue(id: String): JsonElement? = displays.value[id]?.value
+
+    /** What stateful node [id] shows now: in a dialog its local field over
+     * the authored layer (never a password's), else the store. */
+    fun liveValue(id: String): JsonElement? =
+        if (dialog != null) captureValue(id, dialog.fields, dialog.defaults) else storeValue(id)
 
     fun action(descriptor: JsonObject?, value: JsonElement? = null) {
         dispatchAction(descriptor, value)
@@ -596,6 +602,7 @@ internal open class MaterialNodeRenderContext(
         context.dialog?.registerVolatile(id, erase) ?: {}
     override fun storeValue(id: String): JsonElement? = context.storeValue(id)
     override fun epochOf(id: String): Long = context.epochOf(id)
+    override fun liveValue(id: String): JsonElement? = context.liveValue(id)
 
     @Composable
     override fun renderChild(child: JsonObject, index: Int, modifier: Modifier) {
@@ -913,7 +920,13 @@ internal fun RenderTextInput(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         else OutlinedTextFieldDefaults.contentPaddingWithLabel()
     }
 
-    val fieldModifier = binding.fieldModifier(m)
+    // SPEC 17.4 `suggestions`: completion of the word at the local cursor.
+    val suggestions = remember(node) { TextInputSuggestions.of(node) }
+    val wordSuggestions = remember { MaterialWordSuggestions() }
+    val fieldModifier = binding.fieldModifier(m).let {
+        if (suggestions.isEmpty()) it else wordSuggestions.fieldModifier(it)
+    }
+    if (suggestions.isNotEmpty()) wordSuggestions.Popup(controller, suggestions)
     if (presentation.password) {
         if (filled) {
                 androidx.compose.material3.SecureTextField(

@@ -2720,8 +2720,12 @@ long press."
 
 (cl-defun jetpacs-menu-item (label on-tap &key icon enabled supporting-text
                                    trailing-icon trailing-text
-                                   checked checked-icon)
+                                   checked checked-icon items)
   "A MenuItem for `jetpacs-menu' (SPEC §17.4).
+:items, a list of `jetpacs-menu-item's, makes it a SUBMENU row (amendment
+#203): ON-TAP is then nil, the row opens those items, and it takes no
+:checked or trailing member; submenus nest one level.  Without the
+Companion's `menu.submenu' feature, pass an ON-TAP and no :items.
 Besides LABEL, ON-TAP, :icon and :enabled: :supporting-text is a second
 line under the label; :trailing-icon and :trailing-text sit at the row
 end and are mutually exclusive, because the item has ONE trailing slot —
@@ -2732,7 +2736,17 @@ flip your own state and rebuild; while checked, :checked-icon (default
 check) replaces the leading icon, and a tap keeps the popup open the way
 M3 checkable menus do."
   (jetpacs-require-string label ":label")
-  (jetpacs-check-descriptor on-tap ":on-tap")
+  (if items
+      (progn
+        (unless (and (proper-list-p items) items)
+          (error "jetpacs-menu-item: :items must be a non-empty list of menu items"))
+        (dolist (sub items)
+          (when (plist-member sub :items)
+            (error "jetpacs-menu-item: submenus nest one level (SPEC 17.4)")))
+        (when (or on-tap checked checked-icon trailing-icon trailing-text)
+          (error "jetpacs-menu-item: a submenu row takes no on-tap, :checked or trailing member"))
+        (setq items (vconcat items)))
+    (jetpacs-check-descriptor on-tap ":on-tap"))
   (when icon (jetpacs-check-identifier icon ":icon"))
   (when enabled (jetpacs-check-bool enabled ":enabled"))
   (when supporting-text (jetpacs-require-string supporting-text ":supporting-text"))
@@ -2746,7 +2760,7 @@ M3 checkable menus do."
   (jetpacs-make-node nil :label label :on_tap on-tap :icon icon :enabled enabled
                  :supporting_text supporting-text :trailing_icon trailing-icon
                  :trailing_text trailing-text
-                 :checked checked :checked_icon checked-icon))
+                 :checked checked :checked_icon checked-icon :items items))
 
 (cl-defun jetpacs-menu-group (label items)
   "A menu group {label, items} for `jetpacs-menu' :groups (SPEC §17.4).
@@ -2820,7 +2834,8 @@ helpers reject them before calling this function."
                                  variant is-error supporting-text prefix suffix
                                  leading-icon trailing-icon max-length
                                  selection hide-keyboard-on-submit
-                                 content-padding mask filter enabled)
+                                 content-padding mask filter suggestions
+                                 enabled)
   "A text input identified by ID (SPEC §17.4).
 Booleans (SINGLE-LINE, MONOSPACE, PASSWORD, AUTOFOCUS, CLEAR-ON-SUBMIT,
 ENABLED) take t or :json-false.  Enforces the §17.4 line-count, single-line
@@ -2836,9 +2851,12 @@ template over the stored value (every `#' consumes one Unicode scalar,
 everything else is literal filler that never enters the value); FILTER
 reverts characters outside deterministic ASCII digits/alnum at the keystroke,
 locally.  MAX-LENGTH is a hard Unicode-scalar bound on authored and local
-values.  A PASSWORD submission must explicitly capture ID, uses only the drop
-policy, and cannot request CLEAR-ON-SUBMIT; ordinary clearing requires a remote
-ON-SUBMIT descriptor."
+values.  SUGGESTIONS, a list of whitespace-free strings, completes the word
+being typed: the Companion lists those that start with the word ending at
+its own cursor and a pick replaces that word, plus a space (amendment #202);
+the cursor itself never reaches Emacs.  A PASSWORD submission must
+explicitly capture ID, uses only the drop policy, and cannot request
+CLEAR-ON-SUBMIT; ordinary clearing requires a remote ON-SUBMIT descriptor."
   (jetpacs-check-identifier id ":id")
   (when value (jetpacs-require-string value ":value"))
   (when hint (jetpacs-require-string hint ":hint"))
@@ -2901,6 +2919,26 @@ ON-SUBMIT descriptor."
         (when present
           (error "jetpacs-text-input: :mask is invalid with :%s (SPEC 17.4)"
                  member)))))
+  (when suggestions
+    (let ((spec (plist-get jetpacs-text-input-contract :suggestions)))
+      (unless (and (proper-list-p suggestions)
+                   (<= (plist-get spec :min_items) (length suggestions)
+                       (plist-get spec :max_items))
+                   (cl-every (lambda (word)
+                               (and (stringp word)
+                                    (<= (plist-get spec :item_min_length) (length word)
+                                        (plist-get spec :item_max_length))
+                                    (not (string-match-p "[[:space:]]" word))))
+                             suggestions))
+        (error "jetpacs-text-input: :suggestions must be %d-%d words without whitespace (SPEC 17.4)"
+               (plist-get spec :min_items) (plist-get spec :max_items)))
+      (dolist (member (plist-get spec :incompatible_with))
+        (when (pcase member
+                ("password" (eq password t))
+                ("mask" mask)
+                (_ (error "jetpacs-text-input: unsupported suggestions incompatibility %S" member)))
+          (error "jetpacs-text-input: :suggestions is invalid with :%s (SPEC 17.4)" member))))
+    (setq suggestions (vconcat suggestions)))
   (when filter
     (setq filter (jetpacs-check-enum filter jetpacs--text-input-filters ":filter"))
     (unless (jetpacs--text-input-filter-matches-p (or (jetpacs--literal value) "") filter)
@@ -2949,7 +2987,7 @@ ON-SUBMIT descriptor."
                  :selection selection
                  :hide_keyboard_on_submit hide-keyboard-on-submit
                  :content_padding content-padding
-                 :mask mask :filter filter
+                 :mask mask :filter filter :suggestions suggestions
                  :enabled enabled))
 
 (defconst jetpacs--checkbox-states '("off" "on" "indeterminate"))

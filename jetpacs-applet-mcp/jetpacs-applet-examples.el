@@ -108,7 +108,9 @@ applet returns literally."
     ("jetpacs.pressable" . "jetpacs-design-material-filled-button")
     ("jetpacs.inline_text" . "jetpacs-design-inline-text")
     ("jetpacs.inline" . "jetpacs-design-inline")
-    ("jetpacs.glyph" . "jetpacs-design-glyph"))
+    ("jetpacs.glyph" . "jetpacs-design-glyph")
+    ("jetpacs.wheel" . "jetpacs-design-wheel")
+    ("jetpacs.state_switch" . "jetpacs-design-state-switch"))
   "Design nodes and the proof-library builder that produces each one.")
 
 (defun jetpacs-applet-examples--design-tree ()
@@ -125,6 +127,11 @@ its builders are documented to make (jetpacs-design-material.el)."
                         (jetpacs-design-glyph '("M0 2h4v8H0zM6 0h4v10H6z") 10 10 14)
                         24 :reserve-text "x" :reserve-extra 8)
                        (jetpacs-text " today")))
+                ;; A wheel, and a hint that follows it without a round trip.
+                (jetpacs-design-wheel "unit" '("Day" "Week") "Week")
+                (jetpacs-design-state-switch
+                 "unit" `(("Day" . ,(jetpacs-text "Every day"))
+                          ("Week" . ,(jetpacs-text "Every week"))))
                 (jetpacs-design-material-filled-button
                  "Save" (jetpacs-action "catalog.save")))))))
 

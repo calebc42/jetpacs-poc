@@ -562,6 +562,24 @@
   (should-error (jetpacs-text-input "i" :mask "literal"))
   (should-error (jetpacs-text-input "i" :password t :mask "####"))
   (should-error (jetpacs-text-input "i" :syntax "elisp" :mask "####"))
+;; Amendment #203: a submenu row opens its items, one level deep.
+  (let ((row (jetpacs-menu-item "Clock" nil :items
+                                (list (jetpacs-menu-item "Clock in" '(:action "c.in"))))))
+    (should (equal (plist-get (aref (plist-get row :items) 0) :label) "Clock in"))
+    (should-not (plist-member row :on_tap)))
+  (should-error (jetpacs-menu-item "Clock" '(:action "c.x")
+                                   :items (list (jetpacs-menu-item "In" '(:action "c.in")))))
+  (should-error (jetpacs-menu-item "A" nil :items
+                                   (list (jetpacs-menu-item "B" nil :items
+                                                            (list (jetpacs-menu-item "C" '(:action "c.c")))))))
+  (should-error (jetpacs-menu-item "Clock" nil))
+  ;; Amendment #202: whole words to complete, never with a secret or a mask.
+  (should (equal (plist-get (jetpacs-text-input "i" :suggestions '("tag1" "work")) :suggestions)
+                 ["tag1" "work"]))
+  (should-error (jetpacs-text-input "i" :suggestions '("two words")))
+  (should-error (jetpacs-text-input "i" :suggestions '("")))
+  (should-error (jetpacs-text-input "i" :password t :suggestions '("x")))
+  (should-error (jetpacs-text-input "i" :mask "####" :suggestions '("1234")))
   ;; enum_list distinct + value-in-options
   (should-error (jetpacs-enum-list "e" (list (jetpacs-enum-option "A" "x")
                                              (jetpacs-enum-option "B" "x"))))
