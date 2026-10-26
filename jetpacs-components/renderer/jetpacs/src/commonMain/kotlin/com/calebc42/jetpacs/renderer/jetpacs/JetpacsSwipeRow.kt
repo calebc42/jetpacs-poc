@@ -124,24 +124,26 @@ internal fun JetpacsSwipeRow(
     swipeStart: JsonObject?,
     swipeEnd: JsonObject?,
     context: ComposeNodeRenderContext,
+    modifier: Modifier = Modifier,
     foreground: @Composable BoxScope.(isOpen: Boolean, close: () -> Unit) -> Unit,
 ) {
     val start = jetpacsSwipeSide(swipeStart)
     val end = jetpacsSwipeSide(swipeEnd)
     if (start == null && end == null) {
-        androidx.compose.foundation.layout.Box { foreground(false) {} }
+        androidx.compose.foundation.layout.Box(modifier) { foreground(false) {} }
         return
     }
     // Amendment #207: a popup side opens a floating action row beside the
     // gesture and never displaces the row. The first authored popup side
     // decides for the whole row; a mixed row is a popup row.
     if (start?.popup == true || end?.popup == true) {
-        JetpacsSwipePopupRow(identity, start, end, context, foreground)
+        JetpacsSwipePopupRow(identity, start, end, context, modifier, foreground)
         return
     }
     val haptic = LocalHapticFeedback.current
     RevealSwipeRow(
         identity = identity,
+        modifier = modifier,
         start = start?.behavior,
         end = end?.behavior,
         onAction = { direction, index, fromGestureCommit ->
@@ -238,6 +240,7 @@ private fun JetpacsSwipePopupRow(
     start: JetpacsSwipeSide?,
     end: JetpacsSwipeSide?,
     context: ComposeNodeRenderContext,
+    modifier: Modifier,
     foreground: @Composable BoxScope.(isOpen: Boolean, close: () -> Unit) -> Unit,
 ) {
     var anchor by remember(identity) { mutableStateOf<SwipePopupAnchor?>(null) }
@@ -245,6 +248,7 @@ private fun JetpacsSwipePopupRow(
         hasStart = start != null,
         hasEnd = end != null,
         onOpen = { anchor = it },
+        modifier = modifier,
     ) {
         foreground(false) {}
         anchor?.let { open ->
@@ -274,8 +278,9 @@ private fun JetpacsSwipePopup(
 ) {
     val styleState = remember { MutableStyleState(null) }
     val colors = JetpacsTheme.colors
+    val provider = remember(offset) { SwipePopupPositionProvider(offset) }
     Popup(
-        offset = offset,
+        popupPositionProvider = provider,
         onDismissRequest = onDismiss,
         properties = PopupProperties(
             focusable = true,
@@ -283,10 +288,11 @@ private fun JetpacsSwipePopup(
             dismissOnClickOutside = true,
         ),
     ) {
+        // Revived's NotePopup is a bare row of buttons: no card behind them.
+        // The `swipe.popup` slot may give it one.
         Row(
             modifier = Modifier.styleable(
                 styleState,
-                JetpacsTheme.styles.menuPopup,
                 designComponentStyle(DesignComponentStyleSlot.SwipePopup),
             ),
         ) {
@@ -301,7 +307,10 @@ private fun JetpacsSwipePopup(
                 ) ?: colors.content
                 Column(
                     modifier = Modifier
-                        .padding(SwipePopupButtonGap)
+                        .padding(
+                            horizontal = SwipePopupButtonInsetX,
+                            vertical = SwipePopupButtonInsetY,
+                        )
                         .size(SwipePopupButtonSize)
                         .clip(RoundedCornerShape(SwipePopupButtonSize / 2))
                         .background(background)
@@ -326,7 +335,34 @@ private fun JetpacsSwipePopup(
     }
 }
 
-/** Material 3's filled tonal icon button: a 40dp disc with a 24dp glyph, 8dp apart. */
-private val SwipePopupButtonSize = 40.dp
+/**
+ * Place the popup at [offset] inside the row, kept wholly inside the window
+ * as Android's PopupWindow keeps Revived's: near the edge the row slides
+ * back rather than running off it.
+ */
+private class SwipePopupPositionProvider(private val offset: IntOffset) :
+    androidx.compose.ui.window.PopupPositionProvider {
+    override fun calculatePosition(
+        anchorBounds: androidx.compose.ui.unit.IntRect,
+        windowSize: androidx.compose.ui.unit.IntSize,
+        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+        popupContentSize: androidx.compose.ui.unit.IntSize,
+    ): IntOffset {
+        val x = (anchorBounds.left + offset.x)
+            .coerceAtMost(windowSize.width - popupContentSize.width)
+            .coerceAtLeast(0)
+        val y = (anchorBounds.top + offset.y)
+            .coerceAtMost(windowSize.height - popupContentSize.height)
+            .coerceAtLeast(0)
+        return IntOffset(x, y)
+    }
+}
+
+/**
+ * Revived's NotePopupButtonFilledTonal, as drawn on the Pixel Tablet: a 44dp
+ * disc with a 24dp glyph, 52dp apart, 9dp below the row's top.
+ */
+private val SwipePopupButtonSize = 44.dp
 private val SwipePopupIconSize = 24.dp
-private val SwipePopupButtonGap = 4.dp
+private val SwipePopupButtonInsetX = 4.dp
+private val SwipePopupButtonInsetY = 9.dp

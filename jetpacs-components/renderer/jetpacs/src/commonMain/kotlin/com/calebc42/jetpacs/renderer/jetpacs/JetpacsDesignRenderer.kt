@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.style.StyleState
 import androidx.compose.foundation.style.rememberUpdatedStyleState
@@ -268,15 +269,16 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
         }
         // SPEC 17.3 (#207): a pressable row may carry swipe sides — revealed
         // beneath it, or shown as a popup beside the gesture — like a list item.
-        JetpacsSwipeRow(
-            identity = context.path,
-            swipeStart = p[JetpacsPressableMembers.SwipeStart],
-            swipeEnd = p[JetpacsPressableMembers.SwipeEnd],
-            context = context,
-        ) { _, _ ->
+        // The incoming modifier carries the parent's layout data (a row's
+        // weight, an authored width): it belongs on the outermost node, so a
+        // swiping pressable hands it to the swipe row and fills that instead.
+        val swipeStart = p[JetpacsPressableMembers.SwipeStart]
+        val swipeEnd = p[JetpacsPressableMembers.SwipeEnd]
+        val swipes = swipeStart != null || swipeEnd != null
+        val face: @Composable (Modifier) -> Unit = { faceModifier ->
         Row(
             verticalAlignment = if (centered) Alignment.CenterVertically else Alignment.Top,
-            modifier = modifier
+            modifier = faceModifier
                 .then(computed.intrinsicLayout())
                 .sizeIn(
                     minWidth = if (authoredWidth) 0.dp else 48.dp,
@@ -316,6 +318,17 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
                 }
             }
         }
+        }
+        if (!swipes) {
+            face(modifier)
+        } else {
+            JetpacsSwipeRow(
+                identity = context.path,
+                swipeStart = swipeStart,
+                swipeEnd = swipeEnd,
+                context = context,
+                modifier = modifier,
+            ) { _, _ -> face(Modifier.fillMaxWidth()) }
         }
     }
 }

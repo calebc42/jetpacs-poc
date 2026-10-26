@@ -1421,27 +1421,26 @@ internal fun SwipeActionBox(
                             dismissOnClickOutside = true,
                         ),
                     ) {
-                        androidx.compose.material3.Surface(
-                            shape = MaterialTheme.shapes.medium,
-                            tonalElevation = 3.dp,
-                            shadowElevation = 6.dp,
-                        ) {
-                            Row(Modifier.padding(4.dp)) {
-                                side.actions.forEach { action ->
-                                    androidx.compose.material3.FilledTonalIconButton(
-                                        onClick = {
-                                            anchor = null
-                                            ctx.actionInjecting(action.descriptor, buildJsonObject {
-                                                put("direction", open.direction.name.lowercase())
-                                            })
-                                        },
-                                    ) {
-                                        val icon = action.icon
-                                        if (icon != null) {
-                                            Icon(IconMap.get(icon), contentDescription = action.label)
-                                        } else {
-                                            Text(action.label, maxLines = 1)
-                                        }
+                        // Revived's NotePopup: a bare row of 44dp tonal
+                        // discs, 52dp apart, no card behind them.
+                        Row {
+                            side.actions.forEach { action ->
+                                androidx.compose.material3.FilledTonalIconButton(
+                                    onClick = {
+                                        anchor = null
+                                        ctx.actionInjecting(action.descriptor, buildJsonObject {
+                                            put("direction", open.direction.name.lowercase())
+                                        })
+                                    },
+                                    modifier = Modifier
+                                        .padding(horizontal = 4.dp, vertical = 9.dp)
+                                        .size(44.dp),
+                                ) {
+                                    val icon = action.icon
+                                    if (icon != null) {
+                                        Icon(IconMap.get(icon), contentDescription = action.label)
+                                    } else {
+                                        Text(action.label, maxLines = 1)
                                     }
                                 }
                             }
