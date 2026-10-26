@@ -942,7 +942,6 @@ its editor is deliberately plain and section-scoped."
 ;; ownerless, like every other exposure-gated Org verb.
 
 
-(declare-function org-babel-lob-execute-maybe "ob-lob" ())
 
 (defconst jetpacs-reader-org-source-edit-limit 65536
   "Maximum characters retained in the single inline code-edit session.")
@@ -965,10 +964,6 @@ A source draft has no `:kind'; an argument draft carries `:kind' `call'.")
 
 (defvar jetpacs-reader-org--footnote-sequence 0
   "Sequence of action-created footnote dialogs; never read by builders.")
-
-(defun jetpacs-reader-org--save-buffer (buffer)
-  "Save BUFFER synchronously through the Org save policy."
-  (jetpacs-org-save-policy buffer))
 
 (defun jetpacs-reader-org-source-draft ()
   "Return the live inline Babel draft plist, or nil."
@@ -1171,8 +1166,8 @@ Failed writes roll back the Org buffer and keep the draft open."
                       "Source changed. Cancel and reopen the code editor."
                       (plist-get params :surface))
                      'stale)
-                 (ebp-org--check-file buffer-file-name)
-                 (ebp-org--with-clamped-io
+                 (ebp-org-check-file buffer-file-name)
+                 (ebp-org-with-clamped-io
                    (atomic-change-group
                      (save-excursion
                        (goto-char beg) (delete-region beg end)
@@ -1187,7 +1182,7 @@ Failed writes roll back the Org buffer and keep the draft open."
                            (when (string-empty-p (plist-get session :language))
                              (insert " "))
                            (insert language))))
-                     (jetpacs-reader-org--save-buffer buffer)))
+                     (jetpacs-org-save-policy buffer)))
                  (setq jetpacs-reader-org--source-edit nil)
                  (jetpacs-buffer-defer-refresh (plist-get params :surface))
                  'accepted))))
@@ -1348,12 +1343,12 @@ its parentheses.  Failed writes roll back the buffer and retain the draft."
                   (plist-get params :surface))
                  'rejected)
                 (t
-                 (ebp-org--check-file buffer-file-name)
-                 (ebp-org--with-clamped-io
+                 (ebp-org-check-file buffer-file-name)
+                 (ebp-org-with-clamped-io
                    (atomic-change-group
                      (save-excursion
                        (goto-char beg) (delete-region beg end) (insert value))
-                     (jetpacs-reader-org--save-buffer buffer)))
+                     (jetpacs-org-save-policy buffer)))
                  (setq jetpacs-reader-org--source-edit nil)
                  (jetpacs-buffer-defer-refresh (plist-get params :surface))
                  'accepted)))))
@@ -1391,9 +1386,8 @@ source-block Play control.  No evaluation happens in any builder."
                                  (eql pos (org-element-property
                                            :post-affiliated element))))
                        'stale
-                     (ebp-org--check-file buffer-file-name)
-                     (require 'ob-lob)
-                     (ebp-org--with-clamped-io
+                     (ebp-org-check-file buffer-file-name)
+                     (ebp-org-with-clamped-io
                        ;; Play is the explicit execution request, as for
                        ;; source blocks.
                        (let ((org-confirm-babel-evaluate nil))
@@ -1401,7 +1395,7 @@ source-block Play control.  No evaluation happens in any builder."
                            (unless (org-babel-lob-execute-maybe)
                              (user-error
                               "Babel call target could not be resolved"))
-                           (jetpacs-reader-org--save-buffer buffer))))
+                           (jetpacs-org-save-policy buffer))))
                      (jetpacs-buffer-defer-refresh (plist-get params :surface))
                      'accepted))))))
         (error (jetpacs-shell-notify (jetpacs-error-label err)
@@ -1535,7 +1529,7 @@ allowlisted source file.  Opening this transient UI has no document effect."
       (condition-case err
           (with-current-buffer buffer
             (org-with-wide-buffer
-             (ebp-org--check-file buffer-file-name)
+             (ebp-org-check-file buffer-file-name)
              (cond
               ((or (/= tick (buffer-chars-modified-tick))
                    (not (<= (point-min) pos (point-max))))
@@ -1647,15 +1641,15 @@ drafts, and failed writes roll back the buffer while leaving the dialog open."
                       "Keep the text inside one Org footnote definition."
                       surface)
                      'rejected)
-                 (ebp-org--check-file buffer-file-name)
-                 (ebp-org--with-clamped-io
+                 (ebp-org-check-file buffer-file-name)
+                 (ebp-org-with-clamped-io
                    (atomic-change-group
                      (save-excursion
                        (goto-char (plist-get session :beg))
                        (delete-region (plist-get session :beg)
                                       (plist-get session :end))
                        (insert value))
-                     (jetpacs-reader-org--save-buffer buffer)))
+                     (jetpacs-org-save-policy buffer)))
                  (jetpacs-reader-org--footnote-close)
                  (jetpacs-buffer-defer-refresh surface)
                  'accepted)))))

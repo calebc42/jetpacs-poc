@@ -84,10 +84,15 @@
   (cl-letf (((symbol-function 'org-clock-is-active) (lambda () nil)))
     (should (eq (jetpacs-org-clock--on-out nil nil) 'stale)))
   ;; Clock-out captures the live buffer before Org clears its marker.
+  ;; The buffer visits a file (the save is stubbed): a file-less buffer
+  ;; has nothing durable to write and is not saved.
   (with-temp-buffer
-    (let* ((marker (point-marker)) saved outed
-           (ebp-org-file-save-function (lambda (b) (push b saved))))
-      (cl-letf (((symbol-function 'org-clock-is-active) (lambda () marker))
+    (setq buffer-file-name "/nonexistent/clock-test.org")
+    (set-buffer-modified-p nil)
+    (let* ((marker (point-marker)) saved outed)
+      (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                 (lambda (b) (push b saved)))
+                ((symbol-function 'org-clock-is-active) (lambda () marker))
                 ((symbol-function 'org-clock-out)
                  (lambda (&rest _) (setq outed t))))
         (let ((org-clock-marker marker))
@@ -99,9 +104,11 @@
   (should (eq (jetpacs-org-clock--on-switch nil nil) 'rejected))
   ;; Clock-in-last installs the same save guard in the newly clocked buffer.
   (with-temp-buffer
-    (let* ((marker (point-marker)) saved
-           (ebp-org-file-save-function (lambda (b) (push b saved))))
-      (cl-letf (((symbol-function 'org-clock-in-last) (lambda (&rest _) t)))
+    (setq buffer-file-name "/nonexistent/clock-test.org")
+    (let* ((marker (point-marker)) saved)
+      (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                 (lambda (b) (push b saved)))
+                ((symbol-function 'org-clock-in-last) (lambda (&rest _) t)))
         (let ((org-clock-marker marker))
           (should (eq (jetpacs-org-clock--on-in-last nil nil) 'accepted))
           (should (equal saved (list (current-buffer))))
@@ -112,20 +119,31 @@
     (should (eq (jetpacs-org-clock--on-in-last nil nil) 'rejected))))
 
 (ert-deftest jetpacs-org-clock-out-saves-through-the-policy ()
-  "Clock-out saves through `ebp-org-file-save-function'; a refused save
-falls back to the deferred save and the done clock-out stays accepted."
+  "Clock-out saves through `jetpacs-org-save-policy'; a REFUSED save
+falls back to the deferred save and the done clock-out stays accepted,
+while any other failure of the save reaches the handler."
   (with-temp-buffer
-    (let* ((marker (point-marker)) deferred
-           (ebp-org-file-save-function
-            (lambda (_b) (signal 'ebp-org-refused '(locked)))))
-      (cl-letf (((symbol-function 'org-clock-is-active) (lambda () marker))
+    (setq buffer-file-name "/nonexistent/clock-test.org")
+    (let* ((marker (point-marker)) deferred)
+      (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                 (lambda (_b) (signal 'ebp-org-refused '(locked))))
+                ((symbol-function 'org-clock-is-active) (lambda () marker))
                 ((symbol-function 'org-clock-out) #'ignore)
                 ((symbol-function 'ebp-org-defer-save)
                  (lambda () (push (current-buffer) deferred))))
         (let ((org-clock-marker marker)
               (inhibit-message t))
           (should (eq (jetpacs-org-clock--on-out nil nil) 'accepted))
-          (should (equal deferred (list (current-buffer)))))))))
+          (should (equal deferred (list (current-buffer))))))
+      (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                 (lambda (_b) (error "Disk full")))
+                ((symbol-function 'org-clock-is-active) (lambda () marker))
+                ((symbol-function 'org-clock-out) #'ignore)
+                ((symbol-function 'ebp-org-defer-save)
+                 (lambda () (push (current-buffer) deferred))))
+        (let ((org-clock-marker marker))
+          (should-error (jetpacs-org-clock--on-out nil nil))
+          (should (= (length deferred) 1)))))))
 
 (ert-deftest jetpacs-org-clock-replayed-tap-dispatches-before-root-claim ()
   "A durable SYNCING replay reaches its global handler without a root."

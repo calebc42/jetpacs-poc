@@ -144,13 +144,13 @@ would immediately overwrite any value typed into it."
                     (setcdr entry input)
                     (save-excursion
                       (org-table-store-formulas stored)))))
-               (ignore-errors (jetpacs-shell-push surface))))
+               (jetpacs-shell-push-caught surface)))
          (let* ((input (read-string "Cell: " current))
                 (new (jetpacs-org-table-clean-field input)))
            (jetpacs-org-table-mutate buffer pos
                                      (lambda ()
                                        (org-table-get-field nil new)))
-           (ignore-errors (jetpacs-shell-push surface))))))
+           (jetpacs-shell-push-caught surface)))))
    surface
    "Cell editing needs an attended session"
    "That table edit did not work"))
@@ -173,7 +173,7 @@ references (or mark them INVALID) on the way through.")
             (op (cdr (assoc choice jetpacs-org-table--menu-ops))))
        (when op
          (jetpacs-org-table-mutate buffer pos op)
-         (ignore-errors (jetpacs-shell-push surface)))))
+         (jetpacs-shell-push-caught surface))))
    surface
    "Table editing needs an attended session"
    "That table edit did not work"))
@@ -220,7 +220,7 @@ confirm that cannot reach the device refuses instead of wedging."
                  (org-babel-execute-src-block nil info)))))
           (jetpacs-org-save-policy buffer))
         (jetpacs-shell-notify "Block executed" surface)
-        (ignore-errors (jetpacs-shell-push surface)))
+        (jetpacs-shell-push-caught surface))
     (inhibited-interaction
      (jetpacs-shell-notify jetpacs-org-table--babel-refusal surface))
     (jetpacs-org-table--timeout

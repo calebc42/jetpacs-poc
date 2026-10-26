@@ -213,7 +213,7 @@ dialog can reach the device; missing and swept tokens answer at once."
                    'add-note (list :token (car tokens)))
                   'accepted))
       (should (equal (car jetpacs-org-heading-verbs-test--notes)
-                     "This needs the Companion dialog bridge")))
+                     "Dialogs are not available in this session")))
     (cl-letf (((symbol-function 'jetpacs-dialog-can-bridge-p) (lambda () t))
               ((symbol-function 'read-string)
                (lambda (prompt &rest _)

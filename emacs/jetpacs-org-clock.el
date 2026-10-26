@@ -23,6 +23,7 @@
 (require 'jetpacs-surfaces)
 (require 'jetpacs-widgets)
 (require 'jetpacs-shell)
+(require 'jetpacs-org-save)
 
 (defconst jetpacs-org-clock-owner "org-mode"
   "Owner of native Org clocking and its chronometer notification.")
@@ -147,18 +148,22 @@ depth-90 READY phase, after durable replay has settled."
   "Save Org clock mutations in BUFFER through the save policy.
 The buffer-local crypt hook rides the policy's `save-buffer', closing
 the path that would otherwise persist a decrypted Org Crypt entry in
-cleartext.  The clock change is already made, so a refused save falls
-back to the engine's deferred save (the same policy, retried when idle)
-rather than turning a done clock-out into a rejected event."
+cleartext.  The clock change is already made, so a save the clamp
+REFUSES (a prompt nobody can answer: supersession, a write-protected
+file) falls back to the engine's deferred save, retried when idle,
+rather than turning a done clock-out into a rejected event.  Any other
+failure is the handler's to answer: it signals.  A buffer visiting no
+file has nothing durable to write."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (add-hook 'before-save-hook #'org-encrypt-entries nil t)
-      (condition-case err
-          (funcall ebp-org-file-save-function buffer)
-        (error
-         (message "jetpacs-org-clock: save deferred: %s"
-                  (jetpacs-error-label err))
-         (ebp-org-defer-save))))))
+      (when buffer-file-name
+        (condition-case err
+            (jetpacs-org-save-policy buffer)
+          (ebp-org-refused
+           (message "jetpacs-org-clock: save deferred: %s"
+                    (jetpacs-error-label err))
+           (ebp-org-defer-save)))))))
 
 (defun jetpacs-org-clock--on-out (_args _params)
   "Stop the running clock and return its durable dispatch status."

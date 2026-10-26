@@ -176,13 +176,6 @@ not emit its own, or the button doubles."
     (when (derived-mode-p 'org-mode)
       (org-encrypt-entries))))
 
-(defalias 'jetpacs-editor-org-save-policy #'jetpacs-org-save-policy
-  "The policy's former home and name, kept live for app callers.
-The policy lives in `jetpacs-org-save' now, a leaf every Org module
-requires eagerly.  Stub `jetpacs-org-save-policy', which the
-foundation calls; stubbing this alias intercepts only callers that
-still use its name.")
-
 (defun jetpacs-editor-org--commit-narrowed
     (true path value record buffer)
   "Splice VALUE into BUFFER's restriction and write all of TRUE.
@@ -445,7 +438,7 @@ anchored ref."
   ;; Check disk identity before resolving the ref.  Resolution may visit or
   ;; consult the already-visiting buffer; doing it first would let Emacs ask
   ;; whether to edit a buffer whose file changed externally, violating D2.
-  (let ((true (ebp-org--check-file (plist-get ref :file))))
+  (let ((true (ebp-org-check-file (plist-get ref :file))))
     (when (jetpacs-editor-org--synced-edit-p true)
       (jetpacs-editor-org--splice-refuse "file is open in the synced editor"))
     (unless (equal stamp (jetpacs-editor-org-mtime-stamp true))

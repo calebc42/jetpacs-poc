@@ -1230,16 +1230,16 @@ no `:command' ops, one-level menus only, and op-plist long-presses."
 ;;;; Saving through the policy
 
 (ert-deftest jetpacs-org-render-encrypt-saves-through-the-policy ()
-  "Encrypting an entry saves now, through `ebp-org-file-save-function'."
+  "Encrypting an entry saves now, through `jetpacs-org-save-policy'."
   (let* ((file (make-temp-file "jetpacs-render-crypt" nil ".org" "* A\n"))
          (buf (find-file-noselect file))
-         (saved nil)
-         (ebp-org-file-save-function
-          (lambda (b)
-            (push b saved)
-            (with-current-buffer b (set-buffer-modified-p nil)))))
+         (saved nil))
     (unwind-protect
-        (cl-letf (((symbol-function 'org-encrypt-entry)
+        (cl-letf (((symbol-function 'jetpacs-org-save-policy)
+                   (lambda (b)
+                     (push b saved)
+                     (with-current-buffer b (set-buffer-modified-p nil))))
+                  ((symbol-function 'org-encrypt-entry)
                    (lambda () (insert "-----BEGIN PGP MESSAGE-----\n")))
                   ((symbol-function 'jetpacs-event-stale-p) #'ignore)
                   ((symbol-function 'jetpacs-buffer-defer-refresh) #'ignore)

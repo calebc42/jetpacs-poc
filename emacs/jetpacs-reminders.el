@@ -89,18 +89,24 @@ reminders, which a disabled projection's empty set is."
   (maphash (lambda (owner _) (jetpacs-reminders-schedule-sync owner))
            jetpacs-reminders--projections))
 
-(defun jetpacs-reminders-schedule-sync (owner &rest _ignored)
+(defconst jetpacs-reminders--coalesce-idle-seconds 0.1
+  "Idle delay before a scheduled sync runs, outside an action handler.
+Long enough to fold a burst of pushes or saves into one projection,
+short enough that the device's set follows an edit at once; the delay
+the Org projection used before the module took over its sync.")
+
+(defun jetpacs-reminders-schedule-sync (owner)
   "Coalesce a sync of OWNER's projection; return t.
 Inside an action handler the sync runs as the handler's continuation,
-elsewhere from an idle timer.  Extra arguments are ignored, so this can
-sit on any hook through a closure.  Nothing happens without a projection."
+elsewhere from an idle timer.  Nothing happens without a projection."
   (when-let* ((projection (gethash owner jetpacs-reminders--projections)))
     (unless (timerp (plist-get projection :timer))
       (let ((run (lambda () (jetpacs-reminders--run-scheduled owner))))
         (plist-put projection :timer
                    (if (jetpacs-in-action-p)
                        (jetpacs-flow-continue run)
-                     (run-with-idle-timer 0.1 nil run))))))
+                     (run-with-idle-timer
+                      jetpacs-reminders--coalesce-idle-seconds nil run))))))
   t)
 
 (defun jetpacs-reminders--run-scheduled (owner)

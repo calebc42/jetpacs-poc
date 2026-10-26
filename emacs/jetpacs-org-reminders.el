@@ -40,8 +40,12 @@ The search itself is performed by Org's agenda search commands; this bound
 limits the neutral records retained for downstream applets."
   :type '(integer 1 512) :group 'jetpacs-org)
 
-(defvar jetpacs-org-reminders-enabled t
-  "Non-nil when the canonical Org reminder pipeline is enabled.")
+(defcustom jetpacs-org-reminders-enabled t
+  "Non-nil when the canonical Org reminder pipeline is enabled.
+On by default: `jetpacs-org-mode-register' then defines the Org reminder
+projection, and the device receives the agenda's timed items.  Off, no
+projection is defined and nothing is sent."
+  :type 'boolean :group 'jetpacs-org)
 
 (defconst jetpacs-org-mode--agenda-buffer "*Jetpacs Org Mode Agenda*"
   "Private Org Agenda buffer used by the canonical extraction.")
@@ -360,7 +364,7 @@ while every returned row is rechecked against the canonical agenda scope."
         (unwind-protect
             (save-window-excursion
               (let ((org-agenda-window-setup 'current-window))
-                (ebp-org--with-clamped-io
+                (ebp-org-with-clamped-io
                   (org-agenda nil "a"))
                 (with-current-buffer jetpacs-org-mode--agenda-buffer
                   (goto-char (point-min))
@@ -442,7 +446,7 @@ every card shares one shape."
   (let ((scope (or files (jetpacs-org-mode--agenda-scope)))
         items)
     (when scope
-      (ebp-org--with-clamped-io
+      (ebp-org-with-clamped-io
         (org-map-entries
          (lambda ()
            (when (nth 2 (org-heading-components))
@@ -476,7 +480,7 @@ namespace."
       ;; every file, so it runs clamped.
       (let ((files (jetpacs-org-mode--agenda-scope)))
         (when files
-          (ebp-org--with-clamped-io
+          (ebp-org-with-clamped-io
             (dolist (entry (org-global-tags-completion-table files))
               (when (stringp (car entry)) (push (car entry) tags))))))
       (sort (delete-dups tags) #'string-lessp))))
@@ -588,12 +592,16 @@ does not cover settings changes.  A refused or vanished FILE answers nil."
                                     (member member file-tags))
                                   members)
                       :positions (nreverse positions))))))
-      (error nil))))
+      ;; A file outside the roots, gone, or unreadable has no tag
+      ;; groups to answer; a bug in the scan still signals.
+      ((ebp-org-refused ebp-org-unresolved ebp-org-unavailable) nil))))
 
 ;;;; Reminder projection and ownership
 
-(defun jetpacs-org-reminders--item-hm (time)
-  "Normalize an agenda TIME property to HH:MM, or return nil."
+(defun jetpacs-org-reminders-item-hm (time)
+  "Normalize an agenda TIME property to HH:MM, or return nil.
+Public: downstream cards render the same clock text the reminder
+projection alarms on."
   (when (stringp time)
     (let ((text (string-trim time)))
       (when (string-match
@@ -601,32 +609,7 @@ does not cover settings changes.  A refused or vanished FILE answers nil."
         (format "%02d:%s" (string-to-number (match-string 1 text))
                 (match-string 2 text))))))
 
-(defalias 'jetpacs-org-reminders-item-hm
-  #'jetpacs-org-reminders--item-hm
-  "Normalize an agenda item's raw `time' property to HH:MM, or nil.
-Public: downstream cards render the same clock text the reminder
-projection alarms on.")
-
 ;;;; Agenda item formatters (the shared card's vocabulary)
-
-(defun jetpacs-org-agenda-item-meta (it hm)
-  "Compose the compact metadata line for agenda item IT.
-Leads with the time HM or the agenda's own qualifier (\"Sched. 3x\",
-\"In 3 d.\", \"2 d. ago\"), then the file name — the Orgzly-style
-second row.  A bare \"Scheduled\"/\"Deadline\" qualifier restates what
-the row's type icon already says, so it is dropped."
-  (let* ((extra (alist-get 'extra it))
-         (extra (and (stringp extra)
-                     (replace-regexp-in-string
-                      "[ \t]+" " "
-                      (string-trim (replace-regexp-in-string
-                                    ":[ \t]*\\'" "" (string-trim extra))))))
-         (extra (and extra (not (member extra '("" "Scheduled" "Deadline")))
-                     extra))
-         (file (alist-get 'file it)))
-    (string-join (delq nil (list (or hm extra)
-                                 (and file (file-name-nondirectory file))))
-                 " · ")))
 
 (defun jetpacs-org-agenda-type-icon (type)
   "Return (ICON . COLOR) for an agenda item TYPE string (color may be nil)."
@@ -725,7 +708,7 @@ add their own opaque routing without duplicating Org extraction."
       (error "jetpacs-org: reminder lead minutes must be a non-negative integer"))
     (dolist (item items)
       (let ((date (alist-get 'date item))
-            (hm (jetpacs-org-reminders--item-hm (alist-get 'time item)))
+            (hm (jetpacs-org-reminders-item-hm (alist-get 'time item)))
             (headline (alist-get 'headline item))
             (type (alist-get 'type item))
             (file (alist-get 'file item))
