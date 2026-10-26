@@ -402,7 +402,7 @@
       "optional": {}
     },
     "jetpacs.pressable": {
-      "description": "A styled pressable region dispatching on_tap, with enabled, selected and toggled presentation states.",
+      "description": "A styled pressable region dispatching on_tap and on_long_tap, with enabled, selected and toggled presentation states and optional swipe sides.",
       "required": {
         "styles": {
           "type": "ref",
@@ -436,6 +436,10 @@
         "swipe_end": {
           "type": "swipe-side",
           "description": "Actions revealed, or shown as a popup, by a swipe toward the end edge (SPEC 17.3)."
+        },
+        "on_long_tap": {
+          "type": "action",
+          "description": "The action dispatched by a long press (SPEC 17.3 on_long_tap)."
         }
       }
     },

@@ -616,15 +616,18 @@ default) plus RESERVE-EXTRA dp, at most RESERVE-MAX dp."
                      :reserve_extra reserve-extra :reserve_max reserve-max))
 
 (cl-defun jetpacs-design-pressable
-    (styles on-tap children &key enabled selected toggled swipe-start swipe-end)
+    (styles on-tap children &key enabled selected toggled swipe-start swipe-end
+                                 on-long-tap)
   "Build one accessible pressable face with STYLES and ON-TAP.
 CHILDREN must contain one to 16 passive presentation nodes.  ENABLED,
 SELECTED, and TOGGLED are t or `:json-false' when authored; transient hover,
 focus, and press state stays local to the receiver.  STYLES may be a
 `jetpacs-ref' (SPEC 13.8.3): the ordered identifiers then come from the
 surface data document, which is how a template row varies its face.
-SWIPE-START and SWIPE-END are swipe sides from `jetpacs-swipe' (SPEC 17.3)."
+SWIPE-START and SWIPE-END are swipe sides from `jetpacs-swipe' (SPEC 17.3);
+ON-LONG-TAP is the action a long press dispatches."
   (jetpacs-check-descriptor on-tap ":on-tap")
+  (when on-long-tap (jetpacs-check-descriptor on-long-tap ":on-long-tap"))
   (unless (and (proper-list-p children) (<= 1 (length children) 16))
     (error "jetpacs-design: pressable children must contain one to 16 nodes"))
   (dolist (pair `((,enabled . "enabled")
@@ -638,6 +641,7 @@ SWIPE-START and SWIPE-END are swipe sides from `jetpacs-swipe' (SPEC 17.3)."
    :styles (if (jetpacs-ref-p styles) styles
              (jetpacs-design--style-references styles))
    :on_tap on-tap
+   :on_long_tap on-long-tap
    :children (jetpacs-design--children children 16 "pressable children")
    :enabled enabled
    :selected selected

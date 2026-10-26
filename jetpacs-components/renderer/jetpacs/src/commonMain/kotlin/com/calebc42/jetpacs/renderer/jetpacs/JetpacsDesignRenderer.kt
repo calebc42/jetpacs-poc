@@ -2,6 +2,7 @@
 package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Row
@@ -255,6 +256,7 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
         val hasSelected = p.has(JetpacsPressableMembers.Selected)
         val hasToggled = p.has(JetpacsPressableMembers.Toggled)
         val onTap = p[JetpacsPressableMembers.OnTap]
+        val onLongTap = p[JetpacsPressableMembers.OnLongTap]
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource) {
             it.isEnabled = enabled
@@ -286,11 +288,12 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
                 )
                 .hoverable(interactionSource, enabled)
                 .jetpacsFocusable(enabled, interactionSource)
-                .clickable(
+                .combinedClickable(
                     interactionSource = interactionSource,
                     indication = null,
                     enabled = enabled,
                     role = Role.Button,
+                    onLongClick = onLongTap?.let { descriptor -> { context.action(descriptor) } },
                 ) {
                     context.action(onTap)
                 }
