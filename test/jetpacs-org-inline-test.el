@@ -79,7 +79,11 @@ an id link asks the title hook first; the tally and budget are charged."
       (should (equal (plist-get target :color) "primary"))
       (should (equal (plist-get web :color) "secondary"))
       (should (equal (plist-get note :color) "primary"))
-      (dolist (entry `((,target . "jetpacs.org.follow") (,web . "jetpacs.org.follow")
+      ;; A web link opens on the device (EBP #208 uri.open); the rest
+      ;; follow through Emacs at their exposed positions.
+      (should (equal (plist-get web :on_tap)
+                     '(:builtin "uri.open" :uri "https://example.com/api/")))
+      (dolist (entry `((,target . "jetpacs.org.follow")
                        (,note . "jetpacs.org.footnote.open")))
         (let* ((tap (plist-get (car entry) :on_tap))
                (args (plist-get tap :args))

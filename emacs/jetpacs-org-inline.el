@@ -34,6 +34,7 @@
 (require 'jetpacs-surfaces)
 (require 'jetpacs-widgets)
 (require 'jetpacs-buffer)
+(require 'jetpacs-org-links)             ; system links open on the device
 
 (defconst jetpacs-org-inline-literal-background "#80808024"
   "Subtle translucent background for inline code and verbatim text.")
@@ -194,10 +195,12 @@ RichSpan has no strike decoration; strike-through loses only its markers."
               (when (and (eq (org-element-type object) 'link)
                          (not (org-element-lineage object '(footnote-reference link))))
                 (let* ((pos (+ source-start (1- (org-element-property :begin object))))
-                       (action (with-current-buffer source-buffer
-                                 (jetpacs-action "jetpacs.org.follow"
-                                                 :args (list :buffer (buffer-name) :pos pos
-                                                             :tick (buffer-chars-modified-tick))))))
+                       (action (jetpacs-org-link-action
+                                (org-element-property :raw-link object)
+                                (with-current-buffer source-buffer
+                                  (jetpacs-action "jetpacs.org.follow"
+                                                  :args (list :buffer (buffer-name) :pos pos
+                                                              :tick (buffer-chars-modified-tick)))))))
                   (when (jetpacs-org-inline--link-properties object action source-buffer)
                     (push pos links)))))
             (dolist (object objects)

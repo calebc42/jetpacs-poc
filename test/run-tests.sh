@@ -469,6 +469,11 @@ emacs -Q --batch -L emacs -l test/jetpacs-reader-org-test.el \
 emacs -Q --batch -L emacs -l test/jetpacs-org-inline-test.el \
   -f ert-run-tests-batch-and-exit
 
+# System links (web, mail, phone, messages, maps) tap into uri.open (EBP
+# #208); Org learns Revived's schemes; every other link follows in Emacs.
+emacs -Q --batch -L emacs -l test/jetpacs-org-links-test.el \
+  -f ert-run-tests-batch-and-exit
+
 # JA-5g exit gate: the habits screen — the windowed graph with rotten
 # habits skipped, the one-canvas strip's A2 spend, the durable Done
 # with the prompt hazard loud, token honesty, and the grep pin keeping

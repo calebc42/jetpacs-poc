@@ -608,12 +608,13 @@ under a root would hang `insert-file-contents' forever (JA-6 P1-4)."
           (equal (plist-get (plist-get item :on_tap) :action)
                  "jetpacs.org.heading"))
         (append (plist-get overflow :items) nil)))
-      ;; The link keeps its more-specific action; ordinary headline runs
-      ;; become the larger fold target.
+      ;; The link keeps its more-specific action — a web link opens on the
+      ;; device (EBP #208) — and ordinary headline runs become the larger
+      ;; fold target.
       (should (seq-some
                (lambda (span)
-                 (equal (plist-get (plist-get span :on_tap) :action)
-                        "jetpacs.org.follow"))
+                 (equal (plist-get span :on_tap)
+                        '(:builtin "uri.open" :uri "https://example.com")))
                spans))
       (should (seq-some
                (lambda (span)
@@ -1095,6 +1096,39 @@ cleanup thunk — the drain never burns a tick on a view nobody shows."
           (should (seq-some (lambda (node)
                               (plist-get node :scroll_here))
                             nodes)))))))
+
+(ert-deftest jetpacs-org-render-id-link-indexes-the-org-roots ()
+  "An `id:' link into a file Org has never indexed still follows: the
+roots are scanned first, as Revived searches every notebook."
+  (jetpacs-org-render-test--with-file f "See [[id:abc-123][the target]].\n"
+    (let* ((dir (file-name-directory f))
+           (org-id-locations-file (expand-file-name ".ids" dir))
+           (org-id-locations nil)
+           (org-id-files nil)
+           (org-id--locations-checksum nil)
+           presented)
+      (with-temp-file (expand-file-name "other.org" dir)
+        (insert "* Elsewhere\n:PROPERTIES:\n:ID: abc-123\n:END:\nBody\n"))
+      (let ((buf (jetpacs-org-render-test--buffer f)))
+        (jetpacs-org-render buf)
+        (let ((pos (jetpacs-org-render-test--exposed-position
+                    buf "jetpacs.org.follow"))
+              (jetpacs-navigate-drill-function (lambda (&rest _) t))
+              (jetpacs-org-render-follow-destination-function
+               (lambda (_source destination position _target)
+                 (setq presented (list destination position))
+                 t)))
+          (should (eq 'accepted
+                      (jetpacs-org-render--follow
+                       (list :buffer (buffer-name buf) :pos pos)
+                       (list :surface "app:org-id-test"))))
+          (should presented)
+          (with-current-buffer (nth 0 presented)
+            (should (equal (file-name-nondirectory buffer-file-name) "other.org"))
+            (save-excursion
+              (goto-char (nth 1 presented))
+              (should (looking-at-p "\\* Elsewhere"))))
+          (kill-buffer (nth 0 presented)))))))
 
 (ert-deftest jetpacs-org-render-link-offers-org-destination-to-host ()
   "A document host sees Org's exact destination and suppresses drilling."

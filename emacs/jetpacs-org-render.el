@@ -76,6 +76,7 @@
 (require 'jetpacs-widgets)
 (require 'jetpacs-surfaces)
 (require 'jetpacs-buffer)
+(require 'jetpacs-org-links)             ; system links open on the device
 (require 'jetpacs-navigate)
 (require 'jetpacs-hypertext)
 (require 'jetpacs-async)
@@ -851,8 +852,14 @@ cannot see."
          ;; retain their built-in behavior.  Footnotes were claimed by
          ;; the more-specific arm above.
          ((org-in-regexp org-link-any-re)
-          (jetpacs-action "jetpacs.org.follow"
-                          :args (list :buffer buffer-name :pos pos)))
+          ;; A web, mail, phone, message or map link opens on the device
+          ;; (EBP #208); every other link still goes through Org.
+          (jetpacs-org-link-action
+           (let ((context (org-element-context)))
+             (and (eq (org-element-type context) 'link)
+                  (org-element-property :raw-link context)))
+           (jetpacs-action "jetpacs.org.follow"
+                           :args (list :buffer buffer-name :pos pos))))
          ;; Drawer header (or :END:) line: fold affordance.
          ((and (eq c ?:)
                (save-excursion
@@ -1535,6 +1542,7 @@ the generic drill in `jetpacs-navigate-thunk' shows the destination."
            ;; navigator's shim captures both it and Org's destination point.
            (set-buffer buf)
            (goto-char pos)
+           (jetpacs-org-link-prepare)
            (org-open-at-point))
          surface
          "Org link"
