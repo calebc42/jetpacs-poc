@@ -23,7 +23,9 @@ import androidx.compose.foundation.text.input.TextFieldDecorator
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.remember
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawWithContent
@@ -56,6 +58,7 @@ fun JetpacsEditor(
     readOnly: Boolean = false,
     lineNumbers: Boolean = false,
     chromeless: Boolean = false,
+    placeholder: String? = null,
     inputTransformation: InputTransformation? = null,
     outputTransformation: OutputTransformation? = null,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
@@ -79,6 +82,7 @@ fun JetpacsEditor(
     val decorator = TextFieldDecorator { innerTextField ->
         JetpacsEditorDecoration(
             text = state.text.toString(),
+            placeholder = placeholder,
             lineNumbers = lineNumbers,
             textLayoutState = textLayoutState,
             scrollState = scrollState,
@@ -98,7 +102,7 @@ fun JetpacsEditor(
     BasicTextField(
         state = state,
         modifier = modifier
-            .heightIn(min = 48.dp)
+            .heightIn(min = editorMinHeight())
             .styleable(
                 styleState,
                 designComponentNonTextStyle(DesignComponentStyleSlot.EditorText),
@@ -124,9 +128,22 @@ fun JetpacsEditor(
     )
 }
 
+/**
+ * The editor's floor: 48dp, unless the design scope's `editor.text` style
+ * authors a size — a chromeless form field shaped like a TextView sizes
+ * itself, as `textFieldMinHeight` lets a text field do.
+ */
+@Composable
+@ReadOnlyComposable
+private fun editorMinHeight(): androidx.compose.ui.unit.Dp =
+    if (LocalDesignScope.current?.componentStyle(DesignComponentStyleSlot.EditorText)
+            ?.authoredSize()?.second == true
+    ) 0.dp else 48.dp
+
 @Composable
 private fun JetpacsEditorDecoration(
     text: String,
+    placeholder: String?,
     lineNumbers: Boolean,
     textLayoutState: EditorTextLayoutState?,
     scrollState: ScrollState,
@@ -161,6 +178,31 @@ private fun JetpacsEditorDecoration(
                 styleState, baseStyle, designSurfaceStyle, callerStyle,
             ),
         ) {
+            // SPEC 17.4 (#206) `hint`: drawn under the empty field, outside
+            // its semantics, in the `editor.placeholder` slot's style.
+            if (placeholder != null && text.isEmpty()) {
+                Box(
+                    modifier = Modifier
+                        .clearAndSetSemantics { }
+                        .styleable(
+                            styleState,
+                            designComponentNonTextStyle(
+                                DesignComponentStyleSlot.EditorPlaceholder,
+                            ),
+                        ),
+                ) {
+                    BasicText(
+                        placeholder,
+                        style = resolvedDesignTextStyle(
+                            DesignComponentStyleSlot.EditorPlaceholder,
+                            JetpacsTheme.typography.code.copy(
+                                color = JetpacsTheme.colors.mutedContent,
+                            ),
+                            styleState,
+                        ),
+                    )
+                }
+            }
             innerTextField()
         }
         return
@@ -263,6 +305,7 @@ internal fun JetpacsEditorReadOnlyFixture(
     }
     JetpacsEditorDecoration(
         text = state.text.toString(),
+        placeholder = null,
         lineNumbers = lineNumbers,
         textLayoutState = null,
         scrollState = rememberScrollState(),
@@ -294,6 +337,7 @@ fun JetpacsEditorFocusFixture(state: TextFieldState) {
     }
     JetpacsEditorDecoration(
         text = state.text.toString(),
+        placeholder = null,
         lineNumbers = false,
         textLayoutState = null,
         scrollState = rememberScrollState(),

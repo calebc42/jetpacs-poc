@@ -3322,20 +3322,22 @@ level, inside a `menu', or in a `long_press' (SPEC §17.7)."
                    (and lp (plist-member lp :command)))))
            items))
 
-(cl-defun jetpacs-editor (id &key document value on-save on-enter
+(cl-defun jetpacs-editor (id &key document value hint on-save on-enter
                              single-line min-lines max-lines read-only syntax
                              line-numbers complete chromeless publish-state
                              autofocus toolbar enabled)
   "An editor identified by ID (SPEC §17.4 + §17.7).
 Without DOCUMENT it is a local input node; with DOCUMENT it is a synchronized
 editor (emit only when `editor.sync' is granted).  COMPLETE and a toolbar
-`command' op each require DOCUMENT.  TOOLBAR is a registered identifier string
-or a list of `jetpacs-toolbar-item's.  SINGLE-LINE uses a one-line field and
-prohibits newlines; MIN-LINES and MAX-LINES otherwise control its visible
-height.  Booleans take t or :json-false."
+`command' op each require DOCUMENT.  HINT is the placeholder shown while
+the text is empty (amendment #206).  TOOLBAR is a registered identifier
+string or a list of `jetpacs-toolbar-item's.  SINGLE-LINE uses a one-line
+field and prohibits newlines; MIN-LINES and MAX-LINES otherwise control
+its visible height.  Booleans take t or :json-false."
   (jetpacs-check-identifier id ":id")
   (when document (jetpacs-check-identifier document ":document"))
   (when value (jetpacs-require-string value ":value"))
+  (when hint (jetpacs-require-string hint ":hint"))
   (when on-save (jetpacs-check-descriptor on-save ":on-save"))
   (when on-enter (jetpacs-check-descriptor on-enter ":on-enter"))
   (when single-line (jetpacs-check-bool single-line ":single-line"))
@@ -3372,7 +3374,7 @@ height.  Booleans take t or :json-false."
     (setq toolbar (vconcat toolbar)))
    (t (error "jetpacs-editor: :toolbar must be a registered id string or a list of toolbar items, got %S" toolbar)))
   (jetpacs-make-node "editor"
-                 :id id :document document :value value
+                 :id id :document document :value value :hint hint
                  :on_save on-save :on_enter on-enter
                  :single_line single-line
                  :min_lines min-lines :max_lines max-lines

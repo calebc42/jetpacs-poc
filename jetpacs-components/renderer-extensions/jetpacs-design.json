@@ -273,6 +273,7 @@
         "editor.chromeless",
         "editor.text",
         "editor.gutter",
+        "editor.placeholder",
         "editor.toolbar",
         "editor.toolbar-item",
         "editor.sync-status",

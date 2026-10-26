@@ -64,6 +64,7 @@
     "dropdown.field" "dropdown.text" "dropdown.label" "dropdown.popup"
     "dropdown.item"
     "editor.surface" "editor.chromeless" "editor.text" "editor.gutter"
+    "editor.placeholder"
     "editor.toolbar" "editor.toolbar-item" "editor.sync-status"
     "editor.completion-list" "editor.completion-item"
     "editor.candidate-document" "editor.tooling-status"

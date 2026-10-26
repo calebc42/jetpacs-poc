@@ -1294,6 +1294,8 @@ internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             outputTransformation = outputTransformation,
             lineLimits = presentation.lineLimits,
             keyboardOptions = presentation.keyboardOptions,
+            // SPEC 17.4 (#206): the placeholder while the text is empty.
+            placeholder = presentation.hint?.let { hint -> { Text(hint) } },
             onKeyboardAction =
                 androidx.compose.foundation.text.input.KeyboardActionHandler {
                     binding.enter()

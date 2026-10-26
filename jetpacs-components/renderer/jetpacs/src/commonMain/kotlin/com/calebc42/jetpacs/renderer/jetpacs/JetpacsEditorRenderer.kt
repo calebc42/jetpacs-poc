@@ -155,6 +155,7 @@ object JetpacsEditorRenderer : ComposeCanonicalNodeOverride {
                 readOnly = binding.effectiveReadOnly,
                 lineNumbers = presentation.lineNumbers,
                 chromeless = presentation.chromeless,
+                placeholder = presentation.hint,
                 inputTransformation = binding.controller.inputTransformation,
                 outputTransformation = outputTransformation,
                 keyboardOptions = presentation.keyboardOptions,

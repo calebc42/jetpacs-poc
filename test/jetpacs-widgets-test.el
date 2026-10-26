@@ -633,6 +633,7 @@
       (chk "45" (jetpacs-editor "body"))
       (chk "46" (jetpacs-editor "body"
                                 :autofocus :json-false :chromeless :json-false
+                                :hint "Body"
                                 :line-numbers t
                                 :on-enter (jetpacs-action "note.enter")
                                 :on-save (jetpacs-action "note.save")

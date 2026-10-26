@@ -89,9 +89,10 @@
                 :content_padding :mask :filter :suggestions :enabled))
     ("editor"
      :required (:id)
-     :optional (:document :value :on_save :on_enter :single_line :min_lines
-                :max_lines :read_only :syntax :line_numbers :complete
-                :chromeless :publish_state :autofocus :toolbar :enabled)))
+     :optional (:document :value :hint :on_save :on_enter :single_line
+                :min_lines :max_lines :read_only :syntax :line_numbers
+                :complete :chromeless :publish_state :autofocus :toolbar
+                :enabled)))
   "Closed node schemas owned by this catalog authoring model.")
 
 (defconst jetpacs-component-authoring--component-root-types
@@ -886,8 +887,8 @@ MENU-CHILD rejects recursively nested menus."
   "Text Input wire keys mapped to public builder keywords.")
 
 (defconst jetpacs-component-authoring--editor-keywords
-  '((:document . :document) (:value . :value) (:on_save . :on-save)
-    (:on_enter . :on-enter) (:single_line . :single-line)
+  '((:document . :document) (:value . :value) (:hint . :hint)
+    (:on_save . :on-save) (:on_enter . :on-enter) (:single_line . :single-line)
     (:min_lines . :min-lines) (:max_lines . :max-lines)
     (:read_only . :read-only) (:syntax . :syntax)
     (:line_numbers . :line-numbers) (:complete . :complete)

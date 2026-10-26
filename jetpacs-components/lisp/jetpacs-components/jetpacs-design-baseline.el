@@ -378,6 +378,7 @@
     ("editor.chromeless" . ("base.screen"))
     ("editor.text" . ("typography.code"))
     ("editor.gutter" . ("typography.metadata" "base.muted"))
+    ("editor.placeholder" . ("typography.code" "base.muted"))
     ("editor.toolbar" . ("base.surface"))
     ("editor.toolbar-item" . ("base.interactive" "typography.label"))
     ("editor.sync-status" . ("typography.metadata"))

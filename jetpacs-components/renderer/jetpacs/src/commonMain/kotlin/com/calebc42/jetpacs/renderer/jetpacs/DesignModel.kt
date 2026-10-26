@@ -158,6 +158,8 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     EditorChromeless("editor.chromeless"),
     EditorText("editor.text"),
     EditorGutter("editor.gutter"),
+    /** SPEC 17.4 (#206) `editor.hint`: the placeholder drawn while the text is empty. */
+    EditorPlaceholder("editor.placeholder"),
     EditorToolbar("editor.toolbar"),
     EditorToolbarItem("editor.toolbar-item"),
     EditorSyncStatus("editor.sync-status"),
