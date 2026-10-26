@@ -194,6 +194,45 @@ bare scaffold, only under an advertised runtime."
                (cl-loop for (key value) on profile by #'cddr
                         unless (eq key :theme-roles) append (list key value)))))))
 
+(ert-deftest jetpacs-design-scope-inherits-the-enclosing-scopes-tokens ()
+  "A nested scope may name a token or motion its enclosing scope declares.
+The receiver resolves a nested scope over its parent's merged maps, so a
+screen-local scope need not copy the profile's tokens onto the wire; the
+reference check consults `:inherit' and still refuses a name nobody
+declares."
+  (let* ((parent `(:tokens (("color.ink" . ,(jetpacs-design-color "#112233"))
+                            ("space.row" . ,(jetpacs-design-dimension 12)))
+                   :motions (("fade" . ,(jetpacs-design-motion 120 "linear")))))
+         (style (jetpacs-design-style
+                 `(("content_color" . ,(jetpacs-design-token "color.ink")))
+                 :motion "fade"))
+         (scope (jetpacs-design-scope nil `(("inked" . ,style))
+                                      (list (jetpacs-text "x"))
+                                      :inherit parent
+                                      :theme-roles
+                                      `(("primary" . ,(jetpacs-design-token
+                                                       "color.ink"))))))
+    ;; Nothing inherited rides the wire: the scope declares only its style.
+    (should (string-search "\"tokens\":{}" (jetpacs-node->canonical-json scope)))
+    (should (plist-get (plist-get scope :styles) :inked))
+    ;; Without the parent the same style is an authoring error, as before.
+    (should-error (jetpacs-design-scope nil `(("inked" . ,style))
+                                        (list (jetpacs-text "x"))))
+    ;; A name the parent does not declare is still refused.
+    (should-error
+     (jetpacs-design-scope
+      nil `(("lost" . ,(jetpacs-design-style
+                        `(("content_color" . ,(jetpacs-design-token
+                                               "color.nowhere"))))))
+      (list (jetpacs-text "x")) :inherit parent))
+    ;; A profile plist is an acceptable parent: its maps are alists too.
+    (should (jetpacs-design-scope
+             nil `(("inked" . ,style)) (list (jetpacs-text "x"))
+             :inherit (jetpacs-design-make-profile
+                       "test.parent" "Parent"
+                       :tokens (plist-get parent :tokens)
+                       :motions (plist-get parent :motions))))))
+
 (ert-deftest jetpacs-components-list-item-drops-members-the-target-omits ()
   "The canonical row drops a card variant and a column weight its target
 profile does not advertise; a full profile keeps both."
