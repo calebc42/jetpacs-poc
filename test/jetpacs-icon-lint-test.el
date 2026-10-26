@@ -52,7 +52,9 @@
     names))
 
 (defun jetpacs-icon-lint--preseed-names ()
-  "Names IconMap.kt pre-seeds (known rendering on device)."
+  "Material names IconMap.kt pre-seeds (known rendering on device).
+A hand-drawn `outlineGlyph' (Orgzly Revived's new-note glyphs) is no
+Material icon, so the generated Material table cannot list it."
   (let ((names nil))
     (with-temp-buffer
       (insert-file-contents
@@ -60,7 +62,7 @@
         "companion/renderer/material3/src/commonMain/kotlin/com/calebc42/jetpacs/material3/IconMap.kt"
         jetpacs-icon-lint--root))
       (goto-char (point-min))
-      (while (re-search-forward "cache\\[\"\\([a-z_0-9]+\\)\"\\]" nil t)
+      (while (re-search-forward "cache\\[\"\\([a-z_0-9]+\\)\"\\] = Icons\\." nil t)
         (push (match-string 1) names)))
     names))
 
