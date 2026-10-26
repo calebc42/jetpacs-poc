@@ -804,9 +804,12 @@ fallback."
                                   t)
                      :cells (mapcar
                              (lambda (c)
+                               ;; `dom-texts' with an empty separator:
+                               ;; `dom-inner-text' arrived in Emacs 31,
+                               ;; above the 30.1 floor.
                                (jetpacs-hypertext--collapse-ws
                                 (jetpacs-buffer-scalar-text
-                                 (dom-inner-text c))))
+                                 (dom-texts c ""))))
                              cells))))
            trs))
          (widths (delete-dups (mapcar (lambda (r)
