@@ -244,7 +244,7 @@ Manifest `jetpacs-components/renderer-extensions/jetpacs-components.json`, schem
 
 Manifest `jetpacs-components/renderer-extensions/jetpacs-design.json`, schema sha256 88b65d855657aa44217632b421c0720a5b73fccb7780e7b98717530db857fced. A node travels only to a target whose profile advertises both the node type and the extension.
 
-- jetpacs.design_scope: { children: node-array(0..10000), styles: style-map, tokens: token-map, component_styles?: component-style-bindings, motions?: motion-map, theme_roles?: theme-role-map } - The root of the Elisp-authored design runtime: tokens, named styles, motions and component styles that its subtree may reference. [accepts children] [targets: app] [elisp: jetpacs-design-scope (tokens styles children &key motions component-styles theme-roles)]
+- jetpacs.design_scope: { children: node-array(0..10000), styles: style-map, tokens: token-map, component_styles?: component-style-bindings, motions?: motion-map, theme_roles?: theme-role-map } - The root of the Elisp-authored design runtime: tokens, named styles, motions and component styles that its subtree may reference. [accepts children] [targets: app] [elisp: jetpacs-design-scope (tokens styles children &key motions component-styles theme-roles inherit)]
   - styles: Named styles available to jetpacs.styled and jetpacs.pressable beneath.
   - tokens: Named design tokens the styles resolve.
   - example (design-material, jetpacs-design-material-scope): a 2535-character node; see `jetpacs_node_examples`
