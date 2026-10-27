@@ -1,9 +1,37 @@
 import java.io.File
+import java.security.MessageDigest
 
 // AGP 9 carries built-in Kotlin; only the compose compiler plugin is added.
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+}
+
+// The bundled flavor's engine: an AAR built by the sibling jetpacs-emacs-engine
+// repository from the pristine Emacs release (never from a modified tree).
+// gradle/engine.lock pins its identity and SHA-256; JETPACS_ENGINE_AAR
+// overrides the location. Only bundled variants need it, and they refuse to
+// build without it rather than failing later on an unresolved class.
+val engineLock: Map<String, String> = rootProject.file("gradle/engine.lock").readLines()
+    .filter { it.isNotBlank() && !it.startsWith("#") && it.contains("=") }
+    .associate { it.substringBefore("=").trim() to it.substringAfter("=").trim() }
+val engineId: String = engineLock.getValue("engine")
+val engineAar: File = providers.environmentVariable("JETPACS_ENGINE_AAR").orNull?.let(::file)
+    ?: (gradle.extra["jetpacs.repositoriesRoot"] as File)
+        .resolve("jetpacs-emacs-engine/dist/jetpacs-emacs-engine-$engineId.aar")
+val verifyBundledEngine = tasks.register("verifyBundledEngine") {
+    description = "Checks the pinned engine AAR exists and matches gradle/engine.lock"
+    doLast {
+        check(engineAar.isFile) {
+            "The bundled flavor needs the engine AAR $engineAar: build " +
+                "jetpacs-emacs-engine (tools/build-all.sh) or set JETPACS_ENGINE_AAR"
+        }
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(engineAar.readBytes()).joinToString("") { "%02x".format(it) }
+        check(digest == engineLock["sha256"]) {
+            "Engine AAR $engineAar has SHA-256 $digest, gradle/engine.lock pins ${engineLock["sha256"]}"
+        }
+    }
 }
 
 android {
@@ -33,6 +61,29 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+    }
+    buildFeatures { buildConfig = true }
+
+    // docs/PLAN-bundled-emacs.md: one codebase, two distributions. `standalone`
+    // is today's app, paired with an Emacs the user installs; `bundled` carries
+    // GNU Emacs inside the APK as an engine process. Distinct application IDs
+    // let both sit on one device.
+    flavorDimensions += "engine"
+    productFlavors {
+        create("standalone") {
+            dimension = "engine"
+            isDefault = true
+        }
+        create("bundled") {
+            dimension = "engine"
+            applicationIdSuffix = ".bundled"
+            versionNameSuffix = "-bundled"
+            // The engine ships arm64-v8a and x86_64 only; without the filter a
+            // 32-bit device could install an APK whose engine never loads.
+            ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
+            // The engine identity the dump cache is keyed on (gradle/engine.lock).
+            buildConfigField("String", "ENGINE_ID", "\"$engineId\"")
+        }
     }
 }
 
@@ -223,6 +274,25 @@ androidComponents {
     }
 }
 
+androidComponents {
+    // Without the pinned AAR the bundled variants do not exist, so the
+    // unflavored anchors (assembleDebug, lint, test) keep working on any
+    // machine; with it present verifyBundledEngine still checks the digest.
+    beforeVariants(selector().withFlavor("engine" to "bundled")) { variant ->
+        if (!engineAar.isFile) {
+            logger.lifecycle("engine AAR $engineAar absent: variant ${variant.name} disabled")
+            variant.enable = false
+        }
+    }
+    onVariants(selector().withFlavor("engine" to "bundled")) { variant ->
+        // Emacs execs libexec1.so and libloader.so from nativeLibraryDir, so
+        // the engine's libraries must be real files, not pages of the APK.
+        variant.packaging.jniLibs.useLegacyPackaging.set(true)
+        val preBuild = "pre${variant.name.replaceFirstChar(Char::uppercase)}Build"
+        tasks.configureEach { if (name == preBuild) dependsOn(verifyBundledEngine) }
+    }
+}
+
 dependencies {
     implementation(projects.ebpKmp)
     implementation(projects.wire)
@@ -233,6 +303,7 @@ dependencies {
     implementation(projects.core.database)
     implementation(projects.core.ebpStore)
     implementation(projects.host)
+    "bundledImplementation"(files(engineAar))
     implementation(libs.androidx.room3.runtime)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)

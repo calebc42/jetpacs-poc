@@ -274,7 +274,7 @@ DEDICATED_KEY="$SCRATCH_DIR/onboard_ed25519"
 adbs() { adb -s "$SERIAL" "$@"; }
 
 COMPANION_DIR="$REPO_ROOT/companion"
-COMPANION_APK="$COMPANION_DIR/app/build/outputs/apk/debug/app-debug.apk"
+COMPANION_APK="$COMPANION_DIR/app/build/outputs/apk/standalone/debug/app-standalone-debug.apk"
 COMPANION_PACKAGE="com.calebc42.jetpacs.companion"
 COMPANION_VERSION=""
 
@@ -282,7 +282,7 @@ phase_companion_build() {
   [ -x "$COMPANION_DIR/gradlew" ] \
     || die "Companion Gradle wrapper is missing or not executable"
   log "building the debug Companion APK from this tree"
-  (cd "$COMPANION_DIR" && ./gradlew :app:assembleDebug) \
+  (cd "$COMPANION_DIR" && ./gradlew :app:assembleStandaloneDebug) \
     || die "Companion debug APK build failed"
   [ -f "$COMPANION_APK" ] \
     || die "Companion build succeeded but $COMPANION_APK is missing"

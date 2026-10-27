@@ -53,6 +53,14 @@ class JetpacsApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // docs/PLAN-bundled-emacs.md: the bundled flavor's engine process hosts
+        // GNU Emacs and nothing of the Companion. Room, the KeyStore, the
+        // bridge and the widget coordinator belong to the Companion process;
+        // `bridge` and `container` stay uninitialized there by design.
+        if (EngineFlavor.isEngineProcess(this)) {
+            EngineFlavor.prepareEngineProcess(this)
+            return
+        }
         val processStartedAtEpochMs = System.currentTimeMillis().coerceAtLeast(0)
         // LD-11: size the image cache to this device's per-app memory class.
         // An eighth of the app heap is a conservative retention budget — the

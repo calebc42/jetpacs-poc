@@ -211,5 +211,7 @@ internal class AndroidHostPlatform(context: Context) : CompanionHostPlatform {
         }
     }
 
-    override val loopbackPort: Int = DEFAULT_LOOPBACK_PORT
+    // The flavor owns the port: standalone keeps SPEC 5.2's default, bundled
+    // listens beside it (docs/PLAN-bundled-emacs.md).
+    override val loopbackPort: Int = EngineFlavor.loopbackPort
 }

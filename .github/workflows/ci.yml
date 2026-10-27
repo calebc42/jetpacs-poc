@@ -82,9 +82,9 @@ jobs:
             :core:ebp-store:jvmTest \
             :core:data:jvmTest \
             :core:testing:jvmTest \
-            :app:testDebugUnitTest \
-            :app:lintDebug \
-            :app:lintRelease \
+            :app:testStandaloneDebugUnitTest \
+            :app:lintStandaloneDebug \
+            :app:lintStandaloneRelease \
             :app:assembleDebug \
             :app:assembleRelease \
             --console=plain
@@ -92,7 +92,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ebp-companion-debug-apk
-          path: companion/app/build/outputs/apk/debug/*.apk
+          path: companion/app/build/outputs/apk/standalone/debug/*.apk
           retention-days: 14
 
   api34-device:
@@ -117,7 +117,7 @@ jobs:
         working-directory: companion
         run: |
           chmod +x gradlew
-          ./gradlew :app:pixel2Api34DebugAndroidTest --console=plain
+          ./gradlew :app:pixel2Api34StandaloneDebugAndroidTest --console=plain
 
   spec:
     name: spec (validate.py + I1)

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bundled flavor overlay (docs/PLAN-bundled-emacs.md): the one component
+     that runs GNU Emacs as the app's engine, in its own process. It is
+     private, accepts no extras, and its binder exposes no operation, which
+     is what SPEC 5.8's same-application wake target requires. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The engine's HOME holds the user's notes when the vault is app-private;
+         ask before discarding it on uninstall. -->
+    <application android:hasFragileUserData="true">
+        <service
+            android:name=".engine.JetpacsEngineService"
+            android:process=":emacs"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Runs the app's bundled Emacs notes engine in its own process" />
+        </service>
+    </application>
+</manifest>

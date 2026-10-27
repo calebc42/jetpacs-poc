@@ -84,9 +84,9 @@ Run the JVM persistence and production compilation gates with:
   :core:ebp-store:jvmTest \
   :host:jvmTest \
   :host:testAndroidHostTest \
-  :app:testDebugUnitTest \
-  :app:lintDebug \
-  :app:lintRelease \
+  :app:testStandaloneDebugUnitTest \
+  :app:lintStandaloneDebug \
+  :app:lintStandaloneRelease \
   :app:assembleDebug \
   :app:assembleRelease
 ```
@@ -157,7 +157,7 @@ corpus (38 vectors). Production source must contain no
 The Android 14 managed-device gate is:
 
 ```sh
-./gradlew :app:pixel2Api34DebugAndroidTest
+./gradlew :app:pixel2Api34StandaloneDebugAndroidTest
 ```
 
 That task installs an API 34 AOSP image and runs the production composition
@@ -174,7 +174,7 @@ Run the renderer, Room lifecycle, policy, and app composition checks with:
 ./gradlew \
   :renderer:glance:testDebugUnitTest \
   :core:database:jvmTest \
-  :app:testDebugUnitTest \
+  :app:testStandaloneDebugUnitTest \
   :app:assembleDebug
 ```
 
@@ -513,7 +513,7 @@ activity launch otherwise fails whole suites.
   :renderer:material3:testAndroidHostTest :renderer:material3:jvmTest \
   :renderer:material3:compileAndroidDeviceTest \
   :renderer:compose-testing:testDebugUnitTest \
-  :app:testDebugUnitTest \
+  :app:testStandaloneDebugUnitTest \
   :app:assembleDebug \
   :renderer:jetpacs-screenshots:validateDebugScreenshotTest \
   :renderer:material3-screenshots:validateDebugScreenshotTest
@@ -534,10 +534,50 @@ cd ..
 tools/onboard-tablet.sh --vault shared --emacs-home emacs --skip-pylsp SERIAL
 ```
 
-Install mode builds `:app:assembleDebug`, reinstalls it with app data
+Install mode builds `:app:assembleStandaloneDebug`, reinstalls it with app data
 preserved, provisions the selected Emacs home, and prints the installed package
 version and managed-tree audit. Pass the current serial from `adb devices -l`;
 wireless ADB ports do not remain stable across reconnects.
+
+## Bundled engine
+
+The `bundled` product flavor (`docs/PLAN-bundled-emacs.md`) embeds GNU Emacs
+as the `:emacs` process. It exists only when the pinned engine AAR is
+present: `gradle/engine.lock` names the engine (`31.1+1`) and its SHA-256,
+and the AAR is read from `../jetpacs-emacs-engine/dist/` beside this
+checkout or from `$JETPACS_ENGINE_AAR`. Without it every `bundled*` task is
+disabled and the unflavored anchors build the standalone flavor alone.
+
+```sh
+./gradlew :app:verifyBundledEngine :app:assembleBundledDebug :app:testBundledDebugUnitTest
+```
+
+Device evidence goes through `tools/engine-spike.sh` (one adb device,
+`ANDROID_SERIAL` pinned):
+
+```sh
+tools/engine-spike.sh install        # assembleBundledDebug + adb install -r
+tools/engine-spike.sh launch         # the launcher activity starts both services
+tools/engine-spike.sh watch 120      # JetpacsEngine, Emacs and bridge logcat lines
+tools/engine-spike.sh status         # processes, engine HOME, stamps, dump, listener
+tools/engine-spike.sh cpu 30         # CPU share of :emacs over 30 s (expect 0.0 %)
+tools/engine-spike.sh night on       # dark theme: the event-queue hazard test
+tools/engine-spike.sh kill           # kill -9 through run-as; the sticky service restarts
+tools/engine-spike.sh init-el        # the provisioned init.el and install.conf
+```
+
+What a healthy first start shows: `initEmacs [libandroid-emacs.so,
+--fg-daemon=jetpacs] … dump=(none, loadup will dump)`, "Dump complete"
+about 1.4 s later, "Starting Emacs daemon", then a connection on
+127.0.0.1:8766 (`awk '$2 ~ /:223E/' /proc/net/tcp6`: `0A` listening, `01`
+established) and `surface_records` rows in the Companion's Room. A second
+start names the dump and reaches the daemon in about 2 s.
+
+Notes: the bundled flavor listens on 8766 so a standalone install and its
+Emacs on 8765 keep working beside it; `run-as PKG sh -c …` is denied on the
+Pixel Tablet, so probe with one direct `run-as PKG ls|cat|kill …` per step;
+the shell user cannot signal the engine process, `run-as` can; the
+launcher activity starts the engine even behind the keyguard.
 
 ## Restored Orgzly Foundation applet
 
@@ -567,4 +607,4 @@ records; it does not connect to a live Emacs vault or prove transport replay.
 From `jetpacs-poc/`, regenerate fixtures with
 `../harp-native/test/verify-applet.sh`, then copy the five corresponding `screens/*.json`
 files into the test assets. Run the instrumentation class on a device after
-`:app:assembleDebug :app:assembleDebugAndroidTest`.
+`:app:assembleDebug :app:assembleStandaloneDebugAndroidTest`.

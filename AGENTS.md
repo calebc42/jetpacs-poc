@@ -178,7 +178,7 @@ suite, then cross-layer or device checks proportional to risk.
 |---|---|
 | EBP spec/contract/goldens | `cd ../ebp && python3 validate.py` plus every affected implementation conformance test |
 | Jetpacs Elisp foundation | Targeted ERT, warning-as-error byte compilation, then `test/run-tests.sh` for broad changes |
-| Companion Kotlin/Android | Owning module unit tests; for broad changes run `cd companion && ./gradlew testDebugUnitTest testAndroidHostTest jvmTest :desktop:test assembleDebug` (the multiplatform renderer and core modules have no `testDebugUnitTest` task) |
+| Companion Kotlin/Android | Owning module unit tests; for broad changes run `cd companion && ./gradlew testDebugUnitTest :app:testStandaloneDebugUnitTest testAndroidHostTest jvmTest :desktop:test assembleDebug` (the multiplatform renderer and core modules have no `testDebugUnitTest` task; the app's unit tests are flavored, and `assembleDebug` also builds the `bundled` flavor when the pinned engine AAR is present, see docs/PLAN-bundled-emacs.md) |
 | Platform tools | `cd jetpacs-platform-tools && ./gradlew clean test installDist`, then `doctor` smoke |
 | Applet tooling | Static ERT suite, trusted-runtime ERT suite, Checkdoc, and warning-as-error byte compilation described in its nested guide |
 | Applet | Static inspect/manifest/validate, offline ERT, trusted determinism check for trusted code, then a narrow real-device flow |

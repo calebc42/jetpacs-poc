@@ -12,12 +12,12 @@ import org.w3c.dom.Element
 class ManifestSecurityTest {
     private val android = "http://schemas.android.com/apk/res/android"
 
-    private fun components(tag: String): List<Element> {
+    private fun components(tag: String, manifest: String = "src/main/AndroidManifest.xml"): List<Element> {
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true
             setFeature("http://apache.org/xml/features/disallow-doctype-decl", true)
         }
-        val document = factory.newDocumentBuilder().parse(File("src/main/AndroidManifest.xml"))
+        val document = factory.newDocumentBuilder().parse(File(manifest))
         val nodes = document.getElementsByTagName(tag)
         return (0 until nodes.length).map { nodes.item(it) as Element }
     }
@@ -102,6 +102,26 @@ class ManifestSecurityTest {
                 .map { (bootActions.item(it) as Element).attr("name") }
                 .toSet(),
         )
+    }
+
+    /**
+     * docs/PLAN-bundled-emacs.md: the bundled flavor's overlay declares exactly
+     * one component, the engine's service, private and in its own process, so
+     * SPEC 5.8's same-application wake target exists by construction and no
+     * Emacs activity, provider or receiver is merged into the APK from here.
+     */
+    @Test
+    fun bundledOverlayDeclaresOnlyThePrivateEngineService() {
+        val overlay = "src/bundled/AndroidManifest.xml"
+        for (tag in listOf("activity", "receiver", "provider", "activity-alias")) {
+            assertEquals(tag, 0, components(tag, overlay).size)
+        }
+        val service = components("service", overlay).single()
+        assertEquals(".engine.JetpacsEngineService", service.attr("name"))
+        assertEquals("false", service.attr("exported"))
+        assertEquals(":emacs", service.attr("process"))
+        assertEquals("specialUse", service.attr("foregroundServiceType"))
+        assertEquals(0, service.getElementsByTagName("intent-filter").length)
     }
 
     @Test

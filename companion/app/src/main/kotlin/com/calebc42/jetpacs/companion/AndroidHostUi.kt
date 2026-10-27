@@ -43,5 +43,6 @@ internal class AndroidHostUi(context: Context) : HostUiPlatform {
         }
     }
 
-    override val listeningEndpoint: String = "127.0.0.1:8765"
+    // The flavor owns the port (standalone 8765, bundled 8766; docs/PLAN-bundled-emacs.md).
+    override val listeningEndpoint: String = "127.0.0.1:${EngineFlavor.loopbackPort}"
 }

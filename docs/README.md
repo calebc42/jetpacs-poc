@@ -32,6 +32,7 @@ specification or extension manifest, then run the documented generator.
 | [`PLAN-room3-rebuild.md`](PLAN-room3-rebuild.md) | Implemented Room schema, transaction boundaries, and non-durable state |
 | [`PLAN-responsiveness.md`](PLAN-responsiveness.md) | Ordered responsiveness and navigation work across the Companion, the Emacs platform and the apps, with its first slice, measurement and completion gates |
 | [`PLAN-desktop-companion.md`](PLAN-desktop-companion.md) | Ordered work to build the Compose for Desktop Companion host: module inventory, dependency facts, change order, routing and completion gates |
+| [`PLAN-bundled-emacs.md`](PLAN-bundled-emacs.md) | Ordered work to embed GNU Emacs as the `bundled` flavor's engine process: the no-patch constraint, decisions, architecture, milestones E0-E7, routing and gates |
 | [`PLAN-desktop-d1-renderers.md`](PLAN-desktop-d1-renderers.md) | D1 execution map: the multiplatform conversion of the four renderer modules, its seams, screenshot modules, steps and gates |
 | [`PLAN-app-descent.md`](PLAN-app-descent.md) | What moved from the applets into the foundation, section by section, and the owner decisions |
 | [`PLAN-elisp-expressivity.md`](PLAN-elisp-expressivity.md) | The receiver, foundation and protocol words the parity applets still lack, with evidence and an order |

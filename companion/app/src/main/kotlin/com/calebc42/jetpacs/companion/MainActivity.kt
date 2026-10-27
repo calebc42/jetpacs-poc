@@ -71,6 +71,8 @@ class MainActivity : ComponentActivity() {
         // First visible launch opts into the best-effort background bridge.
         // The service owns the listener and its durable enabled flag.
         JetpacsBridgeService.enable(this)
+        // The bundled flavor also starts its engine here; standalone does nothing.
+        EngineFlavor.onCompanionLaunched(this)
         val hostUi = AndroidHostUi(this)
         setContent {
             // SPEC 18.4: mirror the pushed palette (colors/dark), or the native
