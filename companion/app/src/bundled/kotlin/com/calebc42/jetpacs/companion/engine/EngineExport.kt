@@ -18,8 +18,8 @@ internal object EngineExport {
         ZipOutputStream(output.buffered()).use { zip ->
             if (vault.isDirectory) {
                 vault.walkTopDown()
-                    .onEnter { dir -> dir.canonicalFile == dir.absoluteFile.normalize() }
-                    .filter { it.isFile && !it.name.endsWith(".jetpacs-new") }
+                    .onEnter { dir -> !EngineVault.isSymlink(dir) }
+                    .filter { it.isFile && !EngineVault.isSymlink(it) && !it.name.endsWith(".jetpacs-new") }
                     .forEach { file ->
                         val name = file.relativeTo(vault).invariantSeparatorsPath
                         zip.putNextEntry(ZipEntry(name).apply { time = file.lastModified() })

@@ -7,6 +7,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.Settings
 import java.io.File
+import java.nio.file.Files
 
 /**
  * Where the user's notes live (docs/PLAN-bundled-emacs.md, decision 2):
@@ -78,6 +79,12 @@ internal object EngineVault {
         return copied
     }
 
-    private fun isSymlink(file: File): Boolean =
-        file.canonicalFile != file.absoluteFile.normalize()
+    /**
+     * Whether this entry itself is a symbolic link. Not a canonical-path
+     * comparison: on Android the app's files are reached through
+     * /data/user/0, a link to /data/data, so every path under the private
+     * vault canonicalizes elsewhere and such a test would skip the whole
+     * vault (found on the Pixel Tablet: an empty export).
+     */
+    internal fun isSymlink(file: File): Boolean = Files.isSymbolicLink(file.toPath())
 }
