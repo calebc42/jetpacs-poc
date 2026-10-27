@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- GNU Emacs is compiled into this flavor, so it is the whole app:
+         "Jetpacs". The standalone flavor keeps "Jetpacs Companion". -->
+    <string name="app_name">Jetpacs</string>
+</resources>

@@ -1,4 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- The standalone flavor pairs with an Emacs the user installs: the
+         Companion. The bundled flavor, Emacs inside, is plain "Jetpacs"
+         (src/bundled/res/values/strings.xml), so the two are told apart in the
+         launcher, notifications and permission prompts. -->
+    <string name="app_name">Jetpacs Companion</string>
     <string name="jetpacs_widget_description">An Emacs-authored Jetpacs surface</string>
 </resources>

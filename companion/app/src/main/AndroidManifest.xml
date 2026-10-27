@@ -51,7 +51,7 @@
          excludes that channel too. -->
     <application
         android:name=".JetpacsApplication"
-        android:label="Jetpacs Companion"
+        android:label="@string/app_name"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">
