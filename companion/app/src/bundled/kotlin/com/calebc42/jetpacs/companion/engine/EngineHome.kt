@@ -72,8 +72,8 @@ class EngineHome(val root: File) {
  * invisible to it. The kit is the same `jetpacs-onboarding/payload` the
  * standalone flavor stages for the user to install by hand.
  *
- * User state in `apps/`, `apps.el`, `var/` and `user.el` is never touched;
- * only distribution-owned trees are replaced.
+ * User state in `apps/`, `apps.el`, `var/`, `user.el` and `custom.el` is
+ * never touched; only distribution-owned trees are replaced.
  */
 object EngineProvisioner {
     private const val TAG = "JetpacsEngine"

@@ -18,19 +18,29 @@ internal object EngineFiles {
     /**
      * The managed block onboarding would ask a user to paste, plus the bundled
      * settings: the Companion's Unix socket (SPEC 5.3) when [socketPath] is
-     * given, else the flavor's loopback port.
+     * given, else the flavor's loopback port, and the Customize file.
+     *
+     * The provisioner rewrites this file whenever it differs, so nothing the
+     * user changes may land in it. Customize writes `custom-file`, and
+     * without one it appended to this file, so every Settings change was
+     * lost at the next engine start (found on the Pixel Tablet). It is
+     * `jetpacs/custom.el`, user state the provisioner never touches, loaded
+     * once the kit is, so every option it sets is defined by then.
      */
     fun initEl(port: Int, socketPath: String? = null): String = """;;; init.el --- Jetpacs bundled engine -*- lexical-binding: t; -*-
 ;; Written by the Jetpacs engine supervisor. Personal overrides belong in
-;; jetpacs/user.el, which loads last and survives updates.
+;; jetpacs/user.el and survive updates; changes made in the app's Settings
+;; are saved in jetpacs/custom.el, which loads after it.
 ;;; >>> Jetpacs managed: composition root >>>
 ;; The two timestamps bracket the kit load in the engine log (E6 timing).
 (message "Jetpacs init: loading the kit")
 ${transportForms(port, socketPath)}
 (setq jetpacs-credentials-file
       (expand-file-name "jetpacs/var/pairing" user-emacs-directory))
+(setq custom-file (expand-file-name "jetpacs/custom.el" user-emacs-directory))
 (add-to-list 'load-path (expand-file-name "jetpacs/emacs" user-emacs-directory))
 (require 'jetpacs)
+(load custom-file 'noerror 'nomessage)
 (message "Jetpacs init: kit loaded")
 ;;; <<< Jetpacs managed: composition root <<<
 """

@@ -19,6 +19,25 @@ class EngineFilesTest {
         assertTrue(text.contains(";;; <<< Jetpacs managed: composition root <<<"))
     }
 
+    /**
+     * Settings changes survive engine starts: Customize saves into user
+     * state, never into this supervisor-rewritten file, and that file loads
+     * after the kit defines the options it sets.
+     */
+    @Test
+    fun initElSavesCustomizationsOutsideItselfAndLoadsThemAfterTheKit() {
+        val text = EngineFiles.initEl(8766)
+        assertTrue(
+            text.contains(
+                "(setq custom-file (expand-file-name \"jetpacs/custom.el\" user-emacs-directory))",
+            ),
+        )
+        val kit = text.indexOf("(require 'jetpacs)")
+        val custom = text.indexOf("(load custom-file 'noerror 'nomessage)")
+        assertTrue(kit >= 0 && custom > kit)
+        assertTrue(text.indexOf("(setq custom-file") < kit)
+    }
+
     @Test
     fun initElNamesTheUnixSocketInsteadOfThePortWhenGiven() {
         val text = EngineFiles.initEl(8766, "/data/user/0/x/files/ebp/companion.sock")
