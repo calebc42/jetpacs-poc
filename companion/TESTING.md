@@ -552,6 +552,14 @@ disabled and the unflavored anchors build the standalone flavor alone.
 ./gradlew :app:verifyBundledEngine :app:assembleBundledDebug :app:testBundledDebugUnitTest
 ```
 
+The bundled variants also byte-compile the staged Elisp kit at build time
+(`compileBundledDebugOnboardingKit`, `app/kit-byte-compile.el`) with the
+host Emacs named by `JETPACS_HOST_EMACS` (else `emacs` on PATH), which must
+be the engine's major version; a host without one skips the step with a
+warning and the device loads the sources. The step reports the files it
+left to source (today only `ebp-websocket.el`, which needs the `websocket`
+package).
+
 Device evidence goes through `tools/engine-spike.sh` (one adb device,
 `ANDROID_SERIAL` pinned):
 

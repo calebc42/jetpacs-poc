@@ -1,3 +1,4 @@
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.security.MessageDigest
 
@@ -238,6 +239,62 @@ abstract class StageOnboardingAssets : DefaultTask() {
     }
 }
 
+/**
+ * E6 (docs/PLAN-bundled-emacs.md): the bundled engine loads the kit from its
+ * own HOME, so the kit's Elisp is byte-compiled at build time by a host Emacs
+ * of the engine's major version (`JETPACS_HOST_EMACS`, else `emacs` on PATH)
+ * into a second generated asset root AGP merges beside the sources. A host
+ * without such an Emacs skips the step with a warning and the device loads
+ * the sources, slower but identical.
+ */
+abstract class ByteCompileOnboardingKit : DefaultTask() {
+    @get:org.gradle.api.tasks.InputDirectory
+    abstract val stagedDir: org.gradle.api.file.DirectoryProperty
+
+    @get:org.gradle.api.tasks.InputFile
+    abstract val script: org.gradle.api.file.RegularFileProperty
+
+    @get:org.gradle.api.tasks.Input
+    abstract val emacs: org.gradle.api.provider.Property<String>
+
+    @get:org.gradle.api.tasks.Input
+    abstract val engineMajor: org.gradle.api.provider.Property<String>
+
+    @get:org.gradle.api.tasks.OutputDirectory
+    abstract val outputDir: org.gradle.api.file.DirectoryProperty
+
+    @get:javax.inject.Inject
+    abstract val execOperations: org.gradle.process.ExecOperations
+
+    @org.gradle.api.tasks.TaskAction
+    fun compile() {
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        out.mkdirs()
+        val version = runCatching {
+            val bytes = ByteArrayOutputStream()
+            execOperations.exec {
+                commandLine(emacs.get(), "--version")
+                standardOutput = bytes
+                isIgnoreExitValue = true
+            }
+            Regex("GNU Emacs (\\d+)").find(bytes.toString())?.groupValues?.get(1)
+        }.getOrNull()
+        if (version != engineMajor.get()) {
+            logger.warn("kit byte-compile skipped: ${emacs.get()} is Emacs ${version ?: "absent"}, the engine is ${engineMajor.get()}")
+            return
+        }
+        val payload = stagedDir.get().asFile.resolve("jetpacs-onboarding/payload")
+        val target = out.resolve("jetpacs-onboarding/payload")
+        execOperations.exec {
+            commandLine(
+                emacs.get(), "-Q", "--batch", "-l", script.get().asFile.path,
+                "--", payload.path, target.path,
+            )
+        }
+    }
+}
+
 androidComponents {
     onVariants { variant ->
         val repo = rootProject.layout.projectDirectory.dir("..")
@@ -271,6 +328,20 @@ androidComponents {
         }
         variant.sources.assets?.addGeneratedSourceDirectory(
             stage, StageOnboardingAssets::outputDir)
+        if (variant.flavorName == "bundled") {
+            val compile = tasks.register(
+                "compile${variant.name.replaceFirstChar(Char::uppercase)}OnboardingKit",
+                ByteCompileOnboardingKit::class,
+            ) {
+                stagedDir.set(stage.flatMap { it.outputDir })
+                script.set(layout.projectDirectory.file("kit-byte-compile.el"))
+                emacs.set(providers.environmentVariable("JETPACS_HOST_EMACS").orElse("emacs"))
+                engineMajor.set(engineId.substringBefore("."))
+                outputDir.set(layout.buildDirectory.dir("generated/onboardingKitElc/${variant.name}"))
+            }
+            variant.sources.assets?.addGeneratedSourceDirectory(
+                compile, ByteCompileOnboardingKit::outputDir)
+        }
     }
 }
 

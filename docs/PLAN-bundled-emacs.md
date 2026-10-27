@@ -381,6 +381,19 @@ command is `assembleStandaloneDebug` for the existing app and
    dump through `site-lisp/site-init.el`, build-time byte-compilation,
    asset trimming before the index is rebuilt; targets ≤ 2 s tap-to-READY
    on the Pixel Tablet and ≤ 60 MB per ABI.
+   First slice (2026-10-27): the bundled variants byte-compile the staged
+   kit at build time (`compileBundledDebugOnboardingKit` over
+   `app/kit-byte-compile.el`, one batch Emacs of the engine's major
+   version, 201 files in 3.5 s, `ebp-websocket.el` left to source) into a
+   second generated asset root the provisioner copies beside the sources.
+   Pixel Tablet, same engine and pairing: the daemon still comes up 2.37 s
+   after `initEmacs`, the first surface is accepted 3.34 s after it (was
+   4.4 s with sources) and all 16 by 4.56 s. The engine repository's build
+   2 (commit `17a9842`) trims the Info manuals from the assets and rebuilds
+   `directory-tree` with Emacs's own tool: 4,347 asset files, 161 MB
+   uncompressed, the AAR 53.7 MB (was 59.7 MB). Next: attribute the 2.4 s
+   of core startup, then a curated `site-init.el` preload of Org and the
+   side-effect-free kit libraries, measured the same way.
 8. **E7 — CI, distribution and documentation.** Engine release workflow,
    Companion CI with the pinned AAR, release signing, the documents listed
    in the routing table.
