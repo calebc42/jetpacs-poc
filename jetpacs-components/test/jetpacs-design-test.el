@@ -12,6 +12,21 @@
 (require 'jetpacs-design-baseline)
 (require 'jetpacs-data)
 
+(ert-deftest jetpacs-design-component-styles-bound-admits-every-slot ()
+  "The contract bounds a scope's component styles at one binding per closed
+slot or more, so the baseline, which binds every slot, is admissible.
+Found 2026-10-27: 130 slots against a bound of 128 made the Companion
+refuse every foundation surface while the design runtime was on."
+  (let* ((scope (cdr (assoc "jetpacs.design_scope"
+                            jetpacs-design-typed-node-schema)))
+         (schema (cdr (assoc "component_styles" (plist-get scope :optional))))
+         (bound (plist-get schema :max-items)))
+    (should (integerp bound))
+    (should (>= bound (length jetpacs-design-component-style-slots)))
+    (should (<= (length (plist-get (jetpacs-design-baseline-profile)
+                                   :component-styles))
+                bound))))
+
 (ert-deftest jetpacs-design-baseline-binds-every-slot-and-presents-once ()
   "The platform baseline is theme-neutral, complete, and presents only a
 bare scaffold, only under an advertised runtime."

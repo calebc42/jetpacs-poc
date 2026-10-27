@@ -294,7 +294,10 @@ class DesignModelTest {
         assertEquals(DesignComponentStyleSlot.TextBody, slotForStyle("unknown"))
         assertEquals(DesignComponentStyleSlot.TextMono, slotForStyle("mono"))
         assertTrue(scope.componentStyle(DesignComponentStyleSlot.TextTitle) == null)
-        assertEquals(127, DesignComponentStyleSlot.entries.size)
+        // A snapshot; #206 (editor.placeholder) and #207 (swipe.popup,
+        // swipe.popup-button) took it to 130. JetpacsDesignVocabularyTest pins
+        // the mirror against the manifest.
+        assertEquals(130, DesignComponentStyleSlot.entries.size)
     }
 
     @Test

@@ -8,10 +8,15 @@ import com.calebc42.ebp.wire.NODE_SCHEMA
 import com.calebc42.ebp.wire.SpecValidator
 import java.io.File
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Test
@@ -46,6 +51,36 @@ class JetpacsDesignVocabularyTest {
             JETPACS_DESIGN_NODE_SCHEMA.keys.toList(),
         )
         assertEquals(JETPACS_DESIGN_NODE_SCHEMA.keys, JETPACS_DESIGN_TYPED_NODE_SCHEMA.keys)
+    }
+
+    /**
+     * One binding per closed slot must be admissible: the baseline profile
+     * binds every slot, and a bound below the slot count made the Companion
+     * refuse every foundation surface while the design runtime was on (Pixel
+     * Tablet, 2026-10-27: 130 slots against max_items 128).
+     */
+    @Test
+    fun aScopeBindingEveryComponentSlotIsAdmitted() {
+        val manifest = Json.parseToJsonElement(
+            repositoryFile("renderer-extensions/jetpacs-design.json").readText(),
+        ).jsonObject
+        val slots = manifest.getValue("definitions").jsonObject
+            .getValue("component-style-slot").jsonObject
+            .getValue("values").jsonArray.map { it.jsonPrimitive.content }
+        val bindings = JsonArray(
+            slots.map { slot ->
+                buildJsonObject {
+                    put("slot", slot)
+                    putJsonArray("styles") { add("button") }
+                }
+            },
+        )
+        SpecValidator.validateSurfaceSpec(
+            JsonObject(designDocument() + ("component_styles" to bindings)),
+            path = "surface",
+            advertisedTypes = advertised,
+            nodeVocabulary = vocabulary,
+        )
     }
 
     @Test

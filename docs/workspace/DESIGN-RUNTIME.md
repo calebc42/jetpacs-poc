@@ -95,8 +95,8 @@ direction, and syntax colors remain properties of the receiver theme.
 
 ## Rendering coverage and fallback
 
-The source currently pins three extension nodes, 99 component-style slots,
-and canonical overrides for 17 node types. Those numbers are a source-audited
+The source currently pins eight extension nodes, 130 component-style slots,
+and canonical overrides for 19 node types. Those numbers are a source-audited
 snapshot, not an independent registry:
 
 | Pin | Witness |
@@ -105,6 +105,19 @@ snapshot, not an independent registry:
 | Slot mirror equality | `JetpacsDesignVocabularyTest.kt` |
 | Exact canonical override set | `CompanionRendererTest.kt` |
 | Baseline binds every slot | `test/jetpacs-design-test.el` |
+| A scope binding every slot is admitted | `JetpacsDesignVocabularyTest.kt`, `test/jetpacs-design-test.el` |
+
+A design scope's `component_styles` holds at most 256 bindings
+(`component-style-bindings` in the manifest), each naming a distinct slot:
+the Elisp builder refuses a duplicate. The bound must stay at or above the
+number of slots, because the baseline binds every one. It was 128 until
+2026-10-27, when amendments #206 and #207 had taken the slots to 130: the
+Companion then refused every foundation surface that carried the baseline
+(1201, "array size must be within 0..128") while the runtime was on, and only
+surfaces with their own design profile still updated. The manifest's schema
+digest is `131dcd2876a8b063ff21fd1a4e5b48a7327cacbf6acaefd6f6e09439ef0a9dae`
+since that change; a Companion and an Emacs kit from before it disagree on
+the bound, so update both together.
 
 The override set covers the high-value styled controls, text and editing
 surfaces used by the host and component catalog. Shape-specific fallbacks are
