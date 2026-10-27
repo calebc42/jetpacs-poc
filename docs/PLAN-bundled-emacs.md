@@ -109,9 +109,11 @@ Decisions by analysis:
 
 ```
 APK com.calebc42.jetpacs.companion.bundled
-├── process (main): JetpacsApplication, MainActivity, DeviceBridge,
-│     JetpacsBridgeService, receivers, widgets, tiles, EngineSupervisor
-└── process :emacs : JetpacsEngineService (FGS, "Jetpacs is running")
+├── process (main): JetpacsApplication, MainActivity, DeviceBridge (its
+│     listener lives with the process), receivers, widgets, tiles,
+│     EngineSupervisor, CompanionKeepaliveService (bound by the engine)
+└── process :emacs : JetpacsEngineService (FGS, "Jetpacs is running",
+      the app's only notification)
       └── thread "Emacs main thread": stderr→logcat, LANG, dump lookup,
             setEmacsParams(service = null), initEmacs(--fg-daemon=jetpacs)
             → ebp.el dials the Companion and authenticates (SPEC §9)
@@ -561,12 +563,30 @@ Resolved after the gates, at the owner's direction (2026-10-27):
   engine isn't running / Showing the last screen it sent. / Settings /
   Start it". The Settings hub's "Emacs Settings" entry keeps its name: it
   holds the engine's own options.
+- **One notification.** Background running on showed two ongoing
+  notifications, the engine's and the Companion bridge service's, and
+  with it off the bridge's stayed. The bundled flavor now runs no bridge
+  service: the Companion's listener lives with its process, and the
+  engine's foreground service, the app's only one, binds a private, inert
+  service in that process (`CompanionKeepaliveService`) while it runs.
+  On the tablet the Companion process held importance 200 (process state
+  4, not frozen) after more than a minute behind Home, under one
+  notification; with background running off there is none; killing the
+  Companion process brought it back 1.5 s later through the binding and
+  Emacs reconnected; "Pause" released both processes.
+- **Colors.** The owner saw the bundled app's colors differ from the
+  Companion's. Both mirror the Emacs theme (`jetpacs-theme-mode`
+  `mirror`), but the engine is a daemon without a frame, where every face
+  color reads as unspecified, so it pushed no palette and the app fell
+  back to its own scheme (a lavender surface and the design renderer's
+  blue accent). The engine now resolves the theme as a frame of Emacs for
+  Android would show it (`jetpacs-theme--frameless-attribute`): on the
+  tablet the bundled app persisted the same 13 colors and 13 syntax
+  styles as the standalone Companion, value for value.
 
 Still open:
 
-- Background running on shows two ongoing notifications (engine and
-  bridge), where decision 1 asked for one; turning it off restarts the
-  engine once.
+- Turning background running off restarts the engine once.
 - A note with a scheduled time gets a second reminder from the Org Mode
   app, without a tap action (the known duplicate-reminder item).
 - Under heavy machine load the desktop tests once crashed in Room's bundled
