@@ -64,6 +64,16 @@ Owner decisions (2026-10-26):
   Companion pins an engine identity and the AAR's SHA-256 in
   `companion/gradle/engine.lock`.
 
+Owner decisions (2026-10-27), after the device gates:
+
+- **Names.** The bundled flavor is "Jetpacs"; the standalone flavor stays
+  "Jetpacs Companion".
+- **First run.** No default applet: a fresh install opens on the hub, the
+  Elisp REPL, with the Files tree beside it; applets stay a choice in Apps.
+- **Wording.** The bundled app never sends its user to an Emacs of their
+  own: the Companion's text and the kit's hints name Jetpacs or the notes
+  engine there (`HostWording`, `jetpacs-bundled-p`).
+
 Decisions by analysis:
 
 - **Emacs 31.1 release.** The fork tracks master for the canvas image type,
@@ -532,25 +542,36 @@ own commit in `jetpacs-poc`.
   Android kill the app's processes; the sticky service restarted the
   engine) and the bundled app cleared.
 
-Found and left open, with the owner:
+Resolved after the gates, at the owner's direction (2026-10-27):
 
-- `jetpacs-design-baseline-component-styles` has 130 bindings and the
-  `jetpacs.design` contract allows 128 per scope (since 320284ff, #207), so
-  with the experimental design runtime on every foundation surface is
-  refused with 1201 (`component_styles`: "array size must be within
-  0..128"), in either flavor; only surfaces with their own design profile,
-  such as Orgzly's, still update. Raise the limit or trim two bindings.
-- The first run lands someone who has never used Emacs on the Elisp REPL
-  with no applet enabled, and Orgzly needs the experimental design runtime;
-  the bundled flavor may want a default applet.
-- Bundled copy still says Emacs where it should not: the "Emacs is
-  offline … Open Emacs" snackbar and "runs the app with your Emacs's full
-  permissions" in the Enable dialog.
+- **The design runtime's component styles (71a2aeb6).** The baseline binds
+  all 130 slots and the `jetpacs.design` contract allowed 128 per scope
+  since #206 and #207, so with the experimental design runtime on every
+  foundation surface was refused (1201, `component_styles`), in either
+  flavor. The bound is now 256 (`docs/workspace/DESIGN-RUNTIME.md` states
+  it and its rule); on the tablet the hub and the other foundation
+  surfaces are accepted with all 130 bindings.
+- **The design runtime switch never reached Emacs over the Unix socket
+  (58f740b9).** A `LocalSocket` close did not wake the session's blocked
+  reader, so no abort ever ended a bundled session; now each switch brings
+  a fresh handshake about four seconds later.
+- **Wording (6027213a).** The offline banner, the waiting screen, the
+  dropped-tap toast, the app store's consent and the kit's "in Emacs"
+  hints use bundled wording; on the tablet the banner reads "The notes
+  engine isn't running / Showing the last screen it sent. / Settings /
+  Start it". The Settings hub's "Emacs Settings" entry keeps its name: it
+  holds the engine's own options.
+
+Still open:
+
 - Background running on shows two ongoing notifications (engine and
   bridge), where decision 1 asked for one; turning it off restarts the
   engine once.
 - A note with a scheduled time gets a second reminder from the Org Mode
   app, without a tap action (the known duplicate-reminder item).
+- Under heavy machine load the desktop tests once crashed in Room's bundled
+  SQLite driver (`PairingDao.setReadyDisconnectedAt`, SIGSEGV); idle, the
+  same tree passes twice. Worth its own look.
 
 ## Routing table
 
