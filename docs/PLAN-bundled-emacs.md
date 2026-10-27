@@ -4,12 +4,12 @@ Status: active. E0, the engine build and harvest, and E1, the headless
 boot spike, are done (2026-10-26) and the spike is a go; E2, SPEC
 amendment #209, E3, the bundled flavor end to end, E4, the Unix socket and
 the bound-service wake, E5, the lifecycle policy, E6, the startup work, and
-E7, CI, distribution and the documents, landed 2026-10-27. Still open: the
-device gates that need an unlocked tablet (the wake, background-off
-binding, the vault move, the first-run screen), the engine log export, the
-lisp subtree trim, the first engine release and the CI runs that depend on
-it, per-ABI release APKs, and the open questions at the end. The decisions
-were taken by the owner on 2026-10-26.
+E7, CI, distribution and the documents, landed 2026-10-27, and the device
+gates ran the same day (see "Device gates"; seven regressions found there
+are fixed). Still open: the items listed under the device gates, the
+engine log export, the lisp subtree trim, the first engine release and the
+CI runs that depend on it, per-ABI release APKs, and the open questions at
+the end. The decisions were taken by the owner on 2026-10-26.
 
 The outcome is one APK that a person who has never used Emacs installs and
 opens: the `bundled` product flavor of `companion/app` carries GNU Emacs as
@@ -466,6 +466,91 @@ command is `assembleStandaloneDebug` for the existing app and
    standalone unit gates pass (57 and 43 tests). The CI jobs themselves run
    green only once the engine release `engine-31.1+2` carries the pinned
    AAR (publish from the developer's `dist/` first, then push).
+
+## Device gates (2026-10-27)
+
+Run on the Pixel Tablet, unlocked, with the owner watching; each fix is its
+own commit in `jetpacs-poc`.
+
+- **First run.** A cleared install shows the first-run screen with
+  Android's notification prompt above it ("Allow Jetpacs to send you
+  notifications?"); the engine starts at launch, before Start is tapped,
+  dumps in 5.4 s, reaches the daemon in 6.1 s and accepts the first
+  surface within a second of it. The hub is the Elisp REPL (owner decision
+  2026-08-06) and a fresh install enables no applet.
+- **Found and fixed, the preload (6d329ed1, 5492ece0).** The E6 dump made
+  the composition root's ten `defvar` seeds no-ops: no navigation rail or
+  bottom bar, no Tools or Settings in the drawer (the owner saw this first),
+  `org-directory` and the Files roots outside the vault. Two preloaded
+  libraries also seeded Org's inbox, agenda files and starter notes into
+  the loadup-time `~/org`. The dump now unbinds the root's seeds, the seven
+  Org-seeding libraries load at init (61 of 68 features stay preloaded; a
+  dump-backed start reaches the daemon in 1.0 s, was 0.66 s), and
+  `tools/engine-preload-audit.el` fails on this class of mistake (it fails
+  on the previous list with exactly the three problems the tablet showed).
+- **Background running off.** The engine's foreground notification goes;
+  the engine restarts once (the stop ends its process, the visible bind
+  starts a new one, 2.3 s to the daemon) and stays bound while the window
+  is visible; Home ends it within three seconds.
+- **Found and fixed, lifecycle (34142844).** Leaving the app posted the
+  high-importance "Jetpacs engine stopped" prompt every time; the bundled
+  flavor now supplies none. The crash-loop guard counted every visible bind
+  and wake as a start and halted the engine at the third open inside ten
+  minutes, for good; a clean stop now forgets the history and a launch or
+  a visible window clears the halt. Four Home-and-reopen rounds in a minute
+  no longer halt.
+- **Name (d354cd8b).** At the owner's request the bundled flavor is
+  "Jetpacs" and the standalone flavor stays "Jetpacs Companion".
+- **Wake (SPEC 5.8).** With background running off, an Orgzly note
+  scheduled a few minutes ahead armed two inexact alarms (a fresh install
+  has no exact-alarm grant), and the main process, started by the alarm
+  with no engine, posted the reminders. A tap on Orgzly's reminder
+  (`orgzly.home`, `when_offline` `wake`, `open_surface` `app:orgzly`)
+  started the `:emacs` process for the bind 45 ms later; the wake bound,
+  the daemon was up at 1.5 s and the wake was released at READY 2.7 s
+  after the tap; the queued event was delivered (`queue_events` empty) and
+  Orgzly's notebooks were re-read from the vault.
+- **Found and fixed, restart (2f04dcb4).** With background off, Restart
+  engine (and Rebuild engine cache, and the vault move) ended the engine
+  and never brought it back: the visible window was read after `stop()`
+  had cleared it. Now a new engine serves 2.5 s after the tap.
+- **Export.** Found and fixed (33c867f6): the export and the move skipped
+  "symbolic links" by comparing canonical and absolute paths, and the
+  private vault's own root fails that comparison on Android
+  (`/data/user/0` links to `/data/data`), so the export was a 22-byte
+  empty archive. Now the archive holds all 14 vault files.
+- **Vault move.** Run into `/sdcard/Jetpacs`, which on this tablet is the
+  standalone install's live vault, with the owner's go-ahead and a
+  checksummed backup: "Allow a shared folder" opens the system's All files
+  access page for "Jetpacs"; after the grant the row offered the move only
+  once the screen was reopened (fixed in fff08e76, it re-reads the grant on
+  resume); the move copied the one file the shared folder lacked, changed
+  none of its 26 files, rewrote `install.conf` (`vault_mode=shared`,
+  `vault=/storage/emulated/0/Jetpacs`), restarted the engine onto it in
+  1.6 s, and the hub's REPL reported `org-directory` in the shared folder.
+  Afterwards the test note was removed, the grant revoked (which makes
+  Android kill the app's processes; the sticky service restarted the
+  engine) and the bundled app cleared.
+
+Found and left open, with the owner:
+
+- `jetpacs-design-baseline-component-styles` has 130 bindings and the
+  `jetpacs.design` contract allows 128 per scope (since 320284ff, #207), so
+  with the experimental design runtime on every foundation surface is
+  refused with 1201 (`component_styles`: "array size must be within
+  0..128"), in either flavor; only surfaces with their own design profile,
+  such as Orgzly's, still update. Raise the limit or trim two bindings.
+- The first run lands someone who has never used Emacs on the Elisp REPL
+  with no applet enabled, and Orgzly needs the experimental design runtime;
+  the bundled flavor may want a default applet.
+- Bundled copy still says Emacs where it should not: the "Emacs is
+  offline … Open Emacs" snackbar and "runs the app with your Emacs's full
+  permissions" in the Enable dialog.
+- Background running on shows two ongoing notifications (engine and
+  bridge), where decision 1 asked for one; turning it off restarts the
+  engine once.
+- A note with a scheduled time gets a second reminder from the Org Mode
+  app, without a tap action (the known duplicate-reminder item).
 
 ## Routing table
 

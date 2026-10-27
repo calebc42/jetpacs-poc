@@ -598,16 +598,35 @@ tools/engine-spike.sh init-el        # the provisioned init.el and install.conf
 What a healthy first start shows: `initEmacs [libandroid-emacs.so,
 --fg-daemon=jetpacs] … dump=(none, loadup will dump)`, site-init
 preloading the kit (any "not preloaded" line names a library that will
-load at init time instead), "Dump complete" about 5.4 s later with a dump
-of about 33 MB, "Jetpacs init: loading the kit" / "kit loaded",
-"Starting Emacs daemon", then the engine dialing the
-Companion's SPEC 5.3 socket `files/ebp/companion.sock` (0600 in a 0700
-directory; `grep companion.sock /proc/net/unix` shows the listener and the
-connected pair) and `surface_records` rows for the generated pairing in the
-Companion's Room. A second start names the dump, loads the kit in about
-0.5 s and reaches the daemon in about 0.7 s, with the first surface
-accepted about 1.3 s after `initEmacs`. No loopback TCP port is bound by
-the bundled flavor.
+load at init time instead), `site-init: unbound 10 root seeds: (org-directory
+…)` (the composition root's defvar seeds, which it then applies at init),
+"Dump complete" about 5.4 s after `initEmacs` with a dump of about 33 MB,
+"Jetpacs init: loading the kit" / "kit loaded", "Starting Emacs daemon"
+about 6.1 s after it, then the engine dialing the Companion's SPEC 5.3
+socket `files/ebp/companion.sock` (0600 in a 0700 directory; `grep
+companion.sock /proc/net/unix` shows the listener and the connected pair)
+and `surface_records` rows for the generated pairing in the Companion's
+Room. After a clean install the hub shows the Eval and Files rail, the
+drawer Apps, Tools and Settings, and `files/vault/org` holds the starter
+notes while the engine's HOME has no `org` directory. A second start names
+the dump, loads the rest of the kit in about 0.8 s and reaches the daemon
+in about 1.0 s. No loopback TCP port is bound by the bundled flavor.
+
+The dump must not capture loadup-time state: a preloaded library that
+writes files or derives paths from what the composition root sets later
+bakes the wrong values in. After any change to `EngineFiles.PRELOAD`, run
+the audit (the bundled CI job does), with a host Emacs of the engine's
+major version and the staged kit:
+
+```sh
+./gradlew :app:stageBundledDebugOnboardingAssets
+emacs -Q --batch -l ../tools/engine-preload-audit.el
+```
+
+It loads the list interactively under a scratch HOME and fails on any file
+created there other than `.emacs.d`, any variable other than
+`org-directory` naming `~/org`, and any `jetpacs-init.el` defvar seed still
+bound after site-init's unbind step.
 
 Notes: the bundled flavor's socket keeps it apart from a standalone install
 and its Emacs on 8765; `run-as PKG sh -c …` is denied on the Pixel Tablet,
