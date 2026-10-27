@@ -80,8 +80,10 @@ internal object EngineSupervisor {
      * shutdown and exits), and the start that follows gets a fresh one.
      */
     fun restart(context: Context) {
-        stop(context)
+        // Read before stop(): unbinding the visible window clears it, and
+        // with background running off the rebind below is the only start.
         val activity = visible
+        stop(context)
         if (!start(context) && activity != null) bindWhileVisible(activity)
     }
 
@@ -107,6 +109,8 @@ internal object EngineSupervisor {
         val from = EngineVault.current(home)
         val to = if (target == EngineVault.Mode.SHARED) EngineVault.sharedDir() else EngineVault.privateDir(home)
         check(to.isDirectory || to.mkdirs()) { "cannot create ${to.path}" }
+        // As in restart(): stop() clears the visible window, read it first.
+        val activity = visible
         stop(context)
         var waited = 0
         while (processAlive(context) && waited < 3_000) {
@@ -115,7 +119,6 @@ internal object EngineSupervisor {
         val copied = EngineVault.mergeCopy(from, to)
         EngineVault.setMode(home, target)
         // The provisioner rewrites install.conf on the next start.
-        val activity = visible
         if (!start(context) && activity != null) bindWhileVisible(activity)
         return copied
     }
