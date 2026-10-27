@@ -78,8 +78,11 @@ ${transportForms(port, socketPath)}
      * the kit's libraries, Org and the EBP client sit in the dump and later
      * starts skip loading them. The composition root is never preloaded: it
      * creates directories, registers the apps and starts the server when it
-     * loads, which belongs to a start, not to a dump. A library that fails
-     * to preload is reported and loads at init time instead. The load-path
+     * loads, which belongs to a start, not to a dump. It also seeds some of
+     * the preloaded libraries' variables with `defvar` before it loads them,
+     * so the preload unbinds each of those again before the dump and the
+     * root's seeds apply at init as they do without one. A library that
+     * fails to preload is reported and loads at init time instead. The load-path
      * change is discarded after the dump, as loadup warns, and `init.el`
      * re-adds the kit at every start.
      */
@@ -124,7 +127,31 @@ ${transportForms(port, socketPath)}
         append("                                    (message \"site-init: first failure in %s: %s\\n%s\" feature e\n")
         append("                                             (substring (with-output-to-string (backtrace)) 0 2500))))))\n")
         append("            (require feature))\n")
-        append("        (error (message \"site-init: %s not preloaded: %s\" feature err))))))\n")
+        append("        (error (message \"site-init: %s not preloaded: %s\" feature err))))\n")
+        // The composition root seeds some of these libraries' variables with
+        // `defvar' before it loads them (jetpacs-init.el, "Profile defaults
+        // are established before their defining libraries load"; the vault's
+        // org-directory and Files roots, the chrome's dock and drawer seams).
+        // The preload loaded the libraries first, which bound those variables
+        // to the libraries' own defaults and would leave the root's seeds
+        // no-ops: no navigation rail, no Settings, Org outside the vault.
+        // Every variable the root seeds with a top-level defvar and the
+        // preload bound is unbound again, so the root seeds it at init
+        // exactly as it does without a dump, and user.el still wins after it.
+        append("    ;; Unbind what the composition root seeds with defvar, so its seeds apply at init.\n")
+        append("    (let ((root (expand-file-name \"jetpacs-init.el\" kit)) (unbound nil))\n")
+        append("      (when (file-readable-p root)\n")
+        append("        (with-temp-buffer\n")
+        append("          (insert-file-contents root)\n")
+        append("          (goto-char (point-min))\n")
+        append("          (condition-case nil\n")
+        append("              (while t\n")
+        append("                (let ((form (read (current-buffer))))\n")
+        append("                  (when (and (eq (car-safe form) 'defvar) (cddr form) (boundp (cadr form)))\n")
+        append("                    (makunbound (cadr form))\n")
+        append("                    (push (cadr form) unbound))))\n")
+        append("            (end-of-file nil))))\n")
+        append("      (message \"site-init: unbound %d root seeds: %S\" (length unbound) (nreverse unbound)))))\n")
         // The pdumper cannot dump overlays, and a library loaded in the current
         // buffer (*scratch* during loadup) may leave one behind; such overlays
         // are load-time artifacts, not state, so they go before the dump.

@@ -38,6 +38,24 @@ class EngineFilesTest {
         assertTrue(text.contains("(condition-case err"))
     }
 
+    /**
+     * The composition root seeds preloaded libraries' variables with defvar
+     * before it loads them; the dump must leave those unbound or the seeds are
+     * no-ops (found on the Pixel Tablet: no navigation rail, no Settings, Org
+     * outside the vault). The unbind follows the preload and precedes the dump.
+     */
+    @Test
+    fun siteInitUnbindsTheRootsDefvarSeedsAfterThePreload() {
+        val text = EngineFiles.siteInit()
+        val preload = text.indexOf("(require feature)")
+        val unbind = text.indexOf("(makunbound (cadr form))")
+        val overlays = text.indexOf("(remove-overlays)")
+        assertTrue(preload in 0 until unbind)
+        assertTrue(unbind < overlays)
+        assertTrue(text.contains("(expand-file-name \"jetpacs-init.el\" kit)"))
+        assertTrue(text.contains("(eq (car-safe form) 'defvar) (cddr form) (boundp (cadr form))"))
+    }
+
     @Test
     fun installConfIsFormatThreeWithThePrivateVaultAndBundledHome() {
         val text = EngineFiles.installConf("/data/x/files/vault", "/data/x/files/emacs", "/data/x/files/emacs/.emacs.d/jetpacs")
