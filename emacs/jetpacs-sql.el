@@ -238,15 +238,19 @@ the companion-local `view.switch', which works with the socket down."
 (jetpacs-defaction "sql.open" #'jetpacs-sql--action-open)
 (jetpacs-defaction "sql.list-tables" #'jetpacs-sql--action-list-tables)
 
-;; Entry: a card on the settings screen (order 40, after Project).
+;; Entry: a card on the settings screen (order 40, after Project).  Not
+;; in the bundled app: `sql.el' drives client programs (psql, mysql,
+;; sqlite3) that its engine does not have.
 (with-eval-after-load 'jetpacs-settings
   (jetpacs-settings-add-link
    40 (lambda ()
-        (jetpacs-sql--entry "storage" "Databases"
-                            "SQL connections and sessions"
-                            (jetpacs-action "sql.show"
-                                            :when-offline "drop")))))
-(declare-function jetpacs-settings-add-link "jetpacs-settings" (order builder))
+        (unless (jetpacs-bundled-p)
+          (jetpacs-sql--entry "storage" "Databases"
+                              "SQL connections and sessions"
+                              (jetpacs-action "sql.show"
+                                              :when-offline "drop"))))))
+(declare-function jetpacs-settings-add-link "jetpacs-settings"
+                  (order builder &optional advanced))
 
 (defvar jetpacs-launcher-row-icons)
 (defvar jetpacs-launcher-row-labels)

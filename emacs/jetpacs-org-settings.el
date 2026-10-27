@@ -85,47 +85,121 @@ after-set memo-buster; the user-identity rows feed no memoised
 extraction and stay bare.  `ebp-org-roots' and
 `org-default-notes-file' are the relocation plan's two previously
 unsurfaced foundation rows — the roots gate every bridge resolve, and
-the notes file is where phone capture lands, so both bust the memo."
-  (cl-flet ((org-entry (sym label)
-              (list sym :label label
-                    :after-set #'jetpacs-org-settings-after-set))
-            (plain (sym label) (list sym :label label)))
+the notes file is where phone capture lands, so both bust the memo.
+
+In the bundled app the Notes setting in Jetpacs Settings owns where the
+notes live, so the directory and the notes file are `:standalone-only'
+there; the bridge roots and the Babel timeout are `:advanced'; and
+`:plain' is that app's wording (`jetpacs-settings-item')."
+  (cl-flet ((org-entry (sym label &rest more)
+              (append (list sym :label label
+                            :after-set #'jetpacs-org-settings-after-set)
+                      more))
+            (bare (sym label &rest more)
+              (append (list sym :label label) more)))
     (list
      (cons "Org Workflow"
-           (list (org-entry 'org-directory "Org directory")
-                 (org-entry 'org-default-notes-file "Default notes file")
-                 (org-entry 'ebp-org-roots "Bridge org roots")
-                 (org-entry 'org-log-done "Log task completion")
-                 (org-entry 'org-log-into-drawer "Log into drawer")
-                 (org-entry 'org-archive-location "Archive location")))
+           (list (org-entry 'org-directory "Org directory"
+                            :standalone-only t)
+                 (org-entry 'org-default-notes-file "Default notes file"
+                            :standalone-only t)
+                 (org-entry 'ebp-org-roots "Bridge org roots" :advanced t)
+                 (org-entry 'org-log-done "Log task completion"
+                            :plain '(:label "When a task is done"
+                                     :summary "What to record when you mark a task done."
+                                     :choices ((nil . "Nothing")
+                                               (time . "The time")
+                                               (note . "The time and a note"))))
+                 (org-entry 'org-log-into-drawer "Log into drawer"
+                            :plain '(:label "Keep task history in a drawer"
+                                     :summary "Put state changes and notes in a folded drawer under the heading."
+                                     :hint "Drawer name"
+                                     :choices ((nil . "No")
+                                               (t . "Yes, in LOGBOOK"))))
+                 (org-entry 'org-archive-location "Archive location"
+                            :plain '(:summary "Where archived headings go; %s stands for the file's name."))))
      (cons "Org Agenda"
-           (list (org-entry 'org-agenda-span "Agenda span")
+           (list (org-entry 'org-agenda-span "Agenda span"
+                            :plain '(:summary "How many days the agenda shows."
+                                     :hint "Number of days"))
                  (org-entry 'org-deadline-warning-days
-                            "Deadline warning days")
+                            "Deadline warning days"
+                            :plain '(:summary "How many days ahead a deadline starts to show."))
                  (org-entry 'org-extend-today-until
-                            "Extend today until (hour)")))
+                            "Extend today until (hour)"
+                            :plain '(:label "Day ends at"
+                                     :summary "Before this hour the agenda still shows the day before."
+                                     :choices ((0 . "Midnight") (1 . "1 AM")
+                                               (2 . "2 AM") (3 . "3 AM")
+                                               (4 . "4 AM") (5 . "5 AM")
+                                               (6 . "6 AM"))))))
      (cons "Org Editing & Display"
-           (list (org-entry 'org-startup-folded "Initial folding")
-                 (org-entry 'org-startup-indented "Indent to outline level")
+           (list (org-entry 'org-startup-folded "Initial folding"
+                            :plain '(:label "Open files folded"
+                                     :summary "How much of a file shows when it opens."
+                                     :choices ((nofold . "Everything")
+                                               (fold . "Top headings only")
+                                               (show2levels . "Two levels")
+                                               (show3levels . "Three levels")
+                                               ;; Org's own value is spelled so.
+                                               (show4evels . "Four levels")
+                                               (show4levels . "Four levels")
+                                               (show5levels . "Five levels")
+                                               (content . "All headings")
+                                               (showeverything
+                                                . "Everything, drawers too"))))
+                 (org-entry 'org-startup-indented "Indent to outline level"
+                            :plain '(:label "Indent text under headings"
+                                     :summary "Indent each heading's text to its level; slower for big files."
+                                     :choices ((nil . "Off") (t . "On"))))
                  (org-entry 'org-hide-emphasis-markers
-                            "Hide emphasis markers")
-                 (org-entry 'org-return-follows-link "Enter follows links")
+                            "Hide emphasis markers"
+                            :plain '(:label "Hide formatting marks"
+                                     :summary "Hide the * / _ around bold, italic and underlined text."))
+                 (org-entry 'org-return-follows-link "Enter follows links"
+                            :plain '(:summary "Enter on a link opens it."))
                  ;; Plain: the timeout feeds no memoised extraction.
-                 (plain 'jetpacs-org-babel-timeout "Babel run timeout (s)")))
+                 (bare 'jetpacs-org-babel-timeout "Babel run timeout (s)"
+                       :advanced t)))
      (cons "User Defaults"
-           (list (plain 'user-full-name "Author (Name)")
-                 (plain 'user-mail-address "Email")))
+           (list (bare 'user-full-name "Author (Name)"
+                       :plain '(:label "Your name"
+                                :summary "Shown as the author of notes you export."
+                                :hint "Your name"))
+                 (bare 'user-mail-address "Email"
+                       :plain '(:label "Your email"
+                                :summary "Shown with your name on exported notes."
+                                :hint "you@example.com"))))
      (cons "Calendar & Location"
            (list (org-entry 'calendar-week-start-day
-                            "Week start day (0=Sun, 1=Mon)")
-                 (org-entry 'calendar-latitude "Latitude (e.g. 40.7)")
+                            "Week start day (0=Sun, 1=Mon)"
+                            :plain '(:label "First day of the week"
+                                     :summary "Calendars and the agenda start weeks on this day."
+                                     :choices ((0 . "Sunday") (1 . "Monday")
+                                               (2 . "Tuesday") (3 . "Wednesday")
+                                               (4 . "Thursday") (5 . "Friday")
+                                               (6 . "Saturday"))))
+                 ;; solar.el defines both; until it loads they are unbound.
+                 (org-entry 'calendar-latitude "Latitude (e.g. 40.7)"
+                            :library 'solar
+                            :plain '(:label "Latitude"
+                                     :summary "Your location, for sunrise and sunset times; north is positive."
+                                     :hint "40.7"
+                                     :choices ((nil . "Not set"))))
                  (org-entry 'calendar-longitude
-                            "Longitude (e.g. -74.0)")))
+                            "Longitude (e.g. -74.0)"
+                            :library 'solar
+                            :plain '(:label "Longitude"
+                                     :summary "East is positive, west negative."
+                                     :hint "-74.0"
+                                     :choices ((nil . "Not set"))))))
      (cons "Reader"
            (list (org-entry 'ebp-org-outline-show-deadline
-                            "Deadline on headings")
+                            "Deadline on headings"
+                            :plain '(:summary "Outlines show each heading's deadline."))
                  (org-entry 'ebp-org-outline-show-clocked
-                            "Clocked time on headings"))))))
+                            "Clocked time on headings"
+                            :plain '(:summary "Outlines show the time clocked on each heading.")))))))
 
 (defun jetpacs-org-settings-register ()
   "Register (or replace) every org/calendar section.

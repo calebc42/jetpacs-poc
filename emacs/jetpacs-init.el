@@ -208,36 +208,73 @@ then silently refuses.  A value set by the user's init remains authoritative.")
 ;; module's (the ratified §3 relocation) — required here under the
 ;; same boot rule.
 (require 'jetpacs-org-settings)
+;; The bundled app's engine has no user account behind it: Emacs for
+;; Android's placeholder identity ("Android user", u0_…@localhost) would
+;; sign the owner's exported notes.  Both start empty, which is also
+;; their default for Reset, until the owner enters them in Emacs
+;; Settings; a saved value wins.
+(when (jetpacs-bundled-p)
+  (dolist (sym '(user-full-name user-mail-address))
+    (put sym 'standard-value (list ""))
+    (unless (get sym 'saved-value)
+      (set-default sym ""))))
+;; Every `:plain' below is the bundled app's wording: its user has no
+;; Emacs of their own, so it replaces the docstrings there and only
+;; there (`jetpacs-settings-item').  `:advanced' rows are for the people
+;; building Jetpacs and gather in one section at the end.
 (jetpacs-settings-register-section
  "Appearance"
  '(;; The §3 fold-in: the app's authored enum node retired — the
    ;; choice-of-consts custom-type renders an equivalent enum.
-   (jetpacs-line-numbers :label "Line numbers")
+   (jetpacs-line-numbers
+    :label "Line numbers"
+    :plain (:summary "Number the lines of text in buffer views."))
    ;; S10: where M-x rides — the whole point of the choice-of-consts
    ;; type is that the phone can set it, so the phone must SHOW it.
-   (jetpacs-chrome-global-actions-placement :label "Global actions")))
+   (jetpacs-chrome-global-actions-placement
+    :label "Global actions"
+    :plain (:label "M-x button"
+            :summary "Where the M-x button sits on every screen."
+            :choices ((top-bar . "Top bar")
+                      (fab . "Floating button")
+                      (fab-menu . "Floating menu"))))))
 (jetpacs-settings-register-section
  "Editor"
- '((ebp-sync-diagnostics :label "Push diagnostics")
-   (ebp-sync-fontify :label "Push syntax highlighting")
-   (ebp-sync-eldoc :label "Push documentation")))
+ '((ebp-sync-diagnostics :label "Push diagnostics" :advanced t)
+   (ebp-sync-fontify :label "Push syntax highlighting" :advanced t)
+   (ebp-sync-eldoc :label "Push documentation" :advanced t)))
 ;; The SPEC 23.3 explicit developer setting: full failure detail stays
 ;; local and bounded, and only while this is on.
 (jetpacs-settings-register-section
  "Devtools"
- '((jetpacs-devtools-recording :label "Record failure details")
-   (jetpacs-devtools-stream-log :label "Log wire frames")))
+ '((jetpacs-devtools-recording :label "Record failure details" :advanced t)
+   (jetpacs-devtools-stream-log :label "Log wire frames" :advanced t)))
 (jetpacs-settings-register-section
  "Clipboard"
- '((jetpacs-clip-auto-refresh :label "Auto-refresh the kill ring")
-   (jetpacs-clip-max-entries :label "Kill-ring entries shown")))
+ '((jetpacs-clip-auto-refresh
+    :label "Auto-refresh the kill ring"
+    :plain (:label "Update the clipboard list as you copy"
+            :summary "Refresh the list after every cut or copy."))
+   (jetpacs-clip-max-entries
+    :label "Kill-ring entries shown"
+    :plain (:label "Clipboard entries shown"
+            :summary "How many recent cuts and copies the list keeps."))))
+;; In the bundled app the Notes setting in Jetpacs Settings decides
+;; what storage the engine sees, so the browser's own storage switches
+;; are left out there.
 (jetpacs-settings-register-section
  "Files"
- '((jetpacs-files-sync-editor :label "Live editing")
-   (jetpacs-files-shared-storage :label "Shared storage access")
+ '((jetpacs-files-sync-editor
+    :label "Live editing"
+    :plain (:summary "Text files open in the live editor."))
+   (jetpacs-files-shared-storage :label "Shared storage access"
+                                 :standalone-only t)
    (jetpacs-files-android-private-locations
-    :label "Android private locations")
-   (jetpacs-files-max-rows :label "Directory rows shown")))
+    :label "Android private locations" :standalone-only t)
+   (jetpacs-files-max-rows
+    :label "Directory rows shown"
+    :plain (:label "Files shown per folder"
+            :summary "A folder with more files lists only the first ones."))))
 
 ;;;; The hub — the screen you land on and come home to
 
