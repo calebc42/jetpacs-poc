@@ -4,6 +4,11 @@
      private, accepts no extras, and its binder exposes no operation, which
      is what SPEC 5.8's same-application wake target requires. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Decision 2 of the plan: the user may move the notes to the shared
+         /sdcard/Jetpacs, which on Android 11+ means All files access, granted
+         by the user on the system page the Settings row opens. Never
+         requested at install, never needed for the private default. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
     <!-- The engine's HOME holds the user's notes when the vault is app-private;
          ask before discarding it on uninstall. -->
     <application android:hasFragileUserData="true">

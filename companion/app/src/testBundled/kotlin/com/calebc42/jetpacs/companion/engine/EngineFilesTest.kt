@@ -34,6 +34,7 @@ class EngineFilesTest {
                 "home=/data/x/files/emacs\nemacs_home=/data/x/files/emacs\nroot=/data/x/files/emacs/.emacs.d/jetpacs\n",
             text,
         )
+        assertTrue(EngineFiles.installConf("/sdcard/Jetpacs", "/h", "/r", vaultMode = "shared").contains("vault_mode=shared\nvault=/sdcard/Jetpacs\n"))
     }
 
     @Test

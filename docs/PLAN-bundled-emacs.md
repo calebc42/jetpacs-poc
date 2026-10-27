@@ -361,10 +361,22 @@ command is `assembleStandaloneDebug` for the existing app and
    and the socket pair reappeared within 14 s. Found on the way: the
    first version restarted from `onCreate`/`onStart` only, which a resumed
    singleTop activity never sees again, and counted the halted start
-   against the next launch. Still open in E5: export/backup, the
-   shared-folder option, log export, the device gate for the wake and
-   for background-off binding (the tablet stays locked, so the switch
-   cannot be flipped from here).
+   against the next launch.
+   Second slice (2026-10-27), decision 2: `EngineVault` keeps the vault
+   mode in `files/emacs/vault.mode` (private unless moved), the
+   provisioner's `install.conf` follows it, and the Engine section's
+   "Notes" rows offer "Export notes" (the vault zipped through the
+   system's document picker, `EngineExport`), "Allow a shared folder"
+   (the All files access system page; the overlay manifest declares
+   `MANAGE_EXTERNAL_STORAGE`, never requested at install) and, once
+   granted, "Store notes in a shared folder" / "Keep notes private":
+   `EngineSupervisor.switchVault` stops the engine, waits for its process
+   to end, copies what the target vault lacks without overwriting or
+   deleting (`EngineVault.mergeCopy`), records the mode and starts the
+   engine again. `EngineVaultTest` pins the merge and the archive. Still
+   open in E5: log export, and the device gates for the wake, for
+   background-off binding and for the vault move (the tablet stays locked,
+   so Settings cannot be driven from here).
 7. **E6 — Startup time and size.** Shipped per-ABI dumps, a kit-preloaded
    dump through `site-lisp/site-init.el`, build-time byte-compilation,
    asset trimming before the index is rebuilt; targets ≤ 2 s tap-to-READY

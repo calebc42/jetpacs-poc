@@ -22,7 +22,7 @@ import android.util.Log
  * neither EBP endpoint; the Companion still only listens, and the engine's
  * Emacs still dials and authenticates.
  */
-object EngineSupervisor {
+internal object EngineSupervisor {
     private const val TAG = "JetpacsEngine"
     private const val PREFS = "jetpacs-engine"
     private const val KEY_BACKGROUND = "background"
@@ -89,6 +89,33 @@ object EngineSupervisor {
         home.root.listFiles()?.filter { it.name.endsWith(".pdmp") }?.forEach { it.delete() }
         java.io.File(home.root, "dump.stamp").delete()
         restart(context)
+    }
+
+    /**
+     * Move the notes between the private and the shared vault (decision 2):
+     * stop the engine so nothing writes meanwhile, copy what the target
+     * lacks (never overwriting, never deleting the source), record the
+     * mode the provisioner reads, start again. Returns the files copied.
+     */
+    fun switchVault(context: Context, target: EngineVault.Mode): Int {
+        val home = EngineHome.of(context)
+        if (target == EngineVault.Mode.SHARED) {
+            check(EngineVault.sharedAccessGranted()) { "All files access is not granted" }
+        }
+        val from = EngineVault.current(home)
+        val to = if (target == EngineVault.Mode.SHARED) EngineVault.sharedDir() else EngineVault.privateDir(home)
+        check(to.isDirectory || to.mkdirs()) { "cannot create ${to.path}" }
+        stop(context)
+        var waited = 0
+        while (processAlive(context) && waited < 3_000) {
+            Thread.sleep(100); waited += 100
+        }
+        val copied = EngineVault.mergeCopy(from, to)
+        EngineVault.setMode(home, target)
+        // The provisioner rewrites install.conf on the next start.
+        val activity = visible
+        if (!start(context) && activity != null) bindWhileVisible(activity)
+        return copied
     }
 
     /** Whether the engine's process exists right now (a fact, not a session claim). */

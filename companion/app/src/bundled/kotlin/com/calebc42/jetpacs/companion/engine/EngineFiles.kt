@@ -40,10 +40,10 @@ ${transportForms(port, socketPath)}
     private fun elispString(value: String): String =
         value.replace("\\", "\\\\").replace("\"", "\\\"")
 
-    /** `install.conf` format 3 as `device/install-recommended.el` writes it, for the private vault. */
-    fun installConf(vault: String, home: String, root: String): String =
+    /** `install.conf` format 3 as `device/install-recommended.el` writes it; [vaultMode] is `private` or `shared`. */
+    fun installConf(vault: String, home: String, root: String, vaultMode: String = "private"): String =
         "format=3\n" +
-            "vault_mode=private\n" +
+            "vault_mode=$vaultMode\n" +
             "vault=$vault\n" +
             "home_mode=bundled\n" +
             "home=$home\n" +

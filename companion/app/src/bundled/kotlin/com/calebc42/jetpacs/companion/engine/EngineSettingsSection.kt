@@ -91,4 +91,5 @@ internal fun EngineSettingsSection(bridge: DeviceBridge) {
         TextButton(onClick = { EngineSupervisor.restart(context) }) { Text("Restart engine") }
         TextButton(onClick = { EngineSupervisor.rebuildCache(context) }) { Text("Rebuild engine cache") }
     }
+    VaultSettings()
 }

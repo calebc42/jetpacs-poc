@@ -95,13 +95,18 @@ object EngineProvisioner {
         if (!home.initFile.isFile || home.initFile.readText() != initEl) {
             home.initFile.writeText(initEl)
         }
-        // The private vault and the record that points the composition root at it.
+        // The vault the user chose (private unless moved) and the record that
+        // points the composition root at it. The shared folder may be
+        // unreachable until All files access is granted; the mode is then
+        // still honored and Emacs reports the missing directory itself.
         check(home.vault.isDirectory || home.vault.mkdirs()) { "cannot create ${home.vault.path}" }
-        File(home.vault, "org").mkdirs()
+        val vault = EngineVault.current(home)
+        runCatching { File(vault, "org").mkdirs() }
         val installConf = EngineFiles.installConf(
-            vault = home.vault.canonicalPath,
+            vault = vault.canonicalPath,
             home = home.root.canonicalPath,
             root = home.installRoot.canonicalPath,
+            vaultMode = EngineVault.label(home),
         )
         if (!home.installConf.isFile || home.installConf.readText() != installConf) {
             home.installConf.writeText(installConf)
