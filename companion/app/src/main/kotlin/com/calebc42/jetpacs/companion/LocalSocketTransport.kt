@@ -132,6 +132,13 @@ internal class LocalSocketTransport(
         }
 
         override fun close() {
+            // Closing a LocalSocket's descriptor does not wake the session's
+            // reader blocked in read(): the kernel keeps the socket open while
+            // that read holds it, so Emacs never saw an abort and the session
+            // outlived it (found on the Pixel Tablet: the design runtime
+            // switch's reconnect never happened). Shut both directions first.
+            socket.runCatching { shutdownInput() }
+            socket.runCatching { shutdownOutput() }
             socket.runCatching { close() }
         }
     }
