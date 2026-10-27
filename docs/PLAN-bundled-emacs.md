@@ -584,8 +584,48 @@ Resolved after the gates, at the owner's direction (2026-10-27):
   tablet the bundled app persisted the same 13 colors and 13 syntax
   styles as the standalone Companion, value for value.
 
+- **Settings cleanup (owner's choices, 2026-10-27).** Developer and
+  internal rows (Editor push toggles, Devtools, Bridge org roots, Babel
+  timeout, Widget Gallery, the theme's Off mode) gather in one Advanced
+  section at the end of Emacs Settings, in both flavors. The bundled app
+  words its rows plainly (`:plain` in the settings registry: labels,
+  summaries, option names, placeholders) and hides rows its own settings
+  own or that cannot work there (`:standalone-only`: Org directory,
+  Default notes file, the Files storage switches; the Databases link).
+  Jetpacs Settings puts Background and Notes first and the transport,
+  engine state, paths, Restart and Rebuild in a Diagnostics group last
+  (SPEC §5.1's profile and address); "Set up or repair" is the standalone
+  flavor's only. Found and fixed on the way, in both flavors unless
+  noted: every text field repeated its title; built-in options such as
+  `user-full-name` rendered as raw Lisp (`"Android user"`) because Emacs
+  for Android's first-start dump provides `cus-start` after only its
+  preload half, so it is now loaded whole once; latitude and longitude
+  read "not loaded yet" (their `solar` library now loads first); options
+  with a free-form arm (Agenda span, Log into drawer) rendered as raw
+  Lisp and now offer their choices plus a field; the Theme screen's Color
+  scheme row was refused on every tap (`jetpacs-theme-mode` was never
+  registered); and, bundled only, the placeholder identity
+  (`u0_…@localhost`) starts empty.
+- **Settings did not survive an engine start (bundled).** Customize had
+  no `custom-file`, so it saved into `init.el`, which the supervisor
+  rewrites whenever it differs: every Settings change was lost at the
+  next engine start, which with background running off is every open.
+  `init.el` now sets `custom-file` to `jetpacs/custom.el` (user state the
+  provisioner never touches) and loads it after the kit, and a Modus
+  theme pick is saved through Customize too. On the tablet a theme pick
+  and the color scheme mode survived Restart engine (a new engine
+  process).
+
 Still open:
 
+- Packages cannot download: the engine has no HTTPS. Its configure
+  passes `--with-gnutls=ifavailable` with only `deps/sqlite` on
+  `--with-ndk-path`; Emacs's own `java/INSTALL` (GNUTLS) names the five
+  ndk-build ports at android-ports-for-gnu-emacs (gmp 6.2.1, gnutls
+  3.8.5, libtasn1 4.19.0, p11-kit 0.24.1, nettle 3.8) to add to that
+  path, and `gnutls-trustfiles` already reads the system CA store
+  (`/system/etc/security/cacerts`, 120 certificates on the tablet).
+  Awaiting the owner's go-ahead (third-party native code in the APK).
 - Turning background running off restarts the engine once.
 - A note with a scheduled time gets a second reminder from the Org Mode
   app, without a tap action (the known duplicate-reminder item).
