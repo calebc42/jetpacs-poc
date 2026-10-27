@@ -17,6 +17,7 @@ remains the research and hand-rewrite repository.
 | `~/workspace/bloom-native/` | `calebc42/grove-native` | Bloom (formerly Grove) Elisp applet |
 | `~/workspace/orgzly-native/` | `calebc42/orgzly-native` | Orgzly Elisp applet |
 | `~/workspace/harp-native/` | `calebc42/harp-native` | Harp Elisp applet |
+| `~/workspace/jetpacs-emacs-engine/` | `calebc42/jetpacs-emacs-engine` | Bundled engine build: GNU Emacs 31.1 for Android as a pinned AAR |
 | `~/workspace/jetpacs/` | `calebc42/jetpacs` | Separate hand rewrite |
 
 The initial migration assembled eleven POC repositories: the three existing GitHub projects plus
@@ -27,6 +28,22 @@ the Android app. See `../bloom-native/README.md` relative to the POC root.
 The future hand rewrite uses `calebc42/jetpacs`.
 The developer tools and Material 3 remain inside `jetpacs-poc`; they do not need
 separate remotes.
+
+## Bundled engine repository (2026-10-26)
+
+`~/workspace/jetpacs-emacs-engine/` was created for the bundled flavor of
+the Companion ([`PLAN-bundled-emacs.md`](PLAN-bundled-emacs.md)), which
+makes **13 repositories**. It holds build glue only: `versions.env` pins the
+Emacs release tarball, its digest and signing key, the NDK, platform and
+build-tools; `tools/` fetches and verifies the tarball, runs Emacs's own
+configure and make per ABI, harvests the libraries, assets and the pristine
+`org.gnu.emacs` Java sources, and packages the AAR with the AGP project in
+`android/`. GNU Emacs prohibits LLM-generated contributions, so the
+repository contains no Emacs source and no patch, and nothing is sent
+upstream. Its `dist/` is ignored by git; the Companion reads the pinned AAR
+from `../jetpacs-emacs-engine/dist/` beside this checkout, from
+`$JETPACS_ENGINE_AAR`, or through `tools/fetch-engine-aar.sh` from the
+engine repository's GitHub release.
 
 ## Main integration (2026-09-06)
 

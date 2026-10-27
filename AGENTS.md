@@ -29,6 +29,7 @@ and applet dependencies are sibling repositories under
 | `./` | Canonical standalone Jetpacs POC repository and the source-backed target used by the developer tools | Obey its lineage and architecture documents |
 | `poc/v1`, `poc/v2`, `poc/v3-pre-split` tags in this repository | Immutable older POC snapshots and reusable implementation evidence | Reuse or adapt their code as useful; do not move or modify the snapshot tags |
 | `../ebp/`, `../ebp.el/`, `../ebp-kmp/`, `../ebp-compose/`, `../ebp-org/` | Independent EBP repositories | Use `../ebp/` as the sole POC specification authority |
+| `../jetpacs-emacs-engine/` | The bundled flavor's engine build: pristine GNU Emacs 31.1 for Android as a pinned AAR | Build glue only; it holds no Emacs source and no patch is ever added for Jetpacs (docs/PLAN-bundled-emacs.md) |
 | `../glasspane/` | Sibling applet source | Follow the applet authoring contract below |
 | `../bloom-native/` | Bloom (formerly Grove) Jetpacs applet and tests | Read its local `AGENTS.md`; the Android reference app lives in `../grove/` |
 | `../jetpacs-authoring/` | Shared Elisp authoring and source-inspection repository | Read its local `AGENTS.md` before changing it |
@@ -178,7 +179,7 @@ suite, then cross-layer or device checks proportional to risk.
 |---|---|
 | EBP spec/contract/goldens | `cd ../ebp && python3 validate.py` plus every affected implementation conformance test |
 | Jetpacs Elisp foundation | Targeted ERT, warning-as-error byte compilation, then `test/run-tests.sh` for broad changes |
-| Companion Kotlin/Android | Owning module unit tests; for broad changes run `cd companion && ./gradlew testDebugUnitTest :app:testStandaloneDebugUnitTest testAndroidHostTest jvmTest :desktop:test assembleDebug` (the multiplatform renderer and core modules have no `testDebugUnitTest` task; the app's unit tests are flavored, and `assembleDebug` also builds the `bundled` flavor when the pinned engine AAR is present, see docs/PLAN-bundled-emacs.md) |
+| Companion Kotlin/Android | Owning module unit tests; for broad changes run `cd companion && ./gradlew testDebugUnitTest :app:testStandaloneDebugUnitTest testAndroidHostTest jvmTest :desktop:test assembleDebug` (the multiplatform renderer and core modules have no `testDebugUnitTest` task; the app's unit tests are flavored: add `:app:testBundledDebugUnitTest` when the pinned engine AAR is present, which also makes `assembleDebug` build the `bundled` flavor, see docs/PLAN-bundled-emacs.md) |
 | Platform tools | `cd jetpacs-platform-tools && ./gradlew clean test installDist`, then `doctor` smoke |
 | Applet tooling | Static ERT suite, trusted-runtime ERT suite, Checkdoc, and warning-as-error byte compilation described in its nested guide |
 | Applet | Static inspect/manifest/validate, offline ERT, trusted determinism check for trusted code, then a narrow real-device flow |

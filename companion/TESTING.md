@@ -543,10 +543,14 @@ wireless ADB ports do not remain stable across reconnects.
 
 The `bundled` product flavor (`docs/PLAN-bundled-emacs.md`) embeds GNU Emacs
 as the `:emacs` process. It exists only when the pinned engine AAR is
-present: `gradle/engine.lock` names the engine (`31.1+1`) and its SHA-256,
-and the AAR is read from `../jetpacs-emacs-engine/dist/` beside this
-checkout or from `$JETPACS_ENGINE_AAR`. Without it every `bundled*` task is
-disabled and the unflavored anchors build the standalone flavor alone.
+present: `gradle/engine.lock` names the engine (`31.1+2` today) and its
+SHA-256, and the AAR is read from `../jetpacs-emacs-engine/dist/` beside
+this checkout or from `$JETPACS_ENGINE_AAR`. Without it every `bundled*`
+task is disabled and the unflavored anchors build the standalone flavor
+alone. A machine without the engine repository built beside it runs
+`tools/fetch-engine-aar.sh`, which downloads the pinned AAR from the engine
+repository's GitHub release and checks its digest against the lock; this is
+what CI does.
 
 ```sh
 ./gradlew :app:verifyBundledEngine :app:assembleBundledDebug :app:testBundledDebugUnitTest
@@ -560,6 +564,23 @@ warning and the device loads the sources. The step reports the files it
 left to source (today only `ebp-websocket.el`, which needs the `websocket`
 package).
 
+CI (`.github/workflows/ci.yml`): the `bundled` job runs
+`verifyBundledEngine`, this unit gate, `lintBundledDebug` and the debug APK
+against the downloaded AAR, with Emacs 31.1 on the runner for the kit
+byte-compilation; `api34-bundled` runs the managed-device composition smoke
+with the x86_64 engine packaged. Both need the release `engine-<id>` of
+`jetpacs-emacs-engine` to carry the pinned AAR, so they stay red until it
+is published (that repository's README, "Releases and CI").
+`.github/workflows/release.yml` builds the release APKs of both flavors for
+a `companion-*` tag and attaches them to the GitHub release, signed when the
+secrets `JETPACS_RELEASE_KEYSTORE_BASE64`, `JETPACS_RELEASE_KEYSTORE_PASSWORD`,
+`JETPACS_RELEASE_KEY_ALIAS` and `JETPACS_RELEASE_KEY_PASSWORD` exist.
+Locally the same four `JETPACS_RELEASE_*` variables (the first naming the
+keystore file instead) sign an `assembleRelease`; without them release APKs
+are unsigned, as before.
+
+`tools/onboard-tablet.sh --bundled` builds, installs and launches the
+bundled debug APK on the tablet with no Termux, ssh or provisioning phase.
 Device evidence goes through `tools/engine-spike.sh` (one adb device,
 `ANDROID_SERIAL` pinned):
 

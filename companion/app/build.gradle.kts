@@ -86,6 +86,21 @@ android {
             buildConfigField("String", "ENGINE_ID", "\"$engineId\"")
         }
     }
+
+    // docs/PLAN-bundled-emacs.md E7: release signing comes from the
+    // environment. The keystore stays outside the repository (CI decodes it
+    // from a secret into the runner's temporary directory for one step,
+    // .github/workflows/release.yml); without JETPACS_RELEASE_KEYSTORE the
+    // release build type stays unsigned, as it always was.
+    providers.environmentVariable("JETPACS_RELEASE_KEYSTORE").orNull?.let { keystore ->
+        val release = signingConfigs.create("release") {
+            storeFile = file(keystore)
+            storePassword = providers.environmentVariable("JETPACS_RELEASE_KEYSTORE_PASSWORD").orNull
+            keyAlias = providers.environmentVariable("JETPACS_RELEASE_KEY_ALIAS").orNull
+            keyPassword = providers.environmentVariable("JETPACS_RELEASE_KEY_PASSWORD").orNull
+        }
+        buildTypes.getByName("release").signingConfig = release
+    }
 }
 
 /**

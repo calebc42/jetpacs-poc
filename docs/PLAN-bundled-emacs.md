@@ -2,9 +2,14 @@
 
 Status: active. E0, the engine build and harvest, and E1, the headless
 boot spike, are done (2026-10-26) and the spike is a go; E2, SPEC
-amendment #209, E3, the bundled flavor end to end, and E4, the Unix
-socket and the bound-service wake, landed 2026-10-27. Every later item is
-open. The decisions were taken by the owner on 2026-10-26.
+amendment #209, E3, the bundled flavor end to end, E4, the Unix socket and
+the bound-service wake, E5, the lifecycle policy, E6, the startup work, and
+E7, CI, distribution and the documents, landed 2026-10-27. Still open: the
+device gates that need an unlocked tablet (the wake, background-off
+binding, the vault move, the first-run screen), the engine log export, the
+lisp subtree trim, the first engine release and the CI runs that depend on
+it, per-ABI release APKs, and the open questions at the end. The decisions
+were taken by the owner on 2026-10-26.
 
 The outcome is one APK that a person who has never used Emacs installs and
 opens: the `bundled` product flavor of `companion/app` carries GNU Emacs as
@@ -423,6 +428,44 @@ command is `assembleStandaloneDebug` for the existing app and
 8. **E7 — CI, distribution and documentation.** Engine release workflow,
    Companion CI with the pinned AAR, release signing, the documents listed
    in the routing table.
+   Landed 2026-10-27. The engine repository (commit `fa4e916`) gains
+   `.github/workflows/engine.yml`: both ABIs on a clean `ubuntu-latest`
+   runner (JDK 17; the NDK, platform and build-tools `versions.env` names,
+   installed through `sdkmanager`; the signed tarball fetched and verified
+   there) for every `engine-<version>+<build>` tag, which must match
+   `versions.env`, and on manual dispatch; a tag publishes a GitHub
+   release. `tools/publish-release.sh` stages release-named copies (GitHub
+   rewrites `+` in asset names, so the assets spell the id with `-`; the
+   bytes and the digest are the same), publishes a developer's own `dist/`
+   as the release the Companion pins, and from CI fills only the assets a
+   release lacks: the first asset wins, because `assets/build_info` carries
+   the build time and a rebuild never reproduces a pinned digest. In the
+   Companion, `tools/fetch-engine-aar.sh` downloads the pinned asset and
+   checks it against `gradle/engine.lock`; `ci.yml` gains `bundled`
+   (`verifyBundledEngine`, the bundled unit gate, `lintBundledDebug` and
+   the debug APK, with Emacs 31.1 on the runner for the kit
+   byte-compilation) and `api34-bundled` (the managed-device composition
+   smoke with the x86_64 engine packaged); `release.yml` builds the release
+   APKs of both flavors for a `companion-*` tag and attaches them to the
+   release, signed when the keystore secrets exist. `app/build.gradle.kts`
+   takes the release signing from `JETPACS_RELEASE_KEYSTORE` and its three
+   companion variables, so the keystore never enters the repository and a
+   build without them creates no signing config. `tools/onboard-tablet.sh
+   --bundled` builds, installs and launches the bundled debug APK with no
+   Termux, ssh or provisioning phase. Documents: `ARCHITECTURE-POC3.md`
+   (the bundled engine and the supervisor), `REPOSITORY-BOUNDARIES.md`,
+   `LOCAL-REPOSITORY-LAYOUT.md` and `AGENTS.md` (the engine repository),
+   `PLATFORM-RENTAL-REGISTER.md` (five rows), `SECURITY.md` (the `:emacs`
+   boundary, the socket, the credential file, `run-as`),
+   `ONBOARDING-device.md` and `companion/TESTING.md` (gates, CI, signing,
+   the onboarding switch). Evidence on this host: `lintBundledDebug` green
+   (48 warnings, no error); `assembleRelease` with a throwaway keystore
+   yields `app-standalone-release.apk` (66.5 MB) and
+   `app-bundled-release.apk` (118.0 MB, both ABIs), which `apksigner verify
+   --print-certs` reports as V2-signed by that key; the bundled and
+   standalone unit gates pass (57 and 43 tests). The CI jobs themselves run
+   green only once the engine release `engine-31.1+2` carries the pinned
+   AAR (publish from the developer's `dist/` first, then push).
 
 ## Routing table
 
@@ -468,3 +511,6 @@ The bundled flavor is conforming only while all of these hold:
 - Whether `info/` and the trimmed lisp subtrees are missed by any applet.
 - F-Droid reproducibility of the engine build; Play's policy on
   `MANAGE_EXTERNAL_STORAGE` for the shared-folder option.
+- Per-ABI release APKs: `splits.abi` is module-wide and would rename the
+  standalone flavor's artifacts, so GitHub Releases carry the two-ABI
+  bundled APK (118 MB) for now; an App Bundle would serve Play.

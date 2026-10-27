@@ -75,7 +75,7 @@ downstream application dependency.
 | `:renderer:jetpacs` | Foundation-only `jetpacs.components` and optional `jetpacs.design` implementations; sourced from the in-repository `jetpacs-components/` module |
 | `:renderer:material3` | Jetpacs Material 3 implementation and optional extension; owned locally in `companion/renderer/material3` |
 | `:host` | The platform-neutral Companion host both composition roots share: the loopback listener and engine wiring (`DeviceBridge`), the process-wide projections (`CompanionStores`), the composition root below a platform's own (`CompanionProcess`), the renderer installation over platform targets (`CompanionRenderer`), and the Nav 3 window composition; a platform implements `CompanionHostPlatform` and `HostUiPlatform` |
-| `:app` | Android composition root over `:host`: the Keystore bootstrap, the Android halves of the two seams, platform adapters, onboarding and exact installed renderer selection |
+| `:app` | Android composition root over `:host`: the Keystore bootstrap, the Android halves of the two seams, platform adapters, onboarding and exact installed renderer selection; its `bundled` flavor source set adds the engine process, supervisor and provisioner of [the bundled engine](#bundled-engine) |
 | `:desktop` | Compose for Desktop composition root over `:host`: the data directory, keychain credentials, the generated pairing and the JDK/AWT halves of the two seams ([`PLAN-desktop-companion.md`](PLAN-desktop-companion.md)) |
 
 The app may compose these modules; it does not transfer their authority. In
@@ -113,6 +113,39 @@ Android gesture
 A socket write, Android platform call, or Compose callback never occurs inside
 a Room transaction. Platform work is represented durably where required and
 is reconciled after commit.
+
+## Bundled engine
+
+`companion/app` builds two product flavors of one codebase
+([`PLAN-bundled-emacs.md`](PLAN-bundled-emacs.md)). `standalone` is the
+Companion above, paired with an Emacs the user installs. `bundled`
+(application ID suffix `.bundled`) carries GNU Emacs 31.1 inside the APK as
+an **engine**: the sibling `jetpacs-emacs-engine` repository builds the
+unmodified, signature-verified release tarball with Emacs's own build system
+into an AAR that `companion/gradle/engine.lock` pins by identity and SHA-256.
+No Emacs source tree carries a change made for Jetpacs.
+
+The engine runs in its own process, `:emacs`, under a private `specialUse`
+foreground service (`JetpacsEngineService`) that starts Emacs the way
+upstream's non-interactive entry does: `EmacsNative.setEmacsParams` with no
+`EmacsService`, then `initEmacs` with `--fg-daemon`. Nothing in that process
+opens Room, the Keystore or the bridge; `JetpacsApplication` returns before
+its composition root when it finds itself there. A third component beside
+the two EBP endpoints, the **engine supervisor** of SPEC amendment #209
+(`EngineProvisioner`, `EngineSupervisor`, `EngineWake` in the bundled source
+set), owns the host's initialization files and lifecycle the way a user's
+init and a service manager would on a desktop: it provisions the engine's
+HOME under the app's private files (the managed kit, `init.el`,
+`install.conf`, the private vault and the Emacs endpoint's 0600 copy of a
+generated pairing), starts, stops, restarts and keeps the process alive on
+product policy, lets Emacs's own loadup build the first-start dump with the
+kit preloaded through `site-lisp/site-init.el`, and performs the SPEC §5.8
+bound-service wake. Emacs then dials the Companion over the SPEC §5.3 Unix
+socket (`LocalSocketTransport`, same UID only) and authenticates like any
+other endpoint; the Companion never writes Elisp and never passes code,
+arguments or files through a start or wake signal. Every seam between the
+flavors is one `EngineFlavor` object per source set, so `:host` and the main
+source set stay flavor-blind.
 
 ## Durable state
 

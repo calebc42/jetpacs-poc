@@ -8,6 +8,10 @@
 #     composition smoke now runs below as a managed-device gate;
 #   - RF-1b (Robolectric render snapshots) and RF-1c (the
 #     cross-implementation loopback job) are later rungs.
+#   - the bundled flavor (docs/PLAN-bundled-emacs.md, E7) has its own jobs
+#     below, bundled and api34-bundled: they download the engine AAR
+#     gradle/engine.lock pins from the engine repository's GitHub release
+#     and are red until that release carries it.
 #
 # Two non-obvious facts this file depends on (verified 2026-07-31):
 #   - the WIRE job, not the spec job, is the real cross-repo binding:
@@ -118,6 +122,79 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew :app:pixel2Api34StandaloneDebugAndroidTest --console=plain
+
+  # The bundled flavor against the engine AAR gradle/engine.lock pins,
+  # downloaded from the release engine-<id> of calebc42/jetpacs-emacs-engine
+  # (assets spell "+" as "-"; tools/fetch-engine-aar.sh verifies the digest).
+  # JETPACS_ENGINE_TOKEN is only needed while that repository is private. The
+  # host Emacs byte-compiles the staged kit (companion/TESTING.md, "Bundled
+  # engine"); its major version must be the engine's.
+  bundled:
+    name: "bundled (pinned engine AAR: unit + lint + debug APK)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: "31.1"
+      - name: Download the pinned engine AAR
+        env:
+          GH_TOKEN: ${{ secrets.JETPACS_ENGINE_TOKEN || github.token }}
+        run: tools/fetch-engine-aar.sh "$RUNNER_TEMP/engine"
+      - name: verifyBundledEngine, bundled unit tests, lint, debug APK
+        working-directory: companion
+        run: |
+          chmod +x gradlew
+          ./gradlew \
+            :app:verifyBundledEngine \
+            :app:testBundledDebugUnitTest \
+            :app:lintBundledDebug \
+            :app:assembleBundledDebug \
+            --console=plain
+      - name: Upload bundled debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ebp-companion-bundled-debug-apk
+          path: companion/app/build/outputs/apk/bundled/debug/*.apk
+          retention-days: 14
+
+  api34-bundled:
+    name: Android 14 managed-device gate (bundled, x86_64 engine)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      - uses: purcell/setup-emacs@master
+        with:
+          version: "31.1"
+      - name: Download the pinned engine AAR
+        env:
+          GH_TOKEN: ${{ secrets.JETPACS_ENGINE_TOKEN || github.token }}
+        run: tools/fetch-engine-aar.sh "$RUNNER_TEMP/engine"
+      - name: Enable KVM access
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Composition smoke on API 34 with the x86_64 engine packaged
+        working-directory: companion
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:pixel2Api34BundledDebugAndroidTest --console=plain
 
   spec:
     name: spec (validate.py + I1)

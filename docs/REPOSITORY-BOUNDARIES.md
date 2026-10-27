@@ -44,6 +44,10 @@ lower layer:
   Jetpacs.
 - Applets may depend on public Jetpacs APIs. Jetpacs foundation source does not
   name an applet or encode its domain policy.
+- `jetpacs-emacs-engine` builds GNU Emacs unmodified for Android and knows
+  nothing of EBP or Jetpacs; the Companion's `bundled` flavor consumes its
+  AAR by pinned identity and digest, and every line of integration lives in
+  Jetpacs ([`PLAN-bundled-emacs.md`](PLAN-bundled-emacs.md)).
 
 ## Physical repositories and modules
 
@@ -56,6 +60,7 @@ Paths below are relative to the Jetpacs repository root.
 | `ebp-org` | `../ebp-org` | Reusable Org protocol engine and tests |
 | `ebp-kmp` | `../ebp-kmp` | `:ebp-kmp`, `:wire`, generators, and Kotlin tests |
 | `ebp-compose` | `../ebp-compose` | `:renderer:model`, `:renderer:compose`, `:renderer:compose-testing`, and generic extension and member projection tooling |
+| `jetpacs-emacs-engine` | `../jetpacs-emacs-engine` | The bundled engine build: the pristine Emacs 31.1 tarball through Emacs's own build system into a pinned AAR; build glue only, no Emacs source, no patches |
 | Jetpacs module | `jetpacs-components` | Foundation design renderer, `jetpacs.components` and `jetpacs.design` manifests/projections, builders/tests |
 | `jetpacs-authoring` | `../jetpacs-authoring` | Shared inert Elisp authoring and source-inspection support |
 | Jetpacs module | `jetpacs-automations` | Automation model/runtime, applet, and tests |
@@ -89,7 +94,9 @@ The following stay in this repository:
   loopback-tcp transport, behind `CompanionHostPlatform`, `HostUiPlatform`
   and `CompanionTransport`;
 - `companion/app`: Android composition root and platform adapters over
-  `companion/host`;
+  `companion/host`, with the `bundled` flavor's source set (the engine
+  process service, supervisor, provisioner, wake and vault code, its first-run
+  screen and Engine settings) and the SPEC §5.3 `LocalSocketTransport`;
 - `companion/desktop`: the Compose for Desktop composition root, its JDK
   and AWT adapters and the `emacs-unix` dialer
   ([`PLAN-desktop-companion.md`](PLAN-desktop-companion.md));
@@ -100,7 +107,8 @@ The following stay in this repository:
 - integration tests that prove the selected sibling repositories work together.
 
 The Android namespace and application ID are
-`com.calebc42.jetpacs.companion`. Consumed protocol code remains under
+`com.calebc42.jetpacs.companion`; the `bundled` flavor appends `.bundled` so
+both flavors can sit on one device. Consumed protocol code remains under
 `com.calebc42.ebp.*`. The old `com.calebc42.ebp.companion` package is a
 different POC-era application and is not upgrade-compatible.
 

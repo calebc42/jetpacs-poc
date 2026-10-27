@@ -6,6 +6,13 @@
 #
 #   tools/onboard-tablet.sh [--vault shared|emacs|termux]
 #                            [--emacs-home emacs|termux|remote] [SERIAL]
+#   tools/onboard-tablet.sh --bundled [SERIAL]
+#
+#   --bundled installs the bundled flavor (docs/PLAN-bundled-emacs.md): GNU
+#     Emacs inside the APK as an engine process, its HOME, kit, init and
+#     pairing provisioned by the app itself on first launch. Only the build,
+#     install and launch phases run; Termux, ssh and the provisioning below
+#     do not apply to it, and tools/engine-spike.sh gives its evidence.
 #
 #   PHASE companion-build / companion-install (install mode only): builds the
 #     tree's debug Companion and reinstalls it with app data preserved.
@@ -70,6 +77,9 @@ usage: tools/onboard-tablet.sh [OPTIONS] [SERIAL]
   --reset-home      remove only the managed early-init HOME/PATH block
   --audit           report the selected layout without changing it
   --skip-pylsp      do not install the optional Termux Python LSP tooling
+  --bundled         build, install and launch the bundled flavor (GNU Emacs
+                    inside the APK; needs the pinned engine AAR); no Termux,
+                    ssh or provisioning phase, no --vault or --emacs-home
   -h, --help        show this help
 
   SERIAL   adb device serial (default: \$ANDROID_SERIAL, else
@@ -100,6 +110,7 @@ EMACS_HOME_MODE=""
 ACTION=install
 ACTION_EXPLICIT=0
 INSTALL_PYLSP=1
+BUNDLED=0
 SERIAL_ARG=""
 set_action() {
   local requested="$1"
@@ -127,6 +138,7 @@ while [ "$#" -gt 0 ]; do
     --reset-home) set_action reset-home; shift ;;
     --audit) set_action audit; INSTALL_PYLSP=0; shift ;;
     --skip-pylsp) INSTALL_PYLSP=0; shift ;;
+    --bundled) BUNDLED=1; shift ;;
     -h|--help) usage; exit 0 ;;
     --)
       shift
@@ -145,6 +157,17 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ "$#" -eq 0 ] || die "unexpected arguments: $*"
+
+if [ "$BUNDLED" -eq 1 ]; then
+  [ "$ACTION" = install ] \
+    || die "--bundled supports install only; tools/engine-spike.sh has status, kill and wipe"
+  [ -z "$VAULT_MODE$EMACS_HOME_MODE" ] \
+    || die "--bundled takes no --vault or --emacs-home: the engine's HOME and the private vault are provisioned on the device"
+  # The bundled flavor has its own HOME (the app's private files) and vault
+  # (private, until the user moves it); the choices below do not apply.
+  EMACS_HOME_MODE=bundled
+  VAULT_MODE=private
+fi
 
 choose_emacs_home_mode() {
   if [ -n "$EMACS_HOME_MODE" ]; then return; fi
@@ -212,12 +235,12 @@ choose_vault_mode() {
 case "$EMACS_HOME_MODE" in
   local) EMACS_HOME_MODE=emacs ;;
   private|advanced) EMACS_HOME_MODE=termux ;;
-  ''|emacs|termux|remote) ;;
+  ''|emacs|termux|remote|bundled) ;;
   *) die "--emacs-home must be emacs, termux, or remote" ;;
 esac
 case "$VAULT_MODE" in
   local) VAULT_MODE=emacs ;;
-  ''|shared|emacs|termux) ;;
+  ''|shared|emacs|termux|private) ;;
   *) die "--vault must be shared, emacs, or termux" ;;
 esac
 
@@ -242,7 +265,7 @@ fi
 
 choose_emacs_home_mode
 case "$EMACS_HOME_MODE" in
-  emacs|termux) ;;
+  emacs|termux|bundled) ;;
   remote)
     [ "$ACTION" = install ] || die "--emacs-home remote is only valid for install"
     echo "Jetpacs remote mode selected: Android Emacs HOME and Vault were not changed."
@@ -258,7 +281,7 @@ esac
 
 choose_vault_mode
 case "$VAULT_MODE" in
-  shared|emacs|termux) ;;
+  shared|emacs|termux|private) ;;
   *) die "--vault must be shared, emacs, or termux" ;;
 esac
 
@@ -277,6 +300,8 @@ COMPANION_DIR="$REPO_ROOT/companion"
 COMPANION_APK="$COMPANION_DIR/app/build/outputs/apk/standalone/debug/app-standalone-debug.apk"
 COMPANION_PACKAGE="com.calebc42.jetpacs.companion"
 COMPANION_VERSION=""
+BUNDLED_APK="$COMPANION_DIR/app/build/outputs/apk/bundled/debug/app-bundled-debug.apk"
+BUNDLED_PACKAGE="$COMPANION_PACKAGE.bundled"
 
 phase_companion_build() {
   [ -x "$COMPANION_DIR/gradlew" ] \
@@ -306,11 +331,63 @@ phase_companion_install() {
     || die "the Companion package was not visible after adb install"
 }
 
+# The bundled flavor: build against the pinned engine AAR, install with app
+# data preserved, launch. The app provisions the engine's HOME, kit, init,
+# install.conf and pairing itself on that launch (docs/PLAN-bundled-emacs.md,
+# E3), so nothing is staged or typed from here.
+phase_bundled_install() {
+  local install_output engine_id
+  [ -x "$COMPANION_DIR/gradlew" ] \
+    || die "Companion Gradle wrapper is missing or not executable"
+  engine_id="$(sed -n 's/^engine=//p' "$COMPANION_DIR/gradle/engine.lock")"
+  log "building the debug bundled Companion APK (engine $engine_id)"
+  (cd "$COMPANION_DIR" && ./gradlew :app:verifyBundledEngine :app:assembleBundledDebug) \
+    || die "bundled Companion build failed; the pinned engine AAR must be present \
+(companion/TESTING.md, 'Bundled engine': tools/fetch-engine-aar.sh or the engine repository's dist/)"
+  [ -f "$BUNDLED_APK" ] \
+    || die "bundled build succeeded but $BUNDLED_APK is missing"
+  log "installing or updating the bundled Companion"
+  install_output="$(adbs install -r "$BUNDLED_APK")" \
+    || die "adb could not install the bundled APK"
+  case "$install_output" in
+    *Success*) ;;
+    *) die "unexpected adb install result: $install_output" ;;
+  esac
+  COMPANION_VERSION="$(
+    adbs shell dumpsys package "$BUNDLED_PACKAGE" \
+      | sed -n 's/^[[:space:]]*versionName=//p' \
+      | head -n1 || true
+  )"
+  [ -n "$COMPANION_VERSION" ] \
+    || die "the bundled package was not visible after adb install"
+  log "launching the bundled Companion (its first launch provisions and starts the engine)"
+  adbs shell am start -W -n "$BUNDLED_PACKAGE/$COMPANION_PACKAGE.MainActivity" >/dev/null \
+    || log "warning: could not start the launcher activity; open Jetpacs on the tablet"
+  echo >&2
+  echo "=================== Jetpacs onboarding report ==================" >&2
+  printf '  device serial          : %s\n' "$SERIAL" >&2
+  printf '  action                 : install (bundled flavor)\n' >&2
+  printf '  Companion APK          : %s  [version %s]\n' \
+    "$BUNDLED_PACKAGE" "$COMPANION_VERSION" >&2
+  printf '  engine                 : GNU Emacs %s inside the APK, process :emacs\n' "$engine_id" >&2
+  printf '  Emacs HOME             : the app'"'"'s private files/emacs (provisioned by the app)\n' >&2
+  printf '  Vault                  : private (files/vault) until moved from Settings\n' >&2
+  echo "===============================================================" >&2
+  echo >&2
+  echo "REMAINING:" >&2
+  echo "  1. Open Jetpacs on the tablet if it is not in front: the first launch" >&2
+  echo "     provisions the engine's HOME and builds the Emacs dump (about six" >&2
+  echo "     seconds), then the hub opens. Nothing is pasted or paired." >&2
+  echo "  2. Evidence: tools/engine-spike.sh status | watch | cpu (ANDROID_SERIAL=$SERIAL)." >&2
+  echo >&2
+}
+
 # ---------------------------------------------------------------------
 # Preflight: local tools, device visible, the tree's own invariants
 # ---------------------------------------------------------------------
 
-for cmd in adb ssh ssh-keygen tar; do
+# shellcheck disable=SC2046
+for cmd in adb tar $([ "$BUNDLED" -eq 1 ] || echo ssh ssh-keygen); do
   command -v "$cmd" >/dev/null 2>&1 \
     || die "'$cmd' not found on this desktop -- install it first"
 done
@@ -793,6 +870,12 @@ phase_verify() {
 # ---------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------
+
+if [ "$BUNDLED" -eq 1 ]; then
+  step "PHASE bundled-install"
+  phase_bundled_install
+  exit 0
+fi
 
 if [ "$ACTION" = install ]; then
   step "PHASE companion-build"

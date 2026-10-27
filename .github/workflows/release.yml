@@ -1,0 +1,80 @@
+# docs/PLAN-bundled-emacs.md E7: release APKs of both flavors for a tag
+# companion-<version>, signed when the keystore secrets exist. The keystore
+# never enters the repository: JETPACS_RELEASE_KEYSTORE_BASE64 is decoded into
+# the runner's temporary directory for the one Gradle step, and the passwords
+# reach Gradle as environment variables of that step only
+# (companion/app/build.gradle.kts, release signing). Without the secrets the
+# APKs are unsigned, as a local assembleRelease is. GitHub Releases is the
+# first distribution channel; F-Droid and Play stay open questions.
+name: release
+
+on:
+  push:
+    tags: ["companion-*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apks:
+    name: release APKs (standalone + bundled)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v4
+      # The bundled variants byte-compile the staged kit with a host Emacs of
+      # the engine's major version (companion/TESTING.md, "Bundled engine").
+      - uses: purcell/setup-emacs@master
+        with:
+          version: "31.1"
+      - name: Download the pinned engine AAR
+        env:
+          GH_TOKEN: ${{ secrets.JETPACS_ENGINE_TOKEN || github.token }}
+        run: tools/fetch-engine-aar.sh "$RUNNER_TEMP/engine"
+      - name: Release keystore from the secrets, if present
+        env:
+          KEYSTORE_BASE64: ${{ secrets.JETPACS_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            chmod 600 "$RUNNER_TEMP/release.keystore"
+            echo "JETPACS_RELEASE_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+            echo "signing: keystore present"
+          else
+            echo "signing: no JETPACS_RELEASE_KEYSTORE_BASE64 secret, the APKs will be unsigned"
+          fi
+      - name: Release APKs of both flavors
+        working-directory: companion
+        env:
+          JETPACS_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.JETPACS_RELEASE_KEYSTORE_PASSWORD }}
+          JETPACS_RELEASE_KEY_ALIAS: ${{ secrets.JETPACS_RELEASE_KEY_ALIAS }}
+          JETPACS_RELEASE_KEY_PASSWORD: ${{ secrets.JETPACS_RELEASE_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:verifyBundledEngine :app:assembleRelease --console=plain
+          ls -la app/build/outputs/apk/*/release/*.apk
+      - name: Remove the keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jetpacs-companion-release-apks
+          path: companion/app/build/outputs/apk/*/release/*.apk
+          retention-days: 30
+      - name: Attach the APKs to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --verify-tag \
+                 --title "Jetpacs Companion $GITHUB_REF_NAME" \
+                 --notes "Release APKs of the standalone and bundled flavors (docs/PLAN-bundled-emacs.md)."
+          gh release upload "$GITHUB_REF_NAME" companion/app/build/outputs/apk/*/release/*.apk --clobber

@@ -20,9 +20,12 @@ are exported:
 
 The bridge service, alarms, reminder interactions, notification actions,
 widget provider/action/stale endpoints, and time-trigger receiver are private.
-`ManifestSecurityTest` pins this closed exposure set. Adding an exported
-component requires an explicit caller, permission or input-validation model,
-and a corresponding manifest test.
+`ManifestSecurityTest` pins this closed exposure set, and parses the
+`bundled` flavor's manifest overlay to pin that it adds exactly one private
+component, the engine service `JetpacsEngineService` in process `:emacs`,
+and no activity, provider or receiver. Adding an exported component
+requires an explicit caller, permission or input-validation model, and a
+corresponding manifest test.
 
 ## Intent and PendingIntent rules
 
@@ -82,6 +85,40 @@ are used only after a capability check and degrade to an inexact idle-allowed
 alarm if access is denied or revoked. Platform effects run only after their
 owning durable transaction commits.
 
+## Bundled engine process
+
+The `bundled` flavor ([`PLAN-bundled-emacs.md`](PLAN-bundled-emacs.md))
+runs GNU Emacs in the private process `:emacs` under its own `specialUse`
+foreground service. The boundary is the process: `JetpacsApplication`
+returns before its composition root there, so Room, the Keystore, the
+bridge and the widget coordinator are never opened beside Emacs, and the
+service's binder exposes no operation. The service accepts no extras; a
+start or wake signal never carries code, arguments or files. Emacs's own
+subprocess loader (`libexec1.so` and `libloader.so`, extracted beside
+`libemacs.so`) runs inside the same application sandbox and SELinux domain.
+
+Emacs reaches the Companion over the SPEC §5.3 Unix socket
+`files/ebp/companion.sock`: a 0600 socket in a 0700 directory, bound in the
+filesystem namespace (never the abstract one), and `LocalSocketTransport`
+refuses any peer whose uid is not the application's. The engine's
+credential is the Emacs endpoint's copy of the generated pairing,
+`files/emacs/.emacs.d/jetpacs/var/pairing`, mode 0600, written by the
+provisioner from the Keystore-held pairing; `jetpacs-credentials.el`
+refuses a file readable by group or other. No DocumentsProvider or other
+export covers the engine's HOME: the engine AAR ships an empty manifest, so
+none of Emacs's own components or permissions reach the APK. On a
+debuggable build `run-as` reads these files, which SPEC amendment #209
+names as reduced protection; release builds are not debuggable, and the
+release signing keystore lives outside the repository
+(`.github/workflows/release.yml`).
+
+The overlay declares `MANAGE_EXTERNAL_STORAGE` for the opt-in shared notes
+folder; it is requested only on the system page the Settings row opens,
+never at install, and the private vault needs no permission.
+`hasFragileUserData` makes Android ask before discarding the notes on
+uninstall. The engine's stderr reaches logcat through the service's pipe and
+carries no token: `init.el` names the credential file, never the credential.
+
 ## Verification
 
 Run the current app unit, lint, assembly, and API 34 device gates documented in
@@ -93,6 +130,10 @@ includes:
 - `ReminderNotificationTest` for durable descriptor and PendingIntent
   identities;
 - `WidgetPolicyTest` plus Room widget DAO tests for token and lifecycle rules;
+- the bundled unit gate (`:app:testBundledDebugUnitTest`): the overlay case
+  of `ManifestSecurityTest`, `EngineWakeTest` for the §5.8 bounds,
+  `EngineStartsTest` for the crash-loop halt, `EngineFilesTest` for the
+  provisioned files and `EngineVaultTest` for the non-overwriting move;
 - wire tests for stale tuples, forged identity, durable admission, restart,
   and replay; and
 - the API 34 composition smoke for installed manifest metadata and Keystore

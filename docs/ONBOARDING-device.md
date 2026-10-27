@@ -7,8 +7,10 @@ engine's HOME under the app's private files (the managed kit, an `init.el`,
 `install.conf` with an app-private vault, and the Emacs endpoint's copy of
 a generated pairing), starts the engine, and shows the background-running
 and private-storage notices with a Start button. Nothing is installed,
-pasted or paired by the user. The rest of this document describes the
-**standalone** flavor, which pairs with an Emacs the user installs.
+pasted or paired by the user; `tools/onboard-tablet.sh --bundled` builds,
+installs and launches that flavor on a connected tablet. The rest of this
+document describes the **standalone** flavor, which pairs with an Emacs the
+user installs.
 
 POC 3 begins with one decision: **Recommended** or **Advanced**.
 
