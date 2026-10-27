@@ -391,9 +391,35 @@ command is `assembleStandaloneDebug` for the existing app and
    4.4 s with sources) and all 16 by 4.56 s. The engine repository's build
    2 (commit `17a9842`) trims the Info manuals from the assets and rebuilds
    `directory-tree` with Emacs's own tool: 4,347 asset files, 161 MB
-   uncompressed, the AAR 53.7 MB (was 59.7 MB). Next: attribute the 2.4 s
-   of core startup, then a curated `site-init.el` preload of Org and the
-   side-effect-free kit libraries, measured the same way.
+   uncompressed, the AAR 53.7 MB (was 59.7 MB).
+   Second slice (2026-10-27), the preload: `init.el` now logs two
+   timestamps that bracket the kit load, which showed the dump loads in
+   0.05 s and the kit load was the whole 2.1 s. The provisioner writes
+   `site-lisp/site-init.el`, which Emacs's own loadup loads just before
+   the first-start dump, and it preloads the kit's libraries in
+   `(require 'jetpacs)` order (`EngineFiles.PRELOAD`, 69 features: ebp,
+   the Jetpacs foundation and, through them, Org, url and the rest) but
+   never the composition root, the credential reader, the apps or the
+   package browser. Four loadup facts it works around: the bootstrap
+   load-path lacks the lisp subdirectories (Org, url, net), so it adds
+   them; `user-emacs-directory`, `temporary-file-directory` and
+   `user-mail-address` are delayed-init variables still nil at loadup, so
+   it sets each to the value startup.el will compute (the engine's HOME is
+   fixed per install; `ol.el` reads the mail address at load; Org's temp
+   directories otherwise land in HOME); and the pdumper refuses overlays,
+   which a library evaluated in `*scratch*` had left there, so overlays go
+   before the dump (loadup swallows a failing dump silently; a probe dump
+   found this). The dump stamp carries the kit again, so an update dumps
+   afresh. Pixel Tablet, dump-backed start: `init.el` at 0.07 s after
+   `initEmacs`, kit loaded at 0.55 s, daemon at 0.66 s, first surface
+   accepted at 1.25 s (was 3.34 s), all 16 by 2.17 s; the dump is 33 MB
+   and the first start after an install or engine change, which builds
+   it, reaches the daemon in 5.9 s. The engine also sweeps the `babel-*`
+   and `org-persist-*` temporary directories and interrupted dumps that
+   earlier processes left in the cache and HOME before each start (a
+   killed process never runs `kill-emacs-hook`). Remaining E6 items: a
+   shipped dump is no longer worth its release recipe (one 5.9 s start
+   per install); the lisp subtree trim beyond `info/` stays open.
 8. **E7 — CI, distribution and documentation.** Engine release workflow,
    Companion CI with the pinned AAR, release signing, the documents listed
    in the routing table.

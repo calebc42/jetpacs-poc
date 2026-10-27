@@ -27,6 +27,18 @@ class EngineFilesTest {
     }
 
     @Test
+    fun siteInitPreloadsTheKitLibrariesButNeverTheCompositionRoot() {
+        val text = EngineFiles.siteInit()
+        assertTrue(text.contains("(dolist (feature '(ebp-store ebp-sqlite ebp "))
+        assertTrue(text.contains(" jetpacs-org-mode ebp-complete))"))
+        assertTrue(!EngineFiles.PRELOAD.contains("jetpacs-init"))
+        assertTrue(!EngineFiles.PRELOAD.contains("jetpacs"))
+        assertTrue(!EngineFiles.PRELOAD.contains("jetpacs-credentials"))
+        assertTrue(EngineFiles.PRELOAD.none { it.startsWith("glasspane") || it.startsWith("orgzly") || it.startsWith("harp") || it.startsWith("bloom") })
+        assertTrue(text.contains("(condition-case err"))
+    }
+
+    @Test
     fun installConfIsFormatThreeWithThePrivateVaultAndBundledHome() {
         val text = EngineFiles.installConf("/data/x/files/vault", "/data/x/files/emacs", "/data/x/files/emacs/.emacs.d/jetpacs")
         assertEquals(

@@ -6,7 +6,6 @@ import android.os.Build
 import android.os.Process
 import android.system.Os
 import android.util.Log
-import com.calebc42.jetpacs.companion.BuildConfig
 import java.io.File
 import java.io.FileInputStream
 import org.gnu.emacs.EmacsNative
@@ -61,16 +60,37 @@ object EngineRuntime {
         }
     }
 
+    /**
+     * Leftovers of earlier engine processes: Org creates `babel-*` and
+     * `org-persist-*` temporary directories under TMPDIR at every start and
+     * removes them only on `kill-emacs`, which a process that ends by being
+     * killed never runs; a dump that was interrupted leaves `~emacs-*.pdmp`.
+     * Nothing of a live process is here, since this runs before Emacs
+     * starts in the new one.
+     */
+    private fun sweepLeftovers(app: Context, home: EngineHome) {
+        for (dir in listOf(app.cacheDir, home.root)) {
+            dir.listFiles()?.forEach { entry ->
+                val name = entry.name
+                val stale = (entry.isDirectory && (name.startsWith("babel-") || name.startsWith("org-persist-"))) ||
+                    (entry.isFile && name.startsWith("~emacs-") && name.endsWith(".pdmp"))
+                if (stale) entry.deleteRecursively()
+            }
+        }
+    }
+
     private fun run(app: Context) {
         try {
             val home = EngineProvisioner.prepare(app)
+            sweepLeftovers(app, home)
             pipeStandardStreamsToLog()
             // With no service object Emacs sets neither LANG nor the logcat
             // pipe itself (android.c, emacs_service_object); supply both.
             Os.setenv("LANG", "en_US.utf8", true)
-            // The dump holds Emacs's own preloaded Lisp, nothing of the kit, so it
-            // is keyed on the engine alone: a Companion-only update keeps it.
-            val dump = locateDump(home, BuildConfig.ENGINE_ID)
+            // The dump holds Emacs's preloaded Lisp and, through site-init.el,
+            // Org and the EBP libraries of the kit, so it is keyed on the engine
+            // and the kit (the provisioning stamp): an update dumps afresh.
+            val dump = locateDump(home, EngineProvisioner.currentStamp(app))
             val classPath = app.applicationInfo.sourceDir
             // classPath doubles as the APK whose mtime stamps every /assets file.
             EmacsNative.setEmacsParams(

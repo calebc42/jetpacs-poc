@@ -17,6 +17,10 @@ class EngineHome(val root: File) {
     val emacsD: File = File(root, ".emacs.d")
     val initFile: File = File(emacsD, "init.el")
 
+    /** Emacs's compiled-in site-lisp under HOME; `site-init.el` there preloads into the dump. */
+    val siteLisp: File = File(root, "site-lisp")
+    val siteInit: File = File(siteLisp, "site-init.el")
+
     /** Today's `~/.emacs.d/jetpacs/` install root, layout unchanged. */
     val installRoot: File = File(emacsD, "jetpacs")
     val kit: File = File(installRoot, "emacs")
@@ -91,6 +95,11 @@ object EngineProvisioner {
             copyAssetTree(context.assets, "$PAYLOAD/org", home.org)
             home.stampFile.writeText(stamp)
         }
+        // The preload list for the dump (E6); a changed file means the next
+        // start's loadup dumps with it, because the dump stamp carries the kit.
+        check(home.siteLisp.isDirectory || home.siteLisp.mkdirs()) { "cannot create ${home.siteLisp.path}" }
+        val siteInit = EngineFiles.siteInit()
+        if (!home.siteInit.isFile || home.siteInit.readText() != siteInit) home.siteInit.writeText(siteInit)
         val initEl = EngineFiles.initEl(EngineFlavor.loopbackPort, home.socketFile.canonicalFile.path)
         if (!home.initFile.isFile || home.initFile.readText() != initEl) {
             home.initFile.writeText(initEl)

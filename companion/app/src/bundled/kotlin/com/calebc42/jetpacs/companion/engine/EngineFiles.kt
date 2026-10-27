@@ -24,11 +24,14 @@ internal object EngineFiles {
 ;; Written by the Jetpacs engine supervisor. Personal overrides belong in
 ;; jetpacs/user.el, which loads last and survives updates.
 ;;; >>> Jetpacs managed: composition root >>>
+;; The two timestamps bracket the kit load in the engine log (E6 timing).
+(message "Jetpacs init: loading the kit")
 ${transportForms(port, socketPath)}
 (setq jetpacs-credentials-file
       (expand-file-name "jetpacs/var/pairing" user-emacs-directory))
 (add-to-list 'load-path (expand-file-name "jetpacs/emacs" user-emacs-directory))
 (require 'jetpacs)
+(message "Jetpacs init: kit loaded")
 ;;; <<< Jetpacs managed: composition root <<<
 """
 
@@ -39,6 +42,96 @@ ${transportForms(port, socketPath)}
     /** A path as an Elisp string literal body: backslashes and quotes escaped. */
     private fun elispString(value: String): String =
         value.replace("\\", "\\\\").replace("\"", "\\\"")
+
+    /**
+     * The kit libraries `(require 'jetpacs)` loads, in load order, minus the
+     * composition root (`jetpacs-init`, `jetpacs`), the credential reader and
+     * the apps. Snapshot of the kit on 2026-10-27: a library missing from a
+     * later kit is skipped at preload, one added later loads at init time;
+     * both are correct, only slower.
+     */
+    val PRELOAD: List<String> = listOf(
+        // Not jetpacs-package-browser: it reads package-user-dir at load and
+        // package.el's own delayed-init variables cannot be loaded at loadup.
+        "ebp-store", "ebp-sqlite", "ebp", "jetpacs-vocabulary", "jetpacs-renderer-registry",
+        "jetpacs-widgets", "jetpacs-async", "ebp-path", "jetpacs-surfaces", "jetpacs-data",
+        "jetpacs-shell", "jetpacs-buffer", "jetpacs-navigate", "jetpacs-chrome", "jetpacs-dialog",
+        "jetpacs-transient", "jetpacs-devtools", "jetpacs-profile-snapshot", "jetpacs-repl",
+        "jetpacs-comint", "jetpacs-commands", "jetpacs-results", "jetpacs-sections",
+        "jetpacs-tablist", "jetpacs-dialog-slot", "jetpacs-settings",
+        "jetpacs-customize", "ebp-sync", "jetpacs-apps", "jetpacs-files", "jetpacs-project",
+        "jetpacs-sql", "jetpacs-app-store", "jetpacs-registry", "jetpacs-app-store-registry",
+        "jetpacs-hypertext", "jetpacs-theme-picker", "jetpacs-modus", "jetpacs-theme",
+        "jetpacs-gallery", "jetpacs-clip", "jetpacs-device", "jetpacs-launcher", "jetpacs-keymap",
+        "jetpacs-emacs-ui", "ebp-org", "jetpacs-reader", "jetpacs-editor", "jetpacs-org-links",
+        "jetpacs-dates", "jetpacs-org", "jetpacs-org-structure", "jetpacs-org-settings",
+        "jetpacs-org-save", "jetpacs-org-dialogs", "jetpacs-org-render", "jetpacs-org-inline",
+        "jetpacs-reader-org", "jetpacs-org-toolbar", "jetpacs-editor-org", "jetpacs-org-habits",
+        "jetpacs-reminders", "jetpacs-org-reminders", "jetpacs-org-capture", "jetpacs-org-clock",
+        "jetpacs-org-table", "jetpacs-org-mode", "ebp-complete",
+    )
+
+    /**
+     * `site-lisp/site-init.el`, which Emacs's own loadup loads just before
+     * it dumps on the engine's first start (loadup.el: "you can cause
+     * additional libraries to be preloaded by writing a site-init.el"), so
+     * the kit's libraries, Org and the EBP client sit in the dump and later
+     * starts skip loading them. The composition root is never preloaded: it
+     * creates directories, registers the apps and starts the server when it
+     * loads, which belongs to a start, not to a dump. A library that fails
+     * to preload is reported and loads at init time instead. The load-path
+     * change is discarded after the dump, as loadup warns, and `init.el`
+     * re-adds the kit at every start.
+     */
+    fun siteInit(): String = buildString {
+        append(";;; site-init.el --- Preload for the Jetpacs engine dump -*- lexical-binding: t; -*-\n")
+        append(";; Written by the Jetpacs engine supervisor; loaded by loadup before the dump.\n")
+        // Loadup's load-path is the bootstrap list (site-lisp, /assets/lisp and
+        // five of its subdirectories); Org, url, net and the rest live in
+        // subdirectories normal-top-level adds only after the dump, so the
+        // preload adds every /assets/lisp subdirectory itself.
+        append(";; The bootstrap load-path lacks the lisp subdirectories (org, url, net...).\n")
+        append("(dolist (dir (directory-files \"/assets/lisp/\" t directory-files-no-dot-files-regexp))\n")
+        append("  (when (file-directory-p dir) (add-to-list 'load-path dir t)))\n")
+        // During loadup `user-emacs-directory' is still nil (subr.el: "Emacs
+        // sets this at startup"), so defaults a library derives from it at
+        // load time would be wrong or fail. The engine's HOME is fixed per
+        // install, so the value startup will compute is known now.
+        append(";; What startup.el will set: HOME is fixed per install, XDG unset on Android.\n")
+        append("(setq user-emacs-directory (expand-file-name \".emacs.d/\" \"~\"))\n")
+        // ol.el computes the Org link regexps at load from user-mail-address,
+        // a delayed-init variable still void during loadup; startup.el's own
+        // default form gives the same value the device will have.
+        // files.el's temporary-file-directory is delayed too; at loadup it is
+        // nil and a preloaded library's temp directories would land in HOME.
+        append(";; files.el's delayed default for temporary-file-directory: TMPDIR, the app's cache.\n")
+        append("(setq temporary-file-directory (file-name-as-directory (or (getenv \"TMPDIR\") \"/tmp\")))\n")
+        append(";; startup.el's delayed default for user-mail-address, evaluated the same way here.\n")
+        append("(setq user-mail-address (or (getenv \"EMAIL\") (concat (user-login-name) \"@\" (system-name))))\n")
+        append("(let ((kit (expand-file-name \"jetpacs/emacs\" user-emacs-directory))\n")
+        append("      (first-failure t))\n")
+        append("  (when (file-directory-p kit)\n")
+        append("    (add-to-list 'load-path kit)\n")
+        append("    (dolist (dir (directory-files (expand-file-name \"apps\" kit) t directory-files-no-dot-files-regexp))\n")
+        append("      (when (file-directory-p dir) (add-to-list 'load-path dir)))\n")
+        append("    (dolist (feature '(")
+        append(PRELOAD.joinToString(" "))
+        append("))\n")
+        append("      (condition-case err\n")
+        append("          (handler-bind ((error (lambda (e)\n")
+        append("                                  (when first-failure\n")
+        append("                                    (setq first-failure nil)\n")
+        append("                                    (message \"site-init: first failure in %s: %s\\n%s\" feature e\n")
+        append("                                             (substring (with-output-to-string (backtrace)) 0 2500))))))\n")
+        append("            (require feature))\n")
+        append("        (error (message \"site-init: %s not preloaded: %s\" feature err))))))\n")
+        // The pdumper cannot dump overlays, and a library loaded in the current
+        // buffer (*scratch* during loadup) may leave one behind; such overlays
+        // are load-time artifacts, not state, so they go before the dump.
+        append(";; pdumper refuses overlays; a load-time artifact in *scratch* would void the dump.\n")
+        append("(dolist (b (buffer-list)) (with-current-buffer b (remove-overlays)))\n")
+
+    }
 
     /** `install.conf` format 3 as `device/install-recommended.el` writes it; [vaultMode] is `private` or `shared`. */
     fun installConf(vault: String, home: String, root: String, vaultMode: String = "private"): String =
