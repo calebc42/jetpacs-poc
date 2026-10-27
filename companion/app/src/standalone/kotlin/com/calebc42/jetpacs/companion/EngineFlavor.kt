@@ -107,7 +107,13 @@ internal object EngineFlavor {
     fun onBootOrUpdate(context: Context) = Unit
 
     @Composable
-    fun SettingsSection(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) = Unit
+    fun LeadingSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) = Unit
+
+    @Composable
+    fun DiagnosticsSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) = Unit
+
+    /** Onboarding pairs this Companion with the user's own Emacs. */
+    const val offersSetup: Boolean = true
 
     @Composable
     fun OnboardingContent(onDone: () -> Unit, onCancel: (() -> Unit)?) {

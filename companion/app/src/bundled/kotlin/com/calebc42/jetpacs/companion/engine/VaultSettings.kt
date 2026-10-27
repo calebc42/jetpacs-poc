@@ -24,8 +24,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * The "Notes" rows of the Engine section (docs/PLAN-bundled-emacs.md,
- * decision 2): where the vault is, "Export notes" through the system's
+ * The rows of the Notes section (docs/PLAN-bundled-emacs.md, decision
+ * 2): where the vault is, "Export notes" through the system's
  * document picker, and the move between the app-private vault and the
  * shared `/sdcard/Jetpacs` folder, which first needs Android's All files
  * access granted on its system page. A move copies and never deletes.
@@ -82,10 +82,12 @@ internal fun VaultSettings() {
         }
     }
 
+    // The private folder's path means nothing to the reader; Diagnostics
+    // shows it. The shared folder is one they can open in a file manager.
     Text(
-        "Notes: " + when (mode) {
-            EngineVault.Mode.PRIVATE -> "private to this app (${EngineVault.privateDir(home).path})"
-            EngineVault.Mode.SHARED -> "shared folder ${EngineVault.sharedDir().path}"
+        when (mode) {
+            EngineVault.Mode.PRIVATE -> "Private to this app."
+            EngineVault.Mode.SHARED -> "In the shared folder ${EngineVault.sharedDir().path}."
         },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,

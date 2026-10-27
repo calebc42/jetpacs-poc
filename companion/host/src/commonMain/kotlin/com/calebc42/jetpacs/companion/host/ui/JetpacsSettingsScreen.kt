@@ -39,7 +39,11 @@ import com.calebc42.jetpacs.companion.host.DeviceBridge
 import com.calebc42.jetpacs.companion.host.ExperimentalDesignRuntime
 import com.calebc42.jetpacs.material3.ui.JetpacsChoiceRow
 
-/** The Companion's own settings: completion narrowing, experiments, repair. */
+/**
+ * The Companion's own settings: the platform's leading sections (the
+ * bundled engine's background running and notes), completion narrowing,
+ * experiments, the platform's diagnostics, and setup where it applies.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun JetpacsSettingsScreen(
@@ -50,6 +54,7 @@ fun JetpacsSettingsScreen(
     var narrowing by remember { mutableStateOf(bridge.completionNarrowing) }
     val designRuntimeEnabled by
         bridge.experimentalDesignRuntimeEnabled.collectAsState()
+    val platform = LocalHostUiPlatform.current
     val navigateBack = dropUnlessResumed { onBack() }
     val openOnboarding = dropUnlessResumed { onOpenOnboarding() }
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior()
@@ -77,6 +82,7 @@ fun JetpacsSettingsScreen(
                 .padding(padding)
                 .padding(20.dp),
         ) {
+            platform.LeadingSettings(bridge)
             Text("Completion narrowing", style = MaterialTheme.typography.titleSmall)
             Text(
                 "How typing filters an open completion list.",
@@ -128,12 +134,13 @@ fun JetpacsSettingsScreen(
                     onCheckedChange = bridge::setExperimentalDesignRuntimeEnabled,
                 )
             }
-            // The platform's own section, if it has one (the bundled engine's).
-            LocalHostUiPlatform.current.ExtraSettings(bridge)
-            HorizontalDivider(Modifier.padding(vertical = 16.dp))
-            Text("Installation", style = MaterialTheme.typography.titleSmall)
-            TextButton(onClick = openOnboarding) {
-                Text("Set up or repair Jetpacs")
+            platform.DiagnosticsSettings(bridge)
+            if (platform.offersSetup) {
+                HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                Text("Installation", style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = openOnboarding) {
+                    Text("Set up or repair Jetpacs")
+                }
             }
         }
     }

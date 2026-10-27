@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.runtime.Composable
 import com.calebc42.jetpacs.companion.engine.BundledFirstRun
 import com.calebc42.jetpacs.companion.engine.EngineHome
+import com.calebc42.jetpacs.companion.engine.EngineDiagnostics
 import com.calebc42.jetpacs.companion.engine.EngineSettingsSection
 import com.calebc42.jetpacs.companion.engine.BundledPairing
 import com.calebc42.jetpacs.companion.engine.EngineSupervisor
@@ -141,10 +142,20 @@ internal object EngineFlavor {
         EngineSupervisor.start(context)
     }
 
+    /** Background running and where the notes live, first in Jetpacs Settings. */
     @Composable
-    fun SettingsSection(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
-        EngineSettingsSection(bridge)
+    fun LeadingSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
+        EngineSettingsSection()
     }
+
+    /** SPEC 5.1's profile and address, the engine's state and its maintenance. */
+    @Composable
+    fun DiagnosticsSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
+        EngineDiagnostics(bridge)
+    }
+
+    /** No Emacs to pair: Restart and Rebuild engine cache are the repair. */
+    const val offersSetup: Boolean = false
 
     @Composable
     fun OnboardingContent(onDone: () -> Unit, onCancel: (() -> Unit)?) {

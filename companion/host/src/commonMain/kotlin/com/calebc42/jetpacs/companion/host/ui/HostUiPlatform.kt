@@ -46,13 +46,29 @@ interface HostUiPlatform {
     val listeningEndpoint: String
 
     /**
-     * A settings section the platform owns, composed before "Installation":
-     * the bundled Android engine's policy and diagnostics (SPEC §5.1 asks a
-     * bundled deployment to show its profile and address somewhere). The
-     * default composes nothing.
+     * Settings the platform owns, composed first on the Jetpacs Settings
+     * screen and ending with their own divider: the bundled Android
+     * engine's background running and where its notes live. The default
+     * composes nothing.
      */
     @Composable
-    fun ExtraSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {}
+    fun LeadingSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {}
+
+    /**
+     * The platform's diagnostics, composed last and starting with their own
+     * divider: SPEC §5.1 asks a bundled deployment to show its profile and
+     * address somewhere, with the engine's state and maintenance actions.
+     * The default composes nothing.
+     */
+    @Composable
+    fun DiagnosticsSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {}
+
+    /**
+     * Whether "Set up or repair Jetpacs" applies: onboarding pairs a
+     * Companion with an Emacs the user installs. A bundled deployment has
+     * none to set up, and its engine's maintenance actions are the repair.
+     */
+    val offersSetup: Boolean get() = true
 
     /**
      * The waiting screen's sentence about this host's transport. The default

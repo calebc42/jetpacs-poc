@@ -53,7 +53,14 @@ internal class AndroidHostUi(context: Context) : HostUiPlatform {
     override val wording: com.calebc42.jetpacs.companion.host.HostWording = EngineFlavor.hostWording
 
     @Composable
-    override fun ExtraSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
-        EngineFlavor.SettingsSection(bridge)
+    override fun LeadingSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
+        EngineFlavor.LeadingSettings(bridge)
     }
+
+    @Composable
+    override fun DiagnosticsSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
+        EngineFlavor.DiagnosticsSettings(bridge)
+    }
+
+    override val offersSetup: Boolean get() = EngineFlavor.offersSetup
 }
