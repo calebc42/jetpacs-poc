@@ -15,18 +15,30 @@ internal object EngineFiles {
     /** SPEC 9.1: the 22-character base64url token with padding omitted. */
     val TOKEN_DISPLAY: Regex = Regex("[A-Za-z0-9_-]{22}")
 
-    /** The managed block onboarding would ask a user to paste, plus the bundled settings. */
-    fun initEl(port: Int): String = """;;; init.el --- Jetpacs bundled engine -*- lexical-binding: t; -*-
+    /**
+     * The managed block onboarding would ask a user to paste, plus the bundled
+     * settings: the Companion's Unix socket (SPEC 5.3) when [socketPath] is
+     * given, else the flavor's loopback port.
+     */
+    fun initEl(port: Int, socketPath: String? = null): String = """;;; init.el --- Jetpacs bundled engine -*- lexical-binding: t; -*-
 ;; Written by the Jetpacs engine supervisor. Personal overrides belong in
 ;; jetpacs/user.el, which loads last and survives updates.
 ;;; >>> Jetpacs managed: composition root >>>
-(setq jetpacs-port $port)
+${transportForms(port, socketPath)}
 (setq jetpacs-credentials-file
       (expand-file-name "jetpacs/var/pairing" user-emacs-directory))
 (add-to-list 'load-path (expand-file-name "jetpacs/emacs" user-emacs-directory))
 (require 'jetpacs)
 ;;; <<< Jetpacs managed: composition root <<<
 """
+
+    private fun transportForms(port: Int, socketPath: String?): String =
+        if (socketPath == null) "(setq jetpacs-port $port)"
+        else "(setq jetpacs-transport 'loopback-unix\n      jetpacs-socket \"${elispString(socketPath)}\")"
+
+    /** A path as an Elisp string literal body: backslashes and quotes escaped. */
+    private fun elispString(value: String): String =
+        value.replace("\\", "\\\\").replace("\"", "\\\"")
 
     /** `install.conf` format 3 as `device/install-recommended.el` writes it, for the private vault. */
     fun installConf(vault: String, home: String, root: String): String =

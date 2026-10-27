@@ -468,17 +468,22 @@ beside an `adb forward' of a phone, shows its port on its pairing screen.")
 (defvar jetpacs-transport 'loopback-tcp
   "The EBP SPEC 5 transport profile this Emacs uses.
 Under `loopback-tcp' (SPEC 5.2, the default on every platform) Emacs dials
-the Companion at `jetpacs-host' and `jetpacs-port'.  Under `emacs-unix'
-\(SPEC 5.6, a daemon Emacs serving desktop Companions) Emacs binds the Unix
-socket `jetpacs-socket' in a directory private to this user, and the
-Companion, started with `--transport emacs-unix', dials it and redials
-after any loss; this Emacs never redials.")
+the Companion at `jetpacs-host' and `jetpacs-port'.  Under `loopback-unix'
+\(SPEC 5.3, the bundled Android engine) Emacs dials the Companion's Unix
+socket `jetpacs-socket', refusing one another user owns, and redials after
+any loss like the TCP dialer.  Under `emacs-unix' (SPEC 5.6, a daemon Emacs
+serving desktop Companions) Emacs binds the Unix socket `jetpacs-socket' in
+a directory private to this user, and the Companion, started with
+`--transport emacs-unix', dials it and redials after any loss; this Emacs
+never redials.")
 
 (defvar jetpacs-socket nil
-  "The Unix socket Emacs binds under the `emacs-unix' profile, or nil.
-Nil means ebp.el's default, `ebp-unix-default-path': `ebp.sock' in
-$XDG_RUNTIME_DIR/ebp, else in the temporary directory's ebp<uid>.  The
-desktop Companion's pairing screen names the path it dials.")
+  "The Unix socket of the `loopback-unix' or `emacs-unix' profile, or nil.
+Under `loopback-unix' it is the Companion's socket this Emacs dials and must
+be set.  Under `emacs-unix' nil means ebp.el's default,
+`ebp-unix-default-path': `ebp.sock' in $XDG_RUNTIME_DIR/ebp, else in the
+temporary directory's ebp<uid>; the desktop Companion's pairing screen names
+the path it dials.")
 
 (defvar jetpacs-pairing-id "101112131415161718191a1b1c1d1e1f"
   "Pairing identity used to authenticate this Emacs to the Companion.")
@@ -525,12 +530,21 @@ pairing takes effect on the next dial."
 (defun jetpacs--start-1 ()
   "Open the logical client for `jetpacs-transport'.
 Under `loopback-tcp' Emacs dials `jetpacs-host' and `jetpacs-port' (SPEC
-5.2).  Under `emacs-unix' Emacs binds `jetpacs-socket', or ebp.el's default
-path, and the Companion dials it (SPEC 5.6): the host argument is the socket
-path and the port is nil, exactly as `ebp-unix-listen' passes them."
+5.2).  Under `loopback-unix' Emacs dials the Companion's socket
+`jetpacs-socket' (SPEC 5.3): the host argument is the socket path and the
+port is nil, as `ebp-connect' documents.  Under `emacs-unix' Emacs binds
+`jetpacs-socket', or ebp.el's default path, and the Companion dials it (SPEC
+5.6): the host argument is the socket path and the port is nil, exactly as
+`ebp-unix-listen' passes them."
   (pcase jetpacs-transport
     ('loopback-tcp
      (apply #'jetpacs-connect jetpacs-host jetpacs-port
+            (jetpacs--connect-config)))
+    ('loopback-unix
+     (unless (stringp jetpacs-socket)
+       (error "jetpacs-socket must name the Companion's socket under loopback-unix"))
+     (apply #'jetpacs-connect (expand-file-name jetpacs-socket) nil
+            :transport 'loopback-unix
             (jetpacs--connect-config)))
     ('emacs-unix
      (require 'ebp-unix)
@@ -538,7 +552,7 @@ path and the port is nil, exactly as `ebp-unix-listen' passes them."
             (expand-file-name (or jetpacs-socket (ebp-unix-default-path))) nil
             :transport 'emacs-unix
             (jetpacs--connect-config)))
-    (_ (error "jetpacs-transport must be loopback-tcp or emacs-unix, not %S"
+    (_ (error "jetpacs-transport must be loopback-tcp, loopback-unix or emacs-unix, not %S"
               jetpacs-transport))))
 
 (defun jetpacs-ready-landing (_client)

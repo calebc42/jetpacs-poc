@@ -19,8 +19,8 @@ fun pairingInitSnippet(
     buildString {
         append("(setq jetpacs-pairing-id \"").append(pairingId).append("\"\n")
         append("      jetpacs-pairing-token \"").append(token).append('"')
-        if (transport == "emacs-unix") {
-            append("\n      jetpacs-transport 'emacs-unix")
+        if (transport == "emacs-unix" || transport == "loopback-unix") {
+            append("\n      jetpacs-transport '").append(transport)
             if (socket != null) append("\n      jetpacs-socket \"").append(socket).append('"')
         } else if (port != null && port != DEFAULT_LOOPBACK_PORT) {
             append("\n      jetpacs-port ").append(port)

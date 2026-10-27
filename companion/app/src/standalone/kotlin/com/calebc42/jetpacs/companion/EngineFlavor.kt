@@ -7,7 +7,10 @@ import android.content.Intent
 import androidx.compose.runtime.Composable
 import com.calebc42.ebp.wire.EbpAuth
 import com.calebc42.ebp.wire.PairingId
+import com.calebc42.jetpacs.companion.host.CompanionHostPlatform
+import com.calebc42.jetpacs.companion.host.CompanionTransport
 import com.calebc42.jetpacs.companion.host.DEFAULT_LOOPBACK_PORT
+import com.calebc42.jetpacs.companion.host.LoopbackTcpTransport
 import com.calebc42.jetpacs.core.database.JetpacsDatabase
 import com.calebc42.jetpacs.core.ebpstore.PairingCredentials
 
@@ -66,6 +69,19 @@ internal object EngineFlavor {
 
     fun listeningDescription(endpoint: String): String =
         "Jetpacs Companion is listening on $endpoint."
+
+    fun listeningEndpoint(context: Context): String = "127.0.0.1:$loopbackPort"
+
+    /** SPEC 5.2 on the flavor's port. */
+    fun transport(context: Context, platform: CompanionHostPlatform): CompanionTransport =
+        LoopbackTcpTransport(loopbackPort, platform.log)
+
+    /** No wake mechanism without a configured, inert target (SPEC 5.8). */
+    val wakeCapabilities: Set<String> = emptySet()
+
+    fun wakeRequester(context: Context): (() -> Unit)? = null
+
+    fun onSessionReady(context: Context) = Unit
 
     @Composable
     fun OnboardingContent(onDone: () -> Unit, onCancel: (() -> Unit)?) {

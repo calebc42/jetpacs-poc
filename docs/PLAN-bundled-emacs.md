@@ -2,8 +2,9 @@
 
 Status: active. E0, the engine build and harvest, and E1, the headless
 boot spike, are done (2026-10-26) and the spike is a go; E2, SPEC
-amendment #209, and E3, the bundled flavor end to end, landed 2026-10-27.
-Every later item is open. The decisions were taken by the owner on 2026-10-26.
+amendment #209, E3, the bundled flavor end to end, and E4, the Unix
+socket and the bound-service wake, landed 2026-10-27. Every later item is
+open. The decisions were taken by the owner on 2026-10-26.
 
 The outcome is one APK that a person who has never used Emacs installs and
 opens: the `bundled` product flavor of `companion/app` carries GNU Emacs as
@@ -296,7 +297,7 @@ command is `assembleStandaloneDebug` for the existing app and
    unit tests: standalone 43, bundled 46. Not done here: the instrumented
    `BundledSmokeTest` (the Room witness and the spike script stood in) and
    a look at the first-run screen on an unlocked device.
-5. **E4 — loopback-unix and the bound-service wake.** `LocalSocketTransport`
+5. **E4 — loopback-unix and the bound-service wake (done 2026-10-27; the wake's device gate waits for E5).** `LocalSocketTransport`
    in `:app` (FILESYSTEM `LocalSocket.bind` + `LocalServerSocket(fd)`, 0700
    directory, 0600 socket, peer-UID check), a path-bearing
    `TransportStatus`, a `loopback-unix` branch in `jetpacs--start-1`,
@@ -304,6 +305,28 @@ command is `assembleStandaloneDebug` for the existing app and
    application context with no extras, released at READY or 10 s),
    `offline.wake` granted. Evidence: a reminder tap with the engine dead
    wakes it within 10 s; standalone and bundled coexist on one device.
+   Design notes: `LocalSocketTransport` lives in `:app` and implements the
+   `:host` seam; `TransportStatus.ListeningPath` carries the path. The
+   wake has two entry points: a live engine that is not READY fires
+   `DeviceBridge.onWake` through the wire engine's own 60 s bound, and a
+   cold sender with no engine reaches `CompanionStores.wakeRequester`
+   through a stand-in `LiveSession` that loses `drop` events exactly as a
+   missing session does and forwards durable `wake` admissions; the
+   stand-in exists only when the flavor supplies a wake, so the standalone
+   flavor is unchanged. `EngineWake` applies the 60 s and 10 s bounds over
+   injected platform calls (`EngineWakeTest`). Not covered yet: trigger
+   firings admitted with no engine (`TriggerFiringService` holds its own
+   session slot in wire), and the device gate for the wake itself, which
+   needs E5's background-running switch to leave the engine dead.
+   Recorded on the Pixel Tablet: `files/ebp/companion.sock` is
+   `srw-------` in a `drwx------` directory; `/proc/net/unix` lists the
+   listener (flags 00010000) and the connected pair; the bundled flavor
+   binds no loopback TCP port while the standalone install keeps 8765; the
+   provisioned `init.el` names `jetpacs-transport 'loopback-unix` and the
+   socket path; the engine reached its daemon 2.2 s after `initEmacs` from
+   the dump and the generated pairing's 16 surfaces were re-accepted 4.4 s
+   after `initEmacs` over the socket. `EngineWakeTest` (3 cases) pins the
+   bounds; the entry suite gained the loopback-unix dial case.
 6. **E5 — Lifecycle policy and product polish.** "Run in background"
    setting, notification text and "Pause", boot and update restarts, crash-
    loop guard, export/backup, the shared-folder option, a read-only

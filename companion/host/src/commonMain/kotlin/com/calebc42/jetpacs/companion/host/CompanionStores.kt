@@ -64,7 +64,33 @@ class CompanionStores(
 
     private val liveSessionRef = AtomicReference<LiveSession?>()
 
-    val liveSession: LiveSession? get() = liveSessionRef.get()
+    /**
+     * SPEC 5.8 (docs/PLAN-bundled-emacs.md, E4): the platform's wake signal,
+     * invoked after a cold durable `wake` admission while no engine exists.
+     * Null where the platform defines no wake mechanism, and then the cold
+     * senders see no live session at all, as before.
+     */
+    @Volatile var wakeRequester: (() -> Unit)? = null
+
+    /**
+     * What cold senders get in place of a missing engine when a wake exists:
+     * a `drop` is lost exactly as with no session (SPEC 15.1), and a durable
+     * `wake` admission asks the platform to wake the Emacs host. The engine
+     * applies the same 60 s bound to its own wakes; the platform's wake
+     * applies it to these.
+     */
+    private val coldWakeSession = object : LiveSession {
+        override fun deliverLiveDrop(
+            params: kotlinx.serialization.json.JsonObject,
+            callback: ((String?, kotlinx.serialization.json.JsonObject?) -> Unit)?,
+        ) = Unit
+
+        override fun onDurableAdmitted(policy: String) {
+            if (policy == "wake") wakeRequester?.invoke()
+        }
+    }
+
+    val liveSession: LiveSession? get() = liveSessionRef.get() ?: wakeRequester?.let { coldWakeSession }
 
     fun setLiveSession(session: LiveSession) {
         liveSessionRef.set(session)

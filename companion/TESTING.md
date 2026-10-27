@@ -568,16 +568,18 @@ tools/engine-spike.sh init-el        # the provisioned init.el and install.conf
 
 What a healthy first start shows: `initEmacs [libandroid-emacs.so,
 --fg-daemon=jetpacs] … dump=(none, loadup will dump)`, "Dump complete"
-about 1.4 s later, "Starting Emacs daemon", then a connection on
-127.0.0.1:8766 (`awk '$2 ~ /:223E/' /proc/net/tcp6`: `0A` listening, `01`
-established) and `surface_records` rows in the Companion's Room. A second
-start names the dump and reaches the daemon in about 2 s.
+about 1.4 s later, "Starting Emacs daemon", then the engine dialing the
+Companion's SPEC 5.3 socket `files/ebp/companion.sock` (0600 in a 0700
+directory; `grep companion.sock /proc/net/unix` shows the listener and the
+connected pair) and `surface_records` rows for the generated pairing in the
+Companion's Room. A second start names the dump and reaches the daemon in
+about 2 s. No loopback TCP port is bound by the bundled flavor.
 
-Notes: the bundled flavor listens on 8766 so a standalone install and its
-Emacs on 8765 keep working beside it; `run-as PKG sh -c …` is denied on the
-Pixel Tablet, so probe with one direct `run-as PKG ls|cat|kill …` per step;
-the shell user cannot signal the engine process, `run-as` can; the
-launcher activity starts the engine even behind the keyguard.
+Notes: the bundled flavor's socket keeps it apart from a standalone install
+and its Emacs on 8765; `run-as PKG sh -c …` is denied on the Pixel Tablet,
+so probe with one direct `run-as PKG ls|cat|kill …` per step; the shell
+user cannot signal the engine process, `run-as` can; the launcher activity
+starts the engine even behind the keyguard.
 
 ## Restored Orgzly Foundation applet
 

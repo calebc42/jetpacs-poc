@@ -87,6 +87,8 @@ class JetpacsApplication : Application() {
                     container.pairingId.value,
                     disconnectedAtEpochMs,
                 )
+                // A session reached READY: a held SPEC 5.8 wake binding is released.
+                if (disconnectedAtEpochMs == null) EngineFlavor.onSessionReady(this)
                 WidgetUpdateCoordinator.enqueueAll(this)
             },
             onAppSurfaceCacheLoaded = presentation.onAppSurfaceCacheLoaded,
@@ -108,7 +110,12 @@ class JetpacsApplication : Application() {
             onPieMenuChanged = presentation.onPieMenuChanged,
             onOpenSurface = presentation.onOpenSurface,
             onOpenSettings = presentation.onOpenSettings,
+            // SPEC 5: the flavor's profile (loopback-tcp, or the bundled
+            // flavor's loopback-unix socket) and its wake, if it has one.
+            transport = EngineFlavor.transport(this, container.platform),
+            onWake = EngineFlavor.wakeRequester(this),
         )
+        container.stores.wakeRequester = EngineFlavor.wakeRequester(this)
         WidgetUpdateCoordinator.start(this, processStartedAtEpochMs)
     }
 }

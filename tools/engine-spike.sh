@@ -55,7 +55,12 @@ case "$cmd" in
     echo "== stamps: engine=$(adbs shell run-as "$APP_ID" cat "$home/engine.stamp" 2>/dev/null) dump=$(adbs shell run-as "$APP_ID" cat "$home/dump.stamp" 2>/dev/null)"
     adbs shell run-as "$APP_ID" du -sh "$home/.emacs.d/jetpacs" 2>/dev/null
     echo "== activities of the app (should be only the Companion UI)"; adbs shell "dumpsys activity activities | grep -E 'Hist.*$APP_ID|Run #' | head -5"
-    echo "== loopback listener"; adbs shell "cat /proc/net/tcp | awk '\$2 ~ /:223D/ {print}' | head -3"
+    echo "== SPEC 5.3 socket (E4): file modes and the kernel's view"
+    adbs shell run-as "$APP_ID" ls -la "/data/user/0/$APP_ID/files/ebp" 2>&1
+    # Flags 00010000 mark the listening socket; a second line is the connected server side.
+    adbs shell "grep companion.sock /proc/net/unix" | cut -c1-120
+    echo "== loopback TCP listeners (223D=8765 223E=8766), expected none for the bundled flavor"
+    adbs shell "awk 'NR>1 && \$2 ~ /:223[DE]/ && \$4==\"0A\" {print \$2}' /proc/net/tcp /proc/net/tcp6"
     ;;
   cpu)
     seconds="${1:-30}"

@@ -25,4 +25,17 @@ object EngineSupervisor {
     fun stop(context: Context) {
         context.stopService(Intent(context, JetpacsEngineService::class.java))
     }
+
+    @Volatile private var wake: EngineWake? = null
+
+    private fun wake(context: Context): EngineWake =
+        wake ?: synchronized(this) { wake ?: EngineWake.forApplication(context).also { wake = it } }
+
+    /** SPEC 5.8: the bound-service wake after a durable `wake` admission. */
+    fun requestWake(context: Context): Boolean = wake(context).request()
+
+    /** A session reached READY: the wake binding, if held, has done its job. */
+    fun releaseWake(context: Context) {
+        wake?.release("ready")
+    }
 }

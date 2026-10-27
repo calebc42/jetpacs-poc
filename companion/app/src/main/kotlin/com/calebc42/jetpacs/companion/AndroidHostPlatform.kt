@@ -153,10 +153,12 @@ internal class AndroidHostPlatform(context: Context) : CompanionHostPlatform {
             "editor.sync", "capabilities", "triggers",
             // EBP 13.8 (amendment #194): the surface data document.
             "data.model",
-        )
-        // `offline.wake` is deliberately absent until the user configures an
-        // exact, inert OS-local Emacs wake target and the host rechecks it at
-        // every send (SPEC 5.3). A durable queue alone is not a wake grant.
+        ) + EngineFlavor.wakeCapabilities
+        // Standalone: `offline.wake` is deliberately absent until the user
+        // configures an exact, inert OS-local Emacs wake target and the host
+        // rechecks it at every send (SPEC 5.8). A durable queue alone is not
+        // a wake grant. Bundled: the target is the engine's own service, fixed
+        // by the application (amendment #209), so the flavor grants it.
 
         // Room encrypts every queued payload with an identity-scoped Android
         // KeyStore key, so queued sms/call fire data satisfies SPEC 21.5.

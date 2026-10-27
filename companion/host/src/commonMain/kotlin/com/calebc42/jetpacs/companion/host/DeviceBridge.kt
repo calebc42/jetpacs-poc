@@ -275,6 +275,13 @@ class DeviceBridge(
      * platform's port by default; the desktop passes its emacs-unix dialer.
      */
     val transport: CompanionTransport = LoopbackTcpTransport(platform.loopbackPort, platform.log),
+    /**
+     * SPEC 5.8: the platform's wake signal, invoked by an engine after a
+     * durable `wake` admission while its session is not READY and
+     * `offline.wake` was granted (the engine applies the 60 s bound). Null
+     * where the platform defines no wake mechanism.
+     */
+    private val onWake: (() -> Unit)? = null,
 ) : MaterialRendererHost {
 
     private companion object {
@@ -1683,6 +1690,7 @@ class DeviceBridge(
                 }
             }
         } ?: return ServeOutcome(reachedReady = false)
+        engine.wakeListener = onWake
         // Installed before activation, so every renderer-visible engine has
         // an exact transport the hard password deadline can abort.
         engineTransports[engine] = connection

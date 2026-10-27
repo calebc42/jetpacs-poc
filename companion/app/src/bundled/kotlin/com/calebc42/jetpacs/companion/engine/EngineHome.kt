@@ -33,6 +33,9 @@ class EngineHome(val root: File) {
     /** The app-private vault (decision 2 of the plan), beside HOME, not in it. */
     val vault: File = File(root.parentFile, "vault")
 
+    /** SPEC 5.3: the Companion's Unix socket the engine dials, in a 0700 directory of its own. */
+    val socketFile: File = File(File(root.parentFile, "ebp"), "companion.sock")
+
     /** Which engine and which APK provisioned this HOME. */
     val stampFile: File = File(root, "engine.stamp")
 
@@ -82,7 +85,7 @@ object EngineProvisioner {
             copyAssetTree(context.assets, "$PAYLOAD/org", home.org)
             home.stampFile.writeText(stamp)
         }
-        val initEl = EngineFiles.initEl(EngineFlavor.loopbackPort)
+        val initEl = EngineFiles.initEl(EngineFlavor.loopbackPort, home.socketFile.canonicalFile.path)
         if (!home.initFile.isFile || home.initFile.readText() != initEl) {
             home.initFile.writeText(initEl)
         }

@@ -188,5 +188,30 @@
             (jetpacs-pairing-token "token"))
         (should-error (jetpacs--start-1))))))
 
+(ert-deftest jetpacs-entry-start-dials-the-loopback-unix-socket-when-selected ()
+  "Under `loopback-unix' Emacs dials the Companion's socket (SPEC 5.3):
+path, nil port, :transport, and no default path to fall back on."
+  (let (connect-args)
+    (cl-letf (((symbol-function 'jetpacs-connect)
+               (lambda (&rest args)
+                 (setq connect-args args)
+                 'stub-client))
+              ((symbol-function 'ebp-decode-pairing-token)
+               (lambda (_token) "decoded")))
+      (let ((jetpacs-transport 'loopback-unix)
+            (jetpacs-socket "/data/user/0/app/files/ebp/companion.sock")
+            (jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (should (eq (jetpacs--start-1) 'stub-client)))
+      (should (equal "/data/user/0/app/files/ebp/companion.sock"
+                     (nth 0 connect-args)))
+      (should (null (nth 1 connect-args)))
+      (should (eq 'loopback-unix (plist-get (nthcdr 2 connect-args) :transport)))
+      (let ((jetpacs-transport 'loopback-unix)
+            (jetpacs-socket nil)
+            (jetpacs-pairing-id "pairing")
+            (jetpacs-pairing-token "token"))
+        (should-error (jetpacs--start-1))))))
+
 (provide 'jetpacs-entry-test)
 ;;; jetpacs-entry-test.el ends here

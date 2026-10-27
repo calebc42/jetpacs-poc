@@ -20,6 +20,13 @@ class EngineFilesTest {
     }
 
     @Test
+    fun initElNamesTheUnixSocketInsteadOfThePortWhenGiven() {
+        val text = EngineFiles.initEl(8766, "/data/user/0/x/files/ebp/companion.sock")
+        assertTrue(text.contains("(setq jetpacs-transport 'loopback-unix\n      jetpacs-socket \"/data/user/0/x/files/ebp/companion.sock\")"))
+        assertTrue(!text.contains("jetpacs-port"))
+    }
+
+    @Test
     fun installConfIsFormatThreeWithThePrivateVaultAndBundledHome() {
         val text = EngineFiles.installConf("/data/x/files/vault", "/data/x/files/emacs", "/data/x/files/emacs/.emacs.d/jetpacs")
         assertEquals(

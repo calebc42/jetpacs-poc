@@ -6,9 +6,12 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.runtime.Composable
 import com.calebc42.jetpacs.companion.engine.BundledFirstRun
+import com.calebc42.jetpacs.companion.engine.EngineHome
 import com.calebc42.jetpacs.companion.engine.BundledPairing
 import com.calebc42.jetpacs.companion.engine.EngineSupervisor
 import com.calebc42.jetpacs.companion.engine.JetpacsEngineService
+import com.calebc42.jetpacs.companion.host.CompanionHostPlatform
+import com.calebc42.jetpacs.companion.host.CompanionTransport
 import com.calebc42.jetpacs.core.database.JetpacsDatabase
 import com.calebc42.jetpacs.core.ebpstore.PairingCredentials
 import org.gnu.emacs.EmacsNative
@@ -74,6 +77,21 @@ internal object EngineFlavor {
 
     fun listeningDescription(endpoint: String): String =
         "Starting the notes engine…"
+
+    fun listeningEndpoint(context: Context): String = EngineHome.of(context).socketFile.path
+
+    /** SPEC 5.3: the Companion binds a private Unix socket; the engine's init names it. */
+    fun transport(context: Context, platform: CompanionHostPlatform): CompanionTransport =
+        LocalSocketTransport(EngineHome.of(context).socketFile, platform.log)
+
+    /** Amendment #209: the wake target is the engine's own service, fixed by the application. */
+    val wakeCapabilities: Set<String> = setOf("offline.wake")
+
+    fun wakeRequester(context: Context): (() -> Unit)? = {
+        EngineSupervisor.requestWake(context.applicationContext)
+    }
+
+    fun onSessionReady(context: Context) = EngineSupervisor.releaseWake(context)
 
     @Composable
     fun OnboardingContent(onDone: () -> Unit, onCancel: (() -> Unit)?) {

@@ -61,6 +61,9 @@ sealed interface TransportStatus {
     /** SPEC 5.2: bound and accepting on the loopback [port]. */
     data class Listening(val port: Int) : TransportStatus
 
+    /** SPEC 5.3: bound and accepting on the Unix socket at [path]. */
+    data class ListeningPath(val path: String) : TransportStatus
+
     /**
      * SPEC 5.6: between dials. [nextAttemptAtMs] is the wall-clock instant of
      * the next attempt, or null while a connect is in progress.
@@ -83,7 +86,7 @@ sealed interface TransportStatus {
  * The bridge owns the session code; a transport owns only the socket.
  */
 interface CompanionTransport {
-    /** The SPEC 5 profile identifier, `loopback-tcp` or `emacs-unix`. */
+    /** The SPEC 5 profile identifier: `loopback-tcp`, `loopback-unix` or `emacs-unix`. */
     val profile: String
 
     /** The bound address or the dialed path, for the pairing screen. */
