@@ -1533,6 +1533,15 @@ the generic drill in `jetpacs-navigate-thunk' shows the destination."
                           (goto-char pos)
                           (org-in-regexp org-link-any-re)))))))
       'stale)
+     ;; An id: link is indexed from the Org roots before following; one
+     ;; no file declares is told plainly, as Revived's "No such link
+     ;; target", not as the navigator's redacted failure.
+     ((with-current-buffer buf
+        (org-with-wide-buffer
+         (goto-char pos)
+         (jetpacs-org-link-unresolved-id)))
+      (jetpacs-shell-notify "No such link target" surface)
+      'rejected)
      (t
       (let ((registered (jetpacs-org-render--presenter-for name surface))
             (global jetpacs-org-render-follow-destination-function))
@@ -1542,7 +1551,6 @@ the generic drill in `jetpacs-navigate-thunk' shows the destination."
            ;; navigator's shim captures both it and Org's destination point.
            (set-buffer buf)
            (goto-char pos)
-           (jetpacs-org-link-prepare)
            (org-open-at-point))
          surface
          "Org link"

@@ -1100,7 +1100,7 @@ cleanup thunk — the drain never burns a tick on a view nobody shows."
 (ert-deftest jetpacs-org-render-id-link-indexes-the-org-roots ()
   "An `id:' link into a file Org has never indexed still follows: the
 roots are scanned first, as Revived searches every notebook."
-  (jetpacs-org-render-test--with-file f "See [[id:abc-123][the target]].\n"
+  (jetpacs-org-render-test--with-file f "See [[id:abc-123][the target]] or [[id:gone][nowhere]].\n"
     (let* ((dir (file-name-directory f))
            (org-id-locations-file (expand-file-name ".ids" dir))
            (org-id-locations nil)
@@ -1128,7 +1128,25 @@ roots are scanned first, as Revived searches every notebook."
             (save-excursion
               (goto-char (nth 1 presented))
               (should (looking-at-p "\\* Elsewhere"))))
-          (kill-buffer (nth 0 presented)))))))
+          (kill-buffer (nth 0 presented))
+          ;; An ID no file declares is refused and told, never followed.
+          (let* ((missing (with-current-buffer buf
+                            (goto-char (point-min))
+                            (search-forward "id:gone")
+                            (match-beginning 0)))
+                 (pos (cl-find-if (lambda (p) (and (> p (- missing 3)) (< p (+ missing 10))))
+                                  (hash-table-keys (gethash (buffer-name buf) jetpacs-buffer-exposed))))
+                 notices)
+            (setq presented nil)
+            (should pos)
+            (cl-letf (((symbol-function 'jetpacs-shell-notify)
+                       (lambda (text &rest _) (push text notices))))
+              (should (eq 'rejected
+                          (jetpacs-org-render--follow
+                           (list :buffer (buffer-name buf) :pos pos)
+                           (list :surface "app:org-id-test")))))
+            (should (equal notices '("No such link target")))
+            (should-not presented)))))))
 
 (ert-deftest jetpacs-org-render-link-offers-org-destination-to-host ()
   "A document host sees Org's exact destination and suppresses drilling."

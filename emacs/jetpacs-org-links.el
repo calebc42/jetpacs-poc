@@ -23,7 +23,7 @@
 ;; `org-open-at-point'.  An `id:' link, though, only resolves when Org's
 ;; ID index already knows the file, and a note in a notebook nobody has
 ;; visited is not indexed, so the tap failed.  Before following,
-;; `jetpacs-org-link-prepare' scans the applet's Org roots (the source
+;; `jetpacs-org-link-unresolved-id' scans the applet's Org roots (the source
 ;; file's directory and `ebp-org-roots') into the index, as Orgzly
 ;; Revived searches every notebook for the note with that ID.
 
@@ -120,14 +120,15 @@ nil when no candidate file declares ID; never signals."
                    buffer-file-name)))
       (error nil))))
 
-(defun jetpacs-org-link-prepare ()
-  "Make the link at point followable by `org-open-at-point'.
-An `id:' link gets its ID indexed from the Org roots first."
+(defun jetpacs-org-link-unresolved-id ()
+  "The ID of the `id:' link at point when no file declares it, else nil.
+Indexes the Org roots first, so a miss is a real one."
   (let ((context (org-element-context)))
     (when (and (eq (org-element-type context) 'link)
                (equal (org-element-property :type context) "id"))
       (let ((id (car (split-string (org-element-property :path context) "::"))))
-        (jetpacs-org-link-ensure-id id (current-buffer))))))
+        (unless (jetpacs-org-link-ensure-id id (current-buffer))
+          id)))))
 
 (provide 'jetpacs-org-links)
 ;;; jetpacs-org-links.el ends here
