@@ -1,30 +1,141 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion.engine
 
+import android.app.Activity
+import android.app.ActivityManager
+import android.app.ForegroundServiceStartNotAllowedException
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.ServiceConnection
+import android.os.IBinder
+import android.util.Log
 
 /**
  * The Companion-process side of the engine supervisor
- * (docs/PLAN-bundled-emacs.md): it starts and stops the engine's foreground
- * service. It is neither EBP endpoint; the Companion (`DeviceBridge`) still
- * only binds a listener and the engine's Emacs still dials and authenticates
- * like any other, so no protocol requirement rests on this object.
+ * (docs/PLAN-bundled-emacs.md, E5): the user's background policy and the
+ * engine's lifetime under it. With "Run in background" on (the default,
+ * decision 1) the engine is a foreground service started when the Companion
+ * opens and after a reboot or an update; with it off the engine is bound
+ * only while the Companion's window is visible and otherwise woken by the
+ * SPEC 5.8 bind for at most ten seconds per event. The supervisor is
+ * neither EBP endpoint; the Companion still only listens, and the engine's
+ * Emacs still dials and authenticates.
  */
 object EngineSupervisor {
+    private const val TAG = "JetpacsEngine"
+    private const val PREFS = "jetpacs-engine"
+    private const val KEY_BACKGROUND = "background"
+
+    /** Whether the engine keeps running when the Companion is not visible. */
+    fun backgroundEnabled(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(KEY_BACKGROUND, true)
+
     /**
-     * Start the engine as a foreground service. Callers are the launcher
-     * activity and, later, the boot and update receivers; a start from a
-     * background position may be refused by the platform, which the service
-     * reports rather than this call.
+     * Change the policy and apply it now: on starts the foreground service,
+     * off stops it and, while a window is visible, keeps the engine bound.
      */
-    fun start(context: Context) {
-        context.startForegroundService(Intent(context, JetpacsEngineService::class.java))
+    fun setBackgroundEnabled(context: Context, enabled: Boolean) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putBoolean(KEY_BACKGROUND, enabled).apply()
+        if (enabled) {
+            start(context)
+        } else {
+            context.applicationContext.stopService(Intent(context, JetpacsEngineService::class.java))
+            visible?.let { bindWhileVisible(it) }
+        }
     }
 
-    fun stop(context: Context) {
-        context.stopService(Intent(context, JetpacsEngineService::class.java))
+    /**
+     * Start the engine as a foreground service when background running is
+     * on. A start from a background position may be refused by the
+     * platform; that is logged, not thrown, and the wake path remains.
+     */
+    fun start(context: Context): Boolean {
+        if (!backgroundEnabled(context)) return false
+        // A launch is user intent: the crash-loop guard's halt and the start
+        // history it counted both clear, so the guard counts afresh.
+        EngineHome.of(context).let { it.haltedFile.delete(); it.startsFile.delete() }
+        val app = context.applicationContext
+        return try {
+            app.startForegroundService(Intent(app, JetpacsEngineService::class.java))
+            true
+        } catch (refused: ForegroundServiceStartNotAllowedException) {
+            Log.w(TAG, "engine foreground start refused from this position", refused)
+            false
+        }
     }
+
+    /** Stop the engine on the user's request; it comes back on the next launch or wake. */
+    fun stop(context: Context) {
+        visible?.let { unbindVisible(it) }
+        context.applicationContext.stopService(Intent(context, JetpacsEngineService::class.java))
+    }
+
+    /**
+     * Stop and start again, for the Settings "Restart engine" action. The
+     * stop ends the engine process (the service's destroy runs Emacs's
+     * shutdown and exits), and the start that follows gets a fresh one.
+     */
+    fun restart(context: Context) {
+        stop(context)
+        val activity = visible
+        if (!start(context) && activity != null) bindWhileVisible(activity)
+    }
+
+    /** Delete the engine's dump so the next start rebuilds it, then restart. */
+    fun rebuildCache(context: Context) {
+        val home = EngineHome.of(context)
+        home.root.listFiles()?.filter { it.name.endsWith(".pdmp") }?.forEach { it.delete() }
+        java.io.File(home.root, "dump.stamp").delete()
+        restart(context)
+    }
+
+    /** Whether the engine's process exists right now (a fact, not a session claim). */
+    fun processAlive(context: Context): Boolean {
+        val manager = context.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+        return manager.runningAppProcesses.orEmpty()
+            .any { it.processName.endsWith(JetpacsEngineService.PROCESS_SUFFIX) }
+    }
+
+    /** The engine stopped itself after repeated failures; `start` clears it. */
+    fun halted(context: Context): Boolean = EngineHome.of(context).haltedFile.isFile
+
+    // ---- bound while visible (background running off)
+
+    @Volatile private var visible: Activity? = null
+    private var visibleConnection: ServiceConnection? = null
+
+    /** The Companion's window is visible: keep the engine bound when it is not a service. */
+    fun bindWhileVisible(activity: Activity) {
+        visible = activity
+        if (backgroundEnabled(activity)) {
+            start(activity)
+            return
+        }
+        synchronized(this) {
+            if (visibleConnection != null) return
+            val connection = object : ServiceConnection {
+                override fun onServiceConnected(name: ComponentName?, service: IBinder?) = Unit
+                override fun onServiceDisconnected(name: ComponentName?) = Unit
+            }
+            val intent = Intent(activity.applicationContext, JetpacsEngineService::class.java)
+            if (activity.applicationContext.bindService(intent, connection, Context.BIND_AUTO_CREATE)) {
+                visibleConnection = connection
+            } else {
+                Log.w(TAG, "visible bind refused")
+            }
+        }
+    }
+
+    /** The window went away: release the visible-only binding. */
+    fun unbindVisible(activity: Activity) {
+        if (visible === activity) visible = null
+        val connection = synchronized(this) { visibleConnection.also { visibleConnection = null } } ?: return
+        runCatching { activity.applicationContext.unbindService(connection) }
+    }
+
+    // ---- SPEC 5.8 wake
 
     @Volatile private var wake: EngineWake? = null
 

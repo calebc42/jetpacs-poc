@@ -118,6 +118,9 @@ class BootReceiver : BroadcastReceiver() {
                     if (app.container.backgroundBridgeEnabled()) {
                         JetpacsBridgeService.startPersisted(app)
                     }
+                    // The bundled engine comes back after a reboot or an
+                    // update when background running is on (amendment #209).
+                    EngineFlavor.onBootOrUpdate(app)
                 }
             } finally { pending.finish() }
         }) pending.finish()

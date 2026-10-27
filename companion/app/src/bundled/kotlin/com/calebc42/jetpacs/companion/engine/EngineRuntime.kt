@@ -30,12 +30,34 @@ object EngineRuntime {
 
     @Volatile private var thread: Thread? = null
 
-    /** Start Emacs once per process; later calls are no-ops. */
-    fun start(context: Context) {
+    /** Whether Emacs was started in this process (for the shutdown path). */
+    val started: Boolean get() = thread != null
+
+    /**
+     * Start Emacs once per process; later calls are no-ops that return true.
+     * Returns false when the crash-loop guard refuses: three starts inside
+     * ten minutes mean Emacs is dying at init, and restarting it every second
+     * would only burn the battery (docs/PLAN-bundled-emacs.md, E5).
+     */
+    fun start(context: Context): Boolean {
         synchronized(this) {
-            if (thread != null) return
+            if (thread != null) return true
             val app = context.applicationContext
+            val home = EngineHome.of(app)
+            if (home.haltedFile.isFile) {
+                Log.w(TAG, "engine halted by the crash-loop guard; not starting")
+                return false
+            }
+            val now = System.currentTimeMillis()
+            val previous = EngineStarts.read(home.startsFile)
+            if (EngineStarts.shouldHalt(previous, now)) {
+                Log.e(TAG, "engine started ${previous.size} times in the last ten minutes; halting")
+                home.haltedFile.writeText("$now\n")
+                return false
+            }
+            EngineStarts.write(home.startsFile, EngineStarts.remember(previous, now))
             thread = Thread({ run(app) }, "Emacs main thread").also { it.start() }
+            return true
         }
     }
 

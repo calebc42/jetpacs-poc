@@ -42,6 +42,15 @@ interface HostUiPlatform {
     val listeningEndpoint: String
 
     /**
+     * A settings section the platform owns, composed before "Installation":
+     * the bundled Android engine's policy and diagnostics (SPEC §5.1 asks a
+     * bundled deployment to show its profile and address somewhere). The
+     * default composes nothing.
+     */
+    @Composable
+    fun ExtraSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {}
+
+    /**
      * The waiting screen's sentence about this host's transport. The default
      * is the binding host's; a dialing host says what it dials.
      */

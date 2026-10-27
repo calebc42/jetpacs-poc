@@ -213,6 +213,9 @@ class CompanionStores(
                 bootGeneration = { platform.capabilities.bootGeneration() },
                 occurrenceTransaction = triggerOccurrence,
             ).also { service ->
+                // SPEC 5.8: a trigger firing admitted with no engine reaches the
+                // platform's wake the same way a cold tap does.
+                service.coldSession = coldWakeSession
                 service.stateProvider = { type -> triggerSources().currentState(type) }
                 service.statePredicateProvider = { predicate ->
                     triggerSources().predicateHolds(predicate)

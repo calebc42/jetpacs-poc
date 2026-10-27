@@ -331,6 +331,40 @@ command is `assembleStandaloneDebug` for the existing app and
    setting, notification text and "Pause", boot and update restarts, crash-
    loop guard, export/backup, the shared-folder option, a read-only
    diagnostics screen.
+   First slice (2026-10-27): `EngineSupervisor` owns the policy
+   (SharedPreferences `jetpacs-engine/background`, default on): on, the
+   engine is the foreground service, started by the launcher activity, by
+   `BootReceiver` after a reboot or an update, and by any "open Emacs"
+   request; off, `MainActivity.onStart`/`onStop` bind and unbind the
+   service so the process lives only while the window is visible, and the
+   SPEC 5.8 wake covers background events. `JetpacsEngineService` starts
+   its foreground notification only when started (a bare bind shows none),
+   takes "Pause" (stop until the next launch or wake) and "Restart"
+   actions, and on destroy runs upstream's shutdown shape
+   (`EmacsNative.shutDownEmacs` then the process ends) so a restart is a
+   fresh process. The crash-loop guard (`EngineStarts`, pure, tested)
+   halts the third start inside ten minutes, writes `engine.halted`, posts
+   "Jetpacs engine stopped", and a user launch clears it. The host's
+   `HostUiPlatform.ExtraSettings(bridge)` slot composes the bundled
+   flavor's "Engine" section in Settings: the switch, SPEC §5.1's profile
+   and address, the process and session state, "Restart engine" and
+   "Rebuild engine cache". The trigger-firing cold wake landed with it:
+   ebp-kmp's `TriggerFiringService.coldSession` (commit `4c67813`, with a
+   FiringServiceTest case authored under the `offline.wake` grant) is the
+   stand-in the host sets, so a firing admitted with no engine reaches
+   the platform's wake like a cold tap does. Recorded on the Pixel Tablet:
+   two `run-as kill -9` in a row left no `:emacs` process, `engine.halted`
+   written at the third start ("engine started 2 times in the last ten
+   minutes; halting"), the "Jetpacs engine stopped" notice posted; a
+   relaunch of the already-resumed launcher activity, which only yields
+   `onNewIntent`, cleared the halt and the history, started a fresh engine
+   and the socket pair reappeared within 14 s. Found on the way: the
+   first version restarted from `onCreate`/`onStart` only, which a resumed
+   singleTop activity never sees again, and counted the halted start
+   against the next launch. Still open in E5: export/backup, the
+   shared-folder option, log export, the device gate for the wake and
+   for background-off binding (the tablet stays locked, so the switch
+   cannot be flipped from here).
 7. **E6 — Startup time and size.** Shipped per-ABI dumps, a kit-preloaded
    dump through `site-lisp/site-init.el`, build-time byte-compilation,
    asset trimming before the index is rebuilt; targets ≤ 2 s tap-to-READY

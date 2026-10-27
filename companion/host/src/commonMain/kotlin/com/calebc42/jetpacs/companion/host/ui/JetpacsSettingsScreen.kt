@@ -128,6 +128,8 @@ fun JetpacsSettingsScreen(
                     onCheckedChange = bridge::setExperimentalDesignRuntimeEnabled,
                 )
             }
+            // The platform's own section, if it has one (the bundled engine's).
+            LocalHostUiPlatform.current.ExtraSettings(bridge)
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
             Text("Installation", style = MaterialTheme.typography.titleSmall)
             TextButton(onClick = openOnboarding) {

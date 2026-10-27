@@ -39,6 +39,12 @@ class EngineHome(val root: File) {
     /** Which engine and which APK provisioned this HOME. */
     val stampFile: File = File(root, "engine.stamp")
 
+    /** Recent engine start times, for the crash-loop guard. */
+    val startsFile: File = File(root, "engine.starts")
+
+    /** Present while the guard has stopped the engine; a user launch clears it. */
+    val haltedFile: File = File(root, "engine.halted")
+
     /** Write the Emacs endpoint's credential copy, readable by this app alone. */
     fun writePairing(pairingId: String, tokenDisplay: String) {
         check(variable.isDirectory || variable.mkdirs()) { "cannot create ${variable.path}" }

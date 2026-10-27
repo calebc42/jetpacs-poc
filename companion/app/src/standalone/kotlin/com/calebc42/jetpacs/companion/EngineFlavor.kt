@@ -83,6 +83,15 @@ internal object EngineFlavor {
 
     fun onSessionReady(context: Context) = Unit
 
+    fun onCompanionVisible(activity: android.app.Activity) = Unit
+
+    fun onCompanionHidden(activity: android.app.Activity) = Unit
+
+    fun onBootOrUpdate(context: Context) = Unit
+
+    @Composable
+    fun SettingsSection(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) = Unit
+
     @Composable
     fun OnboardingContent(onDone: () -> Unit, onCancel: (() -> Unit)?) {
         OnboardingFlow(onDone = onDone, onCancel = onCancel)

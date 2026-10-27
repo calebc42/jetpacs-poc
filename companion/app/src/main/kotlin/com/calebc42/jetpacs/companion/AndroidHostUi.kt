@@ -49,4 +49,9 @@ internal class AndroidHostUi(context: Context) : HostUiPlatform {
 
     override val listeningDescription: String
         get() = EngineFlavor.listeningDescription(listeningEndpoint)
+
+    @Composable
+    override fun ExtraSettings(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
+        EngineFlavor.SettingsSection(bridge)
+    }
 }

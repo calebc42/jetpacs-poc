@@ -148,6 +148,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // The bundled flavor keeps its engine bound while the window is visible
+    // when background running is off; standalone composes nothing here.
+    override fun onStart() {
+        super.onStart()
+        EngineFlavor.onCompanionVisible(this)
+    }
+
+    override fun onStop() {
+        EngineFlavor.onCompanionHidden(this)
+        super.onStop()
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
@@ -157,6 +169,10 @@ class MainActivity : ComponentActivity() {
             )) {
             setIntent(Intent())
         }
+        // A new intent on the resumed launcher activity is user intent too
+        // (a notification tap, a relaunch): the bundled engine restarts from
+        // a halt here, since no onCreate or onStart will follow.
+        EngineFlavor.onCompanionLaunched(this)
     }
 
     /** Validate exported launcher ingress before resolving private state. */

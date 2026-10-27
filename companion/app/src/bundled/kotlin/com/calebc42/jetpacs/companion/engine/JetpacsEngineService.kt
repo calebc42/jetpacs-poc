@@ -10,40 +10,107 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.IBinder
+import android.os.Process
 import android.util.Log
 import com.calebc42.jetpacs.companion.MainActivity
+import org.gnu.emacs.EmacsNative
 
 /**
- * The engine's foreground service, the only component declared in the
- * `:emacs` process (src/bundled/AndroidManifest.xml). Its one job is to
- * keep the process that hosts GNU Emacs alive on the user's terms and to
- * start [EngineRuntime] once. The notification describes policy ("Jetpacs is
- * running"), never session liveness, which SPEC invariant 8 keeps out of
- * every correctness requirement.
- *
- * Binding is permitted and inert: the binder exposes no operation, so a
- * `bindService` with no extras is a SPEC 5.8 wake signal by construction.
+ * The engine's service, the only component declared in the `:emacs`
+ * process (src/bundled/AndroidManifest.xml). Started, it is a foreground
+ * service with one "Jetpacs is running" notification (background running
+ * on); merely bound, by the visible Companion or by a SPEC 5.8 wake, it
+ * keeps the process without a notification. Either way it starts
+ * [EngineRuntime] once. The notification describes policy, never session
+ * liveness, which SPEC invariant 8 keeps out of every correctness
+ * requirement. Binding is inert: the binder exposes no operation and no
+ * extra is read, which is what SPEC 5.8's same-application wake target
+ * requires. "Pause" is the one action the notification offers; a restart
+ * is the supervisor's stop followed by its start.
  */
 class JetpacsEngineService : Service() {
+    private var foreground = false
+
     override fun onCreate() {
         super.onCreate()
-        startForeground(
-            NOTIFICATION_ID,
-            buildNotification(),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-        )
+        Log.i(TAG, "engine service created")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        EngineRuntime.start(this)
+        when (intent?.action) {
+            ACTION_PAUSE -> {
+                // The user asked for a stop from the notification; it comes
+                // back on the next launch or wake, the policy unchanged.
+                Log.i(TAG, "engine paused by the user")
+                stopForegroundAndSelf()
+                return START_NOT_STICKY
+            }
+        }
+        if (!foreground) {
+            startForeground(
+                NOTIFICATION_ID,
+                buildNotification(),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
+            )
+            foreground = true
+        }
+        if (!EngineRuntime.start(this)) {
+            // The crash-loop guard refused: no Emacs this time, no retries
+            // until the user opens the Companion again.
+            postHaltedNotice()
+            stopForegroundAndSelf()
+            return START_NOT_STICKY
+        }
         return START_STICKY
     }
 
-    override fun onBind(intent: Intent?): IBinder = Binder()
+    override fun onBind(intent: Intent?): IBinder {
+        EngineRuntime.start(this)
+        return Binder()
+    }
 
     override fun onDestroy() {
-        Log.i(TAG, "engine service destroyed; Emacs keeps the process until it exits")
+        Log.i(TAG, "engine service destroyed; ending the process")
         super.onDestroy()
+        endProcess()
+    }
+
+    private fun stopForegroundAndSelf() {
+        if (foreground) {
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            foreground = false
+        }
+        stopSelf()
+    }
+
+    /**
+     * Upstream's own shutdown shape (EmacsService.onDestroy): auto-save and
+     * unlock in Emacs, then let the process go. A sticky restart or the next
+     * bind brings a fresh process with a fresh Emacs.
+     */
+    private fun endProcess() {
+        if (EngineRuntime.started) runCatching { EmacsNative.shutDownEmacs() }
+        Process.killProcess(Process.myPid())
+    }
+
+    private fun postHaltedNotice() {
+        val manager = getSystemService(NotificationManager::class.java)
+        buildNotification() // ensures the channel
+        val open = PendingIntent.getActivity(
+            this,
+            2,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val notice = Notification.Builder(this, CHANNEL_ID)
+            .setSmallIcon(android.R.drawable.stat_notify_error)
+            .setContentTitle("Jetpacs engine stopped")
+            .setContentText("It failed repeatedly. Open Jetpacs to try again.")
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setCategory(Notification.CATEGORY_ERROR)
+            .build()
+        runCatching { manager.notify(HALTED_NOTIFICATION_ID, notice) }
     }
 
     private fun buildNotification(): Notification {
@@ -63,6 +130,12 @@ class JetpacsEngineService : Service() {
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        val pause = PendingIntent.getService(
+            this,
+            1,
+            Intent(this, JetpacsEngineService::class.java).setAction(ACTION_PAUSE),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
         return Notification.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
             .setContentTitle("Jetpacs is running")
@@ -71,13 +144,16 @@ class JetpacsEngineService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE)
+            .addAction(Notification.Action.Builder(null, "Pause", pause).build())
             .build()
     }
 
     companion object {
         private const val TAG = "JetpacsEngine"
         const val PROCESS_SUFFIX = ":emacs"
+        const val ACTION_PAUSE = "com.calebc42.jetpacs.companion.action.PAUSE_ENGINE"
         private const val CHANNEL_ID = "jetpacs-engine"
         private const val NOTIFICATION_ID = 0x454d43
+        private const val HALTED_NOTIFICATION_ID = 0x454d44
     }
 }

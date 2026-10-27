@@ -7,6 +7,7 @@ import android.content.Intent
 import androidx.compose.runtime.Composable
 import com.calebc42.jetpacs.companion.engine.BundledFirstRun
 import com.calebc42.jetpacs.companion.engine.EngineHome
+import com.calebc42.jetpacs.companion.engine.EngineSettingsSection
 import com.calebc42.jetpacs.companion.engine.BundledPairing
 import com.calebc42.jetpacs.companion.engine.EngineSupervisor
 import com.calebc42.jetpacs.companion.engine.JetpacsEngineService
@@ -92,6 +93,21 @@ internal object EngineFlavor {
     }
 
     fun onSessionReady(context: Context) = EngineSupervisor.releaseWake(context)
+
+    /** While the window is visible the engine runs: as the service, or bound (background off). */
+    fun onCompanionVisible(activity: android.app.Activity) = EngineSupervisor.bindWhileVisible(activity)
+
+    fun onCompanionHidden(activity: android.app.Activity) = EngineSupervisor.unbindVisible(activity)
+
+    /** After a reboot or an update the engine comes back when background running is on. */
+    fun onBootOrUpdate(context: Context) {
+        EngineSupervisor.start(context)
+    }
+
+    @Composable
+    fun SettingsSection(bridge: com.calebc42.jetpacs.companion.host.DeviceBridge) {
+        EngineSettingsSection(bridge)
+    }
 
     @Composable
     fun OnboardingContent(onDone: () -> Unit, onCancel: (() -> Unit)?) {
