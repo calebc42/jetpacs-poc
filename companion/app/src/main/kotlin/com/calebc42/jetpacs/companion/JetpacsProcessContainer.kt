@@ -2,8 +2,6 @@
 package com.calebc42.jetpacs.companion
 
 import android.content.Context
-import com.calebc42.ebp.wire.EbpAuth
-import com.calebc42.ebp.wire.PairingId
 import com.calebc42.jetpacs.companion.host.CompanionProcess
 import com.calebc42.jetpacs.core.database.buildJetpacsDatabase
 import com.calebc42.jetpacs.core.ebpstore.AndroidKeyStorePairingCredentials
@@ -11,9 +9,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 
 /**
- * The Android bootstrap below [JetpacsApplication]: it opens Room, provisions
- * the fixed POC pairing into AndroidKeyStore, and hands both to the shared
- * [CompanionProcess], which owns everything from the store up.
+ * The Android bootstrap below [JetpacsApplication]: it opens Room, has the
+ * flavor resolve the pairing into AndroidKeyStore, and hands both to the
+ * shared [CompanionProcess], which owns everything from the store up.
  */
 internal object JetpacsProcessContainer {
     /**
@@ -26,21 +24,17 @@ internal object JetpacsProcessContainer {
         runBlocking(Dispatchers.IO) {
             val app = context.applicationContext
             val database = buildJetpacsDatabase(app)
-            val pairingId = PairingId(JETPACS_PAIRING_ID)
-            check(database.revocationDao().getRevocation(pairingId.value) == null) {
-                "The fixed POC pairing was revoked and cannot be reactivated"
-            }
             val credentials = AndroidKeyStorePairingCredentials()
-            val rawCredential = EbpAuth.decodePairingToken(JETPACS_PAIRING_TOKEN)
-            val aliases = try {
-                credentials.provision(pairingId, rawCredential)
-            } finally {
-                rawCredential.fill(0)
+            // The flavor owns pairing policy: standalone provisions the fixed
+            // known-answer credential, bundled generates and keeps its own.
+            val pairing = EngineFlavor.resolvePairing(app, database, credentials)
+            check(database.revocationDao().getRevocation(pairing.pairingId.value) == null) {
+                "The pairing ${pairing.pairingId.value} was revoked and cannot be reactivated"
             }
             CompanionProcess.create(
                 database = database,
-                pairingId = pairingId,
-                aliases = aliases,
+                pairingId = pairing.pairingId,
+                aliases = pairing.aliases,
                 credentials = credentials,
                 platform = AndroidHostPlatform(app),
                 renderer = AndroidCompanionRenderer,

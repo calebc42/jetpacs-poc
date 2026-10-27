@@ -1,5 +1,15 @@
 # Onboarding Jetpacs on Android
 
+Two flavors of the Companion exist (`docs/PLAN-bundled-emacs.md`). The
+**bundled** flavor carries GNU Emacs inside the APK as an engine process and
+has no onboarding beyond one screen: the first launch provisions the
+engine's HOME under the app's private files (the managed kit, an `init.el`,
+`install.conf` with an app-private vault, and the Emacs endpoint's copy of
+a generated pairing), starts the engine, and shows the background-running
+and private-storage notices with a Start button. Nothing is installed,
+pasted or paired by the user. The rest of this document describes the
+**standalone** flavor, which pairs with an Emacs the user installs.
+
 POC 3 begins with one decision: **Recommended** or **Advanced**.
 
 - **Recommended** is the fixed device-local preset: Local Emacs's private

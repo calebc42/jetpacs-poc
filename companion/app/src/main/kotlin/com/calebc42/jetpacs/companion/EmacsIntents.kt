@@ -19,3 +19,10 @@ internal fun openAndroidEmacs(context: Context): Boolean {
         true
     }.getOrDefault(false)
 }
+
+/**
+ * What the reconnect notification offers after an authenticated session is
+ * lost: the standalone flavor opens Android Emacs, the bundled flavor
+ * restarts its engine (docs/PLAN-bundled-emacs.md).
+ */
+internal data class ReconnectPrompt(val intent: Intent, val title: String, val text: String)

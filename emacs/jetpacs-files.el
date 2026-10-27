@@ -381,7 +381,10 @@ Known literal fallbacks cover a normal Android startup; paths derived from
 HOME and `user-emacs-directory' come first so `/data/data' versus
 `/data/user/0' follows the active installation."
   (when (and jetpacs-files-android-private-locations
-             (eq system-type 'android))
+             (eq system-type 'android)
+             ;; A bundled engine (docs/PLAN-bundled-emacs.md) has no Android
+             ;; Emacs or Termux sandbox to look into; SELinux logs the attempt.
+             (not (equal (bound-and-true-p jetpacs-home-mode) "bundled")))
     (let* ((home (expand-file-name "~/"))
            (emacs
             (jetpacs-files--first-accessible-dir

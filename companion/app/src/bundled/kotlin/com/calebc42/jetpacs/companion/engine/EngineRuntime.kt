@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Process
 import android.system.Os
 import android.util.Log
+import com.calebc42.jetpacs.companion.BuildConfig
 import java.io.File
 import java.io.FileInputStream
 import org.gnu.emacs.EmacsNative
@@ -45,7 +46,9 @@ object EngineRuntime {
             // With no service object Emacs sets neither LANG nor the logcat
             // pipe itself (android.c, emacs_service_object); supply both.
             Os.setenv("LANG", "en_US.utf8", true)
-            val dump = locateDump(home, EngineProvisioner.currentStamp(app))
+            // The dump holds Emacs's own preloaded Lisp, nothing of the kit, so it
+            // is keyed on the engine alone: a Companion-only update keeps it.
+            val dump = locateDump(home, BuildConfig.ENGINE_ID)
             val classPath = app.applicationInfo.sourceDir
             // classPath doubles as the APK whose mtime stamps every /assets file.
             EmacsNative.setEmacsParams(
@@ -71,9 +74,10 @@ object EngineRuntime {
 
     /**
      * The dump Emacs's loadup wrote into HOME as `emacs-<fingerprint>.pdmp`,
-     * if it belongs to this engine build and this provisioning: the
-     * fingerprint covers the native build, the stamp the Lisp and kit it was
-     * dumped with. Any other `.pdmp` in HOME is stale and removed.
+     * if it belongs to this engine build: the fingerprint covers the native
+     * build, the stamp the engine's Lisp assets (and, once the kit is
+     * preloaded into the dump, the kit). Any other `.pdmp` in HOME is stale
+     * and removed.
      */
     private fun locateDump(home: EngineHome, stamp: String): String? {
         val wanted = "emacs-${EmacsNative.getFingerprint()}.pdmp"

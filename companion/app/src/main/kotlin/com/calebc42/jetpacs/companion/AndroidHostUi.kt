@@ -38,11 +38,14 @@ internal class AndroidHostUi(context: Context) : HostUiPlatform {
     }
 
     override val openEmacs: (() -> Unit) = {
-        if (!openAndroidEmacs(app)) {
+        if (!EngineFlavor.openEmacs(app)) {
             Toast.makeText(app, "Android Emacs is not installed", Toast.LENGTH_SHORT).show()
         }
     }
 
     // The flavor owns the port (standalone 8765, bundled 8766; docs/PLAN-bundled-emacs.md).
     override val listeningEndpoint: String = "127.0.0.1:${EngineFlavor.loopbackPort}"
+
+    override val listeningDescription: String
+        get() = EngineFlavor.listeningDescription(listeningEndpoint)
 }

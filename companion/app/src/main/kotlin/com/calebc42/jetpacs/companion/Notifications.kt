@@ -69,10 +69,7 @@ object Notifications {
      * notification trampoline on modern Android.
      */
     fun postReconnect(ctx: Context) {
-        val launch = ctx.packageManager
-            .getLaunchIntentForPackage(ANDROID_EMACS_PACKAGE)
-            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            ?: return
+        val prompt = EngineFlavor.reconnectPrompt(ctx) ?: return
         val manager = ctx.getSystemService(NotificationManager::class.java)
         if (manager.getNotificationChannel(RECONNECT_CHANNEL) == null) {
             manager.createNotificationChannel(
@@ -86,13 +83,13 @@ object Notifications {
         val openEmacs = PendingIntent.getActivity(
             ctx,
             RECONNECT_ID,
-            launch,
+            prompt.intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
         val notification = Notification.Builder(ctx, RECONNECT_CHANNEL)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Emacs disconnected")
-            .setContentText("Tap to open Android Emacs and reconnect Jetpacs.")
+            .setContentTitle(prompt.title)
+            .setContentText(prompt.text)
             .setContentIntent(openEmacs)
             .setAutoCancel(true)
             .setOnlyAlertOnce(true)

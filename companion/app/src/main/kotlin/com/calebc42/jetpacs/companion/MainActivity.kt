@@ -131,8 +131,10 @@ class MainActivity : ComponentActivity() {
                                         onboardingRequired = false
                                     },
                                     onExit = { finish() },
+                                    // Standalone: the onboarding wizard; bundled: the
+                                    // one-screen first run (docs/PLAN-bundled-emacs.md).
                                     pairingContent = { onDone, onCancel ->
-                                        OnboardingFlow(onDone = onDone, onCancel = onCancel)
+                                        EngineFlavor.OnboardingContent(onDone, onCancel)
                                     },
                                 )
                                 PieMenuHost(app.currentPieMenu, bridge)

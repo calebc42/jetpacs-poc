@@ -24,8 +24,27 @@ class EngineHome(val root: File) {
     val apps: File = File(installRoot, "apps")
     val variable: File = File(installRoot, "var")
 
+    /** `install.conf`, the format-3 record `jetpacs-init.el` reads. */
+    val installConf: File = File(installRoot, "install.conf")
+
+    /** The Emacs endpoint's credential copy (SPEC 9.1, amendment #209), 0600. */
+    val pairingFile: File = File(variable, "pairing")
+
+    /** The app-private vault (decision 2 of the plan), beside HOME, not in it. */
+    val vault: File = File(root.parentFile, "vault")
+
     /** Which engine and which APK provisioned this HOME. */
     val stampFile: File = File(root, "engine.stamp")
+
+    /** Write the Emacs endpoint's credential copy, readable by this app alone. */
+    fun writePairing(pairingId: String, tokenDisplay: String) {
+        check(variable.isDirectory || variable.mkdirs()) { "cannot create ${variable.path}" }
+        val staged = File(variable, "pairing.jetpacs-new")
+        staged.writeText(EngineFiles.pairingFile(pairingId, tokenDisplay))
+        staged.setReadable(false, false); staged.setWritable(false, false)
+        staged.setReadable(true, true); staged.setWritable(true, true)
+        check(staged.renameTo(pairingFile)) { "cannot place ${pairingFile.path}" }
+    }
 
     companion object {
         fun of(context: Context): EngineHome = EngineHome(File(context.filesDir, "emacs"))
@@ -47,20 +66,6 @@ object EngineProvisioner {
     private const val TAG = "JetpacsEngine"
     private const val PAYLOAD = "jetpacs-onboarding/payload"
 
-    /**
-     * The managed block, the same shape onboarding asks a user to paste, plus
-     * the bundled Companion's port (the flavor's, not SPEC 5.2's default).
-     */
-    private val INIT_EL: String = """;;; init.el --- Jetpacs bundled engine -*- lexical-binding: t; -*-
-;; Written by the Jetpacs engine supervisor. Personal overrides belong in
-;; jetpacs/user.el, which loads last and survives updates.
-;;; >>> Jetpacs managed: composition root >>>
-(setq jetpacs-port ${EngineFlavor.loopbackPort})
-(add-to-list 'load-path (expand-file-name "jetpacs/emacs" user-emacs-directory))
-(require 'jetpacs)
-;;; <<< Jetpacs managed: composition root <<<
-"""
-
     fun prepare(context: Context): EngineHome {
         val home = EngineHome.of(context)
         for (dir in listOf(home.root, home.emacsD, home.installRoot, home.apps, home.variable)) {
@@ -77,8 +82,20 @@ object EngineProvisioner {
             copyAssetTree(context.assets, "$PAYLOAD/org", home.org)
             home.stampFile.writeText(stamp)
         }
-        if (!home.initFile.isFile || home.initFile.readText() != INIT_EL) {
-            home.initFile.writeText(INIT_EL)
+        val initEl = EngineFiles.initEl(EngineFlavor.loopbackPort)
+        if (!home.initFile.isFile || home.initFile.readText() != initEl) {
+            home.initFile.writeText(initEl)
+        }
+        // The private vault and the record that points the composition root at it.
+        check(home.vault.isDirectory || home.vault.mkdirs()) { "cannot create ${home.vault.path}" }
+        File(home.vault, "org").mkdirs()
+        val installConf = EngineFiles.installConf(
+            vault = home.vault.canonicalPath,
+            home = home.root.canonicalPath,
+            root = home.installRoot.canonicalPath,
+        )
+        if (!home.installConf.isFile || home.installConf.readText() != installConf) {
+            home.installConf.writeText(installConf)
         }
         return home
     }

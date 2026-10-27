@@ -450,6 +450,10 @@ and Files."
 
 ;;;; Connection
 
+;; A bundled engine's init names a credential file (docs/PLAN-bundled-emacs.md,
+;; SPEC 9.1 under amendment #209); the user's own init sets the variables.
+(require 'jetpacs-credentials)
+
 (defvar jetpacs-host "127.0.0.1"
   "Loopback address the Companion listens on (EBP SPEC 5.2).
 The `loopback-tcp' profile binds an IP loopback interface only; a bridged
@@ -503,7 +507,10 @@ brings the hub forward without creating a competing client."
      (t (jetpacs--start-1)))))
 
 (defun jetpacs--connect-config ()
-  "The `ebp-connect' config this composition root uses under every profile."
+  "The `ebp-connect' config this composition root uses under every profile.
+When `jetpacs-credentials-file' is set it is read first, so a re-provisioned
+pairing takes effect on the next dial."
+  (jetpacs-credentials-apply)
   (list :client-name "device-emacs" :client-version emacs-version
         :pairing-id jetpacs-pairing-id
         :token (ebp-decode-pairing-token jetpacs-pairing-token)

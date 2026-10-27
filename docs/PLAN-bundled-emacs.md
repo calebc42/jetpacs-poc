@@ -1,8 +1,9 @@
 # Bundled Emacs plan
 
 Status: active. E0, the engine build and harvest, and E1, the headless
-boot spike, are done (2026-10-26) and the spike is a go. Every later item
-is open. The decisions were taken by the owner on 2026-10-26.
+boot spike, are done (2026-10-26) and the spike is a go; E2, SPEC
+amendment #209, and E3, the bundled flavor end to end, landed 2026-10-27.
+Every later item is open. The decisions were taken by the owner on 2026-10-26.
 
 The outcome is one APK that a person who has never used Emacs installs and
 opens: the `bundled` product flavor of `companion/app` carries GNU Emacs as
@@ -236,6 +237,8 @@ command is `assembleStandaloneDebug` for the existing app and
    - `run-as … kill -9`: "Scheduling restart of crashed service … in
      1000ms", new process 1.4 s later, dump-backed start to "Starting Emacs
      daemon" in 2.2 s, session re-established on 8766;
+   - ten idle minutes while connected: 24 ticks (0.24 s of CPU, 0.0 % of
+     one core);
    - memory after the restart: PSS 110 MB, RSS 234 MB (native heap 35 MB);
    - the only non-engine log lines from `:emacs` are five SELinux
      `avc: denied { search }` audits from `jetpacs-files.el` probing the
@@ -248,7 +251,7 @@ command is `assembleStandaloneDebug` for the existing app and
    `run-as PKG ls|cat|kill …` works; the shell user cannot signal the
    engine, `run-as` can; the classifier declined force-stopping the
    owner's standalone apps, which is why the bundled port exists.
-3. **E2 — SPEC amendment #209, bundled deployments (prose only).** §2.3
+3. **E2 — SPEC amendment #209, bundled deployments (done 2026-10-27, ebp commit after `9114c28`; prose only).** §2.3
    terms *bundled deployment* and *engine supervisor*; §5.8: a supervisor
    MAY start, stop, restart and keep alive the Emacs host on product
    policy, which is not a wake and changes no correctness requirement; the
@@ -260,7 +263,7 @@ command is `assembleStandaloneDebug` for the existing app and
    exported subtree, debuggable builds named as reduced protection.
    Platform-neutral so the bundled desktop build shares it. Evidence:
    `validate.py` green; D9 in `PLAN-desktop-companion.md` points here.
-4. **E3 — Bundled flavor end to end over loopback-tcp.** Generated pairing
+4. **E3 — Bundled flavor end to end over loopback-tcp (done 2026-10-27).** Generated pairing
    in the KeyStore and `var/pairing` for Emacs; `install.conf` with the
    private vault; `jetpacs-credentials-file` and `home_mode=bundled` in
    `jetpacs-init.el`; the launcher seam (`EmacsIntents` per flavor); the
@@ -268,6 +271,31 @@ command is `assembleStandaloneDebug` for the existing app and
    `ManifestSecurityTest` covers the overlay; `BundledSmokeTest` by `am
    instrument`. Evidence: a fresh install reaches the hub with nothing
    typed; an update with an unchanged engine does not re-dump.
+   Design notes: the generated pairing is resolved on every Companion
+   start from the Emacs copy (`var/pairing` names the id; the partition
+   must be active and its key in the KeyStore), and anything else yields a
+   fresh pairing, because the token cannot be read back out of the
+   KeyStore. The host has no revocation flow yet, so a replaced pairing
+   leaves its old partition active in Room; E5's diagnostics "Reset
+   pairing" must land SPEC §9.1 revocation (fence, erase, re-provision)
+   for both copies. The dump cache is keyed on the engine identity alone
+   (`dump.stamp`), the kit copy on engine plus APK install time
+   (`engine.stamp`).
+   Recorded on the Pixel Tablet: the Companion generated pairing
+   `a53ef6d2…` on first start and wrote the 73-byte 0600 Emacs copy;
+   `install.conf` (format 3, `vault_mode=private`, `home_mode=bundled`)
+   and `files/vault/org/` were provisioned; the engine's first start took
+   3.1 s to "Starting Emacs daemon" with the self-dump, and the first
+   surface on the new identity was accepted 3.9 s after `initEmacs`, 16
+   surfaces in all; a reinstall of the same APK re-copied the kit
+   (`engine.stamp` moved) and kept the dump and the pairing; the SELinux
+   audits left are reflink `ioctl` probes of `copy-file`, a root-directory
+   listing and the exec loader's own lookups, not sandbox probes.
+   `jetpacs-credentials.el` (4 ERT cases, byte-compiles clean) is the
+   68th foundation module and passes the delineation and layering guards;
+   unit tests: standalone 43, bundled 46. Not done here: the instrumented
+   `BundledSmokeTest` (the Room witness and the spike script stood in) and
+   a look at the first-run screen on an unlocked device.
 5. **E4 — loopback-unix and the bound-service wake.** `LocalSocketTransport`
    in `:app` (FILESYSTEM `LocalSocket.bind` + `LocalServerSocket(fd)`, 0700
    directory, 0600 socket, peer-UID check), a path-bearing

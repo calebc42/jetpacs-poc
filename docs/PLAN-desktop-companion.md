@@ -327,9 +327,13 @@ existing gates must pass after every item.
     launch or signal an Emacs process, written for the wake mechanism but
     without a carve-out for a Companion-owned child. After it come the
     daemon lifecycle (start, stop, crash recovery), init isolation, and
-    per-platform packaging in D8's distributions. Planned, not scheduled:
-    it needs its own plan document once D5 and D6 land. Evidence: the
-    amendment with its contract and goldens aligned, then one bundled
+    per-platform packaging in D8's distributions. The bundled Android build
+    has its own plan, [`PLAN-bundled-emacs.md`](PLAN-bundled-emacs.md),
+    whose E2 landed the amendment as #209 (2026-10-27): it names the
+    *engine supervisor*, a component that is neither endpoint, and covers
+    the bundled desktop build too, so the desktop half needs no further
+    amendment, only the child-daemon lifecycle and packaging. Evidence:
+    the amendment (prose only, `validate.py` green), then one bundled
     build pairing with its own daemon on a clean machine.
 
 ## Routing table
