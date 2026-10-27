@@ -62,12 +62,55 @@
          (set-default 'jetpacs-settings-test--name "abc")
          (set-default 'jetpacs-settings-test--count 3)))))
 
+;; The bundled app's renderer checks (docs/PLAN-bundled-emacs.md).
+
+(defvar jetpacs-home-mode)
+
+(defcustom jetpacs-settings-test--span 'week
+  "An open choice fixture: named spans or a number of days."
+  :type '(choice (const :tag "Day" day) (const :tag "Week" week)
+                 (integer :tag "Custom"))
+  :group 'jetpacs-settings-test)
+
+(defcustom jetpacs-settings-test--scheme 'mirror
+  "A choice fixture with an option offered only elsewhere."
+  :type '(choice (const :tag "System" system) (const :tag "Mirror" mirror)
+                 (const :tag "Off" off))
+  :group 'jetpacs-settings-test)
+
+(defun jetpacs-settings-test--nodes (tree)
+  "Every node in TREE, depth first."
+  (let (out)
+    (cl-labels ((walk (n)
+                  (when (and (consp n) (plist-get n :t))
+                    (push n out)
+                    (mapc #'walk (append (plist-get n :children) nil)))))
+      (walk tree))
+    (nreverse out)))
+
+(defun jetpacs-settings-test--of-type (type tree)
+  "The nodes of TYPE in TREE."
+  (cl-remove-if-not (lambda (n) (equal (plist-get n :t) type))
+                    (jetpacs-settings-test--nodes tree)))
+
+(defun jetpacs-settings-test--texts (tree)
+  "The text of every text node, section header and switch in TREE."
+  (delq nil (mapcar (lambda (n)
+                      (or (plist-get n :text) (plist-get n :title)
+                          (and (equal (plist-get n :t) "switch")
+                               (plist-get n :label))))
+                    (jetpacs-settings-test--nodes tree))))
+
 (ert-deftest jetpacs-settings-kind-mapping ()
   "Custom-type schemas map to the right control kinds."
   (should (eq (jetpacs-settings--kind 'boolean) 'boolean))
   (should (eq (jetpacs-settings--kind 'string) 'string))
   (should (eq (jetpacs-settings--kind '(choice (const a) (const b))) 'choice))
-  (should (eq (jetpacs-settings--kind '(choice (const a) string)) 'sexp))
+  ;; Options plus one free string or number arm: an open choice; a free
+  ;; arm the renderer has no field for keeps the raw expression editor.
+  (should (eq (jetpacs-settings--kind '(choice (const a) string)) 'open-choice))
+  (should (eq (jetpacs-settings--kind '(choice (const a) (repeat string)))
+              'sexp))
   (should (eq (jetpacs-settings--kind 'natnum) 'number))
   (should (eq (jetpacs-settings--kind '(repeat string)) 'sexp)))
 
@@ -275,6 +318,168 @@ and an owned section is claimed until then."
     (should-not (jetpacs-settings-test--subscribed-p id))
     (should-not (jetpacs--owner-of "settings-section" "Tmp"))
     (should-not jetpacs-settings-registry)))
+
+
+(ert-deftest jetpacs-settings-text-fields-carry-no-second-label ()
+  "The label row names a field; the field itself repeated it, so a text
+input carries no label of its own."
+  (jetpacs-settings-test--env
+    (let* ((item (jetpacs-settings-item 'jetpacs-settings-test--name
+                                        :label "Name"))
+           (input (car (jetpacs-settings-test--of-type "text_input" item))))
+      (should input)
+      (should-not (plist-get input :label))
+      (should (equal (cl-count "Name" (jetpacs-settings-test--texts item)
+                               :test #'equal)
+                     1)))))
+
+(ert-deftest jetpacs-settings-builtin-variables-get-their-type ()
+  "A built-in variable has a Customize type once cus-start loads, which
+the renderer now asks for: `user-full-name' is a plain string field,
+not a Lisp expression showing the name in quotes."
+  (should (eq (jetpacs-settings--kind (jetpacs-settings--type 'user-full-name))
+              'string))
+  (let* ((user-full-name "Ada")
+         (input (car (jetpacs-settings-test--of-type
+                      "text_input" (jetpacs-settings-item 'user-full-name)))))
+    (should (equal (plist-get input :value) "Ada"))))
+
+(ert-deftest jetpacs-settings-completes-a-half-loaded-cus-start ()
+  "Emacs for Android's first-start dump provides cus-start after only
+its preload half, which types no built-in variable; the renderer loads
+the rest once instead of showing raw Lisp."
+  (require 'cus-start)
+  (let ((type (get 'user-full-name 'custom-type)))
+    (unwind-protect
+        (progn
+          (put 'user-full-name 'custom-type nil)
+          (should (eq (jetpacs-settings--kind
+                       (jetpacs-settings--type 'user-full-name))
+                      'string)))
+      (put 'user-full-name 'custom-type type))))
+
+(ert-deftest jetpacs-settings-library-loads-before-rendering ()
+  "A row names the library that defines its variable; rendering loads it
+instead of reporting the variable as not loaded."
+  (let* ((dir (make-temp-file "jetpacs-settings-lib" t))
+         (load-path (cons dir load-path)))
+    (unwind-protect
+        (progn
+          (with-temp-file (expand-file-name "jetpacs-settings-test-lib.el" dir)
+            (insert ";;; -*- lexical-binding: t; -*-\n"
+                    "(defcustom jetpacs-settings-test-lib-var 5 \"Doc.\"\n"
+                    "  :type 'integer :group 'jetpacs-settings-test)\n"
+                    "(provide 'jetpacs-settings-test-lib)\n"))
+          (should-not (boundp 'jetpacs-settings-test-lib-var))
+          (let ((item (jetpacs-settings-item 'jetpacs-settings-test-lib-var
+                                             :label "Lib"
+                                             :library 'jetpacs-settings-test-lib)))
+            (should (boundp 'jetpacs-settings-test-lib-var))
+            (should (jetpacs-settings-test--of-type "text_input" item))))
+      (delete-directory dir t))))
+
+(ert-deftest jetpacs-settings-open-choice-offers-options-and-a-field ()
+  "A choice with a free-form arm renders its options and a field for any
+other value, and decodes either way; options travel as wire keys."
+  (jetpacs-settings-test--env
+    (should (eq (jetpacs-settings--kind
+                 (jetpacs-settings--type 'jetpacs-settings-test--span))
+                'open-choice))
+    (should (equal (jetpacs-settings--decode 'jetpacs-settings-test--span "week")
+                   '(week)))
+    (should (equal (jetpacs-settings--decode 'jetpacs-settings-test--span "Day")
+                   '(day)))
+    (should (equal (jetpacs-settings--decode 'jetpacs-settings-test--span "10")
+                   '(10)))
+    (should-not (jetpacs-settings--decode 'jetpacs-settings-test--span "soon"))
+    (set-default 'jetpacs-settings-test--span 10)
+    (unwind-protect
+        (let* ((item (jetpacs-settings-item 'jetpacs-settings-test--span))
+               (enum (car (jetpacs-settings-test--of-type "enum_list" item)))
+               (field (car (jetpacs-settings-test--of-type "text_input" item))))
+          (should (equal (mapcar (lambda (o) (plist-get o :value))
+                                 (plist-get enum :options))
+                         '("day" "week")))
+          (should-not (plist-get enum :value))
+          (should (equal (plist-get field :value) "10"))
+          (should (equal (plist-get field :hint) "Custom")))
+      (set-default 'jetpacs-settings-test--span 'week))))
+
+(ert-deftest jetpacs-settings-exclude-hides-an-option-unless-current ()
+  "An excluded option is not offered, except while it is the value."
+  (jetpacs-settings-test--env
+    (cl-flet ((offered ()
+                (mapcar (lambda (o) (plist-get o :label))
+                        (plist-get (car (jetpacs-settings-test--of-type
+                                         "enum_list"
+                                         (jetpacs-settings-item
+                                          'jetpacs-settings-test--scheme
+                                          :exclude '(off))))
+                                   :options))))
+      (should (equal (offered) '("System" "Mirror")))
+      (set-default 'jetpacs-settings-test--scheme 'off)
+      (unwind-protect (should (equal (offered) '("System" "Mirror" "Off")))
+        (set-default 'jetpacs-settings-test--scheme 'mirror)))))
+
+(ert-deftest jetpacs-settings-plain-copy-is-the-bundled-apps-only ()
+  "`:plain' relabels and rewords in the bundled app and nowhere else; the
+relabeled options still decode, by their wire keys."
+  (jetpacs-settings-test--env
+    (let ((plain '(:label "Plan" :summary "Plain words."
+                   :choices ((auto . "On its own") (manual . "By hand")))))
+      (let* ((jetpacs-home-mode "emacs")
+             (texts (jetpacs-settings-test--texts
+                     (jetpacs-settings-item 'jetpacs-settings-test--mode
+                                            :label "Mode" :plain plain))))
+        (should (member "Mode" texts))
+        (should (member "A choice fixture." texts))
+        (should-not (member "Plan" texts)))
+      (let* ((jetpacs-home-mode "bundled")
+             (item (jetpacs-settings-item 'jetpacs-settings-test--mode
+                                          :label "Mode" :plain plain))
+             (enum (car (jetpacs-settings-test--of-type "enum_list" item))))
+        (should (member "Plan" (jetpacs-settings-test--texts item)))
+        (should (member "Plain words." (jetpacs-settings-test--texts item)))
+        (should (equal (mapcar (lambda (o) (plist-get o :label))
+                               (plist-get enum :options))
+                       '("On its own" "By hand")))
+        (should (equal (jetpacs-settings--decode 'jetpacs-settings-test--mode
+                                                 "manual")
+                       '(manual)))))))
+
+(ert-deftest jetpacs-settings-sections-order-advanced-and-bundled-rows ()
+  "Sections follow the display order; `:advanced' rows from any section,
+then the advanced links, gather under one Advanced header at the end;
+a section left empty shows no header; `:standalone-only' rows are left
+out of the bundled app only."
+  (jetpacs-settings-test--env
+    (let ((jetpacs-settings-section-order '("First" "Second")))
+      (jetpacs-settings-register-section
+       "Second" '((jetpacs-settings-test--count :label "Count")
+                  (jetpacs-settings-test--name :label "Name"
+                                               :standalone-only t)))
+      (jetpacs-settings-register-section
+       "Dev" '((jetpacs-settings-test--flag :label "Flag" :advanced t)))
+      (jetpacs-settings-register-section
+       "First" '((jetpacs-settings-test--mode :label "Mode")))
+      (jetpacs-settings-add-link 10 (lambda () (jetpacs-text "Everyday link")))
+      (jetpacs-settings-add-link 20 (lambda () (jetpacs-text "Dev link")) t)
+      (jetpacs-settings-add-link 30 #'ignore)
+      (cl-flet ((headers-and-rows ()
+                  (cl-remove-if-not
+                   (lambda (s) (member s '("First" "Second" "Dev" "Advanced"
+                                           "Mode" "Count" "Name" "Flag"
+                                           "Everyday link" "Dev link")))
+                   (jetpacs-settings-test--texts
+                    (apply #'jetpacs-column (jetpacs-settings-sections))))))
+        (let ((jetpacs-home-mode "emacs"))
+          (should (equal (headers-and-rows)
+                         '("First" "Mode" "Second" "Count" "Name"
+                           "Everyday link" "Advanced" "Flag" "Dev link"))))
+        (let ((jetpacs-home-mode "bundled"))
+          (should (equal (headers-and-rows)
+                         '("First" "Mode" "Second" "Count"
+                           "Everyday link" "Advanced" "Flag" "Dev link"))))))))
 
 (provide 'jetpacs-settings-test)
 ;;; jetpacs-settings-test.el ends here

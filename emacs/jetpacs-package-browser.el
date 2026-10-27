@@ -27,7 +27,8 @@
 (require 'jetpacs-chrome)
 
 ;; Soft-coupled entry card; the browser works without the settings module.
-(declare-function jetpacs-settings-add-link "jetpacs-settings" (order builder))
+(declare-function jetpacs-settings-add-link "jetpacs-settings"
+                  (order builder &optional advanced))
 
 (defvar jetpacs-pkg--search ""
   "Current package search string (matches name and summary).")

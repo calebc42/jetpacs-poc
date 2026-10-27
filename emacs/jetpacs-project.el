@@ -370,7 +370,8 @@ the pick came from the pushed Switch screen and the drill is over."
                                 "The current project's home base"
                                 (jetpacs-action "project.show"
                                                 :when-offline "drop")))))
-(declare-function jetpacs-settings-add-link "jetpacs-settings" (order builder))
+(declare-function jetpacs-settings-add-link "jetpacs-settings"
+                  (order builder &optional advanced))
 
 (defvar jetpacs-launcher-row-icons)
 (with-eval-after-load 'jetpacs-launcher
