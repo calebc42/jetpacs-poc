@@ -52,10 +52,12 @@ internal object EngineSupervisor {
      * platform; that is logged, not thrown, and the wake path remains.
      */
     fun start(context: Context): Boolean {
+        // A launch is user intent, whatever the policy: the crash-loop guard's
+        // halt and the start history it counted both clear, so the guard
+        // counts afresh. (Clearing only when background running was on left a
+        // halt in place for good once it was off; found on the Pixel Tablet.)
+        clearCrashGuard(context)
         if (!backgroundEnabled(context)) return false
-        // A launch is user intent: the crash-loop guard's halt and the start
-        // history it counted both clear, so the guard counts afresh.
-        EngineHome.of(context).let { it.haltedFile.delete(); it.startsFile.delete() }
         val app = context.applicationContext
         return try {
             app.startForegroundService(Intent(app, JetpacsEngineService::class.java))
@@ -128,6 +130,11 @@ internal object EngineSupervisor {
     /** The engine stopped itself after repeated failures; `start` clears it. */
     fun halted(context: Context): Boolean = EngineHome.of(context).haltedFile.isFile
 
+    /** Forget the crash-loop guard's halt and start history (user intent). */
+    private fun clearCrashGuard(context: Context) {
+        EngineHome.of(context).let { it.haltedFile.delete(); it.startsFile.delete() }
+    }
+
     // ---- bound while visible (background running off)
 
     @Volatile private var visible: Activity? = null
@@ -140,6 +147,9 @@ internal object EngineSupervisor {
             start(activity)
             return
         }
+        // The window became visible: user intent, as a launch is. Reopening
+        // the app from Recents gives no launch, only this.
+        clearCrashGuard(activity)
         synchronized(this) {
             if (visibleConnection != null) return
             val connection = object : ServiceConnection {

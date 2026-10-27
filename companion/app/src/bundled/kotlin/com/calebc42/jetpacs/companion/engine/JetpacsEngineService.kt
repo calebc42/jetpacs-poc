@@ -71,6 +71,13 @@ class JetpacsEngineService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "engine service destroyed; ending the process")
+        // A clean stop (the policy, Pause, a wake's release, a restart) is not
+        // a crash: forget the start history so the crash-loop guard counts
+        // only starts that follow a process that died on its own. Without
+        // this, background running off made every open of the app and every
+        // SPEC 5.8 wake a "start", and the third inside ten minutes halted
+        // the engine (found on the Pixel Tablet).
+        EngineHome.of(this).startsFile.delete()
         super.onDestroy()
         endProcess()
     }

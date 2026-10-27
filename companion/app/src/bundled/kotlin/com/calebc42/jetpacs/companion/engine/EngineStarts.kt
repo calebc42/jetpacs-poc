@@ -8,7 +8,9 @@ import java.io.File
  * may start twice inside [WINDOW_MS]; a third start inside the window halts
  * it until the user opens the Companion again. Start times are kept in a
  * small file in the engine's HOME because the `:emacs` process and the
- * Companion process must not share SharedPreferences.
+ * Companion process must not share SharedPreferences. Only restarts after a
+ * process that died on its own count: the service's clean stop deletes the
+ * file, and a launch or a visible window clears it with the halt.
  */
 internal object EngineStarts {
     const val WINDOW_MS = 10L * 60 * 1000

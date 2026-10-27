@@ -3,7 +3,6 @@ package com.calebc42.jetpacs.companion
 
 import android.app.Application
 import android.content.Context
-import android.content.Intent
 import androidx.compose.runtime.Composable
 import com.calebc42.jetpacs.companion.engine.BundledFirstRun
 import com.calebc42.jetpacs.companion.engine.EngineHome
@@ -69,12 +68,18 @@ internal object EngineFlavor {
         return true
     }
 
-    /** Recovery is the launcher activity, which starts the engine again. */
-    fun reconnectPrompt(context: Context): ReconnectPrompt = ReconnectPrompt(
-        Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-        "Jetpacs engine stopped",
-        "Tap to restart the notes engine.",
-    )
+    /**
+     * No prompt: in a bundled deployment the engine supervisor owns recovery.
+     * A lost session is the sticky service restarting the engine (background
+     * running on), the visible binding restarting it (off, window visible),
+     * the policy itself (off, window hidden: the engine runs only while the
+     * app is open and is woken by SPEC 5.8 for background events), the user's
+     * Pause, or the crash-loop halt, which posts its own notice. Each one is
+     * recovering by itself, intended or already explained, so a heads-up
+     * "engine stopped" here would be noise or false (found on the Pixel
+     * Tablet: it fired every time the app was left with background off).
+     */
+    fun reconnectPrompt(context: Context): ReconnectPrompt? = null
 
     fun listeningDescription(endpoint: String): String =
         "Starting the notes engine…"
