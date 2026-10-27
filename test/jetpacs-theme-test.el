@@ -311,6 +311,40 @@ and :tag both ship (they drive meta lines and org tags)."
                          (plist-get (jetpacs-action-schema "modus.set") :args))
                  '(name value))))
 
+(ert-deftest jetpacs-theme/color-scheme-row-is-authorized ()
+  "The Theme screen's Color scheme row sets `jetpacs-theme-mode' through
+the registry-gated `settings.set'.  Nothing registered it, so every tap
+was refused (found on the Pixel Tablet); it is registered as an
+Advanced row, which also offers the `off' mode the Theme screen omits."
+  (let ((entry (jetpacs-settings--entry 'jetpacs-theme-mode)))
+    (should entry)
+    (should (plist-get (cdr entry) :advanced)))
+  (let ((jetpacs-theme-mode 'mirror))
+    (cl-letf (((symbol-function 'jetpacs-settings-save-variable)
+               (lambda (sym value) (set-default sym value)))
+              ((symbol-function 'jetpacs-settings-refresh) #'ignore))
+      (should (eq (jetpacs-settings--action-set
+                   '(:name "jetpacs-theme-mode" :value "system") nil)
+                  'accepted))
+      (should (eq jetpacs-theme-mode 'system)))))
+
+(ert-deftest jetpacs-theme/bundled-app-keeps-the-theme-pick ()
+  "The bundled engine restarts often, so a Modus pick is saved through
+Customize there; an Emacs of the user's own keeps session semantics."
+  (let ((saves 0))
+    (cl-letf (((symbol-function 'custom-save-all) (lambda () (cl-incf saves))))
+      (unwind-protect
+          (jetpacs-theme-test--with-modus 'modus-operandi
+            (let ((jetpacs-home-mode "emacs"))
+              (jetpacs-modus--keep-theme)
+              (should (= saves 0)))
+            (let ((jetpacs-home-mode "bundled"))
+              (jetpacs-modus--keep-theme)
+              (should (= saves 1))
+              (should (equal (eval (car (get 'custom-enabled-themes 'saved-value)) t)
+                             '(modus-operandi)))))
+        (put 'custom-enabled-themes 'saved-value nil)))))
+
 (ert-deftest jetpacs-theme/modus-toggle-real-dispatch ()
   (jetpacs-theme-test--with-modus 'modus-operandi
     (jetpacs-theme-test--attached (jetpacs-theme-test--client)

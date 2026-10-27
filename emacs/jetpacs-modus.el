@@ -201,16 +201,29 @@ fine — there is a user at the keyboard."
                         (jetpacs-text (concat label " — not available") :style "caption"))))))
            jetpacs-modus--options)))
 
+(defconst jetpacs-modus--scheme-plain
+  '(:summary "Where Jetpacs takes its colors from."
+    :choices ((system . "Follow the device")
+              (light . "Light")
+              (dark . "Dark")
+              (mirror . "Match the Emacs theme")))
+  "The bundled app's wording for the Color scheme row.")
+
 (defun jetpacs-modus--body ()
   (let ((current (jetpacs-modus-current)))
     (apply #'jetpacs-lazy-column
            (delq nil
                  (append
-                  (list (jetpacs-section-header "Companion Theme")
+                  (list (jetpacs-section-header
+                         (if (jetpacs-bundled-p) "App colors" "Companion Theme"))
                         ;; A person reads "Color scheme", not the variable.
+                        ;; `off' hands the colors to another app; it is
+                        ;; offered under Advanced in Emacs Settings.
                         (jetpacs-card (list (jetpacs-settings-item
                                              'jetpacs-theme-mode
-                                             :label "Color scheme")))
+                                             :label "Color scheme"
+                                             :exclude '(off)
+                                             :plain jetpacs-modus--scheme-plain)))
                         (jetpacs-section-header "Modus Themes")
                         (jetpacs-modus--current-card current)
                         (jetpacs-modus--actions-row))
@@ -233,6 +246,17 @@ fine — there is a user at the keyboard."
     (when (fboundp 'modus-themes-load-theme)
       (ignore-errors (modus-themes-load-theme theme)))))
 
+(defun jetpacs-modus--keep-theme ()
+  "In the bundled app, save the enabled themes so a pick survives restarts.
+Its engine restarts on every update, on Restart and, with background
+running off, on every open, and a theme loaded for the session alone
+was lost each time (found on the Pixel Tablet).  The pick goes through
+Customize, like every other setting.  An Emacs of the user's own keeps
+`load-theme''s session semantics; its init file decides its theme."
+  (when (and (jetpacs-bundled-p)
+             (customize-mark-to-save 'custom-enabled-themes))
+    (custom-save-all)))
+
 (defun jetpacs-modus--action-toggle (_args params)
   "Toggle the configured Modus pair for action PARAMS.
 Return `rejected' unless the non-interactive two-theme operation is available;
@@ -245,6 +269,7 @@ this keeps Modus's `completing-read' fallback outside the wire dispatch."
     (condition-case err
         (progn
           (modus-themes-toggle)
+          (jetpacs-modus--keep-theme)
           (jetpacs-app-defer-refresh params)
           'accepted)
       (error
@@ -265,7 +290,8 @@ this keeps Modus's `completing-read' fallback outside the wire dispatch."
          (sym (and (stringp name) (intern-soft name))))
     (if (and sym (jetpacs-modus--ensure) (memq sym (jetpacs-modus-themes)))
         (condition-case err
-            (modus-themes-load-theme sym)
+            (progn (modus-themes-load-theme sym)
+                   (jetpacs-modus--keep-theme))
           (error (jetpacs-shell-notify (error-message-string err)
                                        (plist-get params :surface))))
       (jetpacs-shell-notify (format "Unknown modus theme: %s" (or name "?"))
@@ -278,7 +304,8 @@ this keeps Modus's `completing-read' fallback outside the wire dispatch."
   (when (and (jetpacs-modus--ensure)
              (fboundp 'modus-themes-rotate)
              (boundp 'modus-themes-to-rotate))
-    (condition-case err (modus-themes-rotate modus-themes-to-rotate)
+    (condition-case err (progn (modus-themes-rotate modus-themes-to-rotate)
+                               (jetpacs-modus--keep-theme))
       (error (jetpacs-shell-notify (error-message-string err)
                                    (plist-get params :surface)))))
   (jetpacs-app-defer-refresh params)
@@ -317,6 +344,13 @@ this keeps Modus's `completing-read' fallback outside the wire dispatch."
 ;;;; Actions
 
 (with-jetpacs-owner "jetpacs.settings"
+  ;; The Color scheme row sets `jetpacs-theme-mode' through the
+  ;; registry-gated `settings.set', which refused every tap until the
+  ;; registry named it.  All five modes, `off' included, are offered
+  ;; under Advanced in Emacs Settings.
+  (jetpacs-settings-register-section
+   "Theme"
+   '((jetpacs-theme-mode :label "Color scheme (all modes)" :advanced t)))
   (jetpacs-defaction "modus.show" #'jetpacs-modus--action-show
                      :doc "Open the Modus theme picker")
 

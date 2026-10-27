@@ -43,6 +43,7 @@
 (require 'cl-lib)
 (require 'subr-x) ; `string-remove-prefix'
 (require 'jetpacs-widgets)
+(declare-function jetpacs-bundled-p "jetpacs-surfaces" ())
 
 (defconst jetpacs-theme-picker-strip-keys
   '(bg-main fg-main accent-0 accent-1 accent-2 accent-3 err info)
@@ -87,12 +88,15 @@ theme alone."
   "Companion-mirror status: a live badge, or a one-tap switch to mirror mode.
 MIRROR-ACTION performs the switch; THEME-MODE is the provider's explicit
 current mode."
-  (if (eq theme-mode 'mirror)
-      (jetpacs-row (jetpacs-icon "smartphone" :size 16)
-                   (jetpacs-text "Mirroring to the companion"
-                                 :style "caption"))
-    (jetpacs-chip "Mirror on phone" :icon "smartphone"
-                  :on-tap (jetpacs-action mirror-action))))
+  (let ((bundled (and (fboundp 'jetpacs-bundled-p) (jetpacs-bundled-p))))
+    (if (eq theme-mode 'mirror)
+        (jetpacs-row (jetpacs-icon "smartphone" :size 16)
+                     (jetpacs-text (if bundled "The app uses this theme"
+                                     "Mirroring to the companion")
+                                   :style "caption"))
+      (jetpacs-chip (if bundled "Use it in the app" "Mirror on phone")
+                    :icon "smartphone"
+                    :on-tap (jetpacs-action mirror-action)))))
 
 (cl-defun jetpacs-theme-picker-current-card (current &key display-fn
                                                        dark-p-fn color-fn
