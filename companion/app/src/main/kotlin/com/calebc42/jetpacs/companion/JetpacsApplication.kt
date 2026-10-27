@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Process-lifetime composition root (SPEC 21, RF-0.5a). It constructs exactly
-// one Room store, command actor, and bridge. The user-enabled foreground
-// service owns bridge/listener lifetime; alarms and receivers can still use
-// the same actor and durable projections without claiming a live connection.
+// one Room store, command actor, and bridge. In the standalone flavor the
+// user-enabled foreground service owns bridge/listener lifetime; in the
+// bundled one the listener lives with this process, which the engine's
+// foreground service holds (EngineFlavor.onCompanionProcessCreated). Alarms
+// and receivers can still use the same actor and durable projections without
+// claiming a live connection.
 package com.calebc42.jetpacs.companion
 
 import android.app.ActivityManager
@@ -70,7 +73,8 @@ class JetpacsApplication : Application() {
             am.memoryClass.toLong() * 1024 * 1024 / 8)
         container = JetpacsProcessContainer.create(this)
         val presentation = container.presentation
-        // The best-effort FGS owns listener lifetime. This process root constructs the
+        // The flavor owns listener lifetime (the standalone's best-effort FGS,
+        // or the bundled process itself). This process root constructs the
         // bridge once, but does not claim that process existence means the
         // listener or an Emacs session is alive.
         bridge = DeviceBridge(
@@ -117,5 +121,6 @@ class JetpacsApplication : Application() {
         )
         container.stores.wakeRequester = EngineFlavor.wakeRequester(this)
         WidgetUpdateCoordinator.start(this, processStartedAtEpochMs)
+        EngineFlavor.onCompanionProcessCreated(this)
     }
 }

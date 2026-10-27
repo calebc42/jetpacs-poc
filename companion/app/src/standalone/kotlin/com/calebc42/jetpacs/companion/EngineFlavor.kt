@@ -31,6 +31,20 @@ internal object EngineFlavor {
 
     fun onCompanionLaunched(context: Context) = Unit
 
+    /** The background bridge service owns the listener; see [enableBridge]. */
+    fun onCompanionProcessCreated(app: JetpacsApplication) = Unit
+
+    /**
+     * Opt into the best-effort background bridge: a foreground service that
+     * owns the listener and its durable enabled flag.
+     */
+    fun enableBridge(context: Context) = JetpacsBridgeService.enable(context)
+
+    /** After a reboot or an update the bridge returns if the user left it enabled. */
+    suspend fun restoreBridge(app: JetpacsApplication) {
+        if (app.container.backgroundBridgeEnabled()) JetpacsBridgeService.startPersisted(app)
+    }
+
     /**
      * W4 smoke scope, unchanged: the public SPEC 9.3 known-answer credential
      * provisioned into the KeyStore on every start until generated pairing

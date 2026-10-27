@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Bundled flavor overlay (docs/PLAN-bundled-emacs.md): the one component
-     that runs GNU Emacs as the app's engine, in its own process. It is
-     private, accepts no extras, and its binder exposes no operation, which
-     is what SPEC 5.8's same-application wake target requires. -->
+<!-- Bundled flavor overlay (docs/PLAN-bundled-emacs.md): the component
+     that runs GNU Emacs as the app's engine, in its own process, and the
+     Companion-process service that engine binds while it runs in the
+     foreground. Both are private, accept no extras, and their binders expose
+     no operation, which is what SPEC 5.8's same-application wake target
+     requires. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Decision 2 of the plan: the user may move the notes to the shared
          /sdcard/Jetpacs, which on Android 11+ means All files access, granted
@@ -21,5 +23,12 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Runs the app's bundled Emacs notes engine in its own process" />
         </service>
+        <!-- One notification for the whole app: the engine's foreground
+             service binds this while running in the background, which keeps
+             the Companion's process (the socket the engine dials) alive
+             without a foreground service of its own. -->
+        <service
+            android:name=".engine.CompanionKeepaliveService"
+            android:exported="false" />
     </application>
 </manifest>

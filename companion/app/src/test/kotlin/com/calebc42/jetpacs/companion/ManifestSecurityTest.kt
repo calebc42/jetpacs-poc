@@ -106,22 +106,34 @@ class ManifestSecurityTest {
 
     /**
      * docs/PLAN-bundled-emacs.md: the bundled flavor's overlay declares exactly
-     * one component, the engine's service, private and in its own process, so
-     * SPEC 5.8's same-application wake target exists by construction and no
-     * Emacs activity, provider or receiver is merged into the APK from here.
+     * two components, both private services without intent filters: the
+     * engine's, in its own process, so SPEC 5.8's same-application wake
+     * target exists by construction, and the Companion-process service the
+     * engine binds while in the foreground, which is never a foreground
+     * service itself (one notification). No Emacs activity, provider or
+     * receiver is merged into the APK from here.
      */
     @Test
-    fun bundledOverlayDeclaresOnlyThePrivateEngineService() {
+    fun bundledOverlayDeclaresOnlyPrivateServices() {
         val overlay = "src/bundled/AndroidManifest.xml"
         for (tag in listOf("activity", "receiver", "provider", "activity-alias")) {
             assertEquals(tag, 0, components(tag, overlay).size)
         }
-        val service = components("service", overlay).single()
-        assertEquals(".engine.JetpacsEngineService", service.attr("name"))
-        assertEquals("false", service.attr("exported"))
-        assertEquals(":emacs", service.attr("process"))
-        assertEquals("specialUse", service.attr("foregroundServiceType"))
-        assertEquals(0, service.getElementsByTagName("intent-filter").length)
+        val services = components("service", overlay).associateBy { it.attr("name") }
+        assertEquals(
+            setOf(".engine.JetpacsEngineService", ".engine.CompanionKeepaliveService"),
+            services.keys,
+        )
+        for (service in services.values) {
+            assertEquals("false", service.attr("exported"))
+            assertEquals(0, service.getElementsByTagName("intent-filter").length)
+        }
+        val engine = services.getValue(".engine.JetpacsEngineService")
+        assertEquals(":emacs", engine.attr("process"))
+        assertEquals("specialUse", engine.attr("foregroundServiceType"))
+        val keepalive = services.getValue(".engine.CompanionKeepaliveService")
+        assertEquals("", keepalive.attr("process"))
+        assertEquals("", keepalive.attr("foregroundServiceType"))
     }
 
     @Test

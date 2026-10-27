@@ -52,6 +52,25 @@ internal object EngineFlavor {
     }
 
     /**
+     * The Companion's listener lives as long as this process, so it starts
+     * when the process does, whatever started it: the window, a receiver, a
+     * wake, or the engine's hold on it (CompanionKeepaliveService). The app's
+     * one foreground service is the engine's; there is no bridge service and
+     * no second notification.
+     */
+    fun onCompanionProcessCreated(app: JetpacsApplication) {
+        if (!app.container.startBridge(app.bridge)) {
+            android.util.Log.w("JetpacsEngine", "The command actor was full; the listener did not start")
+        }
+    }
+
+    /** Nothing to enable: the listener started with the process. */
+    fun enableBridge(context: Context) = Unit
+
+    /** Nothing to restore: the listener started with the process. */
+    suspend fun restoreBridge(app: JetpacsApplication) = Unit
+
+    /**
      * SPEC 9.1 under amendment #209: the Companion generates the pairing once
      * and the engine supervisor delivers the Emacs endpoint's copy through
      * application-private storage; nothing is shown to the user.

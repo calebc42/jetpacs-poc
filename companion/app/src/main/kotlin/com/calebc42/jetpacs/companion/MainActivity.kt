@@ -68,9 +68,9 @@ class MainActivity : ComponentActivity() {
         // and 18.1's one-outstanding-dialog rule live where the state does.
         enableEdgeToEdge()
         window.isNavigationBarContrastEnforced = false
-        // First visible launch opts into the best-effort background bridge.
-        // The service owns the listener and its durable enabled flag.
-        JetpacsBridgeService.enable(this)
+        // First visible launch opts into the best-effort background bridge
+        // (standalone; the bundled flavor's listener lives with its process).
+        EngineFlavor.enableBridge(this)
         // The bundled flavor also starts its engine here; standalone does nothing.
         EngineFlavor.onCompanionLaunched(this)
         val hostUi = AndroidHostUi(this)

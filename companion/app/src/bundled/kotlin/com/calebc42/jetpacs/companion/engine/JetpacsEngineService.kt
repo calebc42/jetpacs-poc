@@ -6,7 +6,9 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.ComponentName
 import android.content.Intent
+import android.content.ServiceConnection
 import android.content.pm.ServiceInfo
 import android.os.Binder
 import android.os.IBinder
@@ -27,9 +29,19 @@ import org.gnu.emacs.EmacsNative
  * extra is read, which is what SPEC 5.8's same-application wake target
  * requires. "Pause" is the one action the notification offers; a restart
  * is the supervisor's stop followed by its start.
+ *
+ * That notification is the app's only one: in the foreground the service
+ * also binds [CompanionKeepaliveService], which keeps the Companion's
+ * process, whose socket Emacs dials, alive at the engine's importance
+ * without a foreground service of its own.
  */
 class JetpacsEngineService : Service() {
     private var foreground = false
+    private var holdingCompanion = false
+    private val companionHold = object : ServiceConnection {
+        override fun onServiceConnected(name: ComponentName?, service: IBinder?) = Unit
+        override fun onServiceDisconnected(name: ComponentName?) = Unit
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -53,6 +65,7 @@ class JetpacsEngineService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
             )
             foreground = true
+            holdCompanion()
         }
         if (!EngineRuntime.start(this)) {
             // The crash-loop guard refused: no Emacs this time, no retries
@@ -78,6 +91,7 @@ class JetpacsEngineService : Service() {
         // SPEC 5.8 wake a "start", and the third inside ten minutes halted
         // the engine (found on the Pixel Tablet).
         EngineHome.of(this).startsFile.delete()
+        releaseCompanion()
         super.onDestroy()
         endProcess()
     }
@@ -87,7 +101,29 @@ class JetpacsEngineService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false
         }
+        releaseCompanion()
         stopSelf()
+    }
+
+    /**
+     * Bind the Companion's process while running in the background. The
+     * bind is automatic-create, so Android also restarts that process,
+     * whose application then starts its listener again, if it is lost.
+     */
+    private fun holdCompanion() {
+        if (holdingCompanion) return
+        holdingCompanion = bindService(
+            Intent(this, CompanionKeepaliveService::class.java),
+            companionHold,
+            BIND_AUTO_CREATE,
+        )
+        if (!holdingCompanion) Log.w(TAG, "the Companion process could not be held")
+    }
+
+    private fun releaseCompanion() {
+        if (!holdingCompanion) return
+        holdingCompanion = false
+        runCatching { unbindService(companionHold) }
     }
 
     /**

@@ -115,9 +115,7 @@ class BootReceiver : BroadcastReceiver() {
                 if (action == Intent.ACTION_BOOT_COMPLETED ||
                     action == Intent.ACTION_MY_PACKAGE_REPLACED
                 ) {
-                    if (app.container.backgroundBridgeEnabled()) {
-                        JetpacsBridgeService.startPersisted(app)
-                    }
+                    EngineFlavor.restoreBridge(app)
                     // The bundled engine comes back after a reboot or an
                     // update when background running is on (amendment #209).
                     EngineFlavor.onBootOrUpdate(app)

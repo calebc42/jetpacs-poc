@@ -140,7 +140,11 @@ HOME under the app's private files (the managed kit, `init.el`,
 generated pairing), starts, stops, restarts and keeps the process alive on
 product policy, lets Emacs's own loadup build the first-start dump with the
 kit preloaded through `site-lisp/site-init.el`, and performs the SPEC §5.8
-bound-service wake. Emacs then dials the Companion over the SPEC §5.3 Unix
+bound-service wake. The engine's foreground service is the app's only one:
+while it runs it binds a private, inert service in the Companion's process,
+which keeps that process, and the listener that lives as long as it does, at
+the engine's importance, so background running shows one notification and,
+switched off, none. Emacs then dials the Companion over the SPEC §5.3 Unix
 socket (`LocalSocketTransport`, same UID only) and authenticates like any
 other endpoint; the Companion never writes Elisp and never passes code,
 arguments or files through a start or wake signal. Every seam between the

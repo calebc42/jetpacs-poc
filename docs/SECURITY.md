@@ -79,7 +79,8 @@ device cannot inherit an outbox or device-bound pairing.
 
 ## Privileged Android work
 
-The user-enabled loopback bridge is a private `specialUse` foreground service.
+The user-enabled loopback bridge is a private `specialUse` foreground service
+(standalone flavor; the bundled flavor's listener lives with its process).
 Its notification reports policy, not process or session liveness. Exact alarms
 are used only after a capability check and degrade to an inexact idle-allowed
 alarm if access is denied or revoked. Platform effects run only after their
@@ -93,7 +94,11 @@ foreground service. The boundary is the process: `JetpacsApplication`
 returns before its composition root there, so Room, the Keystore, the
 bridge and the widget coordinator are never opened beside Emacs, and the
 service's binder exposes no operation. The service accepts no extras; a
-start or wake signal never carries code, arguments or files. Emacs's own
+start or wake signal never carries code, arguments or files. Its only other
+component, `CompanionKeepaliveService` in the Companion's process, is just as
+private and inert: the engine binds it while in the foreground so the
+Companion's process outlives the window under the engine's one
+notification. Emacs's own
 subprocess loader (`libexec1.so` and `libloader.so`, extracted beside
 `libemacs.so`) runs inside the same application sandbox and SELinux domain.
 

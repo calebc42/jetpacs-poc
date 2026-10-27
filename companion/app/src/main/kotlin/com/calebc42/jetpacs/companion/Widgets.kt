@@ -510,7 +510,7 @@ internal object WidgetActionRouter {
             }
         }
         if (safelyAdmitted && policy == "wake") {
-            JetpacsBridgeService.enable(context)
+            EngineFlavor.enableBridge(context)
             EngineFlavor.openEmacs(context)
         }
         return if (durable && !safelyAdmitted) WidgetActionResult.NotAdmitted
