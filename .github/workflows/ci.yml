@@ -158,6 +158,11 @@ jobs:
             :app:lintBundledDebug \
             :app:assembleBundledDebug \
             --console=plain
+      # The dump preload must not bake loadup-time state into the engine: no
+      # files in HOME, no ~/org paths, every root defvar seed unbound
+      # (tools/engine-preload-audit.el; the build above staged the kit).
+      - name: Engine preload audit
+        run: emacs -Q --batch -l tools/engine-preload-audit.el
       - name: Upload bundled debug APK
         uses: actions/upload-artifact@v4
         with:

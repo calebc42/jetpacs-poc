@@ -30,7 +30,13 @@ class EngineFilesTest {
     fun siteInitPreloadsTheKitLibrariesButNeverTheCompositionRoot() {
         val text = EngineFiles.siteInit()
         assertTrue(text.contains("(dolist (feature '(ebp-store ebp-sqlite ebp "))
-        assertTrue(text.contains(" jetpacs-org-mode ebp-complete))"))
+        assertTrue(text.contains(" jetpacs-org-clock ebp-complete))"))
+        // Loading these interactively seeds Org files and paths into the
+        // loadup-time org-directory (~/org), not the vault: never preloaded.
+        for (seeding in listOf("jetpacs-org-settings", "jetpacs-org-mode", "jetpacs-org-dialogs",
+                "jetpacs-org-render", "jetpacs-reader-org", "jetpacs-editor-org", "jetpacs-org-table")) {
+            assertTrue(seeding, seeding !in EngineFiles.PRELOAD)
+        }
         assertTrue(!EngineFiles.PRELOAD.contains("jetpacs-init"))
         assertTrue(!EngineFiles.PRELOAD.contains("jetpacs"))
         assertTrue(!EngineFiles.PRELOAD.contains("jetpacs-credentials"))

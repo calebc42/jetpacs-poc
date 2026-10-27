@@ -53,22 +53,27 @@ ${transportForms(port, socketPath)}
     val PRELOAD: List<String> = listOf(
         // Not jetpacs-package-browser: it reads package-user-dir at load and
         // package.el's own delayed-init variables cannot be loaded at loadup.
+        // Not jetpacs-org-settings or jetpacs-org-mode, nor the five libraries
+        // that require them (jetpacs-org-dialogs, -org-render, jetpacs-reader-org,
+        // jetpacs-editor-org, jetpacs-org-table): loading them interactively
+        // seeds the Org inbox, agenda files and starter notes into
+        // org-directory, which during loadup is still Org's own ~/org, not the
+        // vault the composition root names at init (found on the Pixel Tablet:
+        // the seed landed in the engine's HOME and capture pointed there).
         "ebp-store", "ebp-sqlite", "ebp", "jetpacs-vocabulary", "jetpacs-renderer-registry",
         "jetpacs-widgets", "jetpacs-async", "ebp-path", "jetpacs-surfaces", "jetpacs-data",
         "jetpacs-shell", "jetpacs-buffer", "jetpacs-navigate", "jetpacs-chrome", "jetpacs-dialog",
         "jetpacs-transient", "jetpacs-devtools", "jetpacs-profile-snapshot", "jetpacs-repl",
-        "jetpacs-comint", "jetpacs-commands", "jetpacs-results", "jetpacs-sections",
-        "jetpacs-tablist", "jetpacs-dialog-slot", "jetpacs-settings",
-        "jetpacs-customize", "ebp-sync", "jetpacs-apps", "jetpacs-files", "jetpacs-project",
-        "jetpacs-sql", "jetpacs-app-store", "jetpacs-registry", "jetpacs-app-store-registry",
-        "jetpacs-hypertext", "jetpacs-theme-picker", "jetpacs-modus", "jetpacs-theme",
-        "jetpacs-gallery", "jetpacs-clip", "jetpacs-device", "jetpacs-launcher", "jetpacs-keymap",
-        "jetpacs-emacs-ui", "ebp-org", "jetpacs-reader", "jetpacs-editor", "jetpacs-org-links",
-        "jetpacs-dates", "jetpacs-org", "jetpacs-org-structure", "jetpacs-org-settings",
-        "jetpacs-org-save", "jetpacs-org-dialogs", "jetpacs-org-render", "jetpacs-org-inline",
-        "jetpacs-reader-org", "jetpacs-org-toolbar", "jetpacs-editor-org", "jetpacs-org-habits",
+        "jetpacs-comint", "jetpacs-commands", "jetpacs-results", "jetpacs-sections", "jetpacs-tablist",
+        "jetpacs-dialog-slot", "jetpacs-settings", "jetpacs-customize", "ebp-sync", "jetpacs-apps",
+        "jetpacs-files", "jetpacs-project", "jetpacs-sql", "jetpacs-app-store", "jetpacs-registry",
+        "jetpacs-app-store-registry", "jetpacs-hypertext", "jetpacs-theme-picker", "jetpacs-modus",
+        "jetpacs-theme", "jetpacs-gallery", "jetpacs-clip", "jetpacs-device", "jetpacs-launcher",
+        "jetpacs-keymap", "jetpacs-emacs-ui", "ebp-org", "jetpacs-reader", "jetpacs-editor",
+        "jetpacs-org-links", "jetpacs-dates", "jetpacs-org", "jetpacs-org-structure",
+        "jetpacs-org-save", "jetpacs-org-inline", "jetpacs-org-toolbar", "jetpacs-org-habits",
         "jetpacs-reminders", "jetpacs-org-reminders", "jetpacs-org-capture", "jetpacs-org-clock",
-        "jetpacs-org-table", "jetpacs-org-mode", "ebp-complete",
+        "ebp-complete",
     )
 
     /**
