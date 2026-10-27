@@ -143,7 +143,9 @@ M-x — on a stock platform surface."
      (if (null kills)
          (jetpacs-empty-state :icon "content_paste"
                               :title "Kill ring is empty"
-                              :caption "Text killed in Emacs shows up here.")
+                              :caption (if (jetpacs-bundled-p)
+                                           "Text you cut or copy shows up here."
+                                         "Text killed in Emacs shows up here."))
        (apply #'jetpacs-lazy-column
               (cons (jetpacs-text (format "%d of %d kills, newest first"
                                           (length kills) (length kill-ring))

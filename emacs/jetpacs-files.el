@@ -384,7 +384,7 @@ HOME and `user-emacs-directory' come first so `/data/data' versus
              (eq system-type 'android)
              ;; A bundled engine (docs/PLAN-bundled-emacs.md) has no Android
              ;; Emacs or Termux sandbox to look into; SELinux logs the attempt.
-             (not (equal (bound-and-true-p jetpacs-home-mode) "bundled")))
+             (not (jetpacs-bundled-p)))
     (let* ((home (expand-file-name "~/"))
            (emacs
             (jetpacs-files--first-accessible-dir
@@ -643,7 +643,9 @@ list of nodes per the `jetpacs-render-buffer-functions' contract."
            (list (jetpacs-text (format "+%d more not shown" (- total (length shown)))
                                :style "caption")))
          (when truncated
-           (list (jetpacs-text (format "listing stopped at %d entries — use dired in Emacs for the rest"
+           (list (jetpacs-text (format (if (jetpacs-bundled-p)
+                                               "listing stopped at %d entries"
+                                             "listing stopped at %d entries — use dired in Emacs for the rest")
                                        jetpacs-files-scan-cap)
                                :style "caption"))))))))
 
@@ -2253,7 +2255,9 @@ revalidated against the effective roots.  nil unless PATH is a string."
                               (file-equal-p true user-init-file))
                          ;; Re-loading init mid-session never applies
                          ;; cleanly; the honest instruction is a restart.
-                         "Saved init — restart Emacs to apply config changes"
+                         (if (jetpacs-bundled-p)
+                             "Saved init — restart the engine in Jetpacs Settings to apply config changes"
+                           "Saved init — restart Emacs to apply config changes")
                        (format "Saved %s"
                                (jetpacs-scalar-text
                                 (file-name-nondirectory true))))

@@ -51,6 +51,9 @@ interface CompanionHostPlatform {
      */
     val uriOpener: HostUriOpener?
 
+    /** How the bridge's notices name the Emacs host; a bundled deployment names its engine. */
+    val wording: HostWording get() = HostWording.Emacs
+
     /** SPEC §20.1.2 locale advice and its change notification. */
     val locale: HostLocale
 

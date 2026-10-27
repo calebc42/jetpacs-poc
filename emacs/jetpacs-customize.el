@@ -184,7 +184,9 @@ the documented cost of not enumerating every defcustom up front.")
                                        jetpacs-customize-max-items)))
         (jetpacs-customize--cap-note (length vars) "variables")))
      (when faces
-       (list (jetpacs-text (format "%d face%s — edit faces in Emacs"
+       (list (jetpacs-text (format (if (jetpacs-bundled-p)
+                                       "%d face%s"
+                                     "%d face%s — edit faces in Emacs")
                                    (length faces)
                                    (if (= (length faces) 1) "" "s"))
                            :style "caption")))

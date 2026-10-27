@@ -32,6 +32,7 @@
 (require 'jetpacs-org-toolbar)
 (require 'jetpacs-org-dialogs)
 (require 'jetpacs-widgets)
+(require 'jetpacs-surfaces)               ; jetpacs-bundled-p
 
 (defvar jetpacs-editor-org--registered nil
   "Non-nil while the Org editor adapter is registered.")
@@ -280,7 +281,10 @@ write restores the buffer byte-for-byte and then signals."
                           (= (point-min) beg) (= (point-max) end)
                           (= (buffer-chars-modified-tick) tick))))
               (jetpacs-shell-notify
-               "Section changed in Emacs — not saved" surface)
+               (if (jetpacs-bundled-p)
+                   "Section changed elsewhere — not saved"
+                 "Section changed in Emacs — not saved")
+               surface)
               'stale)
              (t
               (jetpacs-editor-org--commit-narrowed
@@ -459,7 +463,9 @@ anchored ref."
                             (= current-beg beg) (= current-end end)
                             (= (buffer-chars-modified-tick) tick))
                  (jetpacs-editor-org--splice-refuse
-                  "Heading changed in Emacs — not saved"))
+                  (if (jetpacs-bundled-p)
+                      "Heading changed elsewhere — not saved"
+                    "Heading changed in Emacs — not saved")))
                (jetpacs-editor-org-splice current-beg current-end value))))
         (set-marker marker nil)))))
 

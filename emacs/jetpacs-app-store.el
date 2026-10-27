@@ -90,6 +90,15 @@ outside the foundation layer and fills this variable through the generic
 ;; direct foundation-only test loads deliberately see an empty catalog.
 (require 'jetpacs-packaged-apps nil t)
 
+(defun jetpacs-app-store-permissions-phrase ()
+  "How an install or enable dialog names what an applet runs with.
+An applet is Elisp that runs with everything the Emacs running it may do;
+in the bundled app that Emacs is Jetpacs's own engine, which its user
+knows as Jetpacs (`jetpacs-bundled-p')."
+  (if (jetpacs-bundled-p)
+      "the full permissions of Jetpacs"
+    "your Emacs's full permissions"))
+
 ;; Sources beyond the staging dirs and the APK (the applet registry,
 ;; jetpacs-app-store-registry.el) plug in here.  A source's entries carry
 ;; `:source' and a `:name' (the bundle file name every wire action names);
@@ -419,10 +428,10 @@ boot."
            :confirm (list :title (if packaged "Enable app?" "Install app?")
                           :icon "download"
                           :text (if packaged
-                                    (format "%s is included with Jetpacs. Enabling it runs the app with your Emacs's full permissions."
-                                            label)
-                                  (format "Installing runs %s with your Emacs's full permissions."
-                                          name))
+                                    (format "%s is included with Jetpacs. Enabling it runs the app with %s."
+                                            label (jetpacs-app-store-permissions-phrase))
+                                  (format "Installing runs %s with %s."
+                                          name (jetpacs-app-store-permissions-phrase)))
                           :confirm-label (if packaged "Enable" "Install")
                           :dismiss-label "Cancel"))
           :content-description (format "%s %s"

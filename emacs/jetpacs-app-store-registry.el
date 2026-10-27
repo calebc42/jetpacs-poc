@@ -408,8 +408,9 @@ Reads `jetpacs-app-store-registry--preview'; BACK is the stack's back action."
                       :when-offline "drop"
                       :confirm (list :title (if (> overwrites 0) "Overwrite local changes?" "Install app?")
                                      :icon "download"
-                                     :text (format "Installing runs %s with your Emacs's full permissions.%s"
+                                     :text (format "Installing runs %s with %s.%s"
                                                    name
+                                                   (jetpacs-app-store-permissions-phrase)
                                                    (if (> overwrites 0)
                                                        (format " %d local file%s shown above will be replaced."
                                                                overwrites (if (= overwrites 1) "" "s"))

@@ -66,7 +66,7 @@ class JetpacsBridgeService : Service() {
                     "Jetpacs background bridge",
                     NotificationManager.IMPORTANCE_LOW,
                 ).apply {
-                    description = "Best-effort background availability for the local Emacs bridge"
+                    description = "Keeps the Jetpacs bridge available in the background, as far as Android allows"
                     setShowBadge(false)
                 },
             )

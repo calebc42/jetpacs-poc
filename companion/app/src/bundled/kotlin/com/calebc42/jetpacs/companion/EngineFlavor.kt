@@ -82,7 +82,20 @@ internal object EngineFlavor {
     fun reconnectPrompt(context: Context): ReconnectPrompt? = null
 
     fun listeningDescription(endpoint: String): String =
-        "Starting the notes engine…"
+        "The first start after an install or update takes a few seconds."
+
+    /**
+     * The user of a bundled app has no Emacs of their own: the Companion's
+     * own UI names the notes engine, the term the first-run screen and the
+     * Engine settings use, and its open action starts that engine.
+     */
+    val hostWording = com.calebc42.jetpacs.companion.host.HostWording(
+        offlineTitle = "The notes engine isn't running",
+        offlineDetail = "Showing the last screen it sent.",
+        openAction = "Start it",
+        waitingTitle = "Starting the notes engine",
+        offlineDropNotice = "The notes engine isn't running. Nothing was saved or sent.",
+    )
 
     fun listeningEndpoint(context: Context): String = EngineHome.of(context).socketFile.path
 

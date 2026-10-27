@@ -994,7 +994,7 @@ class DeviceBridge(
         val now = System.currentTimeMillis()
         if (now - lastOfflineDropNoticeMs < OFFLINE_DROP_NOTICE_INTERVAL_MS) return
         lastOfflineDropNoticeMs = now
-        onToast(OFFLINE_DROP_NOTICE)
+        onToast(platform.wording.offlineDropNotice)
     }
 
     private fun deliverOutcome(
@@ -2020,7 +2020,8 @@ internal fun immediateRemoteSurfaceOpenTarget(
 }
 
 /** The notice a dropped offline tap shows: nothing reached Emacs. */
-internal const val OFFLINE_DROP_NOTICE = "Emacs is offline. Nothing was saved or sent."
+/** The standalone wording of the dropped-tap toast; a platform names its host in [HostWording]. */
+internal val OFFLINE_DROP_NOTICE = HostWording.Emacs.offlineDropNotice
 
 /** The shortest gap between two offline-drop notices. */
 internal const val OFFLINE_DROP_NOTICE_INTERVAL_MS = 2_000L

@@ -216,4 +216,7 @@ internal class AndroidHostPlatform(context: Context) : CompanionHostPlatform {
     // The flavor owns the port: standalone keeps SPEC 5.2's default, bundled
     // listens beside it (docs/PLAN-bundled-emacs.md).
     override val loopbackPort: Int = EngineFlavor.loopbackPort
+
+    // The bridge's own notices name the host the way the window does.
+    override val wording: com.calebc42.jetpacs.companion.host.HostWording = EngineFlavor.hostWording
 }

@@ -70,6 +70,9 @@ internal object EngineFlavor {
     fun listeningDescription(endpoint: String): String =
         "Jetpacs Companion is listening on $endpoint."
 
+    /** The user runs Emacs: the host's own wording. */
+    val hostWording = com.calebc42.jetpacs.companion.host.HostWording.Emacs
+
     fun listeningEndpoint(context: Context): String = "127.0.0.1:$loopbackPort"
 
     /** SPEC 5.2 on the flavor's port. */

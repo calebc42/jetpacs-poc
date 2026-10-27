@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.companion.host.ui
 
+import com.calebc42.jetpacs.companion.host.HostWording
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.unit.DpSize
@@ -37,6 +38,9 @@ interface HostUiPlatform {
      * signal one (a desktop Companion, SPEC §5.8). Chrome omits its button then.
      */
     val openEmacs: (() -> Unit)?
+
+    /** How the window names the Emacs host; a bundled deployment names its engine. */
+    val wording: HostWording get() = HostWording.Emacs
 
     /** The listener's address as the user should type it, for the waiting screen. */
     val listeningEndpoint: String

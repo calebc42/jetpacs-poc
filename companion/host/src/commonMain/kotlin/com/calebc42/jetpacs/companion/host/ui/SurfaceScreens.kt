@@ -309,10 +309,11 @@ fun OfflineConnectionBanner(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Icon(Icons.Default.Cable, contentDescription = null)
+            val wording = LocalHostUiPlatform.current.wording
             Column(Modifier.weight(1f)) {
-                Text("Emacs is offline", style = MaterialTheme.typography.labelLarge)
+                Text(wording.offlineTitle, style = MaterialTheme.typography.labelLarge)
                 Text(
-                    "Showing the last screen Emacs sent.",
+                    wording.offlineDetail,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.inverseOnSurface.copy(alpha = 0.75f),
                 )
@@ -322,7 +323,7 @@ fun OfflineConnectionBanner(
             }
             if (onOpenEmacs != null) {
                 TextButton(onClick = onOpenEmacs) {
-                    Text("Open Emacs", color = MaterialTheme.colorScheme.inversePrimary)
+                    Text(wording.openAction, color = MaterialTheme.colorScheme.inversePrimary)
                 }
             }
         }
@@ -336,7 +337,7 @@ fun WaitingForEmacs(description: String, onRepair: () -> Unit) {
         Modifier.fillMaxSize().padding(24.dp),
         verticalArrangement = Arrangement.Center,
     ) {
-        Text("Waiting for Emacs", style = MaterialTheme.typography.headlineMedium)
+        Text(LocalHostUiPlatform.current.wording.waitingTitle, style = MaterialTheme.typography.headlineMedium)
         Text(
             description,
             style = MaterialTheme.typography.bodyMedium,

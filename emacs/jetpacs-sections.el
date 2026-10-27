@@ -264,7 +264,9 @@ and stops."
             (unless (cdr budget)
               (setcdr budget t)
               (push (jetpacs-text
-                     (format "… %d more line(s) in Emacs"
+                     (format (if (jetpacs-bundled-p)
+                                 "… %d more line(s)"
+                               "… %d more line(s) in Emacs")
                              (count-lines (point) end))
                      :style "caption")
                     nodes))
@@ -348,7 +350,9 @@ transparent — only its children show."
       (when (= jetpacs-sections--cards jetpacs-sections-max-sections)
         (cl-incf jetpacs-sections--cards)   ; latch: one note per render
         (list (jetpacs-text
-               (format "… more sections in Emacs (showing first %d)"
+               (format (if (jetpacs-bundled-p)
+                           "… more sections (showing first %d)"
+                         "… more sections in Emacs (showing first %d)")
                        jetpacs-sections-max-sections)
                :style "caption"))))
      ((null end)

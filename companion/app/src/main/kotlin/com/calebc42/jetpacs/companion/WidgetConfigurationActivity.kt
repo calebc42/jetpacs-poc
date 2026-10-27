@@ -78,7 +78,7 @@ class WidgetConfigurationActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                     ) {
                         Text("Configure Jetpacs widget", style = MaterialTheme.typography.headlineSmall)
-                        Text("Bind this Android instance to any Emacs widget:<name> surface.")
+                        Text("Bind this home-screen widget to any widget:<name> surface.")
                         OutlinedTextField(
                             value = surfaceId,
                             onValueChange = { surfaceId = it; error = null },

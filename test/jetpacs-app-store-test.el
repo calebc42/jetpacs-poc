@@ -294,6 +294,40 @@
       (should (stringp (plist-get confirm :confirm_label)))
       (should (stringp (plist-get confirm :dismiss_label))))))
 
+(defvar jetpacs-home-mode)
+
+(defun jetpacs-app-store-test--install-consent ()
+  "The consent text on the first staged app's install affordance."
+  (let (confirm)
+    (cl-labels ((walk (n)
+                  (when-let* ((tap (plist-get n :on_tap)))
+                    (when (equal (plist-get tap :action) "apps.install")
+                      (setq confirm (plist-get tap :confirm))))
+                  (dolist (slot '(:children :trailing :header :body))
+                    (let ((v (plist-get n slot)))
+                      (cond ((vectorp v) (mapc #'walk (append v nil)))
+                            ((and v (listp v) (keywordp (car v)))
+                             (walk v))
+                            ((listp v) (mapc #'walk v)))))))
+      (walk (jetpacs-app-store--row (car (jetpacs-app-store--scan)))))
+    (plist-get confirm :text)))
+
+(ert-deftest jetpacs-app-store-consent-names-jetpacs-in-the-bundled-app ()
+  "The bundled app's user has no Emacs of their own: its consent text
+says Jetpacs, and every other deployment keeps \"your Emacs\"."
+  (jetpacs-app-store-test--env
+    (jetpacs-app-store-test--stage
+     stage "notes.el" ";;; notes.el --- Notes -*- lexical-binding: t; -*-")
+    (let ((jetpacs-home-mode "bundled"))
+      (should (jetpacs-bundled-p))
+      (should (string-match-p "full permissions of Jetpacs"
+                              (jetpacs-app-store-test--install-consent)))
+      (should-not (string-match-p "Emacs" (jetpacs-app-store-test--install-consent))))
+    (let ((jetpacs-home-mode "emacs"))
+      (should-not (jetpacs-bundled-p))
+      (should (string-match-p "your Emacs's full permissions"
+                              (jetpacs-app-store-test--install-consent))))))
+
 ;;;; The combined Apps view (pass 2)
 
 (ert-deftest jetpacs-app-store-combined-view-sections ()

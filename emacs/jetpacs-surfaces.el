@@ -341,6 +341,16 @@ device's platform names no such role."
   "Non-nil when the attached client is past the SPEC 10.3 barrier."
   (and jetpacs--client (eq (ebp-client-state jetpacs--client) 'ready)))
 
+(defvar jetpacs-home-mode)
+
+(defun jetpacs-bundled-p ()
+  "Non-nil when this Emacs is the bundled engine of the Jetpacs app.
+Its user has no Emacs of their own to open, so text that sends them to
+Emacs, or calls it theirs, says Jetpacs or names the notes engine
+instead.  The composition root reads `home_mode' from install.conf into
+`jetpacs-home-mode' (docs/PLAN-bundled-emacs.md)."
+  (equal (bound-and-true-p jetpacs-home-mode) "bundled"))
+
 (defun jetpacs-granted-p (capability &optional client)
   "Non-nil when the session granted CAPABILITY (a SPEC 22.1 name string).
 CLIENT defaults to the attached client; with none the answer is nil —
