@@ -17,6 +17,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -34,6 +36,13 @@ internal fun VaultSettings() {
     val home = remember { EngineHome.of(context) }
     var mode by remember { mutableStateOf(EngineVault.mode(home)) }
     var busy by remember { mutableStateOf(false) }
+    // All files access is granted on a system page; re-read it whenever the
+    // Companion resumes, or the row would keep offering the grant after it
+    // was given (found on the Pixel Tablet).
+    var sharedGranted by remember { mutableStateOf(EngineVault.sharedAccessGranted()) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        sharedGranted = EngineVault.sharedAccessGranted()
+    }
     val scope = rememberCoroutineScope()
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip"),
@@ -49,7 +58,7 @@ internal fun VaultSettings() {
             }
             Toast.makeText(
                 context,
-                result.fold({ "Exported $it notes files" }, { "Export failed: ${it.message}" }),
+                result.fold({ "Exported ${files(it)}" }, { "Export failed: ${it.message}" }),
                 Toast.LENGTH_LONG,
             ).show()
         }
@@ -65,7 +74,7 @@ internal fun VaultSettings() {
             Toast.makeText(
                 context,
                 copied.fold(
-                    { "Notes now in ${EngineVault.current(home).path}; $it files copied" },
+                    { "Notes now in ${EngineVault.current(home).path}; ${files(it)} copied" },
                     { "Could not move the notes: ${it.message}" },
                 ),
                 Toast.LENGTH_LONG,
@@ -88,7 +97,7 @@ internal fun VaultSettings() {
         ) { Text("Export notes") }
         when (mode) {
             EngineVault.Mode.PRIVATE ->
-                if (EngineVault.sharedAccessGranted()) {
+                if (sharedGranted) {
                     TextButton(enabled = !busy, onClick = { move(EngineVault.Mode.SHARED) }) {
                         Text("Store notes in a shared folder")
                     }
@@ -105,3 +114,5 @@ internal fun VaultSettings() {
         }
     }
 }
+
+private fun files(count: Int): String = if (count == 1) "1 file" else "$count files"
