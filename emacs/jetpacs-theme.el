@@ -148,6 +148,8 @@ immediately on a live connection through Customize or `setopt\='."
 Hex strings are parsed directly — `color-name-to-rgb' resolves through
 the current display, which on a tty/batch frame quantizes #2e3440 to the
 nearest terminal color — so theme hexes stay exact on every frame type.
+In the frameless engine (`jetpacs-theme--frameless-p') a name resolves to
+its standard value, which is what a graphical frame shows.
 nil for the `unspecified-fg'/`unspecified-bg' placeholders a batch or tty
 frame reports, and for anything the display can't resolve."
   (cond
@@ -164,6 +166,10 @@ frame reports, and for anything the display can't resolve."
                         16)
                        max))
                   '(0 1 2))))))
+   ((jetpacs-theme--frameless-p)
+    (when-let* ((values (tty-color-standard-values
+                         (tty-color-canonicalize color))))
+      (mapcar (lambda (v) (/ v 65535.0)) values)))
    (t (color-name-to-rgb color))))
 
 (defun jetpacs-theme--hex (color)
@@ -192,13 +198,145 @@ frame reports, and for anything the display can't resolve."
        0.5)))
 
 (defun jetpacs-theme--face-color (attr &rest faces)
-  "Inheritance-resolved ATTR of the first of FACES with a usable color, as hex."
-  (catch 'hit
-    (dolist (f faces)
-      (when (facep f)
-        (when-let* ((hex (jetpacs-theme--hex (face-attribute f attr nil t))))
-          (throw 'hit hex))))
-    nil))
+  "Inheritance-resolved ATTR of the first of FACES with a usable color, as hex.
+In the frameless engine it is the color a frame of Emacs for Android
+shows (`jetpacs-theme--frameless-attribute')."
+  (let ((frameless (jetpacs-theme--frameless-p)))
+    (catch 'hit
+      (dolist (f faces)
+        (when (facep f)
+          (when-let* ((hex (jetpacs-theme--hex
+                            (if frameless
+                                (jetpacs-theme--frameless-attribute f attr)
+                              (face-attribute f attr nil t)))))
+            (throw 'hit hex))))
+      nil)))
+
+;;;; The frameless engine: the theme as Emacs for Android draws it
+
+;; The bundled app's engine is a daemon without a display
+;; (docs/PLAN-bundled-emacs.md).  Its one frame is the initial terminal,
+;; where every face color reads as unspecified, so the face arm above
+;; resolved nothing, the mirror pushed nothing, and the app showed its
+;; native scheme where a standalone Companion shows the same theme
+;; mirrored from Emacs for Android.  There the face arm now asks what a
+;; new frame of Emacs for Android would show: the specs
+;; `face-spec-recalc' chooses under that frame's answers to
+;; `face-spec-set-match-display', applied in the order of
+;; `face-set-after-frame-default'.
+
+(defun jetpacs-theme--frameless-p ()
+  "Non-nil when face colors come from specs rather than from a frame.
+So in the bundled app's engine, which has no frame that shows color."
+  (and (jetpacs-bundled-p) (not (display-color-p))))
+
+(defun jetpacs-theme--specified-p (value)
+  "Non-nil when VALUE is a face attribute value, not a placeholder."
+  (not (or (null value) (eq value 'unspecified)
+           (and (stringp value) (string-prefix-p "unspecified" value)))))
+
+(defun jetpacs-theme--frameless-match-p (display background)
+  "Non-nil when the face-spec DISPLAY matches a frame of Emacs for Android.
+These are that frame's answers to `face-spec-set-match-display': window
+system `android' (Emacs 31 matches `graphic' only on x, w32, ns and
+pgtk), class `color', 24-bit color, BACKGROUND (`light' or `dark') as
+the background mode, and every attribute supported."
+  (or (eq display t)
+      (and (listp display)
+           (cl-every
+            (lambda (conjunct)
+              (let ((options (cdr-safe conjunct)))
+                (pcase (car-safe conjunct)
+                  ('type (memq 'android options))
+                  ('class (memq 'color options))
+                  ('min-colors (and (natnump (car-safe options))
+                                    (<= (car options) 16777216)))
+                  ('background (memq background options))
+                  ('supports t))))
+            display))))
+
+(defun jetpacs-theme--frameless-choose (spec background &optional no-match)
+  "The attribute plist that face SPEC gives a frame of Emacs for Android.
+`face-spec-choose' with `jetpacs-theme--frameless-match-p' over
+BACKGROUND; NO-MATCH when no entry of SPEC applies."
+  (let (result defaults found)
+    (while (and (consp spec) (not found))
+      (let* ((entry (pop spec))
+             (attrs (cdr-safe entry))
+             ;; An old-style entry holds its attribute list as one element.
+             (value (if (cdr-safe attrs) attrs (car-safe attrs))))
+        (cond ((eq (car-safe entry) 'default) (setq defaults value))
+              ((jetpacs-theme--frameless-match-p (car-safe entry) background)
+               (setq result value found t)))))
+    (cond (defaults (append defaults result))
+          (found result)
+          (t no-match))))
+
+(defun jetpacs-theme--frameless-specs (face background)
+  "The attribute plists a new frame of Emacs for Android applies to FACE.
+In order: the enabled themes' specs, lowest priority first, or else the
+defface spec; the override spec; what `set-face-attribute' set for all
+frames.  A later value wins."
+  (while (get face 'face-alias)
+    (setq face (get face 'face-alias)))
+  (let ((themed (delq 'no-match
+                      (mapcar (lambda (elt)
+                                (jetpacs-theme--frameless-choose
+                                 (cadr elt) background 'no-match))
+                              (reverse (get face 'theme-face))))))
+    (append (or themed
+                (list (jetpacs-theme--frameless-choose
+                       (face-default-spec face) background)))
+            (list (jetpacs-theme--frameless-choose
+                   (get face 'face-override-spec) background)
+                  (cl-loop for attr in '(:foreground :background :inherit)
+                           for value = (face-attribute face attr t)
+                           when (jetpacs-theme--specified-p value)
+                           append (list attr value))))))
+
+(defun jetpacs-theme--frameless-attribute-in (face attr background
+                                                   &optional seen)
+  "FACE's ATTR on a new frame of Emacs for Android in BACKGROUND mode.
+The last value applied wins; an unspecified one is inherited, as
+`face-attribute' does with INHERIT t.  The default face's colors are
+the frame's: `default-frame-alist', else its spec, else black on
+white.  SEEN guards inheritance cycles."
+  (let ((value 'unspecified) (inherit nil))
+    (dolist (plist (jetpacs-theme--frameless-specs face background))
+      (while (consp plist)
+        (cond ((eq (car plist) attr) (setq value (cadr plist)))
+              ((eq (car plist) :inherit) (setq inherit (cadr plist))))
+        (setq plist (cddr plist))))
+    (unless (jetpacs-theme--specified-p value)
+      (setq value
+            (or (cl-some (lambda (parent)
+                           (and (facep parent) (not (memq parent seen))
+                                (let ((v (jetpacs-theme--frameless-attribute-in
+                                          parent attr background
+                                          (cons face seen))))
+                                  (and (jetpacs-theme--specified-p v) v))))
+                         (if (listp inherit) inherit (list inherit)))
+                'unspecified)))
+    (if (and (eq face 'default) (memq attr '(:foreground :background)))
+        (or (alist-get (if (eq attr :foreground)
+                           'foreground-color 'background-color)
+                       default-frame-alist)
+            (and (jetpacs-theme--specified-p value) value)
+            (if (eq attr :foreground) "black" "white"))
+      value)))
+
+(defun jetpacs-theme--frameless-attribute (face attr)
+  "FACE's ATTR as a new frame of Emacs for Android shows it.
+Such a frame starts light and settles on the background mode its
+default background calls for, as `frame-set-background-mode' does,
+unless `frame-background-mode' names one."
+  (jetpacs-theme--frameless-attribute-in
+   face attr
+   (or (car (memq frame-background-mode '(light dark)))
+       (if (jetpacs-theme--dark-p
+            (jetpacs-theme--frameless-attribute-in 'default :background 'light))
+           'dark
+         'light))))
 
 ;;;; Modus palette access
 
@@ -401,7 +539,8 @@ compacts away there."
 
 (defun jetpacs-theme-payload ()
   "The full mirror args for `ebp-client-theme-set', or nil.
-nil means the frame can't resolve colors (a batch/tty non-modus frame) —
+nil means the frame can't resolve colors (a batch/tty non-modus frame; the
+bundled app's engine resolves them for Emacs for Android instead) —
 callers MUST NOT push then: 18.4 makes every notification a complete
 replacement, so a colorless session would wipe a good persisted
 palette.  Mirror FORCES polarity from the theme's own surface: with

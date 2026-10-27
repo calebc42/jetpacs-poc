@@ -83,6 +83,58 @@
   (should-not (jetpacs-theme--face-color
                :foreground 'jetpacs-theme-test--undefined)))
 
+;;;; The bundled app's frameless engine (docs/PLAN-bundled-emacs.md)
+
+(defvar jetpacs-home-mode)
+
+(ert-deftest jetpacs-theme/frameless-engine-mirrors-emacs-for-android ()
+  "A batch frame shows no colors.  Outside the bundled app the mirror
+still pushes nothing; its engine mirrors the theme as Emacs for Android
+draws it.  The expected palette is what the Pixel Tablet's standalone
+Companion persisted from Emacs for Android with no theme loaded."
+  (require 'outline)                    ; the engine preloads it with Org
+  (should-not (jetpacs-theme-payload))
+  (let* ((jetpacs-home-mode "bundled")
+         (payload (jetpacs-theme-payload))
+         (colors (plist-get payload :colors))
+         (syntax (plist-get payload :syntax)))
+    (should (eq (plist-get payload :dark) :false))
+    (should (equal colors
+                   '(:primary "#a020f0" :on_primary "#ffffff"
+                     :secondary "#9050b8" :on_secondary "#ffffff"
+                     :error "#ff0000" :on_error "#ffffff"
+                     :background "#ffffff" :on_background "#000000"
+                     :surface "#ffffff" :on_surface "#000000"
+                     :outline "#7f7f7f" :success "#228b22"
+                     :warning "#ff8c00")))
+    (should (equal (plist-get syntax :comment) '(:fg "#b22222")))
+    (should (equal (plist-get syntax :string) '(:fg "#8b2252")))
+    (should (equal (plist-get syntax :function) '(:fg "#0000ff")))
+    ;; Inherited: font-lock-builtin-face, and outline-1's function face.
+    (should (equal (plist-get syntax :preprocessor) '(:fg "#483d8b")))
+    (should (equal (plist-get syntax :heading) '(:fg "#0000ff")))
+    (should (equal (plist-get syntax :link) '(:fg "#3a5fcd")))))
+
+(ert-deftest jetpacs-theme/frameless-engine-follows-a-dark-default ()
+  "A theme's dark default background makes the frame dark, as on Emacs
+for Android: the payload says so and faces take their dark clauses."
+  (deftheme jetpacs-theme-test-dark "A dark default background.")
+  (custom-theme-set-faces
+   'jetpacs-theme-test-dark
+   '(default ((t :background "#101418" :foreground "#e0e0e0"))))
+  (enable-theme 'jetpacs-theme-test-dark)
+  (unwind-protect
+      (let* ((jetpacs-home-mode "bundled")
+             (payload (jetpacs-theme-payload))
+             (colors (plist-get payload :colors)))
+        (should (eq (plist-get payload :dark) t))
+        (should (equal (plist-get colors :background) "#101418"))
+        (should (equal (plist-get colors :on_surface) "#e0e0e0"))
+        ;; font-lock-keyword-face's and error's dark clauses: Cyan1, Pink.
+        (should (equal (plist-get colors :primary) "#00ffff"))
+        (should (equal (plist-get colors :error) "#ffc0cb")))
+    (disable-theme 'jetpacs-theme-test-dark)))
+
 ;;;; Modus extraction against a real loaded theme
 
 (ert-deftest jetpacs-theme/modus-colors-are-contract-roles ()
