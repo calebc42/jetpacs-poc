@@ -15,7 +15,7 @@ import org.junit.Test
  */
 class MaterialTypedReadsTest {
     private val converted = listOf(
-        "Attributes.kt", "ChromeBack.kt", "ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt",
+        "Attributes.kt", "ChromeBack.kt", "Chronometer.kt", "ContentNodes.kt", "InputNodes.kt", "LayoutNodes.kt",
         "MaterialComponents.kt", "Renderer.kt", "RetainedPresentationTracker.kt",
         "VisualizationNodes.kt",
     )

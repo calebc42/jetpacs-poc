@@ -14,7 +14,7 @@ import org.junit.Test
 class MaterialComponentTablesTest {
     private val retainedTypes = setOf(
         "lazy_column", "collapsible", "tabs", "table", "reorderable_list", "pane_scaffold",
-        "carousel", "material3.fab_menu", "lazy_grid", "month_grid", "scaffold",
+        "carousel", "material3.fab_menu", "material3.fab", "lazy_grid", "month_grid", "scaffold",
     )
     private val batchableTypes = setOf("row", "rich_text", "text", "spacer", "divider")
 

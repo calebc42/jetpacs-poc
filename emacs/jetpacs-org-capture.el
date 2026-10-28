@@ -346,13 +346,33 @@ requires the sheet form and therefore is not returned by this helper."
 
 ;;;; Handlers and registration
 
-(defun jetpacs-org-capture--on-show (_args params)
-  "Open the Org capture picker sheet."
-  (if (null (jetpacs-client))
-      'rejected
-    (jetpacs-flow-continue
-     (lambda () (jetpacs-org-capture--start params)))
-    'accepted))
+(defun jetpacs-org-capture-start-template (key params)
+  "Open capture template KEY's field form directly, skipping the picker.
+PARAMS is the opening event.  A pending normal intake still rides the
+form; an Org Protocol intake keeps its own template, so it is not mixed
+in.  Return nil when KEY names no selectable template, else non-nil."
+  (when-let* ((template (jetpacs-org-capture--template key)))
+    (jetpacs-org-capture-dialog-close)
+    (setq jetpacs-org-capture--protocol nil)
+    (jetpacs-org-capture--show-form template params)
+    t))
+
+(defun jetpacs-org-capture--on-show (args params)
+  "Open the Org capture picker sheet, or ARGS' `:template' form directly.
+A template key that is not a string rejects; one that names no current
+template answers `stale': the button outlived the template."
+  (let ((key (plist-get args :template)))
+    (cond
+     ((and key (not (stringp key))) 'rejected)
+     ((null (jetpacs-client)) 'rejected)
+     ((and key (null (jetpacs-org-capture--template key))) 'stale)
+     (t
+      (jetpacs-flow-continue
+       (lambda ()
+         (if key
+             (jetpacs-org-capture-start-template key params)
+           (jetpacs-org-capture--start params))))
+      'accepted))))
 
 (defun jetpacs-org-capture--on-share (args params)
   "Stash shared ARGS and start capture, including Org Protocol URLs."

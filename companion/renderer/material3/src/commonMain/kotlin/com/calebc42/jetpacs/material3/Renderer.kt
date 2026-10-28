@@ -1877,7 +1877,11 @@ fun RenderScaffold(
                         alignment = Alignment.BottomEnd)
                 else Modifier
                 Box(fabMod.onSizeChanged { fabHeightPx = it.height }) {
-                    p[ScaffoldMembers.Fab]?.let { RenderNode(it, ctx.child(it, 2, "fab")) }
+                    // The FAB reads the body's scroll position too: an
+                    // extended `material3.fab` collapses to its icon on it.
+                    CompositionLocalProvider(LocalBodyScrollSignal provides scrollSignal) {
+                        p[ScaffoldMembers.Fab]?.let { RenderNode(it, ctx.child(it, 2, "fab")) }
+                    }
                 }
             },
             bottomBar = {

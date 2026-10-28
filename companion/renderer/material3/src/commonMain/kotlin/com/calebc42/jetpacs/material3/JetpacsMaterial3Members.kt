@@ -10,6 +10,7 @@ import com.calebc42.ebp.renderer.model.vocabulary.EnumMember
 import com.calebc42.ebp.renderer.model.vocabulary.IntMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeMember
 import com.calebc42.ebp.renderer.model.vocabulary.NodeMemberSet
+import com.calebc42.ebp.renderer.model.vocabulary.NumberMember
 import com.calebc42.ebp.renderer.model.vocabulary.StringMember
 
 /** Typed members of the `material3.assist_chip` node. */
@@ -69,6 +70,32 @@ object Material3FabMenuMembers : NodeMemberSet("material3.fab_menu") {
     override val optional: List<NodeMember<*>> = listOf(CloseIcon, Icon)
 }
 
+/** Typed members of the `material3.fab` node. */
+object Material3FabMembers : NodeMemberSet("material3.fab") {
+    val Icon: StringMember = StringMember("icon", required = true)
+    val OnTap: ActionMember = ActionMember("on_tap", required = true)
+    val CollapseOnScroll: BooleanMember = BooleanMember("collapse_on_scroll", required = false)
+    val Color: EnumMember<Material3FabColor> = EnumMember("color", required = false, domain = com.calebc42.jetpacs.material3.Material3FabColor)
+    val ContentDescription: StringMember = StringMember("content_description", required = false)
+    val Label: StringMember = StringMember("label", required = false)
+    val Menu: ArrayMember = ArrayMember("menu", required = false, tag = "array")
+    val MenuIcon: StringMember = StringMember("menu_icon", required = false)
+    val Size: EnumMember<Material3FabSize> = EnumMember("size", required = false, domain = com.calebc42.jetpacs.material3.Material3FabSize)
+    override val required: List<NodeMember<*>> = listOf(Icon, OnTap)
+    override val optional: List<NodeMember<*>> = listOf(CollapseOnScroll, Color, ContentDescription, Label, Menu, MenuIcon, Size)
+}
+
+/** Typed members of the `material3.chronometer` node. */
+object Material3ChronometerMembers : NodeMemberSet("material3.chronometer") {
+    val BaseMs: NumberMember = NumberMember("base_ms", required = true)
+    val Color: StringMember = StringMember("color", required = false)
+    val ContentDescription: StringMember = StringMember("content_description", required = false)
+    val CountDown: BooleanMember = BooleanMember("count_down", required = false)
+    val Style: EnumMember<Material3ChronometerStyle> = EnumMember("style", required = false, domain = com.calebc42.jetpacs.material3.Material3ChronometerStyle)
+    override val required: List<NodeMember<*>> = listOf(BaseMs)
+    override val optional: List<NodeMember<*>> = listOf(Color, ContentDescription, CountDown, Style)
+}
+
 /** Every generated member set, keyed by node type. */
 val JETPACS_MATERIAL3_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "material3.assist_chip" to Material3AssistChipMembers,
@@ -76,4 +103,6 @@ val JETPACS_MATERIAL3_NODE_MEMBERS: Map<String, NodeMemberSet> = mapOf(
     "material3.app_bar_row" to Material3AppBarRowMembers,
     "material3.app_bar_column" to Material3AppBarColumnMembers,
     "material3.fab_menu" to Material3FabMenuMembers,
+    "material3.fab" to Material3FabMembers,
+    "material3.chronometer" to Material3ChronometerMembers,
 )

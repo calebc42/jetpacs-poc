@@ -7,7 +7,9 @@
     "material3.split_button",
     "material3.app_bar_row",
     "material3.app_bar_column",
-    "material3.fab_menu"
+    "material3.fab_menu",
+    "material3.fab",
+    "material3.chronometer"
   ],
   "targets": {
     "app": [
@@ -15,11 +17,14 @@
       "material3.split_button",
       "material3.app_bar_row",
       "material3.app_bar_column",
-      "material3.fab_menu"
+      "material3.fab_menu",
+      "material3.fab",
+      "material3.chronometer"
     ],
     "dialog": [
       "material3.assist_chip",
-      "material3.split_button"
+      "material3.split_button",
+      "material3.chronometer"
     ],
     "notification": []
   },
@@ -283,6 +288,108 @@
           "type": "ref",
           "ref": "identifier",
           "description": "The expanded toggle glyph."
+        }
+      }
+    },
+    "material3.fab": {
+      "description": "A Material floating action button: icon-only, or extended with a label that can collapse to its icon on scroll, optionally with a small menu toggle above it that fans out more actions.",
+      "required": {
+        "icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The button glyph."
+        },
+        "on_tap": {
+          "type": "action",
+          "description": "The primary action."
+        }
+      },
+      "optional": {
+        "label": {
+          "type": "ref",
+          "ref": "text",
+          "description": "Present: an extended FAB showing the label beside the icon."
+        },
+        "collapse_on_scroll": {
+          "type": "boolean",
+          "description": "An extended FAB collapses to its icon while the body is scrolled away from its start."
+        },
+        "size": {
+          "type": "enum",
+          "values": [
+            "small",
+            "medium",
+            "large"
+          ],
+          "description": "The icon-only container size; omitted is the standard FAB."
+        },
+        "color": {
+          "type": "enum",
+          "values": [
+            "primary",
+            "secondary",
+            "tertiary",
+            "surface"
+          ],
+          "description": "The container color family; omitted is the primary container."
+        },
+        "content_description": {
+          "type": "ref",
+          "ref": "text",
+          "description": "The accessible name; defaults to the label."
+        },
+        "menu": {
+          "type": "array",
+          "items": {
+            "type": "ref",
+            "ref": "fab-item"
+          },
+          "min_items": 1,
+          "max_items": 32,
+          "description": "More actions, fanned out above a small toggle FAB stacked over this one."
+        },
+        "menu_icon": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "The menu toggle's collapsed glyph."
+        }
+      }
+    },
+    "material3.chronometer": {
+      "description": "A running timer the Companion ticks on its own: elapsed time since base_ms, or time left until it when counting down. No traffic per tick.",
+      "required": {
+        "base_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 253402300799999,
+          "description": "Epoch milliseconds: the start for an elapsed timer, the end for a countdown."
+        }
+      },
+      "optional": {
+        "count_down": {
+          "type": "boolean",
+          "description": "Count down to base_ms instead of up from it; stops at zero."
+        },
+        "style": {
+          "type": "enum",
+          "values": [
+            "caption",
+            "body",
+            "title",
+            "headline",
+            "mono"
+          ],
+          "description": "Text style; body when absent."
+        },
+        "color": {
+          "type": "ref",
+          "ref": "identifier",
+          "description": "A color role or #hex, as text takes; on_surface when absent."
+        },
+        "content_description": {
+          "type": "ref",
+          "ref": "text",
+          "description": "Spoken prefix before the time, for example Elapsed."
         }
       }
     }

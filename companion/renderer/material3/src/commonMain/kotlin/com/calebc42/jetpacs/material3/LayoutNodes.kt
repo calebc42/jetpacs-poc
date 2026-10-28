@@ -72,7 +72,12 @@ import androidx.compose.material3.Badge
 import androidx.compose.material3.ButtonGroup
 import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.ButtonGroupMenuState
+import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.FloatingActionButtonMenu
+import androidx.compose.material3.LargeFloatingActionButton
+import androidx.compose.material3.MediumFloatingActionButton
+import androidx.compose.material3.SmallFloatingActionButton
 import androidx.compose.material3.FloatingActionButtonMenuItem
 import androidx.compose.material3.ToggleFloatingActionButton
 import androidx.compose.material3.ToggleFloatingActionButtonDefaults
@@ -2479,6 +2484,103 @@ internal fun RenderFabMenu(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     contentDescription = null) },
                 text = { Text(item.stringOr("label")) })
         }
+    }
+}
+
+/** `material3.fab`: Material's floating action button.
+ *
+ * With a `label` it is the extended FAB; `collapse_on_scroll` folds it to its
+ * icon while the scaffold body sits away from its start (the scaffold's
+ * [LocalBodyScrollSignal], provided to the FAB slot too). Without a label it
+ * is the icon FAB at `size` small/medium/large (the Expressive containers);
+ * omitted, the standard 56dp FAB. `color` picks the container family. A
+ * `menu` stacks a small ToggleFloatingActionButton above the primary whose
+ * items fan out above it, exactly the fab_menu presentation; the expansion is
+ * Companion-local, like fab_menu's. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+internal fun RenderFab(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    val p = NodeProperties(node, Material3FabMembers)
+    val onTap = p[Material3FabMembers.OnTap]
+    val glyph = IconMap.get(p[Material3FabMembers.Icon].orEmpty())
+    val label = p[Material3FabMembers.Label]?.takeIf { it.isNotEmpty() }
+    val description = p[Material3FabMembers.ContentDescription]?.takeIf { it.isNotEmpty() } ?: label
+    val scheme = MaterialTheme.colorScheme
+    val (container, content) = when (p[Material3FabMembers.Color]) {
+        Material3FabColor.Secondary -> scheme.secondaryContainer to scheme.onSecondaryContainer
+        Material3FabColor.Tertiary -> scheme.tertiaryContainer to scheme.onTertiaryContainer
+        Material3FabColor.Surface -> scheme.surfaceContainerHigh to scheme.primary
+        else -> scheme.primaryContainer to scheme.onPrimaryContainer
+    }
+    val signal = LocalBodyScrollSignal.current
+    val expanded = !p.getOr(Material3FabMembers.CollapseOnScroll, false) || (signal?.atStart ?: true)
+    val click = { if (onTap != null) ctx.action(onTap) }
+    val icon: @Composable () -> Unit = { Icon(glyph, contentDescription = if (label != null) null else description) }
+    val primary: @Composable () -> Unit = {
+        if (label != null) {
+            ExtendedFloatingActionButton(
+                text = { Text(label, maxLines = 1) },
+                icon = icon,
+                onClick = click,
+                expanded = expanded,
+                containerColor = container,
+                contentColor = content,
+            )
+        } else when (p[Material3FabMembers.Size]) {
+            Material3FabSize.Small -> SmallFloatingActionButton(onClick = click,
+                containerColor = container, contentColor = content, content = icon)
+            Material3FabSize.Medium -> MediumFloatingActionButton(onClick = click,
+                containerColor = container, contentColor = content, content = icon)
+            Material3FabSize.Large -> LargeFloatingActionButton(onClick = click,
+                containerColor = container, contentColor = content, content = icon)
+            else -> FloatingActionButton(onClick = click,
+                containerColor = container, contentColor = content, content = icon)
+        }
+    }
+    val items = p[Material3FabMembers.Menu]
+    if (items == null || items.isEmpty()) {
+        Box(m) { primary() }
+        return
+    }
+    val openName = p[Material3FabMembers.MenuIcon].orEmpty().ifEmpty { "more_vert" }
+    var open by rememberSaveable { mutableStateOf(false) }
+    Column(m, horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        FloatingActionButtonMenu(
+            expanded = open,
+            button = {
+                ToggleFloatingActionButton(
+                    checked = open,
+                    onCheckedChange = { open = !open },
+                    containerSize = ToggleFloatingActionButtonDefaults.containerSize(40.dp, 56.dp),
+                ) {
+                    val name by remember {
+                        derivedStateOf { if (checkedProgress > 0.5f) "close" else openName }
+                    }
+                    with(ToggleFloatingActionButtonDefaults) {
+                        Icon(
+                            painter = rememberVectorPainter(IconMap.get(name)),
+                            contentDescription = if (open) "Close menu" else "More actions",
+                            modifier = Modifier.animateIcon({ checkedProgress }),
+                        )
+                    }
+                }
+            }) {
+            for (i in 0 until items.size) {
+                val item = items[i] as? JsonObject ?: continue
+                val itemTap = item.objOrNull("on_tap")
+                FloatingActionButtonMenuItem(
+                    onClick = {
+                        open = false
+                        if (itemTap != null) ctx.action(itemTap)
+                    },
+                    icon = { Icon(IconMap.get(item.stringOr("icon")), contentDescription = null) },
+                    text = { Text(item.stringOr("label")) })
+            }
+        }
+        // The open menu owns the corner: the primary steps aside so its items
+        // read as one column, as M3's FAB menu replaces its FAB.
+        if (!open) primary()
     }
 }
 

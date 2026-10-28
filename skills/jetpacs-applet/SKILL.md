@@ -105,9 +105,9 @@ Every core node is built by its `jetpacs-*` constructor; member types are the co
 - button_group: { items: button-group-item-array, overflow_icon?: identifier } - M3's ButtonGroup over ITEMS from `jetpacs-button-group-item' (SPEC §17.3). [elisp: jetpacs-button-group (items &key overflow-icon)]
 - lazy_grid: { children: node-array, columns?: positive-integer, min_item_width?: dp, reverse?: boolean, spacing?: dp, content_padding?: dp } - A LazyVerticalGrid over its CHILDREN, order preserved (SPEC §17.3). [accepts children] [elisp: jetpacs-lazy-grid (&rest args)]
 
-## Nodes (jetpacs.material3, 5) - Jetpacs' Material 3 design implementation for Jetpacs Compose nodes.
+## Nodes (jetpacs.material3, 7) - Jetpacs' Material 3 design implementation for Jetpacs Compose nodes.
 
-Manifest `renderer-extensions/jetpacs-material3.json`, schema sha256 99105d126640bae463fd4359753903f109ca9cfc68685f5ef7764e9068e27a87. A node travels only to a target whose profile advertises both the node type and the extension.
+Manifest `renderer-extensions/jetpacs-material3.json`, schema sha256 fd3d77dc87d012ff027159fc9943a8e536e7677c0e697af340db7f29148fc76e. A node travels only to a target whose profile advertises both the node type and the extension.
 
 - material3.assist_chip: { label: text, enabled?: boolean, icon?: identifier, on_tap?: action, variant?: enum[flat|elevated|suggestion|elevated_suggestion] } - A compact Material assist chip with a label, an optional icon and tap action. [targets: app, dialog] [events: on_tap] [elisp: jetpacs-material3-assist-chip (label &key on-tap icon variant enabled)]
   - label: The chip text.
@@ -139,6 +139,24 @@ Manifest `renderer-extensions/jetpacs-material3.json`, schema sha256 99105d12664
   - close_icon: The expanded toggle glyph.
   - icon: The collapsed toggle glyph.
   - example (m3-catalog, FloatingActionButtonMenuSample): `{"items":[{"icon":"message","label":"Reply","on_tap":{"action":"m3catalog.demo","args":{"message":"Reply"}}},{"icon":"people","label":"Reply all","on_tap":{"action":"m3catalog.demo","args":{"message":"Reply all"}}},{"icon":"contacts","label":"Forward","on_tap":{"action":"m3catalog.demo","args":{"message":"Forward"}}},{"icon":"snooze","label":"Snooze","on_tap":{"action":"m3catalog.demo","args":{"message":"Snooze"}}},{"icon":"archive","label":"Archive","on_tap":{"action":"m3catalog.demo","args":{"message":"Archive"}}},{"icon":"label","label":"Label","on_tap":{"action":"m3catalog.demo","args":{"message":"Label"}}}],"t":"material3.fab_menu"}`
+- material3.fab: { icon: identifier, on_tap: action, collapse_on_scroll?: boolean, color?: enum[primary|secondary|tertiary|surface], content_description?: text, label?: text, menu?: array<fab-item>(1..32), menu_icon?: identifier, size?: enum[small|medium|large] } - A Material floating action button: icon-only, or extended with a label that can collapse to its icon on scroll, optionally with a small menu toggle above it that fans out more actions. [targets: app] [events: on_tap] [elisp: jetpacs-material3-fab (icon on-tap &key label collapse-on-scroll size color content-description menu menu-icon)]
+  - icon: The button glyph.
+  - on_tap: The primary action.
+  - collapse_on_scroll: An extended FAB collapses to its icon while the body is scrolled away from its start.
+  - color: The container color family; omitted is the primary container.
+  - content_description: The accessible name; defaults to the label.
+  - label: Present: an extended FAB showing the label beside the icon.
+  - menu: More actions, fanned out above a small toggle FAB stacked over this one.
+  - menu_icon: The menu toggle's collapsed glyph.
+  - size: The icon-only container size; omitted is the standard FAB.
+  - example (golden): `{"collapse_on_scroll":true,"color":"primary","icon":"add","label":"Capture","menu":[{"icon":"add_task","label":"New task","on_tap":{"action":"note.task"}}],"on_tap":{"action":"note.capture"},"t":"material3.fab"}`
+- material3.chronometer: { base_ms: number(0..253402300799999), color?: identifier, content_description?: text, count_down?: boolean, style?: enum[caption|body|title|headline|mono] } - A running timer the Companion ticks on its own: elapsed time since base_ms, or time left until it when counting down. No traffic per tick. [targets: app, dialog] [elisp: jetpacs-material3-chronometer (base &key count-down style color content-description)]
+  - base_ms: Epoch milliseconds: the start for an elapsed timer, the end for a countdown.
+  - color: A color role or #hex, as text takes; on_surface when absent.
+  - content_description: Spoken prefix before the time, for example Elapsed.
+  - count_down: Count down to base_ms instead of up from it; stops at zero.
+  - style: Text style; body when absent.
+  - example (golden): `{"base_ms":1761690600000,"color":"success","content_description":"Elapsed","style":"title","t":"material3.chronometer"}`
 
 ### Definitions (jetpacs.material3)
 

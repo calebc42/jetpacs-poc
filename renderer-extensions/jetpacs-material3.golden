@@ -4,3 +4,5 @@
 03 {"items":[{"icon":"attachment","label":"Attach","on_tap":{"action":"mail.attach"}},{"enabled":false,"icon":"event","label":"Calendar","on_tap":{"action":"mail.calendar"}}],"overflow_icon":"more_vert","t":"material3.app_bar_row"}
 04 {"items":[{"icon":"edit","label":"Edit","on_tap":{"action":"doc.edit"}}],"t":"material3.app_bar_column"}
 05 {"items":[{"icon":"reply","label":"Reply","on_tap":{"action":"mail.reply"}},{"icon":"archive","label":"Archive","on_tap":{"action":"mail.archive"}}],"t":"material3.fab_menu"}
+06 {"collapse_on_scroll":true,"color":"primary","icon":"add","label":"Capture","menu":[{"icon":"add_task","label":"New task","on_tap":{"action":"note.task"}}],"on_tap":{"action":"note.capture"},"t":"material3.fab"}
+07 {"base_ms":1761690600000,"color":"success","content_description":"Elapsed","style":"title","t":"material3.chronometer"}

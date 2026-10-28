@@ -499,14 +499,29 @@
                                 :value 2 :values '(1 2 4))))))
 
 (ert-deftest jetpacs-widgets/jetpacs-material3-golden ()
-  "Jetpacs Material's assist-chip builder matches its renderer-owned witness."
+  "Jetpacs Material's assist-chip, FAB and chronometer builders match their witnesses."
   (let ((goldens (jetpacs-test--jetpacs-material3-goldens)))
     (should
      (equal
       (jetpacs-node->canonical-json
        (jetpacs-material3-assist-chip
         "Help" :icon "info" :on-tap (jetpacs-action "demo.tap")))
-      (gethash "00" goldens)))))
+      (gethash "00" goldens)))
+    (should
+     (equal
+      (jetpacs-node->canonical-json
+       (jetpacs-material3-fab
+        "add" (jetpacs-action "note.capture")
+        :label "Capture" :collapse-on-scroll t :color "primary"
+        :menu (list (jetpacs-material3-fab-menu-item
+                     "New task" "add_task" (jetpacs-action "note.task")))))
+      (gethash "06" goldens)))
+    (should
+     (equal
+      (jetpacs-node->canonical-json
+       (jetpacs-material3-chronometer 1761690600000 :style "title" :color "success"
+                                      :content-description "Elapsed"))
+      (gethash "07" goldens)))))
 
 (ert-deftest jetpacs-widgets/text-input-contract-golden ()
   "The full accepted format-10 text-input witness serializes canonically."
@@ -962,7 +977,8 @@
                  (sort (copy-sequence jetpacs-node-types) #'string<)))
   (should (= (length (append jetpacs-app-node-types
                              (jetpacs-renderer-target-node-types 'app)))
-             54))
+             ;; 49 core + 7 jetpacs.material3 nodes (fab, chronometer added).
+             56))
   ;; post-audit: a data key named "t" inside opaque args/meta is NOT a node type
   (should (jetpacs-check-profile
            (jetpacs-button "Go" (jetpacs-action "foo.bar" :args '(:t "note"))) 'app))

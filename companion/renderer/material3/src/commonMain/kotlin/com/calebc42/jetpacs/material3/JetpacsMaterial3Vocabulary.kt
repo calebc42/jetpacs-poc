@@ -16,11 +16,13 @@ val JETPACS_MATERIAL3_NODE_SCHEMA: Map<String, NodeRow> = mapOf(
     "material3.app_bar_row" to NodeRow(setOf("items"), setOf("overflow_icon", "max_items")),
     "material3.app_bar_column" to NodeRow(setOf("items"), setOf("overflow_icon", "max_items")),
     "material3.fab_menu" to NodeRow(setOf("items"), setOf("icon", "close_icon")),
+    "material3.fab" to NodeRow(setOf("icon", "on_tap"), setOf("label", "collapse_on_scroll", "size", "color", "content_description", "menu", "menu_icon")),
+    "material3.chronometer" to NodeRow(setOf("base_ms"), setOf("count_down", "style", "color", "content_description")),
 )
 
 val JETPACS_MATERIAL3_TARGET_NODE_TYPES: Map<String, Set<String>> = mapOf(
-    "app" to setOf("material3.assist_chip", "material3.split_button", "material3.app_bar_row", "material3.app_bar_column", "material3.fab_menu"),
-    "dialog" to setOf("material3.assist_chip", "material3.split_button"),
+    "app" to setOf("material3.assist_chip", "material3.split_button", "material3.app_bar_row", "material3.app_bar_column", "material3.fab_menu", "material3.fab", "material3.chronometer"),
+    "dialog" to setOf("material3.assist_chip", "material3.split_button", "material3.chronometer"),
     "notification" to setOf(),
 )
 
@@ -38,6 +40,8 @@ val JETPACS_MATERIAL3_TYPED_NODE_SCHEMA: Map<String, ExtensionNodeSchema> = mapO
     "material3.app_bar_row" to ExtensionNodeSchema(mapOf("items" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.ObjectValue(mapOf("icon" to ExtensionValueSchema.StringValue(1, 128), "label" to ExtensionValueSchema.StringValue(0, 4096), "on_tap" to ExtensionValueSchema.ActionDescriptorValue), mapOf("enabled" to ExtensionValueSchema.BooleanValue)), 1, 64)), mapOf("max_items" to ExtensionValueSchema.IntegerValue(1L, 64L), "overflow_icon" to ExtensionValueSchema.StringValue(1, 128))),
     "material3.app_bar_column" to ExtensionNodeSchema(mapOf("items" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.ObjectValue(mapOf("icon" to ExtensionValueSchema.StringValue(1, 128), "label" to ExtensionValueSchema.StringValue(0, 4096), "on_tap" to ExtensionValueSchema.ActionDescriptorValue), mapOf("enabled" to ExtensionValueSchema.BooleanValue)), 1, 64)), mapOf("max_items" to ExtensionValueSchema.IntegerValue(1L, 64L), "overflow_icon" to ExtensionValueSchema.StringValue(1, 128))),
     "material3.fab_menu" to ExtensionNodeSchema(mapOf("items" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.ObjectValue(mapOf("icon" to ExtensionValueSchema.StringValue(1, 128), "label" to ExtensionValueSchema.StringValue(0, 4096), "on_tap" to ExtensionValueSchema.ActionDescriptorValue), mapOf()), 1, 64)), mapOf("close_icon" to ExtensionValueSchema.StringValue(1, 128), "icon" to ExtensionValueSchema.StringValue(1, 128))),
+    "material3.fab" to ExtensionNodeSchema(mapOf("icon" to ExtensionValueSchema.StringValue(1, 128), "on_tap" to ExtensionValueSchema.ActionDescriptorValue), mapOf("collapse_on_scroll" to ExtensionValueSchema.BooleanValue, "color" to ExtensionValueSchema.EnumValue(setOf("primary", "secondary", "surface", "tertiary")), "content_description" to ExtensionValueSchema.StringValue(0, 4096), "label" to ExtensionValueSchema.StringValue(0, 4096), "menu" to ExtensionValueSchema.ArrayValue(ExtensionValueSchema.ObjectValue(mapOf("icon" to ExtensionValueSchema.StringValue(1, 128), "label" to ExtensionValueSchema.StringValue(0, 4096), "on_tap" to ExtensionValueSchema.ActionDescriptorValue), mapOf()), 1, 32), "menu_icon" to ExtensionValueSchema.StringValue(1, 128), "size" to ExtensionValueSchema.EnumValue(setOf("large", "medium", "small")))),
+    "material3.chronometer" to ExtensionNodeSchema(mapOf("base_ms" to ExtensionValueSchema.NumberValue(0.0, 253402300799999.0)), mapOf("color" to ExtensionValueSchema.StringValue(1, 128), "content_description" to ExtensionValueSchema.StringValue(0, 4096), "count_down" to ExtensionValueSchema.BooleanValue, "style" to ExtensionValueSchema.EnumValue(setOf("body", "caption", "headline", "mono", "title")))),
 )
 
-const val JETPACS_MATERIAL3_SCHEMA_SHA256 = "99105d126640bae463fd4359753903f109ca9cfc68685f5ef7764e9068e27a87"
+const val JETPACS_MATERIAL3_SCHEMA_SHA256 = "fd3d77dc87d012ff027159fc9943a8e536e7677c0e697af340db7f29148fc76e"

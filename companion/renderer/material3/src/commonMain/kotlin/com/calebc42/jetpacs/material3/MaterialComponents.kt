@@ -278,6 +278,17 @@ internal object MaterialFabMenuComponent : MaterialComponent("material3.fab_menu
         RenderFabMenu(node, context.ctx, modifier)
 }
 
+internal object MaterialFabComponent : MaterialComponent("material3.fab", Material3FabMembers) {
+    override fun ownsRetainedPresentation(node: JsonObject): Boolean = true
+    @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
+        RenderFab(node, context.ctx, modifier)
+}
+
+internal object MaterialChronometerComponent : MaterialComponent("material3.chronometer", Material3ChronometerMembers) {
+    @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
+        RenderChronometer(node, modifier)
+}
+
 internal object MaterialButtonGroupComponent : MaterialComponent("button_group", ButtonGroupMembers) {
     @Composable override fun render(node: JsonObject, context: MaterialNodeRenderContext, modifier: Modifier) =
         RenderButtonGroup(node, context.ctx, modifier)
@@ -387,6 +398,8 @@ object MaterialComponents {
             MaterialAppBarColumnComponent,
             MaterialCarouselComponent,
             MaterialFabMenuComponent,
+            MaterialFabComponent,
+            MaterialChronometerComponent,
             MaterialButtonGroupComponent,
             MaterialLazyGridComponent,
             MaterialChipComponent,

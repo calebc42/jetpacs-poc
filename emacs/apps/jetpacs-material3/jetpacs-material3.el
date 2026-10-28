@@ -168,6 +168,66 @@ ICON and CLOSE-ICON select its collapsed and expanded toggle glyphs."
   (jetpacs-make-node "material3.fab_menu" :items (vconcat items)
                      :icon icon :close_icon close-icon))
 
+(defconst jetpacs-material3--fab-sizes '("small" "medium" "large")
+  "The icon FAB container sizes `jetpacs-material3-fab' accepts.")
+
+(defconst jetpacs-material3--fab-colors '("primary" "secondary" "tertiary" "surface")
+  "The container color families `jetpacs-material3-fab' accepts.")
+
+(cl-defun jetpacs-material3-fab (icon on-tap &key label collapse-on-scroll size
+                                      color content-description menu menu-icon)
+  "Build Jetpacs's Material floating action button showing ICON, running ON-TAP.
+LABEL makes it the extended FAB; COLLAPSE-ON-SCROLL folds that to its icon
+while the body is scrolled away from its start.  SIZE (small, medium, large)
+sizes an icon-only FAB; COLOR (primary, secondary, tertiary, surface) picks
+the container family.  CONTENT-DESCRIPTION names it for assistive
+technology (default: LABEL).  MENU, a list of
+`jetpacs-material3-fab-menu-item', stacks a small toggle above the FAB that
+fans those actions out; MENU-ICON is that toggle's glyph."
+  (jetpacs-check-identifier icon ":icon")
+  (jetpacs-check-descriptor on-tap ":on-tap")
+  (when label (jetpacs-require-string label ":label"))
+  (when collapse-on-scroll (jetpacs-check-bool collapse-on-scroll ":collapse-on-scroll"))
+  (when size (setq size (jetpacs-check-enum size jetpacs-material3--fab-sizes ":size")))
+  (when color (setq color (jetpacs-check-enum color jetpacs-material3--fab-colors ":color")))
+  (when content-description
+    (jetpacs-require-string content-description ":content-description"))
+  (when menu-icon (jetpacs-check-identifier menu-icon ":menu-icon"))
+  (when (and menu (> (length menu) 32))
+    (error "jetpacs-material3-fab: at most 32 menu items, got %d" (length menu)))
+  (jetpacs-make-node "material3.fab" :icon icon :on_tap on-tap :label label
+                     :collapse_on_scroll collapse-on-scroll :size size :color color
+                     :content_description content-description
+                     :menu (and menu (vconcat menu)) :menu_icon menu-icon))
+
+(defconst jetpacs-material3--chronometer-styles
+  '("caption" "body" "title" "headline" "mono")
+  "The text styles a chronometer takes.")
+
+(cl-defun jetpacs-material3-chronometer (base &key count-down style color
+                                              content-description)
+  "Build a timer the Companion ticks itself from BASE, with no per-tick push.
+BASE is a Lisp time value or epoch milliseconds: the start of an elapsed
+timer, or with COUNT-DOWN the end it counts down to (held at zero past
+it).  STYLE is a text style (caption, body, title, headline, mono);
+COLOR a role or #hex, as text takes.  CONTENT-DESCRIPTION is spoken
+before the time."
+  (let ((ms (if (integerp base)
+                base
+              (truncate (* 1000 (float-time base))))))
+    (unless (<= 0 ms 253402300799999)
+      (error "jetpacs-material3-chronometer: base out of range: %S" base))
+    (when count-down (jetpacs-check-bool count-down ":count-down"))
+    (when style
+      (setq style (jetpacs-check-enum style jetpacs-material3--chronometer-styles
+                                      ":style")))
+    (when color (jetpacs-require-string color ":color"))
+    (when content-description
+      (jetpacs-require-string content-description ":content-description"))
+    (jetpacs-make-node "material3.chronometer" :base_ms ms
+                       :count_down count-down :style style :color color
+                       :content_description content-description)))
+
 (defun jetpacs-material3-chrome-fab-menu (items)
   "Build the shell FAB menu from normalized chrome ITEMS."
   (jetpacs-material3-fab-menu
