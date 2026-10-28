@@ -569,8 +569,10 @@ CI (`.github/workflows/ci.yml`): the `bundled` job runs
 against the downloaded AAR, with Emacs 31.1 on the runner for the kit
 byte-compilation; `api34-bundled` runs the managed-device composition smoke
 with the x86_64 engine packaged. Both need the release `engine-<id>` of
-`jetpacs-emacs-engine` to carry the pinned AAR, so they stay red until it
-is published (that repository's README, "Releases and CI").
+`jetpacs-emacs-engine` to carry the pinned AAR (that repository's README,
+"Releases and CI"). Like every CI job they build against the sibling
+checkouts `tools/ci-checkout-siblings.sh` clones from GitHub
+(docs/LOCAL-REPOSITORY-LAYOUT.md, "Checkout discovery").
 `.github/workflows/release.yml` builds the release APKs of both flavors for
 a `companion-*` tag and attaches them to the GitHub release, signed when the
 secrets `JETPACS_RELEASE_KEYSTORE_BASE64`, `JETPACS_RELEASE_KEYSTORE_PASSWORD`,

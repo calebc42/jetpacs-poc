@@ -22,8 +22,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
+      - name: Sibling checkouts (docs/LOCAL-REPOSITORY-LAYOUT.md)
+        run: tools/ci-checkout-siblings.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -125,6 +125,19 @@ Build and test scripts discover sibling checkouts through
 The Companion Gradle settings use the same collection directory. Existing
 per-dependency environment overrides in test scripts are retained.
 
+CI has only this checkout. Every job of `.github/workflows/ci.yml` and
+`release.yml` first runs `tools/ci-checkout-siblings.sh`, which shallow-clones
+the siblings in the table above that the build and the Elisp suites read, each
+from its GitHub default branch, plus two pinned read-only references:
+`emacs/emacs-websocket` (`ahyatt/emacs-websocket`) and the `lisp/org` subtree
+of `emacs/emacs` (`emacs-mirror/emacs` at the Emacs 31.1 release), which the
+applet tooling's `org` reference root reads. They go beside the checkout (the
+parent of `$GITHUB_WORKSPACE`), and the script exports
+`JETPACS_REPOSITORIES_ROOT`. The applet tooling's discovery, which
+`test/run-tests.sh` runs without that variable, only looks beside the checkout.
+CI therefore builds published heads: a change that spans repositories is green
+only once every repository it touches is pushed to its default branch.
+
 The MCP configuration in `.agents/mcp_config.json` points to this flattened
 checkout and explicitly selects `/home/calebc42/workspace` as the repository
 collection. Tool source access remains restricted to named, canonical repository
