@@ -51,6 +51,34 @@
             (should (= calls 3))))
       (ebp-org-cache-invalidate))))
 
+(ert-deftest jetpacs-org-reminders-agenda-items-carry-their-agenda-day ()
+  "Every agenda item names the day it is listed under.
+A weekly repeater recurs on several days of a month span with one stamp
+`date'; `day' is what tells the occurrences apart."
+  (let* ((dir (make-temp-file "jetpacs-agenda-day" t))
+         (file (expand-file-name "a.org" dir))
+         (org-directory dir)
+         (org-agenda-files (list file))
+         (ebp-org-roots (list dir))
+         (today (format-time-string "%Y-%m-%d"))
+         (start (jetpacs-dates-shift today -14 'day)))
+    (unwind-protect
+        (progn
+          (write-region (format "* TODO Weekly review\nSCHEDULED: <%s +1w>\n"
+                                start)
+                        nil file nil 'silent)
+          (ebp-org-cache-invalidate)
+          (let* ((items (jetpacs-org-mode--agenda-items-1 'month start))
+                 (days (mapcar (lambda (it) (alist-get 'day it)) items)))
+            (should (>= (length items) 3))
+            (dolist (day days)
+              (should (and (stringp day) (jetpacs-dates-valid-p day))))
+            ;; Distinct occurrences, distinct days.
+            (should (= (length days) (length (delete-dups (copy-sequence days)))))
+            (should (member start days))))
+      (ebp-org-cache-invalidate)
+      (delete-directory dir t))))
+
 (ert-deftest jetpacs-org-search-projection-uses-native-text-and-match-modes ()
   "The public projection delegates to Org and returns stable bounded refs."
   (let* ((dir (make-temp-file "jetpacs-org-search" t))

@@ -375,6 +375,19 @@ while every returned row is rechecked against the canonical agenda scope."
                            (type (get-text-property (point) 'type))
                            (extra (get-text-property (point) 'extra))
                            (ts-date (get-text-property (point) 'ts-date))
+                           ;; The agenda DAY the line sits under: Org
+                           ;; stamps every line of a day block with it
+                           ;; (`org-agenda-list').  A repeating or overdue
+                           ;; entry keeps its stamp's `date' on each day
+                           ;; it recurs, so only `day' tells the
+                           ;; occurrences apart.
+                           (day-abs (get-text-property (point) 'day))
+                           (day-str
+                            (when (numberp day-abs)
+                              (let ((d (calendar-gregorian-from-absolute
+                                        day-abs)))
+                                (format "%04d-%02d-%02d"
+                                        (nth 2 d) (nth 0 d) (nth 1 d)))))
                            (date-abs (get-text-property (point) 'date))
                            (date-list
                             (cond
@@ -405,6 +418,7 @@ while every returned row is rechecked against the canonical agenda scope."
                                       (pos . ,(marker-position marker))
                                       (time . ,time)
                                       (date . ,date-str)
+                                      (day . ,(or day-str date-str))
                                       (type . ,(and type (format "%s" type)))
                                       (extra . ,extra)
                                       (ts-date . ,ts-date)
