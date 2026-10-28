@@ -88,6 +88,18 @@ class SurfaceDataPatchRetentionInstrumentedTest {
     private fun materialize(spec: JsonObject, data: JsonObject, previous: JsonObject? = null): JsonObject =
         Materializer.materialize(spec, data, "spec", NodeSupport.NODE_VOCABULARY, previous)
 
+    /**
+     * Scrolls until the bound Row 31 shows, with Row 30 directly above it.
+     * Scrolling to Row 30 instead can leave Row 31 composed but off screen:
+     * batchable rows are presented in chunks of eight (`lazyColumnProjection`),
+     * so the chunk of Rows 24 to 31 is composed while Row 30 is still below a
+     * short viewport such as the Pixel 2 managed device's, and the scroll stops
+     * once Row 30 is visible, at the viewport's bottom edge.
+     */
+    private fun scrollToTheBoundRow() {
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Row 31"))
+    }
+
     /** The row keyed [key] inside the lazy column keyed `rows`, found through the children arrays. */
     private fun row(tree: JsonObject, key: String): JsonObject {
         fun JsonObject.child(k: String): JsonObject = (getValue("children") as JsonArray)
@@ -117,7 +129,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
             }
         }
         compose.onNodeWithText("Scheduled · 2026-09-04").assertIsDisplayed()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Row 30"))
+        scrollToTheBoundRow()
         val before = compose.onNodeWithText("Row 30").assertIsDisplayed()
             .fetchSemanticsNode().boundsInRoot.top
 
@@ -195,7 +207,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                 )
             }
         }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Row 30"))
+        scrollToTheBoundRow()
         val before = compose.onNodeWithText("Row 30").assertIsDisplayed()
             .fetchSemanticsNode().boundsInRoot.top
 
@@ -254,7 +266,7 @@ class SurfaceDataPatchRetentionInstrumentedTest {
                 )
             }
         }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Row 30"))
+        scrollToTheBoundRow()
         val before = compose.onNodeWithText("Row 30").assertIsDisplayed()
             .fetchSemanticsNode().boundsInRoot.top
 
