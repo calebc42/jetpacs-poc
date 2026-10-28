@@ -1,5 +1,5 @@
 # The engine the bundled flavor embeds (docs/PLAN-bundled-emacs.md). The AAR is
 # jetpacs-emacs-engine/dist/jetpacs-emacs-engine-<engine>.aar, or
 # $JETPACS_ENGINE_AAR. Both lines must change together.
-engine=31.1+2
-sha256=ffea226bccc8a1c1011fc968cb5ccccf7352f41fcca235e26a0a6b1d83d1c4ac
+engine=31.1+3
+sha256=e5f18d5be48163a0634d3a28d09a96b299ababb56b43953ff86a762cccfd9d85

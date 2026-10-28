@@ -184,7 +184,9 @@ engine repository's README and the session plan.
 - ebp.el already dials `loopback-unix` (`ebp--open-unix-socket`, uid owner
   check); `jetpacs--start-1` handles `loopback-tcp` and `emacs-unix` only;
   the receipts store is the builtin `sqlite-open`, so the engine is built
-  with SQLite (`deps/sqlite` in the engine repository).
+  with SQLite (`deps/sqlite` in the engine repository); since engine
+  31.1+3 it also has GnuTLS, from the ndk-build ports Emacs's
+  `java/INSTALL` names, for package archives and url.el over https.
 
 ## Change order
 
@@ -616,16 +618,27 @@ Resolved after the gates, at the owner's direction (2026-10-27):
   and the color scheme mode survived Restart engine (a new engine
   process).
 
+- **Packages over https (engine 31.1+3, owner's go-ahead).** The engine
+  had no TLS: its configure passed `--with-gnutls=ifavailable` with only
+  `deps/sqlite` on `--with-ndk-path`. The engine repository now fetches
+  the ndk-build ports Emacs's own `java/INSTALL` (GNUTLS) names, from the
+  Android port maintainer's android-ports-for-gnu-emacs (gnutls 3.8.5,
+  nettle 3.8, gmp 6.3.0, libtasn1 4.19.0, p11-kit 0.24.1; SHA-256 pinned,
+  SourceForge's MD5 matched where published), extracts them unmodified
+  beside the Emacs tree and requires GnuTLS at configure. Both ABIs
+  build (x86_64 included, which upstream has not tested); six 16 KB-
+  aligned libraries; the AAR grows from 53.7 to 57.7 MB. On the tablet
+  `gnutls-available-p` reports TLS 1.3, GNU ELPA's archive-contents came
+  over https in 1.2 s, `package-refresh-contents` listed 803 packages,
+  and `package-install` of `xr` worked and survived an engine restart
+  (then removed). Servers are verified against the system CA store
+  (`/system/etc/security/cacerts`, 120 certificates, already in Emacs's
+  default `gnutls-trustfiles`); with no gpg on the device, package
+  signatures are not checked. CI's bundled jobs need the release
+  `engine-31.1+3` to carry the pinned AAR.
+
 Still open:
 
-- Packages cannot download: the engine has no HTTPS. Its configure
-  passes `--with-gnutls=ifavailable` with only `deps/sqlite` on
-  `--with-ndk-path`; Emacs's own `java/INSTALL` (GNUTLS) names the five
-  ndk-build ports at android-ports-for-gnu-emacs (gmp 6.2.1, gnutls
-  3.8.5, libtasn1 4.19.0, p11-kit 0.24.1, nettle 3.8) to add to that
-  path, and `gnutls-trustfiles` already reads the system CA store
-  (`/system/etc/security/cacerts`, 120 certificates on the tablet).
-  Awaiting the owner's go-ahead (third-party native code in the APK).
 - Turning background running off restarts the engine once.
 - A note with a scheduled time gets a second reminder from the Org Mode
   app, without a tap action (the known duplicate-reminder item).
@@ -663,9 +676,10 @@ The bundled flavor is conforming only while all of these hold:
 
 ## Deliberately not taken
 
-- Patching Emacs, native compilation, GnuTLS, libxml2 or tree-sitter
-  ports, SAF `/content/` access (it needs an `EmacsService`), Emacs's own
-  notifications or clipboard.
+- Patching Emacs, native compilation, libxml2 or tree-sitter ports, SAF
+  `/content/` access (it needs an `EmacsService`), Emacs's own
+  notifications or clipboard. (GnuTLS was on this list until the owner
+  asked for package downloads; engine 31.1+3 has it.)
 - Running Emacs inside the Companion's main process.
 - Extending the fork or ebp-java's Android hosts.
 - The bundled desktop build beyond sharing E2's amendment; ABIs beyond

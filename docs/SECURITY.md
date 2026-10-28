@@ -101,6 +101,11 @@ Companion's process outlives the window under the engine's one
 notification. Emacs's own
 subprocess loader (`libexec1.so` and `libloader.so`, extracted beside
 `libemacs.so`) runs inside the same application sandbox and SELinux domain.
+Since engine 31.1+3 Emacs speaks TLS through GnuTLS built from the Android
+ports Emacs's `java/INSTALL` names: package archives and url.el reach https
+servers verified against the device's system CA store
+(`/system/etc/security/cacerts`), and package signatures go unchecked
+because the device has no gpg.
 
 Emacs reaches the Companion over the SPEC §5.3 Unix socket
 `files/ebp/companion.sock`: a 0600 socket in a 0700 directory, bound in the

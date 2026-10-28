@@ -543,7 +543,7 @@ wireless ADB ports do not remain stable across reconnects.
 
 The `bundled` product flavor (`docs/PLAN-bundled-emacs.md`) embeds GNU Emacs
 as the `:emacs` process. It exists only when the pinned engine AAR is
-present: `gradle/engine.lock` names the engine (`31.1+2` today) and its
+present: `gradle/engine.lock` names the engine (`31.1+3` today) and its
 SHA-256, and the AAR is read from `../jetpacs-emacs-engine/dist/` beside
 this checkout or from `$JETPACS_ENGINE_AAR`. Without it every `bundled*`
 task is disabled and the unflavored anchors build the standalone flavor
