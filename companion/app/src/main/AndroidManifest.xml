@@ -52,6 +52,8 @@
     <application
         android:name=".JetpacsApplication"
         android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:theme="@android:style/Theme.DeviceDefault.NoActionBar">

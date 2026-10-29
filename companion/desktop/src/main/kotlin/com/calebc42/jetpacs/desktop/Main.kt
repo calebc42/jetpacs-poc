@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 package com.calebc42.jetpacs.desktop
 
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
@@ -10,6 +12,7 @@ import java.util.logging.Logger
 import kotlin.system.exitProcess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
+import org.jetbrains.skia.Image
 
 /**
  * The desktop Companion. Configuration comes from the command line and the
@@ -39,6 +42,7 @@ fun main(args: Array<String>) {
     DesktopFonts.install()
     val companion = runBlocking(Dispatchers.IO) { DesktopCompanion.create(config) }
     companion.start()
+    val icon = windowIcon()
     application {
         val windowState = rememberWindowState(width = 1280.dp, height = 800.dp)
         Window(
@@ -47,6 +51,7 @@ fun main(args: Array<String>) {
                 exitApplication()
             },
             title = config.windowTitle,
+            icon = icon,
             state = windowState,
         ) {
             CompanionWindow(
@@ -60,3 +65,9 @@ fun main(args: Array<String>) {
         }
     }
 }
+
+/** The Jetpacs logo (companion/branding), or none if the jar lacks it. */
+private fun windowIcon(): BitmapPainter? =
+    Thread.currentThread().contextClassLoader
+        ?.getResourceAsStream("jetpacs-logo.png")
+        ?.use { BitmapPainter(Image.makeFromEncoded(it.readBytes()).toComposeImageBitmap()) }
