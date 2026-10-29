@@ -541,6 +541,18 @@ Settings draws none of them."
       (should (equal (plist-get (jetpacs-settings--app-view nil) :t)
                      "scaffold")))))
 
+(ert-deftest jetpacs-settings-text-fields-span-the-row ()
+  "Every settings text field spans its row, whatever its value's length:
+a field takes its own width otherwise, so short values sat in short boxes."
+  (jetpacs-settings-test--env
+    (let ((jetpacs-home-mode "emacs"))
+      (dolist (sym '(jetpacs-settings-test--count jetpacs-settings-test--name))
+        (let* ((item (jetpacs-settings-item sym))
+               (fields (jetpacs-settings-test--of-type "text_input" item)))
+          (should fields)
+          (dolist (field fields)
+            (should (equal (plist-get field :fill_fraction) 1))))))))
+
 (ert-deftest jetpacs-settings-measure-insets-and-centers ()
   "A settings body is always inset from the window's sides; on a wide
 window it also centers at `jetpacs-measure-dp'."

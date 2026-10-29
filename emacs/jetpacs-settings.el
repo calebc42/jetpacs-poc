@@ -333,6 +333,13 @@ their own label."
               (if plain (cons (cdr plain) (cdr o)) o)))
           opts))
 
+(defun jetpacs-settings--field (id &rest args)
+  "A settings text field, ID and ARGS as for `jetpacs-text-input'.
+It spans the row: a field takes its own width otherwise, which grows
+with its text, so a short value left a short box beside full-width
+ones (seen on a phone)."
+  (jetpacs-with-attrs (apply #'jetpacs-text-input id args) :fill_fraction 1))
+
 (cl-defun jetpacs-settings-item (sym &key label (id-prefix "setting/")
                                      (set-action "settings.set")
                                      (reset-action "settings.reset")
@@ -393,7 +400,7 @@ any other type."
                       (other (not (rassoc value (car open)))))
                  (jetpacs-column
                   (jetpacs-settings--enum wid-id opts value set exclude t)
-                  (jetpacs-text-input
+                  (jetpacs-settings--field
                    (concat wid-id "/other")
                    :value (and other value (format "%s" value))
                    :hint (or hint (jetpacs-settings--arm-tag (cdr open))
@@ -410,21 +417,21 @@ any other type."
                  ;; on the field itself only repeated it.
                  (pcase kind
                    ('string
-                    (jetpacs-text-input wid-id
-                                        :value (and (stringp value) value)
-                                        :hint hint :single-line t
-                                        :on-submit set))
+                    (jetpacs-settings--field wid-id
+                                             :value (and (stringp value) value)
+                                             :hint hint :single-line t
+                                             :on-submit set))
                    ('number
-                    (jetpacs-text-input wid-id
-                                        :value (and (numberp value)
-                                                    (number-to-string value))
-                                        :hint hint :single-line t
-                                        :on-submit set))
+                    (jetpacs-settings--field wid-id
+                                             :value (and (numberp value)
+							 (number-to-string value))
+                                             :hint hint :single-line t
+                                             :on-submit set))
                    (_
-                    (jetpacs-text-input wid-id :value (prin1-to-string value)
-                                        :single-line t
-                                        :hint (or hint "Elisp expression")
-                                        :on-submit set))))))))
+                    (jetpacs-settings--field wid-id :value (prin1-to-string value)
+                                             :single-line t
+                                             :hint (or hint "Elisp expression")
+                                             :on-submit set))))))))
       (apply #'jetpacs-column
              (delq nil
                    (list
