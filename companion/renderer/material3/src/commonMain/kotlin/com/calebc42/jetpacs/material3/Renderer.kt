@@ -493,6 +493,9 @@ data class RenderCtx(
         )
 }
 
+/** The gap between a lifted navigation rail and the scaffold body. */
+internal val RAIL_CLEARANCE = 16.dp
+
 /** Root entry for a surface (MainActivity). */
 @Composable
 fun RenderNode(node: JsonObject, surface: String, bridge: MaterialRendererHost,
@@ -1660,6 +1663,11 @@ fun RenderScaffold(
     // hosts an authored navigation_rail, whose own variant and synced
     // expanded state carry the collapsed/expanded forms.
     val rail = p[ScaffoldMembers.Rail]
+    // A design scope that lifts the rail off the page (tints it like a
+    // card) leaves content flush against it reading as one block; the body
+    // keeps a gap from it. The top bar needs none: its own inset clears it.
+    val railClearance = if (rail != null &&
+        LocalComposeChromeStyles.current?.railContainer != null) RAIL_CLEARANCE else 0.dp
     var fabHeightPx by remember { mutableStateOf(0) }
     val scaffold: @Composable () -> Unit = {
         Scaffold(
@@ -1947,6 +1955,7 @@ fun RenderScaffold(
             // descendants with their own imePadding from double-padding.
             val bodyModifier = Modifier.padding(inner)
                 .consumeWindowInsets(inner)
+                .padding(start = railClearance)
                 .imePadding()
             val onRefresh = p[ScaffoldMembers.OnRefresh]
             val body = p[ScaffoldMembers.Body]
