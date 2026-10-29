@@ -472,10 +472,14 @@ instead of each claiming chrome of its own.")
 (defvar jetpacs-settings--advanced-links nil
   "The builders among `jetpacs-settings-links' shown under Advanced.")
 
-(defun jetpacs-settings-add-link (order builder &optional advanced)
+(defvar jetpacs-settings--app-links nil
+  "The builders among `jetpacs-settings-links' shown on App Settings.")
+
+(defun jetpacs-settings-add-link (order builder &optional advanced page)
   "Add BUILDER (a nullary node builder) to the settings screen at ORDER.
 ADVANCED non-nil places it at the end of the Advanced section, with the
-developer options.  Registrations made under `with-jetpacs-owner' are
+developer options.  PAGE `app' puts it on App Settings instead of Emacs
+Settings.  Registrations made under `with-jetpacs-owner' are
 attributed to that owner for the app-identity layer to filter once it
 exists."
   (setq jetpacs-settings-links
@@ -486,7 +490,10 @@ exists."
               (lambda (a b) (< (car a) (car b)))))
   (setq jetpacs-settings--advanced-links
         (delq builder jetpacs-settings--advanced-links))
+  (setq jetpacs-settings--app-links
+        (delq builder jetpacs-settings--app-links))
   (when advanced (push builder jetpacs-settings--advanced-links))
+  (when (eq page 'app) (push builder jetpacs-settings--app-links))
   (jetpacs--claim "settings-link" builder))
 
 (defun jetpacs-settings-remove-link (builder)
@@ -498,6 +505,8 @@ older caller accidentally registered the same builder more than once."
         (cl-remove builder jetpacs-settings-links :key #'cadr))
   (setq jetpacs-settings--advanced-links
         (delq builder jetpacs-settings--advanced-links))
+  (setq jetpacs-settings--app-links
+        (delq builder jetpacs-settings--app-links))
   (jetpacs--unclaim "settings-link" builder))
 
 (jetpacs-define-claim-disposer "settings-section"
@@ -517,58 +526,115 @@ they were registered in."
                     (length jetpacs-settings-section-order)))))
     (cl-stable-sort (reverse jetpacs-settings-registry) #'< :key rank)))
 
-(defun jetpacs-settings-sections ()
-  "The settings body: the sections in order, the links, then Advanced.
-Rows marked `:advanced', from any section, gather under one Advanced
-header at the end, followed by the links registered as advanced; a
-section left without rows shows no header, and rows marked
-`:standalone-only' are left out of the bundled app."
+(defvar jetpacs-settings-homed-sections nil
+  "Titles of the sections a screen of their own renders.
+The Emacs Settings body leaves them out, `:advanced' rows included;
+their screen draws them with `jetpacs-settings-section-nodes'.  They
+stay in the registry, which is what authorizes `settings.set'.")
+
+(defun jetpacs-settings--section-split (section)
+  "SECTION's shown rows as (EVERYDAY . ADVANCED), each in registry order."
+  (let ((rows (cl-remove-if-not #'jetpacs-settings--shown-p (cdr section)))
+        (dev-p (lambda (e) (plist-get (cdr e) :advanced))))
+    (cons (cl-remove-if dev-p rows) (cl-remove-if-not dev-p rows))))
+
+(defun jetpacs-settings-section-nodes (titles &optional links)
+  "Header and rows of each registered section named in TITLES, in order.
+LINKS (link builders) follow the sections.  `:advanced' rows from all
+of them, then the links registered as advanced, gather under one
+Advanced header at the end; a section left without rows shows no
+header, and rows marked `:standalone-only' are left out of the bundled
+app."
   (let (body advanced)
-    (dolist (section (jetpacs-settings--ordered-sections))
-      (let* ((rows (cl-remove-if-not #'jetpacs-settings--shown-p (cdr section)))
-             (dev (cl-remove-if-not (lambda (e) (plist-get (cdr e) :advanced))
-                                    rows))
-             (rows (cl-set-difference rows dev :test #'eq)))
-        (setq advanced (append advanced dev))
-        (when rows
-          (setq body (append body
-                             (cons (jetpacs-section-header (car section))
-                                   (mapcar #'jetpacs-settings--item
-                                           (cl-remove-if-not
-                                            (lambda (e) (memq e rows))
-                                            (cdr section)))))))))
-    (let* ((builders (mapcar #'cadr jetpacs-settings-links))
-           (dev-p (lambda (b) (memq b jetpacs-settings--advanced-links)))
+    (dolist (title titles)
+      (when-let* ((section (assoc title jetpacs-settings-registry)))
+        (pcase-let ((`(,rows . ,dev) (jetpacs-settings--section-split section)))
+          (setq advanced (append advanced dev))
+          (when rows
+            (setq body (append body
+                               (cons (jetpacs-section-header title)
+                                     (mapcar #'jetpacs-settings--item rows))))))))
+    (let* ((dev-p (lambda (b) (memq b jetpacs-settings--advanced-links)))
            (dev-links (delq nil (mapcar #'funcall
-                                        (cl-remove-if-not dev-p builders)))))
+                                        (cl-remove-if-not dev-p links)))))
       (append body
-              (delq nil (mapcar #'funcall (cl-remove-if dev-p builders)))
+              (delq nil (mapcar #'funcall (cl-remove-if dev-p links)))
               (when (or advanced dev-links)
                 (cons (jetpacs-section-header "Advanced")
                       (append (mapcar #'jetpacs-settings--item advanced)
                               dev-links)))))))
 
+(defun jetpacs-settings-sections ()
+  "The Emacs Settings body: the sections in order, the links, then
+Advanced (`jetpacs-settings-section-nodes').  The sections in
+`jetpacs-settings-homed-sections' and the links on App Settings are
+left to their own screens."
+  (jetpacs-settings-section-nodes
+   (cl-remove-if (lambda (title) (member title jetpacs-settings-homed-sections))
+                 (mapcar #'car (jetpacs-settings--ordered-sections)))
+   (cl-remove-if (lambda (b) (memq b jetpacs-settings--app-links))
+                 (mapcar #'cadr jetpacs-settings-links))))
+
+(defconst jetpacs-settings-app-sections
+  '("Appearance" "Editor" "Files" "Clipboard" "Theme" "Devtools")
+  "The sections App Settings draws: options that mean nothing without
+the Companion (`jetpacs-*' and `ebp-*'), where Emacs Settings keeps
+those an init file of one's own would hold.")
+
+(dolist (title jetpacs-settings-app-sections)
+  (cl-pushnew title jetpacs-settings-homed-sections :test #'equal))
+
+(defun jetpacs-settings--app-body ()
+  "The App Settings body: Theme, then the app's sections and links."
+  (apply #'jetpacs-lazy-column
+         (cons (jetpacs-chrome-row
+                "Theme"
+                :subtitle (if (jetpacs-bundled-p)
+                              "Colors and themes"
+                            "Color scheme and Modus-family themes")
+                :icon "palette"
+                :on-tap (jetpacs-action "modus.show")
+                :key "app-settings-theme")
+               (jetpacs-settings-section-nodes
+                jetpacs-settings-app-sections
+                (cl-remove-if-not
+                 (lambda (b) (memq b jetpacs-settings--app-links))
+                 (mapcar #'cadr jetpacs-settings-links))))))
+
+(defun jetpacs-settings--app-view (back)
+  "The App Settings screen, wired to BACK."
+  (jetpacs-chrome-screen "App Settings"
+                         (jetpacs-settings-measure (jetpacs-settings--app-body))
+                         :back back))
+
+(defun jetpacs-settings-measure (node)
+  "NODE, a settings screen's body, measured (`jetpacs-measure') and kept
+off the window's sides on a phone too: settings rows run edge to edge."
+  (jetpacs-measure node :inset t))
+
 (defun jetpacs-settings--emacs-view (back)
-  "The Emacs settings screen: all registered sections + satellites."
+  "The Emacs settings screen: Customize, Packages, then the sections
+and satellites an init file of one's own would hold."
   (jetpacs-chrome-screen
    "Emacs Settings"
-   (apply #'jetpacs-lazy-column
-          (append
-           (list (jetpacs-chrome-row
-                  "Customize"
-                  :subtitle "Browse and edit any Emacs option"
-                  :icon "tune"
-                  :on-tap (if (jetpacs-builtin-advertised-p "surface.open" :app)
-                              (jetpacs-surface-open "app:jetpacs.customize")
-                            (jetpacs-action "customize.show" :when-offline "drop"))
-                  :key "emacs-settings-customize")
-                 (jetpacs-chrome-row
-                  "Packages"
-                  :subtitle "Install and manage Emacs packages"
-                  :icon "archive"
-                  :on-tap (jetpacs-action "packages.show" :when-offline "drop")
-                  :key "emacs-settings-packages"))
-           (jetpacs-settings-sections)))
+   (jetpacs-settings-measure
+    (apply #'jetpacs-lazy-column
+           (append
+            (list (jetpacs-chrome-row
+                   "Customize"
+                   :subtitle "Browse and edit any Emacs option"
+                   :icon "tune"
+                   :on-tap (if (jetpacs-builtin-advertised-p "surface.open" :app)
+                               (jetpacs-surface-open "app:jetpacs.customize")
+                             (jetpacs-action "customize.show" :when-offline "drop"))
+                   :key "emacs-settings-customize")
+                  (jetpacs-chrome-row
+                   "Packages"
+                   :subtitle "Install and manage Emacs packages"
+                   :icon "archive"
+                   :on-tap (jetpacs-action "packages.show" :when-offline "drop")
+                   :key "emacs-settings-packages"))
+            (jetpacs-settings-sections))))
    :back back))
 
 (defun jetpacs-settings--hub-cards ()
@@ -590,7 +656,8 @@ section left without rows shows no header, and rows marked
   "The settings hub: category cards for each settings domain."
   (jetpacs-chrome-screen
    "Settings"
-   (apply #'jetpacs-lazy-column (jetpacs-settings--hub-cards))
+   (jetpacs-settings-measure
+    (apply #'jetpacs-lazy-column (jetpacs-settings--hub-cards)))
    :on-refresh (jetpacs-action "settings.refresh")))
 
 (defun jetpacs-settings-refresh ()
@@ -673,6 +740,13 @@ through their submit action instead."
                               #'jetpacs-settings--emacs-view)
   'accepted)
 
+(defun jetpacs-settings--action-app (_args _params)
+  "Push the App Settings screen onto the settings surface."
+  (jetpacs-chrome-push-screen jetpacs-settings-surface
+                              "jetpacs-settings-app"
+                              #'jetpacs-settings--app-view)
+  'accepted)
+
 (defun jetpacs-settings--action-refresh (_args _params)
   "Schedule a refresh of the current settings screen."
   (jetpacs-settings-refresh)
@@ -690,14 +764,14 @@ through their submit action instead."
    :on-tap (jetpacs-surface-open "companion:settings"))
   (jetpacs-settings-register-hub-entry
    "emacs" :order 20 :icon "settings"
-   :title "Emacs Settings" :subtitle "Editor, files, org, and more"
-   :plain '(:subtitle "Org, files, clipboard and more")
+   :title "Emacs Settings" :subtitle "Customize, packages, org, and calendar"
+   :plain '(:subtitle "Org, calendar and your name")
    :on-tap (jetpacs-action "settings.emacs"))
   (jetpacs-settings-register-hub-entry
-   "theme" :order 30 :icon "palette"
-   :title "Theme" :subtitle "Mode and Modus-family themes"
-   :plain '(:subtitle "Colors and themes")
-   :on-tap (jetpacs-action "modus.show")))
+   "app" :order 30 :icon "palette"
+   :title "App Settings" :subtitle "Theme, M-x button, files and devtools"
+   :plain '(:subtitle "Theme, buttons, files and clipboard")
+   :on-tap (jetpacs-action "settings.app")))
 
 (jetpacs-defaction "settings.set" #'jetpacs-settings--action-set
                    :args '((:name name :type "text" :required t)
@@ -708,13 +782,15 @@ through their submit action instead."
                    :doc "Reset one allowlisted Jetpacs setting")
 (jetpacs-defaction "settings.emacs" #'jetpacs-settings--action-emacs
                    :doc "Open the registered Emacs settings")
+(jetpacs-defaction "settings.app" #'jetpacs-settings--action-app
+                   :doc "Open the app's own settings")
 (jetpacs-defaction "settings.refresh" #'jetpacs-settings--action-refresh
                    :doc "Refresh the current settings screen")
 
 (defun jetpacs-settings-drawer-entry ()
   "The drawer's Settings entry — a single tap opens the settings hub."
   (jetpacs-chrome-row "Settings"
-                      :subtitle "Jetpacs, Emacs, theme, and app options"
+                      :subtitle "Jetpacs, Emacs, and app options"
                       :icon "settings"
                       :on-tap (jetpacs-shell-open-surface-action
                                (concat "app:" jetpacs-settings-surface))

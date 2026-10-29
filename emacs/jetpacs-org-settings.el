@@ -201,13 +201,20 @@ there; the bridge roots and the Babel timeout are `:advanced'; and
                             "Clocked time on headings"
                             :plain '(:summary "Outlines show the time clocked on each heading.")))))))
 
+(defconst jetpacs-org-settings--screen-sections
+  '("Org Workflow" "Org Agenda" "Org Editing & Display" "Reader")
+  "The sections the Org workflow screen draws instead of Emacs Settings.")
+
 (defun jetpacs-org-settings-register ()
   "Register (or replace) every org/calendar section.
 Idempotent — sections replace in place; called at this file's load so
 a queued toggle replays through handlers that registration, not
-rendering, installs."
+rendering, installs.  The org sections proper are homed on the Org
+workflow screen, beside the TODO sequences and tags."
   (dolist (section (jetpacs-org-settings-sections))
-    (jetpacs-settings-register-section (car section) (cdr section))))
+    (jetpacs-settings-register-section (car section) (cdr section)))
+  (dolist (title jetpacs-org-settings--screen-sections)
+    (cl-pushnew title jetpacs-settings-homed-sections :test #'equal)))
 
 ;;;; Seeding (step 4: the phone-generic org wiring)
 
@@ -683,7 +690,9 @@ changed in between."
 ;;;; The Org-workflow satellite screen
 
 (defun jetpacs-org-settings--workflow-body ()
-  "The managed org-workflow screen body: sequences, then tags.
+  "The managed org-workflow screen body: sequences, tags, then the org
+sections (`jetpacs-org-settings--screen-sections'), their Advanced rows
+last.
 lazy_column, not column: the scaffold body has no scroll container on
 the client, and the sequence list grows without bound."
   (apply #'jetpacs-lazy-column
@@ -702,18 +711,22 @@ the client, and the sequence list grows without bound."
                 (jetpacs-text
                  "Manage the global tag list (org-tag-alist)."
                  :style "caption")
-                (jetpacs-org-settings--tags-enum)))))
+                (jetpacs-org-settings--tags-enum)
+                (jetpacs-divider))
+          (jetpacs-settings-section-nodes
+           jetpacs-org-settings--screen-sections))))
 
 (defun jetpacs-org-settings--workflow-screen (back)
   "The pushed Org-workflow screen, wired to BACK."
   (jetpacs-chrome-screen "Org workflow"
-                         (jetpacs-org-settings--workflow-body)
+                         (jetpacs-settings-measure
+                          (jetpacs-org-settings--workflow-body))
                          :back back))
 
 (defun jetpacs-org-settings--link ()
   "The Settings-root satellite row leading to the workflow screen."
   (jetpacs-chrome-row "Org workflow"
-                      :subtitle "TODO sequences, global org tags"
+                      :subtitle "TODO sequences, tags, logging, agenda and display"
                       :icon "checklist"
                       :on-tap (jetpacs-action "jetpacs.org.workflow.open")
                       :key "jetpacs-org-workflow-link"))

@@ -371,7 +371,7 @@ the pick came from the pushed Switch screen and the drill is over."
                                 (jetpacs-action "project.show"
                                                 :when-offline "drop")))))
 (declare-function jetpacs-settings-add-link "jetpacs-settings"
-                  (order builder &optional advanced))
+                  (order builder &optional advanced page))
 
 (defvar jetpacs-launcher-row-icons)
 (with-eval-after-load 'jetpacs-launcher

@@ -43,7 +43,8 @@
   (declare (indent 0))
   `(let ((saved nil) (toasts nil) (refreshes 0)
          (jetpacs-settings-registry nil)
-         (jetpacs-settings-links nil))
+         (jetpacs-settings-links nil)
+         (jetpacs-settings--app-links nil))
      (cl-letf (((symbol-function 'jetpacs-settings-save-variable)
                 (lambda (sym value)
                   (push (cons sym value) saved)
@@ -233,18 +234,18 @@ do not require callers to mutate the foundation registry themselves."
     (should (equal (plist-get tap :surface) "app:jetpacs.settings"))))
 
 (ert-deftest jetpacs-settings-hub-enumerates-its-owned-categories ()
-  "Jetpacs, Emacs, and Theme are reachable from the one drawer target."
+  "Jetpacs, Emacs, and App are reachable from the one drawer target."
   (let ((json (jetpacs-node->canonical-json (jetpacs-settings--view))))
-    (dolist (label '("Jetpacs Settings" "Emacs Settings" "Theme"))
+    (dolist (label '("Jetpacs Settings" "Emacs Settings" "App Settings"))
       (should (string-match-p (regexp-quote label) json)))
-    (dolist (action '("settings.emacs" "modus.show" "settings.refresh"))
+    (dolist (action '("settings.emacs" "settings.app" "settings.refresh"))
       (should (string-match-p (regexp-quote action) json)))
     (should (string-match-p "companion:settings" json))))
 
 (ert-deftest jetpacs-settings-actions-declare-their-public-contract ()
   "Every settings verb exposes readable docs and its consumed arguments."
   (dolist (name '("settings.set" "settings.reset"
-                  "settings.emacs" "settings.refresh"))
+                  "settings.emacs" "settings.app" "settings.refresh"))
     (let ((doc (plist-get (jetpacs-action-schema name) :doc)))
       (should (and (stringp doc) (not (string-empty-p doc))))))
   (should (equal (mapcar (lambda (arg) (plist-get arg :name))
@@ -480,6 +481,89 @@ out of the bundled app only."
           (should (equal (headers-and-rows)
                          '("First" "Mode" "Second" "Count"
                            "Everyday link" "Advanced" "Flag" "Dev link"))))))))
+
+(ert-deftest jetpacs-settings-homed-sections-render-on-their-own-screen ()
+  "A section in `jetpacs-settings-homed-sections' stays registered (so
+`settings.set' still accepts it) but leaves the Emacs Settings body;
+`jetpacs-settings-section-nodes' draws it with its Advanced rows."
+  (jetpacs-settings-test--env
+    (let ((jetpacs-settings-homed-sections '("Homed"))
+          (jetpacs-home-mode "emacs"))
+      (jetpacs-settings-register-section
+       "Kept" '((jetpacs-settings-test--mode :label "Mode")))
+      (jetpacs-settings-register-section
+       "Homed" '((jetpacs-settings-test--count :label "Count")
+                 (jetpacs-settings-test--flag :label "Flag" :advanced t)))
+      (cl-flet ((texts (nodes)
+                  (cl-remove-if-not
+                   (lambda (s) (member s '("Kept" "Mode" "Homed" "Count"
+                                           "Advanced" "Flag")))
+                   (jetpacs-settings-test--texts
+                    (apply #'jetpacs-column nodes)))))
+        (should (equal (texts (jetpacs-settings-sections)) '("Kept" "Mode")))
+        (should (equal (texts (jetpacs-settings-section-nodes '("Homed")))
+                       '("Homed" "Count" "Advanced" "Flag"))))
+      (should (jetpacs-settings--entry 'jetpacs-settings-test--flag)))))
+
+(ert-deftest jetpacs-settings-app-page-holds-the-companion-options ()
+  "App Settings draws Theme, the `jetpacs-settings-app-sections' and the
+links placed on it, advanced ones under its own Advanced header; Emacs
+Settings draws none of them."
+  (jetpacs-settings-test--env
+    (let ((jetpacs-home-mode "emacs"))
+      (jetpacs-settings-register-section
+       "Appearance" '((jetpacs-settings-test--mode :label "Mode")))
+      (jetpacs-settings-register-section
+       "Devtools" '((jetpacs-settings-test--flag :label "Flag" :advanced t)))
+      (jetpacs-settings-register-section
+       "User Defaults" '((jetpacs-settings-test--count :label "Count")))
+      (jetpacs-settings-add-link 10 (lambda () (jetpacs-text "Emacs link")))
+      (jetpacs-settings-add-link 20 (lambda () (jetpacs-text "App link"))
+                                 nil 'app)
+      (jetpacs-settings-add-link 30 (lambda () (jetpacs-text "App dev link"))
+                                 t 'app)
+      (cl-flet ((texts (node)
+                  (cl-remove-if-not
+                   (lambda (s) (member s '("Theme" "Appearance" "Mode"
+                                           "Devtools" "Flag" "User Defaults"
+                                           "Count" "Advanced" "Emacs link"
+                                           "App link" "App dev link")))
+                   (jetpacs-settings-test--texts node))))
+        (should (equal (texts (apply #'jetpacs-column
+                                     (jetpacs-settings-sections)))
+                       '("User Defaults" "Count" "Emacs link")))
+        (should (equal (texts (jetpacs-settings--app-body))
+                       '("Theme" "Appearance" "Mode" "App link"
+                         "Advanced" "Flag" "App dev link"))))
+      (should (string-search "modus.show"
+                             (jetpacs-node->canonical-json
+                              (jetpacs-settings--app-body))))
+      (should (equal (plist-get (jetpacs-settings--app-view nil) :t)
+                     "scaffold")))))
+
+(ert-deftest jetpacs-settings-measure-insets-and-centers ()
+  "A settings body is always inset from the window's sides; on a wide
+window it also centers at `jetpacs-measure-dp'."
+  (let ((body (jetpacs-lazy-column (jetpacs-text "Row"))))
+    (cl-letf (((symbol-function 'jetpacs-window-class)
+               (lambda (_axis) "compact")))
+      (let ((node (jetpacs-settings-measure body)))
+        (should (equal (plist-get node :t) "lazy_column"))
+        (should (equal (plist-get node :pad)
+                       (list :horizontal jetpacs-edge-gap)))
+        (jetpacs-node->canonical-json node)
+      ;; Without :inset a phone gets the body untouched (the reading
+      ;; screens' rule).
+      (should (eq (jetpacs-measure body) body))))
+    (cl-letf (((symbol-function 'jetpacs-window-class)
+               (lambda (_axis) "expanded")))
+      (let* ((node (jetpacs-settings-measure body))
+             (json (jetpacs-node->canonical-json node)))
+        (should (equal (plist-get node :t) "box"))
+        (should (string-search (format "\"max_width\":%d"
+                                       jetpacs-measure-dp)
+                               json))
+        (should (string-search "top_center" json))))))
 
 (provide 'jetpacs-settings-test)
 ;;; jetpacs-settings-test.el ends here

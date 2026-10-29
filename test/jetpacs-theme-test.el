@@ -328,6 +328,30 @@ Advanced row, which also offers the `off' mode the Theme screen omits."
                   'accepted))
       (should (eq jetpacs-theme-mode 'system)))))
 
+(ert-deftest jetpacs-theme/theme-screen-stacks-over-app-settings ()
+  "The Theme screen opens over App Settings on one surface, where node ids
+are unique across the stack; both carry a Color scheme row, so they must
+not share an id (found on the Pixel Tablet: the Theme screen refused to
+build with `jetpacs-duplicate-node-id')."
+  (cl-flet ((ids (node)
+              (let (out)
+                (cl-labels ((walk (n)
+                              (cond
+                               ((vectorp n) (mapc #'walk n))
+                               ((and (consp n) (keywordp (car n)))
+                                (when-let* ((id (plist-get n :id)))
+                                  (push id out))
+                                (cl-loop for (_k v) on n by #'cddr
+                                         do (walk v)))
+                               ((consp n) (mapc #'walk n)))))
+                  (walk node))
+                out)))
+    (let ((app (ids (jetpacs-settings--app-body)))
+          (theme (ids (jetpacs-modus--body))))
+      (should (member "setting/jetpacs-theme-mode" app))
+      (should (member "theme/jetpacs-theme-mode" theme))
+      (should-not (cl-intersection app theme :test #'equal)))))
+
 (ert-deftest jetpacs-theme/bundled-app-keeps-the-theme-pick ()
   "The bundled engine restarts often, so a Modus pick is saved through
 Customize there; an Emacs of the user's own keeps session semantics."

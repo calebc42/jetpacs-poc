@@ -198,6 +198,34 @@ three to five sibling places, never document actions."
 
 (declare-function jetpacs-components-list-item "jetpacs-components")
 
+(defcustom jetpacs-measure-dp 760
+  "The widest a reading column grows, in dp, on medium and expanded windows.
+About 75 characters of body text: lists, pages and settings center at
+this width instead of stretching across a tablet."
+  :type 'natnum :group 'jetpacs)
+
+(defconst jetpacs-edge-gap 16
+  "Dp between a measured column and the window's sides.")
+
+(cl-defun jetpacs-measure (node &key inset)
+  "NODE centered at `jetpacs-measure-dp' on a medium or expanded window.
+A compact window gets NODE unchanged, a phone being narrower already,
+unless INSET is non-nil: then NODE keeps `jetpacs-edge-gap' from the
+window's sides there too, for rows that would otherwise run edge to
+edge."
+  (let ((inset-node (jetpacs-with-attrs
+                     node :pad (list :horizontal jetpacs-edge-gap))))
+    (cond
+     ((not (equal (jetpacs-window-class :width) "compact"))
+      (jetpacs-with-attrs
+       (jetpacs-box (jetpacs-with-attrs inset-node
+                                        :max_width jetpacs-measure-dp
+                                        :fill_fraction 1)
+                    :alignment "top_center")
+       :fill_fraction 1))
+     (inset inset-node)
+     (t node))))
+
 (cl-defun jetpacs-chrome-row (title &key subtitle icon leading trailing
                                     on-tap on-long-tap key)
   "The hub list-row: the best list item the live profile can draw.

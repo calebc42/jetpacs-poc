@@ -218,9 +218,13 @@ fine — there is a user at the keyboard."
                          (if (jetpacs-bundled-p) "App colors" "Companion Theme"))
                         ;; A person reads "Color scheme", not the variable.
                         ;; `off' hands the colors to another app; it is
-                        ;; offered under Advanced in Emacs Settings.
+                        ;; offered under Advanced in App Settings.  This
+                        ;; screen stacks over App Settings, and node ids
+                        ;; are unique across the stack, so the row
+                        ;; wears its own prefix.
                         (jetpacs-card (list (jetpacs-settings-item
                                              'jetpacs-theme-mode
+                                             :id-prefix "theme/"
                                              :label "Color scheme"
                                              :exclude '(off)
                                              :plain jetpacs-modus--scheme-plain)))
@@ -235,10 +239,11 @@ fine — there is a user at the keyboard."
 (defun jetpacs-modus--view (back)
   (jetpacs-chrome-screen
    "Theme"
-   (if (jetpacs-modus--ensure)
-       (jetpacs-modus--body)
-     (jetpacs-column
-      (jetpacs-text "The modus themes are not available in this Emacs.")))
+   (jetpacs-settings-measure
+    (if (jetpacs-modus--ensure)
+        (jetpacs-modus--body)
+      (jetpacs-column
+       (jetpacs-text "The modus themes are not available in this Emacs."))))
    :back back))
 
 (defun jetpacs-modus--reload (&rest _)
@@ -347,7 +352,7 @@ this keeps Modus's `completing-read' fallback outside the wire dispatch."
   ;; The Color scheme row sets `jetpacs-theme-mode' through the
   ;; registry-gated `settings.set', which refused every tap until the
   ;; registry named it.  All five modes, `off' included, are offered
-  ;; under Advanced in Emacs Settings.
+  ;; under Advanced in App Settings (`jetpacs-settings-app-sections').
   (jetpacs-settings-register-section
    "Theme"
    '((jetpacs-theme-mode :label "Color scheme (all modes)" :advanced t)))

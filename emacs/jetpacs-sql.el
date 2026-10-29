@@ -250,7 +250,7 @@ the companion-local `view.switch', which works with the socket down."
                               (jetpacs-action "sql.show"
                                               :when-offline "drop"))))))
 (declare-function jetpacs-settings-add-link "jetpacs-settings"
-                  (order builder &optional advanced))
+                  (order builder &optional advanced page))
 
 (defvar jetpacs-launcher-row-icons)
 (defvar jetpacs-launcher-row-labels)

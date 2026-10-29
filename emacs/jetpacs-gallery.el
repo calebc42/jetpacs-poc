@@ -236,8 +236,8 @@ place and the link is re-added exactly once."
     (jetpacs-defaction "demo.gallery.point" #'jetpacs-gallery--on-point
                        :doc "Report a tapped chart point")
     (jetpacs-settings-remove-link #'jetpacs-gallery--settings-link)
-    ;; A demo for the people building Jetpacs: under Advanced.
-    (jetpacs-settings-add-link 84 #'jetpacs-gallery--settings-link t)))
+    ;; A demo for the people building Jetpacs: under App Settings' Advanced.
+    (jetpacs-settings-add-link 84 #'jetpacs-gallery--settings-link t 'app)))
 
 (defun jetpacs-gallery-unregister ()
   "Drop the gallery verbs and the Settings link.
