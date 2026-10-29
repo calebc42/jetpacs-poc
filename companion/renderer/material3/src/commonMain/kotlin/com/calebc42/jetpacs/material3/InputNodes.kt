@@ -57,6 +57,7 @@ import androidx.compose.material3.ButtonGroupDefaults
 import androidx.compose.material3.DropdownMenuGroup
 import androidx.compose.material3.ToggleButtonShapes
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.AssistChipDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.DatePicker
@@ -556,7 +557,16 @@ internal fun RenderAssistChip(node: JsonObject, ctx: RenderCtx, m: Modifier) {
         "suggestion" -> SuggestionChip(click, label, m, enabled, icon = lead)
         "elevated_suggestion" ->
             ElevatedSuggestionChip(click, label, m, enabled, icon = lead)
-        else -> AssistChip(click, label, m, enabled, leadingIcon = lead)
+        // The flat chip's border takes the full `outline`, not Material's
+        // `outlineVariant`: that one is derived most of the way to the
+        // surface, and on a dark theme it vanishes against a tinted card.
+        else -> AssistChip(
+            click, label, m, enabled, leadingIcon = lead,
+            border = AssistChipDefaults.assistChipBorder(
+                enabled = enabled,
+                borderColor = MaterialTheme.colorScheme.outline,
+            ),
+        )
     }
 }
 
@@ -1623,6 +1633,9 @@ internal fun RenderSplitButton(node: JsonObject, ctx: RenderCtx, m: Modifier) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun RenderNavigationRail(node: JsonObject, ctx: RenderCtx, m: Modifier) {
+    // A design scope may lift the rail off the page (the baseline tints it
+    // like a card); null keeps the toolkit's container.
+    val railContainer = com.calebc42.ebp.renderer.compose.LocalComposeChromeStyles.current?.railContainer
     val p = NodeProperties(node, NavigationRailMembers)
     val items = p[NavigationRailMembers.Items] ?: return
     val header = p[NavigationRailMembers.Header]
@@ -1703,22 +1716,28 @@ internal fun RenderNavigationRail(node: JsonObject, ctx: RenderCtx, m: Modifier)
                     ctx.action(onExpandChange, JsonPrimitive(isOpen))
             }
         }
+        val wideColors = railContainer?.let {
+            androidx.compose.material3.WideNavigationRailDefaults.colors(containerColor = it)
+        } ?: androidx.compose.material3.WideNavigationRailDefaults.colors()
         if (variant == "modal")
             ModalWideNavigationRail(
                 modifier = m,
                 state = state,
                 hideOnCollapse = p.getOr(NavigationRailMembers.HideOnCollapse, false),
+                colors = wideColors,
                 header = headerSlot,
                 arrangement = arrangement,
                 content = destinations)
         else WideNavigationRail(
             modifier = m,
             state = state,
+            colors = wideColors,
             header = headerSlot,
             arrangement = arrangement,
             content = destinations)
     } else NavigationRail(
         modifier = m, header = headerSlot?.let { { it() } },
+        containerColor = railContainer ?: androidx.compose.material3.NavigationRailDefaults.ContainerColor,
         content = { destinations() })
 }
 

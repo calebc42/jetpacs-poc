@@ -71,8 +71,14 @@ internal val LocalDesignTextContext = staticCompositionLocalOf<DesignTextContext
 @Composable
 internal fun designComponentStyle(slot: DesignComponentStyleSlot): androidx.compose.foundation.style.Style {
     val computed = LocalDesignScope.current?.componentStyle(slot)
-    return remember(computed?.layers) {
-        computed?.toFoundationStyle() ?: androidx.compose.foundation.style.Style
+    // Keyed on the theme too: a Style resolves theme roles through
+    // `currentValue`, which `styleable` does not observe, so a theme push
+    // would leave every on-screen node in its old colors until it left
+    // composition.  A fresh Style instance makes the modifier re-resolve,
+    // base styles included.
+    val theme = LocalJetpacsTheme.current
+    return remember(computed?.layers, theme) {
+        computed?.toFoundationStyle() ?: androidx.compose.foundation.style.Style {}
     }
 }
 
@@ -82,9 +88,10 @@ internal fun designComponentNonTextStyle(
     slot: DesignComponentStyleSlot,
 ): androidx.compose.foundation.style.Style {
     val computed = LocalDesignScope.current?.componentStyle(slot)
-    return remember(computed?.layers) {
+    val theme = LocalJetpacsTheme.current // see designComponentStyle
+    return remember(computed?.layers, theme) {
         computed?.toFoundationStyle(includeTextProperties = false)
-            ?: androidx.compose.foundation.style.Style
+            ?: androidx.compose.foundation.style.Style {}
     }
 }
 
@@ -212,7 +219,7 @@ internal object JetpacsStyledComponent : JetpacsComponent("jetpacs.styled", Jetp
             RenderDesignChildren(children, context, modifier)
             return
         }
-        val style = remember(computed.layers) { computed.toFoundationStyle() }
+        val style = remember(computed.layers, LocalJetpacsTheme.current) { computed.toFoundationStyle() }
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource)
         val childStyle = computed.intrinsicLayout().then(computed.elevationShadow()).styleable(styleState, style)
@@ -263,7 +270,7 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
             it.isSelected = selected
             it.isChecked = toggled
         }
-        val style = remember(computed.layers) { computed.toFoundationStyle() }
+        val style = remember(computed.layers, LocalJetpacsTheme.current) { computed.toFoundationStyle() }
         val (authoredWidth, authoredHeight) = remember(computed.layers) { computed.authoredSize() }
         val centered = remember(computed.layers) {
             (computed.baseOnly().resolve().properties[DesignProperty.CenterVertically]

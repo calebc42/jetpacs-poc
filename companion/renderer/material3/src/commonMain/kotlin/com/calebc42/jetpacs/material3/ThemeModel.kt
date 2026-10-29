@@ -22,7 +22,6 @@ import com.calebc42.ebp.renderer.compose.ComposeThemeRoles
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -57,6 +56,14 @@ private fun JsonObject.role(key: String): Color? =
         ?.let { parseHexColor(it)?.let(::Color) }
 
 /** A legible on-color for a pushed extension role that arrived without one. */
+/** [t] of [b] mixed into [a] per sRGB channel, keeping [a]'s alpha. */
+internal fun srgbMix(a: Color, b: Color, t: Float): Color = Color(
+    red = a.red + (b.red - a.red) * t,
+    green = a.green + (b.green - a.green) * t,
+    blue = a.blue + (b.blue - a.blue) * t,
+    alpha = a.alpha,
+)
+
 private fun legibleOn(bg: Color): Color =
     if (bg.luminance() < 0.5f) Color.White else Color(0xFF1A1A1A)
 
@@ -85,12 +92,15 @@ fun buildColorScheme(lookup: (String) -> Color?, base: ColorScheme): ColorScheme
     val secondary = c.role("secondary") ?: base.secondary
     val error = c.role("error") ?: base.error
     val surface = c.role("surface") ?: base.surface
-    val surfaceVariant = lerp(surface, c.role("on_surface") ?: base.onSurface, 0.10f)
-    val primaryContainer = lerp(surface, primary, 0.24f)
-    val secondaryContainer = lerp(surface, secondary, 0.24f)
-    val tertiary = lerp(primary, secondary, 0.5f)
-    val tertiaryContainer = lerp(surface, tertiary, 0.24f)
-    val errorContainer = lerp(surface, error, 0.24f)
+    // Containers mix per sRGB channel (srgbMix), not with Compose's Oklab
+    // `lerp`: near black, 24% of an accent in Oklab is still almost black, so
+    // a dark theme's FAB and tonal containers lost their hue entirely.
+    val surfaceVariant = srgbMix(surface, c.role("on_surface") ?: base.onSurface, 0.10f)
+    val primaryContainer = srgbMix(surface, primary, 0.24f)
+    val secondaryContainer = srgbMix(surface, secondary, 0.24f)
+    val tertiary = srgbMix(primary, secondary, 0.5f)
+    val tertiaryContainer = srgbMix(surface, tertiary, 0.24f)
+    val errorContainer = srgbMix(surface, error, 0.24f)
     // SPEC 18.4 (amendment #56): when a base role is pushed but its paired
     // on-color is absent, derive a contrast-legible on-color from the PUSHED
     // color, not the base scheme's on-color (which may be illegible against the
@@ -125,10 +135,10 @@ fun buildColorScheme(lookup: (String) -> Color?, base: ColorScheme): ColorScheme
         surfaceVariant = surfaceVariant,
         onSurfaceVariant = c.role("on_surface") ?: base.onSurfaceVariant,
         outline = c.role("outline") ?: base.outline,
-        outlineVariant = lerp(c.role("outline") ?: base.outline, surface, 0.55f),
-        surfaceContainerLow = lerp(surface, surfaceVariant, 0.25f),
-        surfaceContainer = lerp(surface, surfaceVariant, 0.5f),
-        surfaceContainerHigh = lerp(surface, surfaceVariant, 0.75f),
+        outlineVariant = srgbMix(c.role("outline") ?: base.outline, surface, 0.55f),
+        surfaceContainerLow = srgbMix(surface, surfaceVariant, 0.25f),
+        surfaceContainer = srgbMix(surface, surfaceVariant, 0.5f),
+        surfaceContainerHigh = srgbMix(surface, surfaceVariant, 0.75f),
     )
 }
 

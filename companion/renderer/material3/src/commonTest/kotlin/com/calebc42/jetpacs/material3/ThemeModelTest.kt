@@ -15,6 +15,20 @@ import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class ThemeModelTest {
+    @Test
+    fun darkContainersKeepTheirAccentHue() {
+        // modus-vivendi: black surface, cyan-ish primary.  An Oklab mix left
+        // the FAB container near black; the sRGB mix keeps a visible teal.
+        val colors = buildJsonObject {
+            put("surface", "#000000")
+            put("on_surface", "#ffffff")
+            put("primary", "#00d3d0")
+        }
+        val scheme = buildColorScheme(colors, darkColorScheme())
+        assertEquals(0.24f * 0xd3 / 255f, scheme.primaryContainer.green, 0.01f)
+        assertEquals(0.10f, scheme.surfaceVariant.red, 0.01f)
+    }
+
 
     @Test
     fun overlaysPushedRolesAndKeepsBaseForTheRest() {

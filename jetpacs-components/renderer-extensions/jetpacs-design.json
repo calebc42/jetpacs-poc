@@ -310,6 +310,7 @@
         "chrome.tab-indicator",
         "chrome.rail-label",
         "chrome.rail-indicator",
+        "chrome.rail",
         "chrome.drawer",
         "chrome.scrim",
         "chrome.bottom-bar",

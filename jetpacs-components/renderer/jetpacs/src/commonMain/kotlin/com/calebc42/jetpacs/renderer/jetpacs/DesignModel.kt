@@ -197,6 +197,8 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     ChromeTabIndicator("chrome.tab-indicator"),
     ChromeRailLabel("chrome.rail-label"),
     ChromeRailIndicator("chrome.rail-indicator"),
+    /** The navigation rail's own container. */
+    ChromeRail("chrome.rail"),
     ChromeDrawer("chrome.drawer"),
     ChromeScrim("chrome.scrim"),
     ChromeBottomBar("chrome.bottom-bar"),
@@ -294,6 +296,13 @@ enum class DesignProperty(val wireName: String, internal val kind: ValueKind) {
     PopupEdgeInset("popup_edge_inset", ValueKind.Dimension),
     PopupBeforeAnchor("popup_before_anchor", ValueKind.Boolean),
     Elevation("elevation", ValueKind.Dimension),
+    /**
+     * A fraction (0..1) of the layer's own content color mixed into its
+     * background: a container that stands off the page under any theme,
+     * lighter on a dark one and darker on a light one, resolved on device so
+     * it follows every theme push.
+     */
+    BackgroundTint("background_tint", ValueKind.Number),
     Italic("italic", ValueKind.Boolean),
     Underline("underline", ValueKind.Boolean),
     StrikeThrough("strike_through", ValueKind.Boolean),
@@ -818,6 +827,7 @@ object DesignModel {
             when (property) {
                 DesignProperty.Alpha -> requireRange(value, 0.0, 1.0, "$path.$name")
                 DesignProperty.Scale -> requireRange(value, 0.0, 4.0, "$path.$name")
+                DesignProperty.BackgroundTint -> requireRange(value, 0.0, 1.0, "$path.$name")
                 else -> Unit
             }
             result[property] = value

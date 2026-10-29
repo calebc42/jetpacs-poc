@@ -78,7 +78,7 @@
     "editor.syntax.heading-5" "editor.syntax.heading-6"
     "editor.syntax.heading-7" "editor.syntax.heading-8"
     "chrome.tab-label" "chrome.tab-indicator"
-    "chrome.rail-label" "chrome.rail-indicator"
+    "chrome.rail-label" "chrome.rail-indicator" "chrome.rail"
     "chrome.drawer" "chrome.scrim" "chrome.bottom-bar" "chrome.dialog" "chrome.snackbar")
   "Closed semantic-component visual slots accepted by design scopes.")
 
@@ -129,6 +129,7 @@
     ("popup_edge_inset" . "dimension")
     ("popup_before_anchor" . "boolean")
     ("elevation" . "dimension")
+    ("background_tint" . "number")
     ("italic" . "boolean")
     ("underline" . "boolean")
     ("strike_through" . "boolean"))
@@ -282,12 +283,12 @@ references are resolved when their containing scope is built."
                         (equal actual "theme-role")))
          (error "jetpacs-design: property %s needs %s, not %s"
                 name expected actual))
-       (when (and (member name '("alpha" "scale"))
+       (when (and (member name '("alpha" "scale" "background_tint"))
                   (equal actual "number"))
          (let ((number (string-to-number (plist-get value :value))))
-           (unless (if (equal name "alpha")
-                       (<= 0 number 1)
-                     (<= 0 number 4))
+           (unless (if (equal name "scale")
+                       (<= 0 number 4)
+                     (<= 0 number 1))
              (error "jetpacs-design: %s is out of range" name))))
        value))))
 

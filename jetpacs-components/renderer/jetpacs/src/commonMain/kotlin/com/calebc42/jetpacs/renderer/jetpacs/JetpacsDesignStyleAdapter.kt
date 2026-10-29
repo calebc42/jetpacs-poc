@@ -112,7 +112,8 @@ private fun StyleScope.applyDesignProperties(
         val value = properties[property] ?: continue
         if (!includeTextProperties && property in textProperties) continue
         when (property) {
-            DesignProperty.BackgroundColor -> background(designColor(value))
+            DesignProperty.BackgroundColor ->
+                background(tintedBackground(designColor(value), properties))
             DesignProperty.ContentColor -> contentColor(designColor(value))
             DesignProperty.BorderColor -> borderColor(designColor(value))
             DesignProperty.BorderWidth -> borderWidth(value.dp())
@@ -169,6 +170,8 @@ private fun StyleScope.applyDesignProperties(
             DesignProperty.PopupEdgeInset, DesignProperty.PopupBeforeAnchor -> Unit
             // Read by the menu popup, which draws the platform shadow.
             DesignProperty.Elevation -> Unit
+            // Folded into background_color by tintedBackground.
+            DesignProperty.BackgroundTint -> Unit
             DesignProperty.Italic ->
                 fontStyle(if (value.boolean()) FontStyle.Italic else FontStyle.Normal)
             // One decoration carries both lines, so the pair is applied once,
@@ -220,6 +223,46 @@ private fun DesignMotion.animationSpec(): AnimationSpec<Float> = when (easing) {
     DesignEasing.EaseInOut -> tween(durationMillis, easing = FastOutSlowInEasing)
     DesignEasing.Spring -> spring(dampingRatio = Spring.DampingRatioMediumBouncy)
 }
+
+/**
+ * BACKGROUND with the layer's `background_tint` fraction of its
+ * `content_color` mixed in; unchanged when either is absent.  Pure apart
+ * from resolving the content color, so the mix is JVM-tested.
+ */
+private fun StyleScope.tintedBackground(
+    background: Color,
+    properties: Map<DesignProperty, DesignValue>,
+): Color {
+    val tint = (properties[DesignProperty.BackgroundTint] as? DesignValue.NumberValue)?.value
+        ?: return background
+    val content = properties[DesignProperty.ContentColor] ?: return background
+    return mixTint(background, designColor(content), tint)
+}
+
+/**
+ * [tint] (clamped to 0..1) of [content] mixed into [background], per sRGB
+ * channel.  Not Compose's `lerp`, which mixes in Oklab: 7% white into
+ * black there is 1/255, a dark page's card would stay black.  The sRGB mix
+ * matches the Emacs theme mirror's own blend.  A dark background takes
+ * half again the fraction: near black the eye needs a larger step to see a
+ * card at all (7% reads as #111 on black, 10.5% as #1b1b1b).
+ */
+internal fun mixTint(background: Color, content: Color, tint: Double): Color {
+    val luminance = 0.2126f * background.red + 0.7152f * background.green +
+        0.0722f * background.blue
+    val boost = if (luminance < 0.5f) DARK_TINT_BOOST else 1.0
+    val t = (tint * boost).coerceIn(0.0, 1.0).toFloat()
+    fun mix(a: Float, b: Float) = a + (b - a) * t
+    return Color(
+        red = mix(background.red, content.red),
+        green = mix(background.green, content.green),
+        blue = mix(background.blue, content.blue),
+        alpha = background.alpha,
+    )
+}
+
+/** How much further a tint mixes on a dark background. */
+internal const val DARK_TINT_BOOST = 1.5
 
 private fun StyleScope.designColor(value: DesignValue): Color = when (value) {
     is DesignValue.ColorValue -> Color(value.argb)
@@ -342,6 +385,16 @@ internal fun CompiledDesignScope.composeChromeStyles(
             else -> null
         }
 
+    // A container's background, with its background_tint folded in as the
+    // Style path does for cards.
+    fun Map<DesignProperty, DesignValue>.container(): Color? {
+        val background = color(DesignProperty.BackgroundColor) ?: return null
+        val tint = (this[DesignProperty.BackgroundTint] as? DesignValue.NumberValue)?.value
+            ?: return background
+        val content = color(DesignProperty.ContentColor) ?: return background
+        return mixTint(background, content, tint)
+    }
+
     fun Map<DesignProperty, DesignValue>.text(): TextStyle? =
         TextStyle.Default.withDesignTextProperties(this, roles)
             .takeIf { it != TextStyle.Default }
@@ -357,6 +410,7 @@ internal fun CompiledDesignScope.composeChromeStyles(
     val tabIndicator = properties(DesignComponentStyleSlot.ChromeTabIndicator)
     val railLabel = properties(DesignComponentStyleSlot.ChromeRailLabel)
     val railIndicator = properties(DesignComponentStyleSlot.ChromeRailIndicator)
+    val rail = properties(DesignComponentStyleSlot.ChromeRail)
     val drawer = properties(DesignComponentStyleSlot.ChromeDrawer)
     val scrim = properties(DesignComponentStyleSlot.ChromeScrim)
     val bottomBar = properties(DesignComponentStyleSlot.ChromeBottomBar)
@@ -367,6 +421,7 @@ internal fun CompiledDesignScope.composeChromeStyles(
         tabIndicator = tabIndicator?.color(DesignProperty.BackgroundColor),
         railLabel = railLabel?.text(),
         railIndicator = railIndicator?.color(DesignProperty.BackgroundColor),
+        railContainer = rail?.container(),
         drawerContainer = drawer?.color(DesignProperty.BackgroundColor),
         drawerShape = drawer?.shape(),
         drawerWidth = (drawer?.get(DesignProperty.Width) as? DesignValue.DimensionValue)

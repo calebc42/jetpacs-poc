@@ -2294,8 +2294,29 @@ internal fun RenderPaneScaffold(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     val listPane: @Composable ThreePaneScaffoldPaneScope.() -> Unit = {
         AnimatedPane { RenderNode(list, ctx.child(list, 0, "list")) }
     }
+    // Side by side, the detail (or supporting) pane opens with a hairline
+    // at its start edge so the two panes read as two; one pane at a time
+    // (a phone) shows no edge.
+    val value = navigator.scaffoldValue
+    val sideBySide =
+        value.primary == androidx.compose.material3.adaptive.layout.PaneAdaptedValue.Expanded &&
+            value.secondary == androidx.compose.material3.adaptive.layout.PaneAdaptedValue.Expanded
     val detailPane: @Composable ThreePaneScaffoldPaneScope.() -> Unit = {
-        AnimatedPane { RenderNode(detail, ctx.child(detail, 1, "detail")) }
+        AnimatedPane {
+            if (sideBySide) {
+                Row(Modifier.fillMaxSize()) {
+                    androidx.compose.material3.VerticalDivider(
+                        Modifier.fillMaxHeight(),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    Box(Modifier.weight(1f)) {
+                        RenderNode(detail, ctx.child(detail, 1, "detail"))
+                    }
+                }
+            } else {
+                RenderNode(detail, ctx.child(detail, 1, "detail"))
+            }
+        }
     }
     val extraPane: (@Composable ThreePaneScaffoldPaneScope.() -> Unit)? =
         extra?.let { { AnimatedPane { RenderNode(it, ctx.child(it, 2, "extra")) } } }

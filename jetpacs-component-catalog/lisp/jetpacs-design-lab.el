@@ -75,7 +75,7 @@
     ":padding_bottom" ":width" ":height" ":min_width" ":min_height"
     ":alpha" ":scale" ":font_size" ":line_height"
     ":letter_spacing" ":font_family" ":font_weight" ":text_align"
-    ":fill_width" ":json-false")
+    ":fill_width" ":background_tint" ":json-false")
   "Only symbols an inert canonical profile source may contain.")
 
 (defun jetpacs-design-lab--baseline-profile ()

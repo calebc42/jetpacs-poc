@@ -74,6 +74,11 @@
       ("radius.panel" . ,(dim 12))
       ("radius.pill" . ,(dim 20)))))
 
+(defconst jetpacs-design-baseline-card-tint 0.07
+  "Fraction of a card's content color mixed into its surface on the device.
+Filled and elevated cards wear it; outlined cards keep the bordered,
+untinted surface.")
+
 (defun jetpacs-design-baseline--styles ()
   "The named faces; every color goes through a `color.*' token."
   (cl-flet ((tok (name) (jetpacs-design-token name))
@@ -91,6 +96,18 @@
              ("content_color" . ,(tok "color.on-surface"))
              ("border_color" . ,(tok "color.outline"))
              ("border_width" . ,(dim 1))
+             ("corner_radius" . ,(tok "radius.panel"))
+             ("padding" . ,(tok "space.panel")))))
+      ;; A card is a container on the page: the surface with a little of
+      ;; its own content color mixed in on the device, so it stands off
+      ;; the page under every theme (lighter on dark, darker on light).
+      ;; Themes, and Material You, give surface and background one color,
+      ;; so without the tint cards vanish into the page.
+      ("base.card"
+       . ,(jetpacs-design-style
+           `(("background_color" . ,(tok "color.surface"))
+             ("content_color" . ,(tok "color.on-surface"))
+             ("background_tint" . ,(num jetpacs-design-baseline-card-tint))
              ("corner_radius" . ,(tok "radius.panel"))
              ("padding" . ,(tok "space.panel")))))
       ("base.popup"
@@ -292,8 +309,8 @@
     ("empty-state.container" . ("base.screen"))
     ("empty-state.title" . ("typography.item-title"))
     ("empty-state.caption" . ("typography.supporting" "base.muted"))
-    ("card.filled" . ("base.surface"))
-    ("card.elevated" . ("base.surface"))
+    ("card.filled" . ("base.card"))
+    ("card.elevated" . ("base.card"))
     ("card.outlined" . ("base.surface"))
     ("list-item.container" . ("base.row"))
     ("list-item.overline" . ("typography.overline" "base.muted"))
@@ -339,6 +356,8 @@
     ("chrome.tab-indicator" . ("base.indicator"))
     ("chrome.rail-label" . ("typography.label"))
     ("chrome.rail-indicator" . ("base.toolkit"))
+    ;; The rail is lifted off the page like a card.
+    ("chrome.rail" . ("base.card"))
     ("chrome.drawer" . ("base.surface"))
     ("chrome.scrim" . ("base.toolkit"))
     ("chrome.bottom-bar" . ("base.toolkit"))
