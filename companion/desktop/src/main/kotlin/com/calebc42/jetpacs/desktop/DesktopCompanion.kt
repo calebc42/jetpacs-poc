@@ -2,6 +2,8 @@
 package com.calebc42.jetpacs.desktop
 
 import com.calebc42.jetpacs.companion.host.CompanionProcess
+import com.calebc42.jetpacs.companion.host.fonts.UserFontStore
+import com.calebc42.jetpacs.companion.host.fonts.UserFonts
 import com.calebc42.jetpacs.companion.host.CompanionTransport
 import com.calebc42.jetpacs.companion.host.LoopbackTcpTransport
 import com.calebc42.jetpacs.companion.host.DeviceBridge
@@ -35,6 +37,8 @@ class DesktopCompanion private constructor(
     val settings: DesktopSettings,
     /** Why the OS keychain was passed over, when it was; shown with the floor notice. */
     val keychainReports: List<String>,
+    /** The user's own fonts under the data directory, installed before the window opens. */
+    val userFonts: UserFonts,
 ) {
     /** What the transport is doing; `Listening(port)` carries an ephemeral port. */
     val transportStatus: StateFlow<TransportStatus> get() = bridge.transportStatus
@@ -52,6 +56,7 @@ class DesktopCompanion private constructor(
 
     companion object {
         const val SETTINGS_FILE = "settings.properties"
+        const val FONTS_DIRECTORY = "fonts"
         private const val SHUTDOWN_MILLIS = 5_000L
 
         suspend fun create(
@@ -68,6 +73,11 @@ class DesktopCompanion private constructor(
             val toasts = DesktopToasts()
             val settings = DesktopSettings(config.dataDirectory.resolve(SETTINGS_FILE))
             val platform = DesktopHostPlatform(config, credentials.protection, toasts, uiExecutor, settings)
+            val userFonts = UserFonts(
+                UserFontStore(config.dataDirectory.resolve(FONTS_DIRECTORY)),
+                DesktopFonts.fileLoader,
+                platform.log,
+            ).also { it.install() }
             // LD-11: an eighth of the heap is the image retention budget, as on Android.
             ImageCache.configure(Runtime.getRuntime().maxMemory() / 8)
             val process = CompanionProcess.create(
@@ -104,7 +114,7 @@ class DesktopCompanion private constructor(
                 onOpenSurface = presentation.onOpenSurface,
                 onOpenSettings = presentation.onOpenSettings,
             )
-            return DesktopCompanion(config, pairing, process, bridge, toasts, settings, reports)
+            return DesktopCompanion(config, pairing, process, bridge, toasts, settings, reports, userFonts)
         }
     }
 }

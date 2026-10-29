@@ -77,7 +77,10 @@ internal fun designComponentStyle(slot: DesignComponentStyleSlot): androidx.comp
     // composition.  A fresh Style instance makes the modifier re-resolve,
     // base styles included.
     val theme = LocalJetpacsTheme.current
-    return remember(computed?.layers, theme) {
+    // And on the installed fonts, for the same reason: a family the user
+    // installs or replaces must reach text already on screen.
+    val fonts = JetpacsFonts.current
+    return remember(computed?.layers, theme, fonts) {
         computed?.toFoundationStyle() ?: androidx.compose.foundation.style.Style {}
     }
 }
@@ -89,7 +92,8 @@ internal fun designComponentNonTextStyle(
 ): androidx.compose.foundation.style.Style {
     val computed = LocalDesignScope.current?.componentStyle(slot)
     val theme = LocalJetpacsTheme.current // see designComponentStyle
-    return remember(computed?.layers, theme) {
+    val fonts = JetpacsFonts.current
+    return remember(computed?.layers, theme, fonts) {
         computed?.toFoundationStyle(includeTextProperties = false)
             ?: androidx.compose.foundation.style.Style {}
     }
@@ -219,7 +223,9 @@ internal object JetpacsStyledComponent : JetpacsComponent("jetpacs.styled", Jetp
             RenderDesignChildren(children, context, modifier)
             return
         }
-        val style = remember(computed.layers, LocalJetpacsTheme.current) { computed.toFoundationStyle() }
+        val style = remember(computed.layers, LocalJetpacsTheme.current, JetpacsFonts.current) {
+            computed.toFoundationStyle()
+        }
         val interactionSource = remember { MutableInteractionSource() }
         val styleState = rememberUpdatedStyleState(interactionSource)
         val childStyle = computed.intrinsicLayout().then(computed.elevationShadow()).styleable(styleState, style)
@@ -270,7 +276,9 @@ internal object JetpacsPressableComponent : JetpacsComponent("jetpacs.pressable"
             it.isSelected = selected
             it.isChecked = toggled
         }
-        val style = remember(computed.layers, LocalJetpacsTheme.current) { computed.toFoundationStyle() }
+        val style = remember(computed.layers, LocalJetpacsTheme.current, JetpacsFonts.current) {
+            computed.toFoundationStyle()
+        }
         val (authoredWidth, authoredHeight) = remember(computed.layers) { computed.authoredSize() }
         val centered = remember(computed.layers) {
             (computed.baseOnly().resolve().properties[DesignProperty.CenterVertically]

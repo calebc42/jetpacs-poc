@@ -37,6 +37,7 @@ import com.calebc42.jetpacs.companion.host.ui.LocalCompanionRendererConfiguratio
 import com.calebc42.jetpacs.companion.host.ui.LocalHostUiPlatform
 import com.calebc42.jetpacs.companion.host.ui.PieMenuHost
 import com.calebc42.jetpacs.companion.host.ui.PlatformDesignRipple
+import com.calebc42.jetpacs.companion.host.ui.rememberEbpFontFamilies
 import com.calebc42.jetpacs.material3.EbpTheme
 import com.calebc42.jetpacs.material3.IconMap
 import com.calebc42.jetpacs.renderer.jetpacs.LocalDesignRippleFactory
@@ -109,7 +110,7 @@ class MainActivity : ComponentActivity() {
                 // Its authored touch ripples are the platform's, as Material draws them.
                 LocalDesignRippleFactory provides PlatformDesignRipple,
             ) {
-                EbpTheme(themePayload) {
+                EbpTheme(themePayload, rememberEbpFontFamilies()) {
                     ProvideJetpacsTheme(themePayload) {
                         val context = LocalContext.current
                         var onboardingRequired by remember {

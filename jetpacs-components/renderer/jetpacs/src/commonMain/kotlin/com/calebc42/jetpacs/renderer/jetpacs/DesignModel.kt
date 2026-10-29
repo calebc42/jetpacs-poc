@@ -213,12 +213,23 @@ enum class DesignComponentStyleSlot(val wireName: String) {
     }
 }
 
-enum class DesignFontFamily {
-    System,
-    PlexSans,
-    PlexSerif,
-    PlexMono,
-    SystemMono,
+/**
+ * The family a `font-family` value names. Five names are built in: the
+ * platform's default and monospace families and the three bundled IBM Plex
+ * families. Any other bounded identifier is [Named]: a family the device may
+ * have installed from the user's own font files, resolved through
+ * [JetpacsFonts] and rendered in the sans role where this device lacks it.
+ * The wire carries the name only; no font file crosses EBP.
+ */
+sealed interface DesignFontFamily {
+    data object System : DesignFontFamily
+    data object PlexSans : DesignFontFamily
+    data object PlexSerif : DesignFontFamily
+    data object PlexMono : DesignFontFamily
+    data object SystemMono : DesignFontFamily
+
+    /** A device-installed family by its bounded identifier. */
+    data class Named(val slug: String) : DesignFontFamily
 }
 
 enum class DesignTextAlign {
@@ -930,7 +941,13 @@ object DesignModel {
                     "plex-serif" -> DesignFontFamily.PlexSerif
                     "plex-mono" -> DesignFontFamily.PlexMono
                     "system-mono" -> DesignFontFamily.SystemMono
-                    else -> invalid("$path.value", "has an unknown font family")
+                    // Any other bounded identifier names a family the device
+                    // may have installed; the renderer falls back where not.
+                    else -> if (validIdentifier(raw)) {
+                        DesignFontFamily.Named(raw)
+                    } else {
+                        invalid("$path.value", "must name a font family by bounded identifier")
+                    }
                 },
             )
             "font-weight" -> {

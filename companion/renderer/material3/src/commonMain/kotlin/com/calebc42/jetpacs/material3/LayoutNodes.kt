@@ -2061,7 +2061,8 @@ private fun TableCell(cell: JsonObject, header: Boolean, ctx: RenderCtx) {
     val scheme = MaterialTheme.colorScheme
     val annotated = buildSpanString(
         cell.arrOrNull("spans"), scheme.primary,
-        { resolveColorIn(scheme, it) }, { ctx.action(it) })
+        { resolveColorIn(scheme, it) }, { ctx.action(it) },
+        mono = LocalEbpFontFamilies.current.monospace)
     val base = MaterialTheme.typography.bodyMedium
     val clickMod = if (onTap != null || onLongTap != null)
         Modifier.combinedClickable(

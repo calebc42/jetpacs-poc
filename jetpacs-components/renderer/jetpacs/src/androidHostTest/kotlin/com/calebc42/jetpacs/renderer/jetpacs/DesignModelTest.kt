@@ -376,6 +376,43 @@ class DesignModelTest {
     }
 
     @Test
+    fun fontFamilyAcceptsBuiltInNamesAndAnyBoundedIdentifier() {
+        val compiled = DesignModel.compileScope(
+            scope(
+                """
+                {"tokens":{},
+                 "styles":{
+                   "bundled":{"properties":{"font_family":{"kind":"font-family","value":"plex-mono"}},"rules":[]},
+                   "installed":{"properties":{"font_family":{"kind":"font-family","value":"literata"}},"rules":[]}
+                 },
+                 "children":[]}
+                """,
+            ),
+        )
+        assertEquals(
+            DesignValue.FontFamilyValue(DesignFontFamily.PlexMono),
+            compiled.computedStyle(listOf("bundled"), "root").resolve().properties[DesignProperty.FontFamily],
+        )
+        // A name outside the built-in five is a family the device may have
+        // installed; the renderer, not the model, decides the fallback.
+        assertEquals(
+            DesignValue.FontFamilyValue(DesignFontFamily.Named("literata")),
+            compiled.computedStyle(listOf("installed"), "root").resolve().properties[DesignProperty.FontFamily],
+        )
+
+        val notAnIdentifier = assertThrows(ContentInvalid::class.java) {
+            DesignModel.compileScope(
+                scope(
+                    """
+                    {"tokens":{},"styles":{"bad":{"properties":{"font_family":{"kind":"font-family","value":"Plex Display"}},"rules":[]}},"children":[]}
+                    """,
+                ),
+            )
+        }
+        assertEquals("root.styles.bad.properties.font_family.value", notAnIdentifier.path)
+    }
+
+    @Test
     fun unresolvedAndCyclicReferencesPreservePaths() {
         val missingToken = assertThrows(ContentInvalid::class.java) {
             DesignModel.compileScope(

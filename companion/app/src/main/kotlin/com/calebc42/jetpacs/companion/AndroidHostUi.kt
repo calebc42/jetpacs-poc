@@ -3,14 +3,23 @@ package com.calebc42.jetpacs.companion
 
 import android.content.Context
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
-import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.window.DialogWindowProvider
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.DialogWindowProvider
+import com.calebc42.jetpacs.companion.host.fonts.PickedFontFile
+import com.calebc42.jetpacs.companion.host.fonts.UserFonts
 import com.calebc42.jetpacs.companion.host.ui.HostUiPlatform
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * The Android half of the shared window composition: the Activity's back
@@ -63,4 +72,22 @@ internal class AndroidHostUi(context: Context) : HostUiPlatform {
     }
 
     override val offersSetup: Boolean get() = EngineFlavor.offersSetup
+
+    override val userFonts: UserFonts? get() = (app as? JetpacsApplication)?.userFonts
+
+    @Composable
+    override fun rememberFontFilePicker(onPicked: (PickedFontFile?) -> Unit): (() -> Unit)? {
+        val current = rememberUpdatedState(onPicked)
+        val scope = rememberCoroutineScope()
+        val launcher = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) {
+                current.value(null)
+            } else {
+                scope.launch {
+                    current.value(withContext(Dispatchers.IO) { AndroidUserFonts.read(app, uri) })
+                }
+            }
+        }
+        return { launcher.launch(AndroidUserFonts.pickerMimeTypes) }
+    }
 }

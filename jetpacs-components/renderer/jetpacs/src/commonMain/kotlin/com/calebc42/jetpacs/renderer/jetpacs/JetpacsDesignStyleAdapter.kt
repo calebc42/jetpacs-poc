@@ -541,14 +541,22 @@ private fun DesignValue.textAlign(): TextAlign = when (
     DesignTextAlign.End -> TextAlign.End
 }
 
-private fun DesignValue.fontFamily(): FontFamily = when (
-    (this as DesignValue.FontFamilyValue).value
-) {
-    DesignFontFamily.System -> FontFamily.Default
-    DesignFontFamily.PlexSans -> PlexFonts.sans
-    DesignFontFamily.PlexSerif -> PlexFonts.serif
-    DesignFontFamily.PlexMono -> PlexFonts.mono
-    DesignFontFamily.SystemMono -> FontFamily.Monospace
+/**
+ * The Compose family for a `font-family` value, through the installed
+ * [JetpacsFonts]: a role the user replaced wins over the bundled or platform
+ * family, and a named family this device lacks falls back to the sans role.
+ */
+private fun DesignValue.fontFamily(): FontFamily {
+    val installed = JetpacsFonts.current
+    return when (val family = (this as DesignValue.FontFamilyValue).value) {
+        DesignFontFamily.System -> installed.sans ?: FontFamily.Default
+        DesignFontFamily.PlexSans -> installed.sans ?: PlexFonts.sans
+        DesignFontFamily.PlexSerif -> installed.serif ?: PlexFonts.serif
+        DesignFontFamily.PlexMono -> installed.mono ?: PlexFonts.mono
+        DesignFontFamily.SystemMono -> installed.mono ?: FontFamily.Monospace
+        is DesignFontFamily.Named ->
+            installed.named[family.slug] ?: installed.sans ?: FontFamily.Default
+    }
 }
 
 /**

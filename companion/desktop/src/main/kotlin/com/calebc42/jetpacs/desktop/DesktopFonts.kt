@@ -2,6 +2,7 @@
 package com.calebc42.jetpacs.desktop
 
 import androidx.compose.ui.text.platform.Font
+import com.calebc42.jetpacs.companion.host.fonts.FontFileLoader
 import com.calebc42.jetpacs.renderer.jetpacs.JetpacsJvmFonts
 
 /**
@@ -15,5 +16,10 @@ object DesktopFonts {
         JetpacsJvmFonts.loader = JetpacsJvmFonts.Loader { resource, weight, style ->
             Font(resource = resource, weight = weight, style = style)
         }
+    }
+
+    /** The same platform call for a file the user added: the desktop's `Font(File)`. */
+    val fileLoader = FontFileLoader { file, weight, style ->
+        Font(file = file.toFile(), weight = weight, style = style)
     }
 }

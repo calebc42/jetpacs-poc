@@ -13,6 +13,7 @@ import com.calebc42.ebp.renderer.model.*
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -23,6 +24,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.Density
@@ -50,6 +52,49 @@ data class ExtendedColors(
 
 /** Falls back to the light defaults before any EbpTheme provides real ones. */
 val LocalExtendedColors = staticCompositionLocalOf { ExtendedColors.defaults(false) }
+
+/**
+ * The families the user installed for the two roles Material text uses: the
+ * body family every typography style wears, and the monospace family the
+ * `mono` text style, `mono` spans, the editor and its doc lines wear. A null
+ * role keeps Material's default or the platform monospace. The host supplies
+ * them from the user's own font files; nothing here reads a file, and no
+ * font ever arrives over EBP.
+ */
+data class EbpFontFamilies(
+    val body: FontFamily? = null,
+    val mono: FontFamily? = null,
+) {
+    /** The monospace family in effect: the user's, else the platform's. */
+    val monospace: FontFamily get() = mono ?: FontFamily.Monospace
+
+    companion object {
+        /** Material's own families throughout. */
+        val None = EbpFontFamilies()
+    }
+}
+
+/** The installed families, provided by [EbpTheme]; Material's own before any theme. */
+val LocalEbpFontFamilies = staticCompositionLocalOf { EbpFontFamilies.None }
+
+/** [typography] with every style's family replaced by [family]. */
+internal fun Typography.withFontFamily(family: FontFamily): Typography = copy(
+    displayLarge = displayLarge.copy(fontFamily = family),
+    displayMedium = displayMedium.copy(fontFamily = family),
+    displaySmall = displaySmall.copy(fontFamily = family),
+    headlineLarge = headlineLarge.copy(fontFamily = family),
+    headlineMedium = headlineMedium.copy(fontFamily = family),
+    headlineSmall = headlineSmall.copy(fontFamily = family),
+    titleLarge = titleLarge.copy(fontFamily = family),
+    titleMedium = titleMedium.copy(fontFamily = family),
+    titleSmall = titleSmall.copy(fontFamily = family),
+    bodyLarge = bodyLarge.copy(fontFamily = family),
+    bodyMedium = bodyMedium.copy(fontFamily = family),
+    bodySmall = bodySmall.copy(fontFamily = family),
+    labelLarge = labelLarge.copy(fontFamily = family),
+    labelMedium = labelMedium.copy(fontFamily = family),
+    labelSmall = labelSmall.copy(fontFamily = family),
+)
 
 private fun JsonObject.role(key: String): Color? =
     stringOr(key).takeIf { it.isNotEmpty() }
@@ -171,10 +216,17 @@ fun buildExtendedColors(lookup: (String) -> Color?, dark: Boolean): ExtendedColo
  * device wallpaper. `font_scale` (0.4..2.0) scales every text node together
  * through LocalDensity; `layout_direction` (ltr|rtl) mirrors the whole layout,
  * absent following the system for both — the tri-state `dark` convention.
- * `syntax` is read separately by the editor (W9-h2).
+ * `syntax` is read separately by the editor (W9-h2). [fonts] carries the
+ * families the user installed on this device for the body and mono roles;
+ * they re-font Material's typography and the renderer's monospace text and
+ * are not part of the payload, since Emacs never sees a device's font files.
  */
 @Composable
-fun EbpTheme(payload: JsonObject?, content: @Composable () -> Unit) {
+fun EbpTheme(
+    payload: JsonObject?,
+    fonts: EbpFontFamilies = EbpFontFamilies.None,
+    content: @Composable () -> Unit,
+) {
     // C6: `boolOrNull` is the by-primitive form of the old `is Boolean` arm —
     // only a real JSON boolean forces polarity; absent, JSON null and a
     // non-boolean all fall to the system (amendment #36). The system read stays
@@ -209,14 +261,19 @@ fun EbpTheme(payload: JsonObject?, content: @Composable () -> Unit) {
         "rtl" -> LayoutDirection.Rtl
         else -> LocalLayoutDirection.current
     }
+    val baseTypography = MaterialTheme.typography
+    val typography = remember(baseTypography, fonts.body) {
+        fonts.body?.let(baseTypography::withFontFamily) ?: baseTypography
+    }
     CompositionLocalProvider(
         LocalExtendedColors provides extended,
         LocalSyntaxColors provides syntax,
+        LocalEbpFontFamilies provides fonts,
         LocalDensity provides (fontScale?.let { Density(density.density, it) }
             ?: density),
         LocalLayoutDirection provides direction,
     ) {
-        MaterialTheme(colorScheme = scheme) {
+        MaterialTheme(colorScheme = scheme, typography = typography) {
             ProvideJetpacsStyleTokens(
                 colors = MaterialTheme.colorScheme,
                 shapes = MaterialTheme.shapes,

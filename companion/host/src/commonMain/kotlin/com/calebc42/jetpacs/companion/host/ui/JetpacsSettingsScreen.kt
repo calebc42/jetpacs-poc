@@ -113,6 +113,10 @@ fun JetpacsSettingsScreen(
                     )
                 }
             }
+            platform.userFonts?.let { fonts ->
+                HorizontalDivider(Modifier.padding(vertical = 16.dp))
+                FontSettings(fonts, platform)
+            }
             HorizontalDivider(Modifier.padding(vertical = 16.dp))
             Text("Experiments", style = MaterialTheme.typography.titleSmall)
             Row(

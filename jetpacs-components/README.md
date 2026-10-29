@@ -110,6 +110,29 @@ JetpacsJvmFonts.loader = JetpacsJvmFonts.Loader { resource, weight, style ->
 Without a loader the Plex families fall back to the platform's default sans,
 serif and monospace families.
 
+### User fonts
+
+A `font-family` value is one of the five built-in names (`system`,
+`plex-sans`, `plex-serif`, `plex-mono`, `system-mono`) or any other bounded
+identifier, which names a family the Companion's user installed from their own
+font files (`jetpacs-design-font-family` accepts both). The renderer resolves
+names through `JetpacsFonts`, a process-wide `JetpacsFontSet` the host installs:
+
+- `named` maps an identifier to the Compose family built from the user's
+  files. A name this device lacks renders in the sans role, so a design
+  authored against one device's fonts still renders on another.
+- `sans`, `serif` and `mono` replace a whole role: `plex-sans` and `system`
+  resolve to `sans`, `plex-serif` to `serif`, `plex-mono` and `system-mono` to
+  `mono`, and the renderer's own typography follows the same roles. A null role
+  keeps the bundled Plex family.
+
+Every remembered Style is keyed on the installed set, so `JetpacsFonts.install`
+re-fonts text already on screen. Font bytes never cross EBP: the wire carries
+the name, and the host keeps the files (the Companion's `UserFontStore`, which
+reads a file's own `name` and `OS/2` tables for the family, weight and style,
+groups faces by family, and offers the three role assignments on the Jetpacs
+Settings screen).
+
 ### Nested scopes inherit
 
 A `jetpacs.design_scope` nested inside another resolves token and motion

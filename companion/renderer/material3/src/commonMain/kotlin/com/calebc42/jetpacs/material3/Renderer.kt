@@ -1304,7 +1304,7 @@ internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
             // fontify run Emacs sends: alignment is half of what font-lock
             // communicates. POC 1's editor was monospaced; this one was not.
             textStyle = LocalTextStyle.current.copy(
-                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+                fontFamily = LocalEbpFontFamilies.current.monospace),
             modifier = binding.fieldModifier(Modifier.fillMaxWidth()))
         // SPEC 19.5: the doc line, between the field and the keyboard. A
         // diagnostic under the caret WINS — a user who moved onto a squiggle
@@ -1340,8 +1340,7 @@ internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     } else {
                         Text(eldoc!!,
                             style = MaterialTheme.typography.labelSmall.copy(
-                                fontFamily =
-                                    androidx.compose.ui.text.font.FontFamily.Monospace),
+                                fontFamily = LocalEbpFontFamilies.current.monospace),
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             maxLines = 2,
                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -1454,8 +1453,7 @@ internal fun RenderEditor(node: JsonObject, ctx: RenderCtx, m: Modifier) {
                     visible.map { it.index })) {
                 Text(doc.text,
                     style = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily =
-                            androidx.compose.ui.text.font.FontFamily.Monospace),
+                        fontFamily = LocalEbpFontFamilies.current.monospace),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier
                         .fillMaxWidth()

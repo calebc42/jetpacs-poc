@@ -276,13 +276,23 @@ fun deriveJetpacsColors(roles: JetpacsThemeRoles, dark: Boolean): JetpacsColors 
 }
 
 /** The complete private theme a design scope installs for re-declared [roles]. */
-internal fun jetpacsThemeFor(roles: JetpacsThemeRoles, dark: Boolean): JetpacsThemeValue =
-    defaultTheme(deriveJetpacsColors(roles, dark), roles, dark)
+internal fun jetpacsThemeFor(
+    roles: JetpacsThemeRoles,
+    dark: Boolean,
+    fonts: JetpacsFontSet = JetpacsFonts.current,
+): JetpacsThemeValue = defaultTheme(deriveJetpacsColors(roles, dark), roles, dark, fonts)
 
+/**
+ * The theme for [colors] and [roles]. Its typography takes the sans and mono
+ * roles from [fonts], the user's installed replacements, before the platform
+ * families, so a replaced role re-fonts every Jetpacs control as well as
+ * every design that names it.
+ */
 private fun defaultTheme(
     colors: JetpacsColors,
     roles: JetpacsThemeRoles,
     dark: Boolean = false,
+    fonts: JetpacsFontSet = JetpacsFonts.current,
 ) = JetpacsThemeValue(
     roles = roles,
     colors = colors,
@@ -290,84 +300,84 @@ private fun defaultTheme(
     typography = JetpacsTypography(
         body = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 16.sp,
             lineHeight = 24.sp,
         ),
         title = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 22.sp,
             fontWeight = FontWeight.Medium,
             lineHeight = 28.sp,
         ),
         headline = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 24.sp,
             lineHeight = 32.sp,
         ),
         caption = TextStyle(
             color = colors.mutedContent,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 12.sp,
             lineHeight = 16.sp,
         ),
         label = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             lineHeight = 16.sp,
         ),
         mono = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = fonts.mono ?: FontFamily.Monospace,
             fontSize = 14.sp,
             lineHeight = 20.sp,
         ),
         action = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 15.sp,
             fontWeight = FontWeight.Medium,
             lineHeight = 20.sp,
         ),
         choice = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 15.sp,
             lineHeight = 20.sp,
         ),
         panelLabel = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = fonts.mono ?: FontFamily.Monospace,
             fontSize = 13.sp,
             fontWeight = FontWeight.SemiBold,
             lineHeight = 18.sp,
         ),
         code = TextStyle(
             color = colors.mutedContent,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = fonts.mono ?: FontFamily.Monospace,
             fontSize = 12.sp,
             lineHeight = 17.sp,
         ),
         field = TextStyle(
             color = colors.content,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 15.sp,
             lineHeight = 20.sp,
         ),
         fieldLabel = TextStyle(
             color = colors.mutedContent,
-            fontFamily = FontFamily.Monospace,
+            fontFamily = fonts.mono ?: FontFamily.Monospace,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             lineHeight = 16.sp,
         ),
         fieldSupporting = TextStyle(
             color = colors.mutedContent,
-            fontFamily = FontFamily.SansSerif,
+            fontFamily = fonts.sans ?: FontFamily.SansSerif,
             fontSize = 12.sp,
             lineHeight = 16.sp,
         ),

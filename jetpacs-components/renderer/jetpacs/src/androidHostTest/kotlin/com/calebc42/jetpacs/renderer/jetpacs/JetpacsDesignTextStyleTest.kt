@@ -3,6 +3,7 @@ package com.calebc42.jetpacs.renderer.jetpacs
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
@@ -11,6 +12,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.After
 import org.junit.Assert.assertNull
 import org.junit.Test
 
@@ -119,5 +121,54 @@ class JetpacsDesignTextStyleTest {
         assertNull(canonicalFontWeight(JsonPrimitive("9")))
         assertNull(canonicalFontWeight(JsonPrimitive(0)))
         assertNull(canonicalFontWeight(JsonPrimitive(1001)))
+    }
+
+    @After
+    fun clearInstalledFonts() {
+        JetpacsFonts.install(JetpacsFontSet.None)
+    }
+
+    private fun familyOf(family: DesignFontFamily): FontFamily? =
+        fallback.withDesignTextProperties(
+            mapOf(DesignProperty.FontFamily to DesignValue.FontFamilyValue(family)),
+            roles,
+        ).fontFamily
+
+    @Test
+    fun installedFamiliesResolveByNameAndFallBackToTheSansRole() {
+        val literata = FontFamily.Serif
+        val userSans = FontFamily.Cursive
+
+        // Nothing installed: a named family renders in the platform default.
+        assertEquals(FontFamily.Default, familyOf(DesignFontFamily.Named("literata")))
+
+        JetpacsFonts.install(JetpacsFontSet(named = mapOf("literata" to literata)))
+        assertEquals(literata, familyOf(DesignFontFamily.Named("literata")))
+        assertEquals(FontFamily.Default, familyOf(DesignFontFamily.Named("missing")))
+
+        // With a sans role replaced, an unknown name follows that role.
+        JetpacsFonts.install(JetpacsFontSet(named = mapOf("literata" to literata), sans = userSans))
+        assertEquals(userSans, familyOf(DesignFontFamily.Named("missing")))
+        assertEquals(literata, familyOf(DesignFontFamily.Named("literata")))
+    }
+
+    @Test
+    fun replacedRolesCoverTheBundledAndTheSystemFamilies() {
+        val sans = FontFamily.Cursive
+        val serif = FontFamily.Serif
+        val mono = FontFamily.Monospace
+        JetpacsFonts.install(JetpacsFontSet(sans = sans, serif = serif, mono = mono))
+
+        assertEquals(sans, familyOf(DesignFontFamily.System))
+        assertEquals(sans, familyOf(DesignFontFamily.PlexSans))
+        assertEquals(serif, familyOf(DesignFontFamily.PlexSerif))
+        assertEquals(mono, familyOf(DesignFontFamily.PlexMono))
+        assertEquals(mono, familyOf(DesignFontFamily.SystemMono))
+
+        // A role left null keeps the bundled family.
+        JetpacsFonts.install(JetpacsFontSet(serif = serif))
+        assertEquals(PlexFonts.sans, familyOf(DesignFontFamily.PlexSans))
+        assertEquals(FontFamily.Default, familyOf(DesignFontFamily.System))
+        assertEquals(serif, familyOf(DesignFontFamily.PlexSerif))
     }
 }

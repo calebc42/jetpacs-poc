@@ -158,7 +158,8 @@ internal fun textStyleForName(name: String): TextStyle = when (name) {
     "headline" -> MaterialTheme.typography.headlineSmall
     "caption" -> MaterialTheme.typography.bodySmall
     "label" -> MaterialTheme.typography.labelMedium
-    "mono" -> MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+    "mono" -> MaterialTheme.typography.bodyMedium.copy(
+        fontFamily = LocalEbpFontFamilies.current.monospace)
     else -> MaterialTheme.typography.bodyLarge
 }
 
@@ -244,6 +245,8 @@ internal fun buildSpanString(
     linkColor: Color,
     resolve: (String?) -> Color?,
     dispatch: (JsonObject) -> Unit,
+    /** The family a `mono` span wears: the user's installed one where there is one. */
+    mono: FontFamily = FontFamily.Monospace,
 ): AnnotatedString = buildAnnotatedString {
     if (spans == null) return@buildAnnotatedString
     for (i in 0 until spans.size) {
@@ -255,7 +258,7 @@ internal fun buildSpanString(
         val span = SpanStyle(
             fontWeight = fontWeightOf(s["font_weight"]),
             fontStyle = if (s.boolOr("italic")) FontStyle.Italic else null,
-            fontFamily = if (s.boolOr("mono")) FontFamily.Monospace else null,
+            fontFamily = if (s.boolOr("mono")) mono else null,
             textDecoration = if (s.boolOr("underline")) TextDecoration.Underline else null,
             // Amendment #201: scale is relative to the enclosing text size.
             fontSize = s["scale"]?.numOrNull()?.toFloat()?.takeIf { it in 0.5f..2.0f }?.em
@@ -289,12 +292,14 @@ internal fun RenderRichText(node: JsonObject, ctx: RenderCtx, m: Modifier) {
     // Reuse it while the immutable wire value/theme is unchanged; links still
     // dispatch through the newest renderer context after recomposition.
     val currentCtx = rememberUpdatedState(ctx)
-    val annotated = remember(spans, scheme) {
+    val mono = LocalEbpFontFamilies.current.monospace
+    val annotated = remember(spans, scheme, mono) {
         buildSpanString(
             spans,
             linkColor = scheme.primary,
             resolve = { resolveColorIn(scheme, it) },
-            dispatch = { currentCtx.value.action(it) })
+            dispatch = { currentCtx.value.action(it) },
+            mono = mono)
     }
     Text(text = annotated, style = style, modifier = m)
 }

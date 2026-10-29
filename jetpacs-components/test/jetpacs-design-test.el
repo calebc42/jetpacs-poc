@@ -412,7 +412,12 @@ that advertises `jetpacs.list_item'."
   (dolist (family jetpacs-design-font-families)
     (should (equal (plist-get (jetpacs-design-font-family family) :value)
                    family)))
-  (should-error (jetpacs-design-font-family "plex-display"))
+  ;; Any other identifier names a family the user installed on the
+  ;; Companion; only a non-identifier is refused.
+  (should (equal (plist-get (jetpacs-design-font-family "literata") :value)
+                 "literata"))
+  (should-error (jetpacs-design-font-family "Plex Display"))
+  (should-error (jetpacs-design-font-family 'plex-sans))
   (dolist (weight jetpacs-design-font-weights)
     (should (equal (plist-get (jetpacs-design-font-weight weight) :value)
                    (number-to-string weight))))

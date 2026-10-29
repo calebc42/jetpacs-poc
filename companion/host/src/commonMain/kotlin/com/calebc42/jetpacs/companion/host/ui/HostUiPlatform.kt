@@ -46,6 +46,24 @@ interface HostUiPlatform {
     val listeningEndpoint: String
 
     /**
+     * The user's own fonts on this device, or null on a platform that keeps
+     * none; the Fonts section of the settings screen composes only with both
+     * this and a [rememberFontFilePicker] launcher.
+     */
+    val userFonts: com.calebc42.jetpacs.companion.host.fonts.UserFonts? get() = null
+
+    /**
+     * Remember a launcher for the platform's file picker, which hands the
+     * chosen file to [onPicked], or null when the user dismissed it. A
+     * platform without a picker returns null and the Fonts section offers
+     * no "Add" button. Reading the file happens off the UI thread.
+     */
+    @Composable
+    fun rememberFontFilePicker(
+        onPicked: (com.calebc42.jetpacs.companion.host.fonts.PickedFontFile?) -> Unit,
+    ): (() -> Unit)? = null
+
+    /**
      * Settings the platform owns, composed first on the Jetpacs Settings
      * screen and ending with their own divider: the bundled Android
      * engine's background running and where its notes live. The default

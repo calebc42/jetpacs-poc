@@ -146,7 +146,10 @@ Public so an editor can offer only the values a property accepts.")
 
 (defconst jetpacs-design-font-families
   '("system" "plex-sans" "plex-serif" "plex-mono" "system-mono")
-  "Closed font family names a font-family value may carry.")
+  "Built-in font family names a font-family value may carry.
+Any other SPEC 4.4 identifier names a family the Companion's user
+installed from their own font files (`jetpacs-design-font-family');
+a Companion without it renders the sans role instead.")
 
 (defconst jetpacs-design-font-weights
   '(100 200 300 400 500 600 700 800 900)
@@ -209,8 +212,13 @@ MINIMUM and MAXIMUM are inclusive; WHAT identifies the authored field."
    "number" (jetpacs-design--number-string value -10000 10000 "number")))
 
 (defun jetpacs-design-font-family (value)
-  "Build a design font-family VALUE."
-  (unless (member value jetpacs-design-font-families)
+  "Build a design font-family VALUE.
+VALUE is one of `jetpacs-design-font-families' or the identifier of a
+family the user installed on the Companion.  Only the name travels;
+the Companion keeps the font files and falls back to its sans role
+when it has no family by that name."
+  (unless (or (member value jetpacs-design-font-families)
+              (and (stringp value) (jetpacs-identifier-p value)))
     (error "jetpacs-design: unknown font family %S" value))
   (jetpacs-design--value "font-family" value))
 

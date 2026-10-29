@@ -88,7 +88,12 @@ screen was already presented by its app.
 
 The baseline deliberately uses theme roles instead of literal colors, system
 type for ordinary content, Plex Mono for code and metadata, and binds every
-closed component slot. A profile may publish all 13 EBP color roles into the
+closed component slot. A `font-family` value names one of the five built-in
+families or, by any other identifier, a family the Companion's user installed
+from their own font files; the Companion resolves the name on the device
+(`JetpacsFonts`, jetpacs-components README "User fonts"), falls back to its
+sans role for a family it lacks, and lets the user replace the sans, serif and
+mono roles device-wide from Jetpacs Settings. No font file crosses EBP. A profile may publish all 13 EBP color roles into the
 renderer scope. Material chrome consumes those resolved roles without making
 the design extension a Material dependency; polarity, density, layout
 direction, and syntax colors remain properties of the receiver theme.

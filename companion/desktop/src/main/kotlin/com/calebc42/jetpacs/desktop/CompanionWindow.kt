@@ -19,6 +19,7 @@ import com.calebc42.ebp.renderer.compose.LocalComposeIconResolver
 import com.calebc42.jetpacs.companion.host.ui.ConfirmHost
 import com.calebc42.jetpacs.companion.host.ui.DialogHost
 import com.calebc42.jetpacs.companion.host.ui.JetpacsNavHost
+import com.calebc42.jetpacs.companion.host.ui.rememberEbpFontFamilies
 import com.calebc42.jetpacs.companion.host.ui.LocalCompanionRendererConfiguration
 import com.calebc42.jetpacs.companion.host.ui.LocalHostUiPlatform
 import com.calebc42.jetpacs.companion.host.ui.PieMenuHost
@@ -51,7 +52,12 @@ fun CompanionWindow(
         bridge.windowChanged(size.width.value.toInt(), size.height.value.toInt())
     }
     val hostUi = remember(companion) {
-        DesktopHostUi(windowSize, companion.config.endpoint, companion.config.waitingDescription)
+        DesktopHostUi(
+            windowSize,
+            companion.config.endpoint,
+            companion.config.waitingDescription,
+            companion.userFonts,
+        )
     }
     // A freshly generated token must be shown before anything else, whatever
     // an older settings file says.
@@ -67,7 +73,7 @@ fun CompanionWindow(
         // Its authored touch ripples are the platform's, as Material draws them.
         LocalDesignRippleFactory provides PlatformDesignRipple,
     ) {
-        EbpTheme(themePayload) {
+        EbpTheme(themePayload, rememberEbpFontFamilies()) {
             ProvideJetpacsTheme(themePayload) {
                 Surface(Modifier.fillMaxSize()) {
                     Box {

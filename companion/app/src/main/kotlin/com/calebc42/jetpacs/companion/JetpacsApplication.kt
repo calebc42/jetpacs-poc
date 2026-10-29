@@ -50,6 +50,10 @@ class JetpacsApplication : Application() {
         private set
     lateinit var container: CompanionProcess
         private set
+
+    /** The user's own fonts, installed in the renderers before the first window; null in the engine process. */
+    var userFonts: com.calebc42.jetpacs.companion.host.fonts.UserFonts? = null
+        private set
     val stores: CompanionStores get() = container.stores
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -72,6 +76,9 @@ class JetpacsApplication : Application() {
         com.calebc42.jetpacs.material3.ImageCache.configure(
             am.memoryClass.toLong() * 1024 * 1024 / 8)
         container = JetpacsProcessContainer.create(this)
+        // The user's fonts re-font both renderers; the manifest is a small
+        // read and the files themselves load at first layout.
+        userFonts = AndroidUserFonts.create(this, container.platform.log).also { it.install() }
         val presentation = container.presentation
         // The flavor owns listener lifetime (the standalone's best-effort FGS,
         // or the bundled process itself). This process root constructs the
