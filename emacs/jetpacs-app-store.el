@@ -83,7 +83,9 @@ by app code keeps working across the packaged-app transition.")
 The catalog is inert data: merely loading the app store does not require an
 app feature or run its registration function.  Distribution composition lives
 outside the foundation layer and fills this variable through the generic
-`jetpacs-packaged-apps' manifest when that satellite is on `load-path'.")
+`jetpacs-packaged-apps' manifest when that satellite is on `load-path'.
+An entry's `:replaces' lists the names it was persisted under before a
+rename; `jetpacs-app-store-boot' carries those choices over to `:name'.")
 
 ;; Metadata only: this soft require never loads an app feature.  The public
 ;; `jetpacs' entry adds every emacs/apps/* directory before it composes init;
@@ -300,12 +302,31 @@ the app's entry file as `load-file-name' (`jetpacs-apps-call-register')."
       (error "Packaged app %s did not register"
              (plist-get entry :name)))))
 
+(defun jetpacs-app-store--current-name (name)
+  "NAME, or the packaged app's name when one `:replaces' NAME."
+  (or (plist-get (seq-find (lambda (entry)
+                             (member name (plist-get entry :replaces)))
+                           jetpacs-app-store-packaged-apps)
+                 :name)
+      name))
+
+(defun jetpacs-app-store--migrate-renames ()
+  "Rewrite renamed apps in `jetpacs-app-store-installed' to their names now.
+Persists the list when anything changed, so the migration runs once."
+  (let ((migrated (delete-dups (mapcar #'jetpacs-app-store--current-name
+                                       jetpacs-app-store-installed))))
+    (unless (equal migrated jetpacs-app-store-installed)
+      (setq jetpacs-app-store-installed migrated)
+      (ignore-errors (jetpacs-app-store--persist)))))
+
 (defun jetpacs-app-store-boot ()
   "Load persisted choices, then activate each app — each isolated.
 One broken bundle costs itself, never the boot (the session-hook
-lesson)."
+lesson).  An app persisted under a name it has since replaced (`:replaces'
+in `jetpacs-app-store-packaged-apps') boots under its name now."
   (when (file-readable-p jetpacs-app-store-file)
     (ignore-errors (load jetpacs-app-store-file nil 'nomessage)))
+  (jetpacs-app-store--migrate-renames)
   (dolist (name jetpacs-app-store-installed)
     (condition-case err
         (if-let* ((packaged (jetpacs-app-store--packaged-entry name)))

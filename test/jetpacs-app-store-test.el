@@ -169,6 +169,23 @@
       (should (assoc "packaged-test" jetpacs-apps--registry))
       (should (equal jetpacs-app-store-test--lifecycle '(register))))))
 
+(ert-deftest jetpacs-app-store-boot-carries-a-renamed-app-over ()
+  "A choice persisted under a replaced name boots the app under its name now."
+  (jetpacs-app-store-test--env
+    (let ((jetpacs-app-store-packaged-apps
+           (list (append (car jetpacs-app-store-test--packaged)
+                         (list :replaces '("old-name.el"))))))
+      (setq jetpacs-app-store-installed '("old-name.el"))
+      (jetpacs-app-store--persist)
+      (setq jetpacs-app-store-installed nil)
+      (jetpacs-app-store-boot)
+      (should (equal jetpacs-app-store-installed '("packaged-test.el")))
+      (should (assoc "packaged-test" jetpacs-apps--registry))
+      ;; The migration is persisted: the next boot reads the new name.
+      (setq jetpacs-app-store-installed nil)
+      (load jetpacs-app-store-file nil 'nomessage)
+      (should (equal jetpacs-app-store-installed '("packaged-test.el"))))))
+
 (ert-deftest jetpacs-app-store-live-untracked-packaged-app-can-disable ()
   "A direct require is shown as active and gains the missing Disable path."
   (jetpacs-app-store-test--env

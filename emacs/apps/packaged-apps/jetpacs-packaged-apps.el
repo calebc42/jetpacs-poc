@@ -29,7 +29,9 @@
          :feature bloom
          :app-id "bloom"
          :register bloom-register
-         :unregister bloom-unregister)
+         :unregister bloom-unregister
+         ;; Bloom was Grove until upstream renamed the Android app.
+         :replaces ("grove.el"))
         (:name "orgzly.el"
          :label "Orgzly"
          :icon "book"
