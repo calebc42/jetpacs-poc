@@ -11,6 +11,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import com.calebc42.jetpacs.material3.LocalScaffoldBottomClearance
 import com.calebc42.jetpacs.material3.ScaffoldBottomClearance
@@ -56,6 +57,7 @@ import androidx.lifecycle.compose.dropUnlessResumed
 import com.calebc42.ebp.renderer.model.RendererActionContext
 import com.calebc42.ebp.renderer.model.RendererActionRequest
 import com.calebc42.jetpacs.companion.host.DeviceBridge
+import com.calebc42.jetpacs.companion.host.SurfaceViews
 import com.calebc42.jetpacs.material3.RenderNode
 import com.calebc42.jetpacs.material3.chromeBackDescriptor
 import com.calebc42.jetpacs.material3.ui.JetpacsCatalogAction
@@ -183,6 +185,7 @@ private fun SurfaceDocumentHost(
     val connected by connectedFlow.collectAsState()
     val surfaceIncarnations by
         bridge.surfacePresentationIncarnations.collectAsState()
+    val surfaceViews by bridge.surfaceViews.collectAsState()
     when (val spec = shown) {
         null -> {
             val repair = dropUnlessResumed { onRepair() }
@@ -214,14 +217,40 @@ private fun SurfaceDocumentHost(
                     )
                 }
             }
-            RenderNode(
-                spec,
-                surfaceId,
-                bridge,
-                configuration = LocalCompanionRendererConfiguration.current,
-            )
+            PerViewState(surfaceViews[surfaceId]) {
+                RenderNode(
+                    spec,
+                    surfaceId,
+                    bridge,
+                    configuration = LocalCompanionRendererConfiguration.current,
+                )
+            }
         }
     }
+}
+
+/**
+ * Give each view of a multi-view surface its own saveable state. The views
+ * render at one place in the composition, so without this a pushed screen
+ * inherits the scroll position of the screen it was pushed from. A view the
+ * spec no longer authors (a popped screen) drops its state, so pushing it
+ * again opens it at the top.
+ */
+@Composable
+fun PerViewState(views: SurfaceViews?, content: @Composable () -> Unit) {
+    if (views == null) {
+        content()
+        return
+    }
+    val holder = rememberSaveableStateHolder()
+    val held = remember { mutableSetOf<String>() }
+    LaunchedEffect(views) {
+        held += views.current
+        val gone = held - views.all
+        gone.forEach(holder::removeState)
+        held -= gone
+    }
+    holder.SaveableStateProvider(views.current, content)
 }
 
 /** Show receiver-owned offline chrome without recomposing the surface tree. */

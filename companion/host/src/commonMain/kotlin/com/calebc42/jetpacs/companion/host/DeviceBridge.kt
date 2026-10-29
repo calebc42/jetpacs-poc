@@ -461,6 +461,7 @@ class DeviceBridge(
                 .filter { it.startsWith("app:") }
                 .forEach {
                     publishPresentationIncarnations(it)
+                    publishSurfaceViews(it, surfaceViewsOf(it))
                     onSurfaceChanged(it, resolveView(it))
                 }
         } catch (e: Exception) {
@@ -1061,6 +1062,13 @@ class DeviceBridge(
         MutableStateFlow<Map<String, Any>>(emptyMap())
     val surfacePresentationIncarnations: StateFlow<Map<String, Any>>
         get() = _surfacePresentationIncarnations
+    // SPEC 13.4: the view each multi-view app surface shows, published
+    // just before its node. The surface root keeps one saveable state per
+    // view, so a pushed screen opens at its top and Back finds its parent
+    // where the user left it.
+    private val _surfaceViews = MutableStateFlow<Map<String, SurfaceViews>>(emptyMap())
+    val surfaceViews: StateFlow<Map<String, SurfaceViews>>
+        get() = _surfaceViews
     private val _retainedPresentationIncarnations =
         MutableStateFlow<Map<Pair<String, String>, Long>>(emptyMap())
     override val retainedPresentationIncarnations:
@@ -1664,6 +1672,21 @@ class DeviceBridge(
         dispatchExecutor.execute { engine?.windowChanged(widthDp, heightDp) }
     }
 
+    /** The views of SURFACE's multi-view spec and the one shown; null for
+     * a single-view spec or a removed surface. */
+    private fun surfaceViewsOf(surface: String): SurfaceViews? {
+        val spec = store.spec(surface) ?: return null
+        val views = spec.objOrNull("views") ?: return null
+        val name = store.currentView(surface) ?: spec.stringOr("initial_view")
+        return SurfaceViews(name, views.keys)
+    }
+
+    private fun publishSurfaceViews(surface: String, views: SurfaceViews?) {
+        _surfaceViews.update {
+            if (views == null) it - surface else it + (surface to views)
+        }
+    }
+
     /** SPEC 13.4/14.2: resolve a multi-view spec to the view being shown;
      * a single-view spec passes through. */
     private fun resolveView(surface: String): JsonObject? {
@@ -1758,6 +1781,7 @@ class DeviceBridge(
             val revision = store.revisionOf(surface)
             val spec = store.spec(surface)
             val view = if (surface.startsWith("app:")) resolveView(surface) else null
+            val views = if (surface.startsWith("app:")) surfaceViewsOf(surface) else null
             presenter.present(surface, timed = engine.stageObserver != null) {
                 // T3/LD-2: publish display generations before the spec, so the
                 // recomposition this push triggers already sees the new epoch.
@@ -1775,8 +1799,10 @@ class DeviceBridge(
                         platform.presentation.surfaceNotification(surface, spec)
                     surface.startsWith("widget:") -> onWidgetSurfaceChanged(surface)
                     surface.startsWith("tile:") -> platform.presentation.tileChanged(surface)
-                    surface.startsWith("app:") ->
+                    surface.startsWith("app:") -> {
+                        publishSurfaceViews(surface, views)
                         onSurfaceChanged(surface, view)
+                    }
                 }
             }
         }
@@ -2025,3 +2051,7 @@ internal val OFFLINE_DROP_NOTICE = HostWording.Emacs.offlineDropNotice
 
 /** The shortest gap between two offline-drop notices. */
 internal const val OFFLINE_DROP_NOTICE_INTERVAL_MS = 2_000L
+
+/** A multi-view surface's views (SPEC 13.4): the one shown and every one the
+ * spec authors. */
+data class SurfaceViews(val current: String, val all: Set<String>)
